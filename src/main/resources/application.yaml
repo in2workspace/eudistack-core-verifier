@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: VC Verifier
+
+server:
+  port: 8082
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+  level:
+    es.in2.vcverifier: INFO
+    org.springframework.security: INFO
+
+management:
+  endpoints:
+    enabled-by-default: false
+    web:
+      exposure:
+        include: health, prometheus
+      base-path: /
+      path-mapping:
+        health: health
+        prometheus: prometheus
+  endpoint:
+    health:
+      enabled: true
+      show-details: always
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ──────────────────────────────────────────────────────────
+# Verifier configuration
+#
+# All values below are dev defaults. Override via env vars
+# in production. Spring relaxed binding applies, e.g.:
+#   verifier.backend.url -> VERIFIER_BACKEND_URL
+# ──────────────────────────────────────────────────────────
+verifier:
+  frontend:
+    portalUrl: http://localhost:4200
+  backend:
+    url: http://localhost:8082
+    identity:
+      # Leave empty to auto-generate ephemeral P-256 key + did:key at startup
+      didKey:
+      privateKey:
+    trustFrameworks:
+      - name: DOME
+        # Leave empty to use local providers (classpath YAML files)
+        trustedIssuersListUrl:
+        trustedServicesListUrl:
