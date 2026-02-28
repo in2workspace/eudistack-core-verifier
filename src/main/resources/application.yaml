@@ -50,6 +50,6 @@ verifier:
       privateKey:
     trustFrameworks:
       - name: DOME
-        # Leave empty to use local providers (classpath YAML files)
-        trustedIssuersListUrl:
-        trustedServicesListUrl:
+        # Leave URLs unset to use local providers (classpath YAML files)
+        # trustedIssuersListUrl: https://example.org/trusted-issuers
+        # trustedServicesListUrl: https://example.org/trusted-services
