@@ -76,8 +76,8 @@ class GlobalExceptionHandlerTest {
 
         GlobalErrorMessage response = globalExceptionHandler.handleException(exception);
 
-        assertThat(response.title()).isEmpty();
-        assertThat(response.message()).isEmpty();
+        assertThat(response.title()).isEqualTo("Unexpected error");
+        assertThat(response.message()).isEqualTo("Exception: Generic error");
         assertThat(response.path()).isEmpty();
     }
 
@@ -101,8 +101,8 @@ class GlobalExceptionHandlerTest {
 
         GlobalErrorMessage response = globalExceptionHandler.handleException(exception);
 
-        assertThat(response.title()).isEmpty();
-        assertThat(response.message()).isEmpty();
+        assertThat(response.title()).isEqualTo("Unexpected error");
+        assertThat(response.message()).isEqualTo("CredentialExpiredException: Credential expired");
         assertThat(response.path()).isEmpty();
     }
 

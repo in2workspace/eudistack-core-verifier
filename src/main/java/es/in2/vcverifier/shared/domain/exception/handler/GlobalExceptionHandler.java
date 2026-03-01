@@ -60,11 +60,60 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new GlobalErrorMessage("","","");
     }
 
+    @ExceptionHandler(IssuerNotAuthorizedException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public GlobalErrorMessage handleIssuerNotAuthorizedException(IssuerNotAuthorizedException ex) {
+        log.error("Issuer not authorized: {}", ex.getMessage(), ex);
+        return new GlobalErrorMessage("Issuer not authorized", ex.getMessage(), "");
+    }
+
+    @ExceptionHandler(InvalidCredentialTypeException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public GlobalErrorMessage handleInvalidCredentialTypeException(InvalidCredentialTypeException ex) {
+        log.error("Invalid credential type: {}", ex.getMessage(), ex);
+        return new GlobalErrorMessage("Invalid credential type", ex.getMessage(), "");
+    }
+
+    @ExceptionHandler(JWTClaimMissingException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public GlobalErrorMessage handleJWTClaimMissingException(JWTClaimMissingException ex) {
+        log.error("JWT claim missing or invalid: {}", ex.getMessage(), ex);
+        return new GlobalErrorMessage("JWT claim error", ex.getMessage(), "");
+    }
+
+    @ExceptionHandler(JWTVerificationException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public GlobalErrorMessage handleJWTVerificationException(JWTVerificationException ex) {
+        log.error("JWT verification failed: {}", ex.getMessage(), ex);
+        return new GlobalErrorMessage("JWT verification failed", ex.getMessage(), "");
+    }
+
+    @ExceptionHandler(JWTParsingException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public GlobalErrorMessage handleJWTParsingException(JWTParsingException ex) {
+        log.error("JWT parsing failed: {}", ex.getMessage(), ex);
+        return new GlobalErrorMessage("JWT parsing failed", ex.getMessage(), "");
+    }
+
+    @ExceptionHandler(InvalidScopeException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public GlobalErrorMessage handleInvalidScopeException(InvalidScopeException ex) {
+        log.error("Cryptographic binding or scope error: {}", ex.getMessage(), ex);
+        return new GlobalErrorMessage("Scope/binding error", ex.getMessage(), "");
+    }
+
+    @ExceptionHandler(CredentialMappingException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public GlobalErrorMessage handleCredentialMappingException(CredentialMappingException ex) {
+        log.error("Credential mapping failed: {}", ex.getMessage(), ex);
+        return new GlobalErrorMessage("Credential mapping error", ex.getMessage(), "");
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public GlobalErrorMessage handleException(Exception ex) {
         log.error("An unexpected error occurred: ", ex);
-        return new GlobalErrorMessage("","","");
+        return new GlobalErrorMessage("Unexpected error", ex.getClass().getSimpleName() + ": " + ex.getMessage(), "");
     }
 
     @ExceptionHandler(InvalidVPtokenException.class)
