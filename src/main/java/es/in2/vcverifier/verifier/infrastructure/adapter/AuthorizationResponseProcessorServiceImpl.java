@@ -2,6 +2,7 @@ package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
@@ -56,6 +57,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final SseEmitterStore sseEmitterStore;
     private final CacheStore<String> cacheForNonceByState;
     private final BackendConfig backendConfig;
+    private final ECKey ecKey;
 
     @Override
     public void processAuthResponse(String state, String vpToken){
@@ -81,28 +83,33 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         String redirectUri = oAuth2AuthorizationRequest.getRedirectUri();
         // Decode vpToken from Base64
         String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
-        log.info("Decoded VP Token (format={})", isSdJwt(decodedVpToken) ? "sd-jwt" : "jwt");
+
+        // Detect DCQL format (JSON object) vs legacy format (direct JWT/SD-JWT string)
+        String resolvedVpToken = extractVpTokenFromPossibleDcql(decodedVpToken);
+
+        log.info("Decoded VP Token (format={})", isSdJwt(resolvedVpToken) ? "sd-jwt" : "jwt");
 
         // Validate and extract credential based on format
         JsonNode credentialJson;
-        if (isSdJwt(decodedVpToken)) {
+        if (isSdJwt(resolvedVpToken)) {
             // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
+            // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
             String cachedNonce = cacheForNonceByState.get(state);
-            String expectedAud = backendConfig.getUrl();
+            String expectedAud = ecKey.getKeyID();
             SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
-                    decodedVpToken, expectedAud, cachedNonce);
+                    resolvedVpToken, expectedAud, cachedNonce);
             credentialJson = objectMapper.valueToTree(result.resolvedClaims());
             log.info("SD-JWT VC validated successfully. vct={}", result.vct());
         } else {
             // JWT VP path (existing logic, unchanged)
-            validateVpTokenNonceAndAudience(decodedVpToken, state);
+            validateVpTokenNonceAndAudience(resolvedVpToken, state);
             try {
-                vpService.validateVerifiablePresentation(decodedVpToken);
+                vpService.validateVerifiablePresentation(resolvedVpToken);
             } catch (Exception e) {
-                log.error("VP Token is invalid - VP Token used in H2M flow is invalid");
+                log.error("VP Token is invalid - VP Token used in H2M flow is invalid: {}", e.getMessage(), e);
                 throw e;
             }
-            credentialJson = vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(decodedVpToken);
+            credentialJson = vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(resolvedVpToken);
             log.info("JWT VP Token validated successfully");
         }
 
@@ -183,6 +190,41 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         return token != null && token.contains("~");
     }
 
+    /**
+     * Extracts the VP token from a possible DCQL format.
+     * DCQL vp_token is a JSON object keyed by credential query IDs, e.g.:
+     * { "lear_jwt_vc": ["eyJ..."] }
+     * Legacy vp_token is a direct JWT or SD-JWT string.
+     */
+    private String extractVpTokenFromPossibleDcql(String decoded) {
+        String trimmed = decoded.trim();
+        if (trimmed.startsWith("{")) {
+            try {
+                JsonNode dcqlVpToken = objectMapper.readTree(trimmed);
+                // Iterate entries and take the first VP token found
+                var fields = dcqlVpToken.fields();
+                while (fields.hasNext()) {
+                    var entry = fields.next();
+                    JsonNode value = entry.getValue();
+                    if (value.isArray() && !value.isEmpty()) {
+                        String token = value.get(0).asText();
+                        log.info("Extracted VP token from DCQL format, credential query id: {}", entry.getKey());
+                        return token;
+                    } else if (value.isTextual()) {
+                        log.info("Extracted VP token from DCQL format, credential query id: {}", entry.getKey());
+                        return value.asText();
+                    }
+                }
+                throw new JWTParsingException("DCQL vp_token JSON object contains no entries");
+            } catch (Exception e) {
+                if (e instanceof JWTParsingException) throw (JWTParsingException) e;
+                throw new JWTParsingException("Failed to parse DCQL vp_token: " + e.getMessage());
+            }
+        }
+        // Legacy format: direct JWT or SD-JWT string
+        return trimmed;
+    }
+
     private void validateVpTokenNonceAndAudience(String decodedVpToken, String state) {
         if (state == null || state.isBlank()) {
             throw new JWTClaimMissingException("The 'state' claim is missing in the VP token.");
@@ -204,10 +246,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             if (audiences == null || audiences.isEmpty()) {
                 throw new JWTClaimMissingException("The 'aud' claim is missing in the VP token.");
             }
-            String expectedAudience = backendConfig.getUrl();
-            log.debug("VP aud validation: expected={}, received={}", expectedAudience, audiences);
-            if (!audiences.contains(expectedAudience)) {
-                throw new JWTClaimMissingException("The 'aud' claim in the VP token does not match the expected verifier URL.");
+            // OID4VP Final 1.0: aud MUST be client_id. Accept both DID key and backend URL for backwards compatibility.
+            String expectedClientId = ecKey.getKeyID();
+            String expectedUrl = backendConfig.getUrl();
+            log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}", expectedClientId, expectedUrl, audiences);
+            if (!audiences.contains(expectedClientId) && !audiences.contains(expectedUrl)) {
+                throw new JWTClaimMissingException("The 'aud' claim in the VP token does not match the verifier client_id or URL.");
             }
             log.debug("Validated VP nonce: received={}, cached={}, audience={}", vpNonce, cachedNonce, audiences);
         } catch (ParseException e) {
