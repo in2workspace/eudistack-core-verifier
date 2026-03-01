@@ -37,11 +37,9 @@ public class Oid4vpController {
     @ResponseStatus(HttpStatus.OK)
     public void processAuthResponse(
             @RequestParam("state") String state,
-            @RequestParam("vp_token") String vpToken,
-            @RequestParam(value = "presentation_submission", required = false) String presentationSubmission) {
-        //TODO We need use presentationSubmission in the future
+            @RequestParam("vp_token") String vpToken) {
         log.info("Processing auth response");
-        log.debug("Oid4vpController -- processAuthResponse -- Request params: state = {}, vpToken = {}, presentationSubmission = {}", state, vpToken, presentationSubmission);
+        log.debug("Oid4vpController -- processAuthResponse -- Request params: state = {}, vpToken = {}", state, vpToken);
         authorizationResponseProcessorService.processAuthResponse(state, vpToken);
     }
 
