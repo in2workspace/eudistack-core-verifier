@@ -1,4 +1,13 @@
-# CLAUDE.md - Verifier Core API
+# CLAUDE.md — Verifier Core Service
+
+## Shared Context
+
+Shared agents, protocol docs, and skills live in `.claude/shared/` (git submodule).
+
+- Agents: `.claude/shared/agents/` (developer, reviewer)
+- Protocol specs: `.claude/shared/docs/protocols/` (OID4VCI gap analysis, SD-JWT, credential JSON schema)
+- Normative references: `.claude/shared/docs/standards/references.md`
+- Skills: `.claude/shared/skills/` (java-spring-hexagonal, angular)
 
 ## Project Overview
 
@@ -31,10 +40,12 @@ Key backend config: `VERIFIER_FRONTEND_PORTALURL` (default: `http://localhost:42
 
 ## Documentation
 
-All design & implementation documents are in `.claude/docs/`:
+Project-specific docs in `.claude/docs/`:
 
-- [srs.md](docs/srs.md) - Complete SRS (source of truth). Read before any change, update after each step.
-- [deployment.md](docs/deployment.md) - Deployment guide for implementers.
+- [srs.md](docs/srs.md) — Complete SRS (source of truth). Read before any change, update after each step.
+- [deployment.md](docs/deployment.md) — Deployment guide for implementers.
+
+Cross-cutting protocol docs in `.claude/shared/docs/protocols/`.
 
 ## Key Technical Decisions
 
