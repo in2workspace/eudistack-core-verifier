@@ -1,8 +1,8 @@
 package es.in2.vcverifier.shared.crypto;
 
 import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
-import com.nimbusds.jose.crypto.impl.CriticalHeaderParamsDeferral;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
@@ -20,6 +20,7 @@ import java.security.PublicKey;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -54,7 +55,7 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
                 // Use the extracted method to process the certificate
                 PublicKey publicKey = processCertificate(certBase64Str, expectedOrgId, certificateFactory);
                 if (publicKey != null) {
-                    verifyJWTWithRSAKey(verifiableCredential ,publicKey);
+                    verifyJWTSignature(verifiableCredential, publicKey);
                     return;
                 }
                 // If the loop finishes without finding a match, throw an exception
@@ -165,35 +166,32 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
         return data;
     }
 
-    private void verifyJWTWithRSAKey(String jwt, PublicKey publicKey) {
+    private void verifyJWTSignature(String jwt, PublicKey publicKey) {
         try {
-            // Ensure the provided key is of the correct type
-            if (!(publicKey instanceof RSAPublicKey)) {
-                throw new IllegalArgumentException("Invalid key type for RSA verification");
-            }
-
-            // Parse the JWT
             SignedJWT signedJWT = SignedJWT.parse(jwt);
 
-            // Define critical headers to defer
+            // Defer JAdES critical headers (e.g. sigT)
             Set<String> defCriticalHeaders = new HashSet<>();
             defCriticalHeaders.add("sigT");
 
-            // Create a policy for critical header parameters and set the deferred ones
-            CriticalHeaderParamsDeferral criticalPolicy = new CriticalHeaderParamsDeferral();
-            criticalPolicy.setDeferredCriticalHeaderParams(defCriticalHeaders);
-
-            // Create the RSA verifier
-            JWSVerifier verifier = new RSASSAVerifier((RSAPublicKey) publicKey, defCriticalHeaders);
-
-            // Verify the signature
-            if (!signedJWT.verify(verifier)) {
-                throw new JWTVerificationException("Invalid JWT signature for RSA key");
+            JWSVerifier verifier;
+            if (publicKey instanceof RSAPublicKey rsaKey) {
+                verifier = new RSASSAVerifier(rsaKey, defCriticalHeaders);
+            } else if (publicKey instanceof ECPublicKey ecKey) {
+                verifier = new ECDSAVerifier(ecKey, defCriticalHeaders);
+            } else {
+                throw new IllegalArgumentException("Unsupported key type for JWT verification: " + publicKey.getAlgorithm());
             }
 
+            if (!signedJWT.verify(verifier)) {
+                throw new JWTVerificationException("Invalid JWT signature");
+            }
+
+        } catch (JWTVerificationException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Exception during JWT signature verification with RSA key", e);
-            throw new JWTVerificationException("JWT signature verification failed due to unexpected error: " + e);
+            log.error("Exception during JWT signature verification", e);
+            throw new JWTVerificationException("JWT signature verification failed: " + e.getMessage());
         }
     }
 }

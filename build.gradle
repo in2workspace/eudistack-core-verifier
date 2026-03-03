@@ -1,112 +1,129 @@
 plugins {
-	id 'java'
-	id 'org.springframework.boot' version '3.5.11'
-	id 'io.spring.dependency-management' version '1.1.7'
-	id 'jacoco'
-	id 'checkstyle'
-	id 'org.owasp.dependencycheck' version '12.2.0'
-	id 'io.swagger.core.v3.swagger-gradle-plugin' version '2.2.28'
-	id 'org.sonarqube' version '6.0.1.5171'
+    id 'java'
+    id 'org.springframework.boot' version '3.5.11'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'jacoco'
+    id 'checkstyle'
+    id 'org.sonarqube' version '7.2.2.6593'
+    id 'org.owasp.dependencycheck' version '12.2.0'
+    id 'com.github.ben-manes.versions' version '0.53.0'
+    id 'se.patrikerdes.use-latest-versions' version '0.2.19'
 }
 
-group = 'es.in2'
-version = '2.1.0'
+group = 'es.altia'
+version = '3.0.0'
 
 java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(25)
-	}
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
 }
 
 configurations {
-	compileOnly {
-		extendsFrom annotationProcessor
-	}
-}
-
-checkstyle {
-	toolVersion = '10.16.0'
-	configFile = file("${rootDir}/checkstyle/checkstyle.xml")
-}
-
-checkstyleMain {
-	source = 'src/main/java'
-}
-
-checkstyleTest {
-	source = 'src/test/java'
-}
-
-sonar {
-	properties {
-		property "sonar.projectName", "IN2 Verifier API"
-		property "sonar.projectKey", "in2workspace_in2-verifier-api"
-		property "sonar.organization", "in2workspace"
-		property "sonar.host.url", "https://sonarcloud.io"
-		property 'sonar.coverage.exclusions',
-                "src/main/java/es/in2/vcverifier/VcVerifierApplication.java, " +
-						"src/main/java/es/in2/vcverifier/security/AuthorizationServerConfig.java"
-	}
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
 }
 
 repositories {
-	mavenCentral()
-	maven { url "https://jitpack.io" }
+    mavenCentral()
+    maven { url = uri('https://jitpack.io') }
 }
 
 dependencies {
-	// Starters
-	implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
-	implementation 'org.springframework.boot:spring-boot-starter-validation'
-	implementation 'org.springframework.boot:spring-boot-starter-actuator'
-	// Cryptography
-	implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
-	implementation 'org.bitcoinj:bitcoinj-core:0.17-alpha5'
-	implementation 'io.github.novacrypto:Base58:2022.01.17'
-	//Jackson
-	implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.17.2'
-	// JSON
-	implementation 'org.json:json:20230227'
-	// JSON Schema validation
-	implementation 'com.networknt:json-schema-validator:1.5.6'
-	// DevTools
-	compileOnly 'org.projectlombok:lombok'
-	annotationProcessor 'org.projectlombok:lombok'
-	// Testing
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-	testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
-	// Monitoring
-	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+    // --- Spring Boot Starters ---
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    // --- Serialization ---
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.17.2'
+    implementation 'org.json:json:20230227'
+
+    // --- Cryptography ---
+    implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+    implementation 'io.github.novacrypto:Base58:2022.01.17'
+
+    // --- Validation ---
+    implementation 'com.networknt:json-schema-validator:1.5.6'
+
+    // --- Caching ---
+    implementation 'com.google.guava:guava:33.4.0-jre'
+
+    // --- Monitoring ---
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    // --- DevTools ---
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // --- Testing ---
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
 }
+
+// --- Quality & CI ---
+
+checkstyle {
+    toolVersion = '10.16.0'
+    configFile = file("${rootDir}/checkstyle/checkstyle.xml")
+}
+
+checkstyleMain {
+    source = 'src/main/java'
+}
+
+checkstyleTest {
+    source = 'src/test/java'
+}
+
+sonar {
+    properties {
+        property 'sonar.projectName', 'Altia EUDIStack Verifier Core Service'
+        property 'sonar.projectKey', 'in2workspace_in2-verifier-api'
+        property 'sonar.organization', 'in2workspace'
+        property 'sonar.host.url', 'https://sonarcloud.io'
+        property 'sonar.coverage.exclusions',
+                "src/main/java/**/VcVerifierApplication.java, " +
+                        "src/main/java/**/AuthorizationServerConfig.java"
+    }
+}
+
+// --- Tasks ---
 
 tasks.named('compileJava') {
-	inputs.files(tasks.named('processResources'))
-}
-
-tasks.register('checkstyle') {
-	reports {
-		xml.required = false
-		html.required = true
-	}
+    inputs.files(tasks.named('processResources'))
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
-	finalizedBy(tasks.jacocoTestReport)
+    useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
 }
 
 tasks.jacocoTestReport {
-	dependsOn(tasks.test)
-	reports {
-		xml.required.set(true)
-		csv.required.set(false)
-		html.outputLocation.set(layout.buildDirectory.dir("jacocoHtml"))
-	}
-	classDirectories.setFrom(files(classDirectories.files.collect {
-		fileTree(dir: it, exclude: [
-				"**/AuthorizationServerConfig.class",
-		])
-	}))
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        csv.required.set(false)
+        html.outputLocation.set(layout.buildDirectory.dir('jacocoHtml'))
+    }
+    classDirectories.setFrom(files(classDirectories.files.collect {
+        fileTree(dir: it, exclude: [
+                "**/AuthorizationServerConfig.class",
+        ])
+    }))
+}
+
+def isNonStable = { String version ->
+    def stableKeyword = ['RELEASE', 'FINAL', 'GA'].any { it -> version.toUpperCase().contains(it) }
+    def regex = /^[0-9,.v-]+(-r)?$/
+    return !stableKeyword && !(version ==~ regex)
+}
+
+tasks.named("dependencyUpdates").configure {
+    rejectVersionIf {
+        isNonStable(it.candidate.version)
+    }
 }

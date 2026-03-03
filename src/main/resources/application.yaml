@@ -45,9 +45,11 @@ verifier:
   backend:
     url: http://localhost:8082
     identity:
-      # Leave empty to auto-generate ephemeral P-256 key + did:key at startup
+      # Leave empty to auto-generate ephemeral P-256 key + did:key at startup (dev only).
+      # For production, configure privateKey + certificate for x509_hash client_id_scheme.
       didKey:
       privateKey:
+      certificate:  # Path to X.509 PEM certificate. When set, enables x509_hash client_id_scheme.
     trustFrameworks:
       - name: DOME
         # Leave URLs unset to use local providers (classpath YAML files)

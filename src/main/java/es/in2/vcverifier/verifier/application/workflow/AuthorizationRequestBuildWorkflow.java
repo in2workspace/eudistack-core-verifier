@@ -77,13 +77,15 @@ public class AuthorizationRequestBuildWorkflow {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(10, ChronoUnit.DAYS);
 
+        String clientId = cryptoComponent.getClientId();
+
         JWTClaimsSet payload = new JWTClaimsSet.Builder()
-                .issuer(cryptoComponent.getECKey().getKeyID())
-                .audience(cryptoComponent.getECKey().getKeyID())
+                .issuer(clientId)
+                .audience(clientId)
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
-                .claim(OAuth2ParameterNames.CLIENT_ID, cryptoComponent.getECKey().getKeyID())
-                .claim("client_id_scheme", "did:key")
+                .claim(OAuth2ParameterNames.CLIENT_ID, clientId)
+                .claim("client_id_scheme", cryptoComponent.getClientIdScheme())
                 .claim(NONCE, nonce)
                 .claim("response_uri", backendConfig.getUrl() + AUTHORIZATION_RESPONSE_ENDPOINT)
                 .claim(OAuth2ParameterNames.SCOPE, "dome.credentials.presentation.LEARCredentialEmployee")
@@ -101,9 +103,14 @@ public class AuthorizationRequestBuildWorkflow {
     private Map<String, Object> buildDcqlQuery() {
         return Map.of("credentials", List.of(
                 Map.of(
-                        "id", "lear_sd_jwt",
+                        "id", "lear_employee_sd_jwt",
                         "format", "dc+sd-jwt",
-                        "meta", Map.of("vct_values", List.of("LEARCredentialEmployee"))
+                        "meta", Map.of("vct_values", List.of("eu.europa.ec.eudi.lce.1"))
+                ),
+                Map.of(
+                        "id", "lear_machine_sd_jwt",
+                        "format", "dc+sd-jwt",
+                        "meta", Map.of("vct_values", List.of("eu.europa.ec.eudi.lcm.1"))
                 ),
                 Map.of(
                         "id", "lear_jwt_vc",
@@ -119,7 +126,7 @@ public class AuthorizationRequestBuildWorkflow {
         String requestUri = String.format("%s/oid4vp/auth-request/%s",
                 backendConfig.getUrl(), nonce);
         return String.format("openid4vp://?client_id=%s&request_uri=%s",
-                URLEncoder.encode(cryptoComponent.getECKey().getKeyID(), StandardCharsets.UTF_8),
+                URLEncoder.encode(cryptoComponent.getClientId(), StandardCharsets.UTF_8),
                 URLEncoder.encode(requestUri, StandardCharsets.UTF_8));
     }
 }

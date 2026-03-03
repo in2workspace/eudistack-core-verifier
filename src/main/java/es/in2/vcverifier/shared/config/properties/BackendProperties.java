@@ -21,7 +21,8 @@ public record BackendProperties(
 
     public record Identity(
             String didKey,
-            String privateKey) {}
+            String privateKey,
+            String certificate) {}
 
     public record TrustFramework(
             @NotBlank String name,

@@ -2,10 +2,10 @@ package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
@@ -57,7 +57,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final SseEmitterStore sseEmitterStore;
     private final CacheStore<String> cacheForNonceByState;
     private final BackendConfig backendConfig;
-    private final ECKey ecKey;
+    private final CryptoComponent cryptoComponent;
 
     @Override
     public void processAuthResponse(String state, String vpToken){
@@ -95,7 +95,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
             // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
             String cachedNonce = cacheForNonceByState.get(state);
-            String expectedAud = ecKey.getKeyID();
+            String expectedAud = cryptoComponent.getClientId();
             SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
                     resolvedVpToken, expectedAud, cachedNonce);
             credentialJson = objectMapper.valueToTree(result.resolvedClaims());
@@ -246,8 +246,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             if (audiences == null || audiences.isEmpty()) {
                 throw new JWTClaimMissingException("The 'aud' claim is missing in the VP token.");
             }
-            // OID4VP Final 1.0: aud MUST be client_id. Accept both DID key and backend URL for backwards compatibility.
-            String expectedClientId = ecKey.getKeyID();
+            // OID4VP Final 1.0: aud MUST be client_id. Accept both x509_hash/DID client_id and backend URL for backwards compatibility.
+            String expectedClientId = cryptoComponent.getClientId();
             String expectedUrl = backendConfig.getUrl();
             log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}", expectedClientId, expectedUrl, audiences);
             if (!audiences.contains(expectedClientId) && !audiences.contains(expectedUrl)) {

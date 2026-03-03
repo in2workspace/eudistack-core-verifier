@@ -6,7 +6,6 @@ import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
-import com.nimbusds.jose.jwk.ECKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,7 +28,6 @@ class AuthorizationRequestBuildWorkflowTest {
     @Mock private BackendConfig backendConfig;
     @Mock private CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
     @Mock private CacheStore<String> cacheForNonceByState;
-    @Mock private ECKey ecKey;
 
     private AuthorizationRequestBuildWorkflow workflow;
 
@@ -44,8 +42,8 @@ class AuthorizationRequestBuildWorkflowTest {
     @Test
     @DisplayName("execute() builds JWT, generates openid4vp URL, and caches the result")
     void execute_buildsJwtAndGeneratesUrl() {
-        when(cryptoComponent.getECKey()).thenReturn(ecKey);
-        when(ecKey.getKeyID()).thenReturn("did:key:z6Mk...");
+        when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
+        when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.generateJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
@@ -75,8 +73,8 @@ class AuthorizationRequestBuildWorkflowTest {
     @Test
     @DisplayName("execute() passes the correct payload structure to JWTService")
     void execute_passesCorrectPayload() {
-        when(cryptoComponent.getECKey()).thenReturn(ecKey);
-        when(ecKey.getKeyID()).thenReturn("did:key:testkey");
+        when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
+        when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.generateJWTwithOI4VPType(anyString())).thenReturn("signed");
 

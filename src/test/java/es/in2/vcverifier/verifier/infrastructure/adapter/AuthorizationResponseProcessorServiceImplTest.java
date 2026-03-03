@@ -8,8 +8,8 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.crypto.MACSigner;
+import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
@@ -79,7 +79,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     private BackendConfig backendConfig;
 
     @Mock
-    private ECKey ecKey;
+    private CryptoComponent cryptoComponent;
 
     @Mock
     private AuthorizationResponseProcessorServiceImpl authorizationResponseProcessorService;
@@ -97,10 +97,10 @@ class AuthorizationResponseProcessorServiceImplTest {
                 sseEmitterStore,
                 cacheForNonceByState,
                 backendConfig,
-                ecKey
+                cryptoComponent
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
-        lenient().when(ecKey.getKeyID()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
+        lenient().when(cryptoComponent.getClientId()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
     }
 
 

@@ -28,6 +28,10 @@ public class BackendConfig {
         return properties.identity() != null ? properties.identity().didKey() : null;
     }
 
+    public String getCertificate() {
+        return properties.identity() != null ? properties.identity().certificate() : null;
+    }
+
     public boolean hasIdentityConfigured() {
         return properties.identity() != null
                 && properties.identity().privateKey() != null

@@ -23,7 +23,8 @@ class BackendPropertiesTest {
     void testBackendProperties() {
         BackendProperties.Identity expectedIdentity = new BackendProperties.Identity(
                 "did:key:zDnaeTest",
-                "0x73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5"
+                "0x73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5",
+                ""
         );
 
         BackendProperties.TrustFramework expectedTrustFramework = new BackendProperties.TrustFramework(

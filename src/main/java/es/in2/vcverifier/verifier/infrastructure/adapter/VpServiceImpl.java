@@ -2,7 +2,10 @@ package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.*;
 import es.in2.vcverifier.shared.domain.exception.*;
@@ -25,6 +28,7 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
 
 import java.security.PublicKey;
+import java.security.interfaces.ECPublicKey;
 import java.text.ParseException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
@@ -133,48 +137,72 @@ public class VpServiceImpl implements VpService {
             throw new InvalidVPtokenException("Invalid vp_token JWT");
         }
 
-        String vpKid = vpJwt.getHeader().getKeyID();
-        String vpIss;
-        String vpSub;
-        try {
-            var claims = vpJwt.getJWTClaimsSet();
-            vpIss = claims.getIssuer();
-            vpSub = claims.getSubject();
-        } catch (Exception e) {
-            throw new InvalidVPtokenException("Cannot read vp_token claims");
+        // 10.1: Verify VP signature — try embedded JWK first, fall back to DID
+        ECPublicKey vpSignerKey = null;
+        String holderDid = null;
+
+        ECKey vpHeaderJwk = extractJwkFromHeader(vpJwt);
+        if (vpHeaderJwk != null) {
+            log.info("[BIND] VP signed with embedded JWK (kid={})", vpHeaderJwk.getKeyID());
+            try {
+                vpSignerKey = vpHeaderJwk.toECPublicKey();
+            } catch (JOSEException e) {
+                throw new InvalidVPtokenException("Cannot extract EC public key from VP header JWK");
+            }
+            jwtService.verifyJWTWithECKey(verifiablePresentation, vpSignerKey);
+            log.info("VP signature verified via embedded JWK");
+        } else {
+            // Legacy path: extract DID from kid/iss/sub
+            String vpKid = vpJwt.getHeader().getKeyID();
+            String vpIss;
+            String vpSub;
+            try {
+                var claims = vpJwt.getJWTClaimsSet();
+                vpIss = claims.getIssuer();
+                vpSub = claims.getSubject();
+            } catch (Exception e) {
+                throw new InvalidVPtokenException("Cannot read vp_token claims");
+            }
+
+            holderDid = extractDidFromKidIssSub(vpKid, vpIss, vpSub);
+            holderDid = normalizeDid(holderDid);
+
+            if (holderDid == null || holderDid.isBlank()) {
+                throw new InvalidScopeException("Cannot extract holder identity from VP (no jwk header and no DID in kid/iss/sub)");
+            }
+
+            log.info("[BIND] VP holder DID resolved as {}", holderDid);
+            PublicKey holderPublicKey = didService.getPublicKeyFromDid(holderDid);
+            jwtService.verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
+            if (holderPublicKey instanceof ECPublicKey ecPub) {
+                vpSignerKey = ecPub;
+            }
+            log.info("VP signature verified via DID resolution (legacy)");
         }
 
-        String holderDid = extractDidFromKidIssSub(vpKid, vpIss, vpSub);
-        holderDid = normalizeDid(holderDid);
+        // 10.2: Cryptographic binding — try cnf.jwk first, fall back to DID comparison
+        ECKey vcCnfJwk = extractCnfJwkFromVc(jwtCredential);
 
-        if (holderDid == null || holderDid.isBlank()) {
-            throw new InvalidScopeException("Cannot extract holder DID from VP (kid/iss/sub)");
+        if (vcCnfJwk != null && vpSignerKey != null) {
+            // New path: JWK Thumbprint comparison
+            validateBindingByJwkThumbprint(vpSignerKey, vcCnfJwk);
+        } else {
+            // Legacy path: DID comparison
+            if (holderDid == null) {
+                throw new InvalidScopeException("Credential has no cnf.jwk and VP has no DID — cannot validate binding");
+            }
+            String boundDidFromVc = extractBoundDidFromCredential(learCredential, vcSub);
+            if (boundDidFromVc == null || boundDidFromVc.isBlank()) {
+                throw new InvalidScopeException("Credential missing cryptographic binding (no cnf.jwk and no DID in credentialSubject.id/sub/mandatee.id)");
+            }
+            log.info("[BIND] VC bound DID resolved as {}", boundDidFromVc);
+            if (!holderDid.equals(boundDidFromVc)) {
+                throw new InvalidScopeException(
+                        "Cryptographic binding mismatch: VP holder DID (" + holderDid + ") != VC bound DID (" + boundDidFromVc + ")"
+                );
+            }
+            log.info("Cryptographic binding validated via DID comparison (legacy)");
         }
-
-        log.info("[BIND] VP holder DID resolved as {}", holderDid);
-
-        // PoP: verify VP signature with holder DID
-        PublicKey holderPublicKey = didService.getPublicKeyFromDid(holderDid);
-        jwtService.verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
-        log.info("VP's signature is valid, holder DID {} confirmed", holderDid);
-
-        // Binding: VC bound DID (new first, then legacy)
-        String boundDidFromVc = extractBoundDidFromCredential(learCredential, vcSub);
-
-        if (boundDidFromVc == null || boundDidFromVc.isBlank()) {
-            throw new InvalidScopeException("Credential missing cryptographic binding DID (credentialSubject.id or vc.jwt.sub or mandatee.id)");
-        }
-
-        log.info("[BIND] VC bound DID resolved as {}", boundDidFromVc);
-
-        // 10.4 Enforce binding: holder DID must match VC bound DID
-        if (!holderDid.equals(boundDidFromVc)) {
-            throw new InvalidScopeException(
-                    "Cryptographic binding mismatch: VP holder DID (" + holderDid + ") != VC bound DID (" + boundDidFromVc + ")"
-            );
-        }
-
-        log.info("Cryptographic binding validated: VP holder DID matches VC bound DID");
         log.info("Verifiable Presentation validation completed successfully");
 
     }
@@ -494,5 +522,64 @@ public class VpServiceImpl implements VpService {
         }
     }
 
+    /**
+     * Extracts the JWK from a VP JWT header, if present.
+     * Returns null if no embedded JWK is found.
+     */
+    private ECKey extractJwkFromHeader(SignedJWT signedJwt) {
+        var jwk = signedJwt.getHeader().getJWK();
+        if (jwk instanceof ECKey ecKey) {
+            return ecKey;
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the cnf.jwk from a VC JWT's claims.
+     * This is the holder binding key embedded in the credential by the issuer.
+     * Returns null if no cnf.jwk is found.
+     */
+    @SuppressWarnings("unchecked")
+    private ECKey extractCnfJwkFromVc(SignedJWT vcJwt) {
+        try {
+            Map<String, Object> cnf = (Map<String, Object>) vcJwt.getJWTClaimsSet().getClaim("cnf");
+            if (cnf == null) return null;
+
+            Map<String, Object> jwk = (Map<String, Object>) cnf.get("jwk");
+            if (jwk == null) return null;
+
+            return ECKey.parse(jwk);
+        } catch (Exception e) {
+            log.warn("Failed to extract cnf.jwk from VC: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Validates cryptographic binding by comparing JWK Thumbprints (RFC 7638).
+     * The VP signer's public key must match the VC's cnf.jwk.
+     */
+    private void validateBindingByJwkThumbprint(ECPublicKey vpSignerKey, ECKey vcCnfJwk) {
+        try {
+            ECKey vpSignerEcKey = new ECKey.Builder(Curve.P_256, vpSignerKey).build();
+            String vpThumbprint = vpSignerEcKey.computeThumbprint().toString();
+            String vcThumbprint = vcCnfJwk.computeThumbprint().toString();
+
+            log.debug("[BIND] VP signer thumbprint: {}", vpThumbprint);
+            log.debug("[BIND] VC cnf.jwk thumbprint: {}", vcThumbprint);
+
+            if (!vpThumbprint.equals(vcThumbprint)) {
+                throw new InvalidScopeException(
+                        "Cryptographic binding mismatch: VP signer JWK Thumbprint (" + vpThumbprint +
+                        ") != VC cnf.jwk Thumbprint (" + vcThumbprint + ")"
+                );
+            }
+            log.info("Cryptographic binding validated via JWK Thumbprint (RFC 7638)");
+        } catch (InvalidScopeException e) {
+            throw e;
+        } catch (JOSEException e) {
+            throw new InvalidScopeException("Failed to compute JWK Thumbprint for binding validation: " + e.getMessage());
+        }
+    }
 
 }

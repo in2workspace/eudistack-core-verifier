@@ -140,11 +140,14 @@ public class JWTServiceImpl implements JWTService {
             ECKey ecJWK = cryptoComponent.getECKey();
             log.debug("JWTServiceImpl -- generateJWT -- ECKey obtained for signing: {}", ecJWK.getKeyID());
 
-            // Set Header
-            JWSHeader jwsHeader = new JWSHeader.Builder(JWSAlgorithm.ES256)
-                    .keyID(cryptoComponent.getECKey().getKeyID())
-                    .type(type)
-                    .build();
+            // Set Header — include x5c if certificate chain is available
+            JWSHeader.Builder headerBuilder = new JWSHeader.Builder(JWSAlgorithm.ES256)
+                    .keyID(ecJWK.getKeyID())
+                    .type(type);
+            if (ecJWK.getX509CertChain() != null && !ecJWK.getX509CertChain().isEmpty()) {
+                headerBuilder.x509CertChain(ecJWK.getX509CertChain());
+            }
+            JWSHeader jwsHeader = headerBuilder.build();
             log.debug("JWTServiceImpl -- generateJWT -- JWT header set with algorithm: {}", JWSAlgorithm.ES256);
 
             // Set Payload
