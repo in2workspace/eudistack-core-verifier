@@ -19,4 +19,9 @@ public record DetailedIssuer(
     public String getId() {
         return id;
     }
+
+    @Override
+    public String getOrganizationIdentifier() {
+        return organizationIdentifier;
+    }
 }

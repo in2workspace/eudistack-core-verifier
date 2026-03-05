@@ -104,6 +104,9 @@ public class VpServiceImpl implements VpService {
         List<String> credentialTypes = learCredential.type();
         log.debug("VpServiceImpl -- validateVerifiablePresentation -- Credential types extracted: {}", credentialTypes);
 
+        // TODO: Trusted issuers should be indexed by organizationIdentifier (e.g. "VATES-B60645900")
+        //  instead of did:elsi:... Once the trusted issuers list is migrated, pass issuerOrgId directly
+        //  and remove DID_ELSI_PREFIX usage.
         // Step 6: Retrieve the list of issuer capabilities
         log.debug("VpServiceImpl -- validateVerifiablePresentation -- Retrieving issuer capabilities for DID {}", credentialIssuerDid);
         List<IssuerCredentialsCapabilities> issuerCapabilitiesList = trustFrameworkService.getTrustedIssuerListData(credentialIssuerDid);
@@ -116,15 +119,19 @@ public class VpServiceImpl implements VpService {
 
         // TODO remove step 7 after the advanced certificate validation component is implemented
         // Step 8: Verify the signature and the organizationId of the credential signature
+        String issuerOrgId = learCredential.issuer().getOrganizationIdentifier();
+        if (issuerOrgId == null || issuerOrgId.isBlank()) {
+            throw new IllegalArgumentException("Cannot determine organizationIdentifier from issuer: " + learCredential.issuer().getId());
+        }
         Map<String, Object> vcHeader = jwtCredential.getHeader().toJSONObject();
-        certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(),vcHeader, credentialIssuerDid.substring("did:elsi:".length())); // Extract public key from x5c certificate and validate OrganizationIdentifier
+        certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, issuerOrgId);
 
         // Step 9: Extract the mandator organization identifier from the Verifiable Credential
         String mandatorOrganizationIdentifier = learCredential.mandatorOrganizationIdentifier();
         log.debug("VpServiceImpl -- validateVerifiablePresentation -- Extracted Mandator Organization Identifier from Verifiable Credential: {}", mandatorOrganizationIdentifier);
 
-        //TODO this must be validated against the participants list, not the issuer list
-        // Validate the mandator with trusted issuer service, if is not present the trustedIssuerListService throws an exception
+        // TODO: Once trusted issuers are indexed by organizationIdentifier, pass mandatorOrganizationIdentifier
+        //  directly instead of prepending DID_ELSI_PREFIX. Also validate against participants list, not issuer list.
         trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + mandatorOrganizationIdentifier);
         log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrganizationIdentifier);
 

@@ -126,10 +126,12 @@ public class LearCredentialClaimsExtractor implements ClaimsExtractor {
         JsonNode vctNode = credential.get("vct");
         if (vctNode != null && vctNode.isTextual()) {
             String vct = vctNode.asText();
-            if (vct.contains("LEARCredentialEmployee") || vct.contains("lear_credential_employee")) {
+            if (vct.contains("LEARCredentialEmployee") || vct.contains("lear_credential_employee")
+                    || vct.equals("eu.europa.ec.eudi.lce.1")) {
                 return "LEARCredentialEmployee";
             }
-            if (vct.contains("LEARCredentialMachine") || vct.contains("lear_credential_machine")) {
+            if (vct.contains("LEARCredentialMachine") || vct.contains("lear_credential_machine")
+                    || vct.equals("eu.europa.ec.eudi.lcm.1")) {
                 return "LEARCredentialMachine";
             }
             return vct;
