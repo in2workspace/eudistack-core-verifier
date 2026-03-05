@@ -149,7 +149,7 @@ public class TokenGenerationWorkflow {
         log.info("Generating access token with verifiableCredential");
         Map<String, Object> credentialData = objectMapper.convertValue(credentialJson, new TypeReference<>() {});
 
-        JWTClaimsSet payload = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
                 .issuer(backendConfig.getUrl())
                 .audience(audience)
                 .subject(subject)
@@ -158,9 +158,13 @@ public class TokenGenerationWorkflow {
                 .expirationTime(Date.from(expirationTime))
                 .claim(OAuth2ParameterNames.SCOPE, extractedClaims.scope())
                 .claim(CLIENT_ID, backendConfig.getUrl())
-                .claim("vc", credentialData)
-                .build();
+                .claim("vc", credentialData);
 
+        if (extractedClaims.accessTokenClaims() != null) {
+            extractedClaims.accessTokenClaims().forEach(payloadBuilder::claim);
+        }
+
+        JWTClaimsSet payload = payloadBuilder.build();
         return jwtService.generateJWT(payload.toString());
     }
 

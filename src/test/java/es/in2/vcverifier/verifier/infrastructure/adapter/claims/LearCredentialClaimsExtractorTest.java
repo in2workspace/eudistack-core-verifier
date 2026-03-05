@@ -39,6 +39,7 @@ class LearCredentialClaimsExtractorTest {
         assertEquals("VATES-12345678", claims.mandatorOrgId());
         assertEquals("did:elsi:VATES-12345678", claims.issuerDid());
         assertEquals("openid learcredential", claims.scope());
+        assertEquals("VATES-12345678", claims.accessTokenClaims().get("tenant"));
         assertEquals("John Doe", claims.idTokenClaims().get("name"));
         assertEquals("John", claims.idTokenClaims().get("given_name"));
         assertEquals("Doe", claims.idTokenClaims().get("family_name"));
@@ -67,6 +68,7 @@ class LearCredentialClaimsExtractorTest {
         assertEquals("did:key:zMachine1", claims.subjectDid());
         assertEquals("VATES-12345678", claims.mandatorOrgId());
         assertEquals("machine learcredential", claims.scope());
+        assertEquals("VATES-12345678", claims.accessTokenClaims().get("tenant"));
         assertTrue(claims.idTokenClaims().isEmpty());
     }
 

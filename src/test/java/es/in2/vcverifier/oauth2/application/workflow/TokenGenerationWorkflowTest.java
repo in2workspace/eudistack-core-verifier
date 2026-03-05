@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -146,6 +147,7 @@ class TokenGenerationWorkflowTest {
                     .subjectDid("did:key:z6MkSubject")
                     .scope("openid learcredential")
                     .idTokenClaims(Map.of("name", "Test User"))
+                    .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
             when(claimsExtractor.supports("LEARCredentialEmployee")).thenReturn(true);
@@ -176,6 +178,7 @@ class TokenGenerationWorkflowTest {
                     .subjectDid("did:key:z6MkMachine")
                     .scope("machine")
                     .idTokenClaims(Map.of())
+                    .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
             when(claimsExtractor.supports("LEARCredentialMachine")).thenReturn(true);
@@ -189,6 +192,29 @@ class TokenGenerationWorkflowTest {
             assertThat(result.idTokenJwt()).isNull();
 
             verify(jwtService, times(1)).generateJWT(anyString());
+        }
+
+        @Test
+        @DisplayName("includes tenant claim from accessTokenClaims in the JWT payload")
+        void includesTenantClaimInAccessToken() {
+            ObjectNode credential = buildW3cCredential("LEARCredentialEmployee");
+            ExtractedClaims claims = ExtractedClaims.builder()
+                    .subjectDid("did:key:z6MkSubject")
+                    .scope("openid learcredential")
+                    .idTokenClaims(Map.of())
+                    .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
+                    .build();
+
+            when(claimsExtractor.supports("LEARCredentialEmployee")).thenReturn(true);
+            when(claimsExtractor.extract(credential)).thenReturn(claims);
+            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(jwtService.generateJWT(anyString())).thenReturn("jwt");
+
+            workflow.execute(credential, "did:key:client", Map.of(), false);
+
+            ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+            verify(jwtService).generateJWT(captor.capture());
+            assertThat(captor.getValue()).contains("\"tenant\":\"VATES-B12345678\"");
         }
 
         @Test

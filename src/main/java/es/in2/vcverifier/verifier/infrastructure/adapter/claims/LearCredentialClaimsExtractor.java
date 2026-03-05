@@ -64,8 +64,11 @@ public class LearCredentialClaimsExtractor implements ClaimsExtractor {
             }
         }
 
-        // Access token: full credential as "vc" claim (handled by caller)
+        // Access token claims (tenant derived from mandator organizationIdentifier)
         Map<String, Object> accessTokenClaims = new HashMap<>();
+        if (mandatorOrgId != null) {
+            accessTokenClaims.put("tenant", mandatorOrgId);
+        }
 
         return ExtractedClaims.builder()
                 .subjectDid(subjectDid)
