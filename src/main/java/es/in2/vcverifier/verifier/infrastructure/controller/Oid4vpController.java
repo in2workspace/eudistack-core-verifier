@@ -35,12 +35,12 @@ public class Oid4vpController {
 
     @PostMapping("/auth-response")
     @ResponseStatus(HttpStatus.OK)
-    public void processAuthResponse(
+    public void handleAuthResponse(
             @RequestParam("state") String state,
             @RequestParam("vp_token") String vpToken) {
         log.info("Processing auth response");
-        log.debug("Oid4vpController -- processAuthResponse -- Request params: state = {}, vpToken = {}", state, vpToken);
-        authorizationResponseProcessorService.processAuthResponse(state, vpToken);
+        log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken = {}", state, vpToken);
+        authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
     }
 
 }

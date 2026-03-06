@@ -85,7 +85,7 @@ class JWTServiceImplTest {
 
         when(cryptoComponent.getECKey()).thenReturn(ecJWK);
 
-        String result = jwtService.generateJWT(payload.toString());
+        String result = jwtService.issueJWT(payload.toString());
 
         assertNotNull(result);
         verify(cryptoComponent, times(1)).getECKey();
@@ -105,7 +105,7 @@ class JWTServiceImplTest {
         when(cryptoComponent.getECKey()).thenReturn(ecJWK);
         when(objectMapper.readTree(anyString())).thenThrow(JsonProcessingException.class);
 
-        assertThrows(JWTCreationException.class, () -> jwtService.generateJWT(invalidPayload));
+        assertThrows(JWTCreationException.class, () -> jwtService.issueJWT(invalidPayload));
 
     }
 
@@ -128,7 +128,7 @@ class JWTServiceImplTest {
         claimsMap.put("iat", 1516239022);
         when(objectMapper.convertValue(any(JsonNode.class), any(TypeReference.class))).thenReturn(claimsMap);
 
-        assertThrows(JWTCreationException.class, () -> jwtService.generateJWT(payload));
+        assertThrows(JWTCreationException.class, () -> jwtService.issueJWT(payload));
     }
 
     @Test
@@ -155,19 +155,19 @@ class JWTServiceImplTest {
     }
 
     @Test
-    void getPayloadFromSignedJWT_validSignedJWT_shouldReturnPayload() {
+    void extractPayloadFromSignedJWT_validSignedJWT_shouldReturnPayload() {
         SignedJWT signedJWTMock = mock(SignedJWT.class);
         Payload payloadMock = mock(Payload.class);
         when(signedJWTMock.getPayload()).thenReturn(payloadMock);
 
-        Payload result = jwtService.getPayloadFromSignedJWT(signedJWTMock);
+        Payload result = jwtService.extractPayloadFromSignedJWT(signedJWTMock);
 
         assertNotNull(result);
         Assertions.assertEquals(payloadMock, result);
     }
 
     @Test
-    void getClaimFromPayload_validClaim_shouldReturnClaimValue() {
+    void extractClaimFromPayload_validClaim_shouldReturnClaimValue() {
         Payload payloadMock = mock(Payload.class);
         String claimName = "sub";
         String claimValue = "subject";
@@ -177,26 +177,26 @@ class JWTServiceImplTest {
 
         when(payloadMock.toJSONObject()).thenReturn(claimsMap);
 
-        String result = jwtService.getClaimFromPayload(payloadMock, claimName);
+        String result = jwtService.extractClaimFromPayload(payloadMock, claimName);
 
         assertNotNull(result);
         Assertions.assertEquals(claimValue, result);
     }
 
     @Test
-    void getClaimFromPayload_missingClaim_shouldThrowJWTClaimMissingException() {
+    void extractClaimFromPayload_missingClaim_shouldThrowJWTClaimMissingException() {
         Payload payloadMock = mock(Payload.class);
         String claimName = "sub";
 
         when(payloadMock.toJSONObject()).thenReturn(new HashMap<>());
 
-        JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () -> jwtService.getClaimFromPayload(payloadMock, claimName));
+        JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () -> jwtService.extractClaimFromPayload(payloadMock, claimName));
 
         Assertions.assertEquals(String.format("The '%s' claim is missing or empty in the JWT payload.", claimName), exception.getMessage());
     }
 
     @Test
-    void getClaimFromPayload_emptyClaim_shouldThrowJWTClaimMissingException() {
+    void extractClaimFromPayload_emptyClaim_shouldThrowJWTClaimMissingException() {
         Payload payloadMock = mock(Payload.class);
         String claimName = "sub";
         String emptyClaimValue = "";
@@ -206,35 +206,35 @@ class JWTServiceImplTest {
 
         when(payloadMock.toJSONObject()).thenReturn(claimsMap);
 
-        JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () -> jwtService.getClaimFromPayload(payloadMock, claimName));
+        JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () -> jwtService.extractClaimFromPayload(payloadMock, claimName));
 
         Assertions.assertEquals(String.format("The '%s' claim is missing or empty in the JWT payload.", claimName), exception.getMessage());
     }
 
     @Test
-    void getExpirationFromPayload_validExp_shouldReturnExpiration() throws ParseException {
+    void extractExpirationFromPayload_validExp_shouldReturnExpiration() throws ParseException {
         Payload payload = mock(Payload.class);
         when(payload.toJSONObject()).thenReturn(JSONObjectUtils.parse("{\"exp\": 1716239022}"));
 
-        long expiration = jwtService.getExpirationFromPayload(payload);
+        long expiration = jwtService.extractExpirationFromPayload(payload);
 
         assertEquals(1716239022, expiration);
     }
 
     @Test
-    void getExpirationFromPayload_invalidExp_shouldThrowJWTClaimMissingException() throws ParseException {
+    void extractExpirationFromPayload_invalidExp_shouldThrowJWTClaimMissingException() throws ParseException {
         Payload payload = mock(Payload.class);
         when(payload.toJSONObject()).thenReturn(JSONObjectUtils.parse("{\"exp\": -1000}"));
 
-        assertThrows(JWTClaimMissingException.class, () -> jwtService.getExpirationFromPayload(payload));
+        assertThrows(JWTClaimMissingException.class, () -> jwtService.extractExpirationFromPayload(payload));
     }
 
     @Test
-    void getVCFromPayload_validVC_shouldReturnVC() throws ParseException {
+    void extractVCFromPayload_validVC_shouldReturnVC() throws ParseException {
         Payload payload = mock(Payload.class);
         when(payload.toJSONObject()).thenReturn(JSONObjectUtils.parse("{\"vc\": \"verifiableCredential\"}"));
 
-        Object vc = jwtService.getVCFromPayload(payload);
+        Object vc = jwtService.extractVCFromPayload(payload);
 
         assertEquals("verifiableCredential", vc);
     }
@@ -391,7 +391,7 @@ class JWTServiceImplTest {
             doThrow(new JOSEException("Signing failed")).when(mock).sign(any(JWSHeader.class), any(byte[].class));
         })) {
             // Execute and assert
-            JWTCreationException exception = assertThrows(JWTCreationException.class, () -> jwtService.generateJWT(payload));
+            JWTCreationException exception = assertThrows(JWTCreationException.class, () -> jwtService.issueJWT(payload));
             assertEquals("Error creating JWT", exception.getMessage());
         }
     }
@@ -402,7 +402,7 @@ class JWTServiceImplTest {
 
         when(cryptoComponent.getECKey()).thenReturn(null);
 
-        assertThrows(NullPointerException.class, () -> jwtService.generateJWT(payload));
+        assertThrows(NullPointerException.class, () -> jwtService.issueJWT(payload));
     }
 
     private PrivateKey getPrivateKeyFromJson(String json) throws Exception {

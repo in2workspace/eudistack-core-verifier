@@ -99,7 +99,7 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
         // Try DID-based key resolution
         if (issuer != null && issuer.startsWith("did:")) {
             log.debug("Resolving issuer public key from DID: {}", issuer);
-            PublicKey publicKey = didService.getPublicKeyFromDid(issuer);
+            PublicKey publicKey = didService.resolvePublicKeyFromDid(issuer);
             JWSVerifier verifier = buildVerifier(publicKey);
             if (!issuerJwt.verify(verifier)) {
                 throw new JWTVerificationException("SD-JWT issuer signature verification failed for DID: " + issuer);

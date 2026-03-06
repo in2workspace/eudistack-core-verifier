@@ -43,16 +43,16 @@ public class ClientCredentialsValidationWorkflow {
      * @param clientAssertion the client_assertion JWT containing the VP
      * @return the validated credential as a JsonNode
      */
-    public JsonNode execute(String clientId, String clientAssertion) {
+    public JsonNode validateClientCredentialsGrant(String clientId, String clientAssertion) {
         log.info("ClientCredentialsValidationWorkflow: validating M2M grant");
 
         SignedJWT signedJWT = jwtService.parseJWT(clientAssertion);
-        Payload payload = jwtService.getPayloadFromSignedJWT(signedJWT);
-        String vpToken = jwtService.getClaimFromPayload(payload, "vp_token");
+        Payload payload = jwtService.extractPayloadFromSignedJWT(signedJWT);
+        String vpToken = jwtService.extractClaimFromPayload(payload, "vp_token");
         String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
 
         // Extract and validate credential type
-        JsonNode vc = vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(decodedVpToken);
+        JsonNode vc = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(decodedVpToken);
         List<String> types = extractTypes(vc);
         if (!types.contains(LEARCredentialType.LEAR_CREDENTIAL_MACHINE.getValue())) {
             log.error("Invalid credential type. Expected: {}", LEARCredentialType.LEAR_CREDENTIAL_MACHINE.getValue());
@@ -60,14 +60,14 @@ public class ClientCredentialsValidationWorkflow {
         }
 
         // Validate client assertion JWT claims
-        boolean isValid = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, payload);
+        boolean isValid = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, payload);
         if (!isValid) {
             log.error("JWT claims from client_assertion are invalid");
             throw new IllegalArgumentException("Invalid JWT claims from assertion");
         }
 
         // Full VP validation
-        vpService.validateVerifiablePresentation(decodedVpToken);
+        vpService.verifyVerifiablePresentation(decodedVpToken);
         log.info("ClientCredentialsValidationWorkflow: VP validated successfully");
 
         return vc;

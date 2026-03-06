@@ -58,9 +58,9 @@ class AuthorizationRequestBuildWorkflowTest {
         when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-        when(jwtService.generateJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
-        AuthorizationRequestBuildWorkflow.Result result = workflow.execute("My Client", "openid learcredential", "state-123");
+        AuthorizationRequestBuildWorkflow.Result result = workflow.buildAuthorizationRequest("My Client", "openid learcredential", "state-123");
 
         assertThat(result.signedAuthRequestJwt()).isEqualTo("signed-jwt-content");
         assertThat(result.openid4vpUrl()).startsWith("openid4vp://");
@@ -76,8 +76,8 @@ class AuthorizationRequestBuildWorkflowTest {
     }
 
     @Test
-    @DisplayName("execute() delegates scope resolution to DcqlProfileResolver")
-    void execute_delegatesScopeResolution() {
+    @DisplayName("buildAuthorizationRequest() delegates scope resolution to DcqlProfileResolver")
+    void buildAuthorizationRequest_delegatesScopeResolution() {
         DcqlQuery dcqlQuery = new DcqlQuery(List.of(
                 new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
                         new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
@@ -86,9 +86,9 @@ class AuthorizationRequestBuildWorkflowTest {
         when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-        when(jwtService.generateJWTwithOI4VPType(anyString())).thenReturn("signed");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
-        workflow.execute("Client", "openid learcredential.employee", "my-state");
+        workflow.buildAuthorizationRequest("Client", "openid learcredential.employee", "my-state");
 
         verify(dcqlProfileResolver).resolve("openid learcredential.employee");
     }
@@ -104,12 +104,12 @@ class AuthorizationRequestBuildWorkflowTest {
         when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-        when(jwtService.generateJWTwithOI4VPType(anyString())).thenReturn("signed");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
-        workflow.execute("Client", "openid learcredential", "my-state");
+        workflow.buildAuthorizationRequest("Client", "openid learcredential", "my-state");
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jwtService).generateJWTwithOI4VPType(payloadCaptor.capture());
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
 
         String payload = payloadCaptor.getValue();
         assertThat(payload).contains("did:key:testkey");

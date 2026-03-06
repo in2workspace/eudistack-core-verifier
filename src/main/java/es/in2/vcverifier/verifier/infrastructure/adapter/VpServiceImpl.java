@@ -2,20 +2,11 @@ package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.Payload;
-import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.*;
 import es.in2.vcverifier.shared.domain.exception.*;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.LEARCredential;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV1;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV2;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV3;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.LEARCredentialMachineV1;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.LEARCredentialMachineV2;
-import es.in2.vcverifier.verifier.domain.model.enums.LEARCredentialType;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import es.in2.vcverifier.verifier.domain.service.*;
 import es.in2.vcverifier.shared.crypto.*;
@@ -27,28 +18,15 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
 
-import java.security.PublicKey;
-import java.security.interfaces.ECPublicKey;
 import java.text.ParseException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
 
-/**
- * This class contains basic validation steps for the scope of validating a Verifiable Presentation (VP)
- * that includes a LEARCredential, following the technical guidelines described in the DOME document.
- * The current implementation includes:
- * - Validation of the Verifiable Credential (VC) issuer.
- * - Verification of the signature using the public key from the JWT.
- * - Extraction and validation of the mandatee ID from the credential subject.
- * - Verification that the VP is signed by the correct DID.
- * In future versions, additional verifications will be added to enhance the validation process.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -57,35 +35,28 @@ public class VpServiceImpl implements VpService {
     private final JWTService jwtService;
     private final ObjectMapper objectMapper;
     private final TrustFrameworkService trustFrameworkService;
-    private final DIDService didService;
     private final CertificateValidationService certificateValidationService;
-
+    private final CredentialMapperService credentialMapperService;
+    private final CryptographicBindingValidator cryptographicBindingValidator;
 
     @Override
-    public void validateVerifiablePresentation(String verifiablePresentation) {
+    public void verifyVerifiablePresentation(String verifiablePresentation) {
         log.info("Starting validation of Verifiable Presentation");
-        // Step 1: Extract the Verifiable Credential (VC) from the VP (JWT)
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Extracting first Verifiable Credential from Verifiable Presentation");
+
+        // Step 1: Extract the first VC from the VP
         SignedJWT jwtCredential = extractFirstVerifiableCredential(verifiablePresentation);
-        String vcSub = null;
-        try {
-            vcSub = jwtCredential.getJWTClaimsSet().getSubject();
-            vcSub = normalizeDid(vcSub);
-        } catch (Exception e) {
-            log.warn("[BIND] Cannot read VC 'sub' from VC JWT claims", e);
-        }
+        String vcSub = extractVcSub(jwtCredential);
         log.info("[BIND] VC JWT sub={}", vcSub);
-        Payload payload = jwtService.getPayloadFromSignedJWT(jwtCredential);
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Successfully extracted the Verifiable Credential payload");
 
-        // Step 1.1: Map the payload to a VerifiableCredential object
-        LEARCredential learCredential = mapPayloadToVerifiableCredential(payload);
+        Payload payload = jwtService.extractPayloadFromSignedJWT(jwtCredential);
 
-        // Step 2: Validate the time window of the credential
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Validating the time window of the credential");
+        // Step 2: Map to typed credential
+        LEARCredential learCredential = credentialMapperService.mapPayloadToVerifiableCredential(payload);
+
+        // Step 3: Validate time window
         validateCredentialTimeWindow(learCredential);
 
-        // Step 3: Validate revocation (only if credentialStatus is present)
+        // Step 4: Validate revocation (only if credentialStatus is present)
         // Non-blocking: if the status list endpoint is unreachable or returns an error,
         // log a warning and let the presentation pass. Only block if revocation is confirmed.
         if (hasCredentialStatus(learCredential)) {
@@ -106,137 +77,47 @@ public class VpServiceImpl implements VpService {
             log.debug("No CredentialStatus block found; skipping revocation check for credential {}", learCredential.id());
         }
 
-        // Step 4: Validate the issuer
+        // Step 5: Validate issuer
         String credentialIssuerDid = learCredential.issuer().getId();
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Retrieved issuer DID from payload: {}", credentialIssuerDid);
 
-        // Step 5: Extract and validate credential types
+        // Step 6: Validate credential types against issuer capabilities
         List<String> credentialTypes = learCredential.type();
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Credential types extracted: {}", credentialTypes);
-
-        // TODO: Trusted issuers should be indexed by organizationIdentifier (e.g. "VATES-B60645900")
-        //  instead of did:elsi:... Once the trusted issuers list is migrated, pass issuerOrgId directly
-        //  and remove DID_ELSI_PREFIX usage.
-        // Step 6: Retrieve the list of issuer capabilities
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Retrieving issuer capabilities for DID {}", credentialIssuerDid);
         List<IssuerCredentialsCapabilities> issuerCapabilitiesList = trustFrameworkService.getTrustedIssuerListData(credentialIssuerDid);
-        log.info("Retrieved issuer capabilities");
-
-        // Step 7: Validate credential type against issuer capabilities
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Validating credential types against issuer capabilities");
         validateCredentialTypeWithIssuerCapabilities(issuerCapabilitiesList, credentialTypes);
         log.info("Issuer DID {} is a trusted participant", credentialIssuerDid);
 
-        // TODO remove step 7 after the advanced certificate validation component is implemented
-        // Step 8: Verify the signature and the organizationId of the credential signature
+        // Step 7: Verify VC signature and certificate
         String issuerOrgId = learCredential.issuer().getOrganizationIdentifier();
         if (issuerOrgId == null || issuerOrgId.isBlank()) {
-            throw new IllegalArgumentException("Cannot determine organizationIdentifier from issuer: " + learCredential.issuer().getId());
+            throw new IllegalArgumentException("Cannot determine organizationIdentifier from issuer: " + credentialIssuerDid);
         }
         Map<String, Object> vcHeader = jwtCredential.getHeader().toJSONObject();
         certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, issuerOrgId);
 
-        // Step 9: Extract the mandator organization identifier from the Verifiable Credential
+        // Step 8: Validate mandator organization
         String mandatorOrganizationIdentifier = learCredential.mandatorOrganizationIdentifier();
-        log.debug("VpServiceImpl -- validateVerifiablePresentation -- Extracted Mandator Organization Identifier from Verifiable Credential: {}", mandatorOrganizationIdentifier);
-
-        // TODO: Once trusted issuers are indexed by organizationIdentifier, pass mandatorOrganizationIdentifier
-        //  directly instead of prepending DID_ELSI_PREFIX. Also validate against participants list, not issuer list.
         trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + mandatorOrganizationIdentifier);
         log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrganizationIdentifier);
 
-        // Step 10: Validate the VP's signature (PoP) and cryptographic binding
+        // Step 9: Validate VP signature + cryptographic binding
+        SignedJWT vpJwt = parseVpJwt(verifiablePresentation);
+        cryptographicBindingValidator.validateVpSignatureAndBinding(
+                verifiablePresentation, vpJwt, jwtCredential, learCredential, vcSub
+        );
 
-        SignedJWT vpJwt;
-        try {
-            vpJwt = SignedJWT.parse(verifiablePresentation);
-        } catch (Exception e) {
-            throw new InvalidVPtokenException("Invalid vp_token JWT");
-        }
-
-        // 10.1: Verify VP signature — try embedded JWK first, fall back to DID
-        ECPublicKey vpSignerKey = null;
-        String holderDid = null;
-
-        ECKey vpHeaderJwk = extractJwkFromHeader(vpJwt);
-        if (vpHeaderJwk != null) {
-            log.info("[BIND] VP signed with embedded JWK (kid={})", vpHeaderJwk.getKeyID());
-            try {
-                vpSignerKey = vpHeaderJwk.toECPublicKey();
-            } catch (JOSEException e) {
-                throw new InvalidVPtokenException("Cannot extract EC public key from VP header JWK");
-            }
-            jwtService.verifyJWTWithECKey(verifiablePresentation, vpSignerKey);
-            log.info("VP signature verified via embedded JWK");
-        } else {
-            // Legacy path: extract DID from kid/iss/sub
-            String vpKid = vpJwt.getHeader().getKeyID();
-            String vpIss;
-            String vpSub;
-            try {
-                var claims = vpJwt.getJWTClaimsSet();
-                vpIss = claims.getIssuer();
-                vpSub = claims.getSubject();
-            } catch (Exception e) {
-                throw new InvalidVPtokenException("Cannot read vp_token claims");
-            }
-
-            holderDid = extractDidFromKidIssSub(vpKid, vpIss, vpSub);
-            holderDid = normalizeDid(holderDid);
-
-            if (holderDid == null || holderDid.isBlank()) {
-                throw new InvalidScopeException("Cannot extract holder identity from VP (no jwk header and no DID in kid/iss/sub)");
-            }
-
-            log.info("[BIND] VP holder DID resolved as {}", holderDid);
-            PublicKey holderPublicKey = didService.getPublicKeyFromDid(holderDid);
-            jwtService.verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
-            if (holderPublicKey instanceof ECPublicKey ecPub) {
-                vpSignerKey = ecPub;
-            }
-            log.info("VP signature verified via DID resolution (legacy)");
-        }
-
-        // 10.2: Cryptographic binding — try cnf.jwk first, fall back to DID comparison
-        ECKey vcCnfJwk = extractCnfJwkFromVc(jwtCredential);
-
-        if (vcCnfJwk != null && vpSignerKey != null) {
-            // New path: JWK Thumbprint comparison
-            validateBindingByJwkThumbprint(vpSignerKey, vcCnfJwk);
-        } else {
-            // Legacy path: DID comparison
-            if (holderDid == null) {
-                throw new InvalidScopeException("Credential has no cnf.jwk and VP has no DID — cannot validate binding");
-            }
-            String boundDidFromVc = extractBoundDidFromCredential(learCredential, vcSub);
-            if (boundDidFromVc == null || boundDidFromVc.isBlank()) {
-                throw new InvalidScopeException("Credential missing cryptographic binding (no cnf.jwk and no DID in credentialSubject.id/sub/mandatee.id)");
-            }
-            log.info("[BIND] VC bound DID resolved as {}", boundDidFromVc);
-            if (!holderDid.equals(boundDidFromVc)) {
-                throw new InvalidScopeException(
-                        "Cryptographic binding mismatch: VP holder DID (" + holderDid + ") != VC bound DID (" + boundDidFromVc + ")"
-                );
-            }
-            log.info("Cryptographic binding validated via DID comparison (legacy)");
-        }
         log.info("Verifiable Presentation validation completed successfully");
-
     }
 
     @Override
-    public Object getCredentialFromTheVerifiablePresentation(String verifiablePresentation) {
-        log.debug("VpServiceImpl -- getCredentialFromTheVerifiablePresentation -- Extracting Verifiable Credential object from Verifiable Presentation");
-        // Step 1: Extract the Verifiable Credential (VC) from the VP (JWT)
+    public Object extractCredentialFromVerifiablePresentation(String verifiablePresentation) {
         SignedJWT jwtCredential = extractFirstVerifiableCredential(verifiablePresentation);
-        Payload payload = jwtService.getPayloadFromSignedJWT(jwtCredential);
-        return jwtService.getVCFromPayload(payload);
+        Payload payload = jwtService.extractPayloadFromSignedJWT(jwtCredential);
+        return jwtService.extractVCFromPayload(payload);
     }
 
     @Override
-    public JsonNode getCredentialFromTheVerifiablePresentationAsJsonNode(String verifiablePresentation) {
-        log.debug("VpServiceImpl -- getCredentialFromTheVerifiablePresentationAsJsonNode -- Converting Verifiable Credential to JSON Node format");
-        return convertObjectToJSONNode(getCredentialFromTheVerifiablePresentation(verifiablePresentation));
+    public JsonNode extractCredentialFromVerifiablePresentationAsJsonNode(String verifiablePresentation) {
+        return convertObjectToJSONNode(extractCredentialFromVerifiablePresentation(verifiablePresentation));
     }
 
     @Override
@@ -262,108 +143,41 @@ public class VpServiceImpl implements VpService {
         return contextList;
     }
 
-    private LEARCredential mapPayloadToVerifiableCredential(Payload payload) {
-        Object vcObject = jwtService.getVCFromPayload(payload);
+    // --- Private helpers ---
+
+    private String extractVcSub(SignedJWT jwtCredential) {
         try {
-            Map<String, Object> vcMap = validateAndCastToMap(vcObject);
-            List<String> types = extractAndValidateTypes(vcMap);
-            return mapToSpecificCredential(vcMap, types);
-        } catch (IllegalArgumentException e) {
-            throw new CredentialMappingException("Error mapping VC payload to specific Verifiable Credential class: " + e.getMessage());
+            String vcSub = jwtCredential.getJWTClaimsSet().getSubject();
+            return cryptographicBindingValidator.normalizeDid(vcSub);
+        } catch (Exception e) {
+            log.warn("[BIND] Cannot read VC 'sub' from VC JWT claims", e);
+            return null;
         }
     }
 
-    private Map<String, Object> validateAndCastToMap(Object vcObject) {
-        if (!(vcObject instanceof Map<?, ?> map)) {
-            throw new CredentialMappingException("Invalid payload format for Verifiable Credential.");
+    private SignedJWT parseVpJwt(String verifiablePresentation) {
+        try {
+            return SignedJWT.parse(verifiablePresentation);
+        } catch (Exception e) {
+            throw new InvalidVPtokenException("Invalid vp_token JWT");
         }
+    }
 
-        // Ensure the map's keys are all types are Strings and values are Objects
-        Map<String, Object> validatedMap = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (!(entry.getKey() instanceof String)) {
-                throw new CredentialMappingException("Invalid key type found in Verifiable Credential map: " + entry.getKey());
+    private void validateCredentialTimeWindow(LEARCredential credential) {
+        try {
+            ZonedDateTime validFrom = ZonedDateTime.parse(credential.validFrom());
+            ZonedDateTime validUntil = ZonedDateTime.parse(credential.validUntil());
+            ZonedDateTime now = ZonedDateTime.now();
+
+            if (now.isBefore(validFrom)) {
+                throw new CredentialNotActiveException("Credential is not yet valid. Valid from: " + validFrom);
             }
-            validatedMap.put((String) entry.getKey(), entry.getValue());
-        }
-
-        return validatedMap;
-    }
-
-
-    private List<String> extractAndValidateTypes(Map<String, Object> vcMap) {
-        Object typeObject = vcMap.get("type");
-
-        // Validate that the "type" object is a list
-        if (!(typeObject instanceof List<?> typeList)) {
-            throw new CredentialMappingException("'type' key is not a list.");
-        }
-
-        // Ensure that all elements in the list are Strings
-        if (!typeList.stream().allMatch(String.class::isInstance)) {
-            throw new CredentialMappingException("'type' list contains non-string elements.");
-        }
-
-        // Safely cast the List<?> to List<String>
-        return typeList.stream()
-                .map(String.class::cast)
-                .toList();
-    }
-
-    private List<String> extractContext(Map<String, Object> vcMap) {
-        Object contextObj = vcMap.get("@context");
-        if (!(contextObj instanceof List<?> contextList)) {
-            throw new CredentialMappingException("The field '@context' is not a list.");
-        }
-        if (!contextList.stream().allMatch(String.class::isInstance)) {
-            throw new CredentialMappingException("The field '@context' contains non-string elements.");
-        }
-        return contextList.stream().map(String.class::cast).toList();
-    }
-
-
-    private LEARCredential mapToSpecificCredential(Map<String, Object> vcMap, List<String> types) {
-        List<String> contextList = extractContext(vcMap);
-
-        if (types.contains(LEARCredentialType.LEAR_CREDENTIAL_EMPLOYEE.getValue())) {
-            // Extract the '@context' field from the VC
-
-            // Compare the context with the v1 and v2 constants
-            if (contextList.equals(LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT)) {
-                return objectMapper.convertValue(vcMap, LEARCredentialEmployeeV1.class);
-            } else if (contextList.equals(LEAR_CREDENTIAL_EMPLOYEE_V2_CONTEXT)) {
-                return objectMapper.convertValue(vcMap, LEARCredentialEmployeeV2.class);
-            } else if(contextList.equals(LEAR_CREDENTIAL_EMPLOYEE_V3_CONTEXT)){
-                return objectMapper.convertValue(vcMap, LEARCredentialEmployeeV3.class);
-            } else {
-                throw new InvalidCredentialTypeException("Unknown LEARCredentialEmployee version: " + contextList);
+            if (now.isAfter(validUntil)) {
+                throw new CredentialExpiredException("Credential has expired. Valid until: " + validUntil);
             }
-        } else if (types.contains(LEARCredentialType.LEAR_CREDENTIAL_MACHINE.getValue())) {
-            if(contextList.equals(LEAR_CREDENTIAL_MACHINE_V2_CONTEXT)){
-                return objectMapper.convertValue(vcMap, LEARCredentialMachineV2.class);
-            } else {
-                return objectMapper.convertValue(vcMap, LEARCredentialMachineV1.class);
-            }
+        } catch (DateTimeParseException e) {
+            throw new CredentialMappingException("Invalid date format in credential: " + e.getMessage());
         }
-        else {
-            throw new InvalidCredentialTypeException("Unsupported credential type: " + types);
-        }
-    }
-
-
-    private void validateCredentialTypeWithIssuerCapabilities(List<IssuerCredentialsCapabilities> issuerCapabilitiesList, List<String> credentialTypes) {
-        // Iterate over each credential type in the verifiable credential
-        for (String credentialType : credentialTypes) {
-            // Check if any of the issuer capabilities support this credential type
-            boolean isSupported = issuerCapabilitiesList.stream().anyMatch(capability -> capability.credentialsType().equals(credentialType));
-
-            // If we find a matching capability, return from the method
-            if (isSupported) {
-                return;
-            }
-        }
-        // If none of the credential types are supported, throw an exception
-        throw new InvalidCredentialTypeException("Credential types " + credentialTypes + " are not supported by the issuer.");
     }
 
     private boolean hasCredentialStatus(LEARCredential credential) {
@@ -373,11 +187,9 @@ public class VpServiceImpl implements VpService {
         return credential.credentialStatusId() != null && !credential.credentialStatusId().isBlank() &&
                 credential.credentialStatusType() != null && !credential.credentialStatusType().isBlank() &&
                 credential.credentialStatusPurpose() != null && !credential.credentialStatusPurpose().isBlank();
-
     }
 
     private boolean validateCredentialNotRevoked(LEARCredential learCredential) {
-        log.info("validateCredentialNotRevoked, vc: {}", learCredential);
         if (!REVOCATION.equals(learCredential.credentialStatusPurpose())) {
             log.error("credentialStatus is not revocation: {}", learCredential.credentialStatusPurpose());
             return false;
@@ -397,65 +209,23 @@ public class VpServiceImpl implements VpService {
         throw new CredentialException("Unsupported credentialStatus.type: " + type);
     }
 
-
-    private void validateCredentialTimeWindow(LEARCredential credential) {
-        try {
-            ZonedDateTime validFrom = ZonedDateTime.parse(credential.validFrom());
-            ZonedDateTime validUntil = ZonedDateTime.parse(credential.validUntil());
-            ZonedDateTime now = ZonedDateTime.now();
-
-            // Check if the credential is not yet valid
-            if (now.isBefore(validFrom)) {
-                throw new CredentialNotActiveException("Credential is not yet valid. Valid from: " + validFrom);
+    private void validateCredentialTypeWithIssuerCapabilities(List<IssuerCredentialsCapabilities> issuerCapabilitiesList, List<String> credentialTypes) {
+        for (String credentialType : credentialTypes) {
+            boolean isSupported = issuerCapabilitiesList.stream().anyMatch(capability -> capability.credentialsType().equals(credentialType));
+            if (isSupported) {
+                return;
             }
-
-            // Check if the credential has expired
-            if (now.isAfter(validUntil)) {
-                throw new CredentialExpiredException("Credential has expired. Valid until: " + validUntil);
-            }
-
-        } catch (DateTimeParseException e) {
-            throw new CredentialMappingException("Invalid date format in credential: " + e.getMessage());
         }
-    }
-
-
-
-    private JsonNode convertObjectToJSONNode(Object vcObject) throws JsonConversionException {
-        JsonNode jsonNode;
-
-        try {
-            if (vcObject instanceof Map) {
-                // Si el objeto es un Map, lo convertimos directamente a JsonNode
-                jsonNode = objectMapper.convertValue(vcObject, JsonNode.class);
-            } else if (vcObject instanceof JSONObject) {
-                // Si el objeto es un JSONObject, lo convertimos a String y luego a JsonNode
-                jsonNode = objectMapper.readTree(vcObject.toString());
-            } else {
-                throw new JsonConversionException("El tipo del objeto no es compatible para la conversión a JsonNode.");
-            }
-        } catch (Exception e) {
-            throw new JsonConversionException("Error durante la conversión a JsonNode.");
-        }
-        return jsonNode;
+        throw new InvalidCredentialTypeException("Credential types " + credentialTypes + " are not supported by the issuer.");
     }
 
     private SignedJWT extractFirstVerifiableCredential(String verifiablePresentation) {
         try {
-            // Parse the Verifiable Presentation (VP) JWT
             SignedJWT vpSignedJWT = SignedJWT.parse(verifiablePresentation);
-
-            // Extract the "vp" claim
             Object vpClaim = vpSignedJWT.getJWTClaimsSet().getClaim("vp");
-
             Object vcClaim = getVcClaim(vpClaim);
-
-            // Extract the first credential if it's a list or if it's a string
             Object firstCredential = getFirstCredential(vcClaim);
-
-            // Parse and return the first Verifiable Credential as SignedJWT
             return SignedJWT.parse((String) firstCredential);
-
         } catch (ParseException e) {
             throw new JWTParsingException("Error parsing the Verifiable Presentation or Verifiable Credential");
         }
@@ -465,18 +235,15 @@ public class VpServiceImpl implements VpService {
         if (vpClaim == null) {
             throw new JWTClaimMissingException("The 'vp' claim was not found in the Verifiable Presentation");
         }
-        // Ensure that vpClaim is an instance of Map (JSON object)
         if (!(vpClaim instanceof Map<?, ?> vpMap)) {
             throw new JWTClaimMissingException("The 'vp' claim is not a valid object");
         }
-        // Extract the "verifiableCredential" claim inside "vp"
         Object vcClaim = vpMap.get("verifiableCredential");
         if (vcClaim == null) {
             throw new JWTClaimMissingException("The 'verifiableCredential' claim was not found within 'vp'");
         }
         return vcClaim;
     }
-
 
     private static Object getFirstCredential(Object vcClaim) {
         if (!(vcClaim instanceof List<?> verifiableCredentials)) {
@@ -485,7 +252,6 @@ public class VpServiceImpl implements VpService {
         if (verifiableCredentials.isEmpty()) {
             throw new CredentialException("No Verifiable Credential found in Verifiable Presentation");
         }
-        // Ensure the first item is a String (JWT in string form)
         Object firstCredential = verifiableCredentials.get(0);
         if (!(firstCredential instanceof String)) {
             throw new CredentialException("The first Verifiable Credential is not a valid JWT string");
@@ -493,110 +259,19 @@ public class VpServiceImpl implements VpService {
         return firstCredential;
     }
 
-    private String extractDidFromKidIssSub(String kid, String iss, String sub) {
-        if (kid != null && kid.startsWith("did:")) {
-            return kid.contains("#") ? kid.substring(0, kid.indexOf('#')) : kid;
-        }
-        if (iss != null && iss.startsWith("did:")) return iss;
-        if (sub != null && sub.startsWith("did:")) return sub;
-        return null;
-    }
-
-    private String extractBoundDidFromCredential(LEARCredential cred, String vcSub) {
-        // 1) NEW: credentialSubject.id (preferred)
-        String csId = safeGetCredentialSubjectId(cred);
-        csId = normalizeDid(csId);
-        if (csId != null && !csId.isBlank()) {
-
-            if (vcSub != null && vcSub.startsWith("did:") && !csId.equals(vcSub)) {
-                log.warn("[BIND] VC mismatch: credentialSubject.id={} != vcSub={}", csId, vcSub);
+    private JsonNode convertObjectToJSONNode(Object vcObject) throws JsonConversionException {
+        try {
+            if (vcObject instanceof Map) {
+                return objectMapper.convertValue(vcObject, JsonNode.class);
+            } else if (vcObject instanceof JSONObject) {
+                return objectMapper.readTree(vcObject.toString());
+            } else {
+                throw new JsonConversionException("Unsupported object type for JsonNode conversion.");
             }
-
-            return csId;
-        }
-
-        // 2) NEW: VC JWT sub
-        if (vcSub != null && vcSub.startsWith("did:")) return vcSub;
-
-        // 3) LEGACY: mandatee.id
-        String mandateeId = normalizeDid(cred.mandateeId());
-        if (mandateeId != null && !mandateeId.isBlank()) return mandateeId;
-
-        return null;
-    }
-
-    private String normalizeDid(String did) {
-        if (did == null) return null;
-        if (!did.startsWith("did:")) return did;
-        return did.contains("#") ? did.substring(0, did.indexOf('#')) : did;
-    }
-
-    private String safeGetCredentialSubjectId(LEARCredential cred) {
-        try {
-            return cred.credentialSubjectId();
-        } catch (Exception ignore) {
-            return null;
-        }
-    }
-
-    /**
-     * Extracts the JWK from a VP JWT header, if present.
-     * Returns null if no embedded JWK is found.
-     */
-    private ECKey extractJwkFromHeader(SignedJWT signedJwt) {
-        var jwk = signedJwt.getHeader().getJWK();
-        if (jwk instanceof ECKey ecKey) {
-            return ecKey;
-        }
-        return null;
-    }
-
-    /**
-     * Extracts the cnf.jwk from a VC JWT's claims.
-     * This is the holder binding key embedded in the credential by the issuer.
-     * Returns null if no cnf.jwk is found.
-     */
-    @SuppressWarnings("unchecked")
-    private ECKey extractCnfJwkFromVc(SignedJWT vcJwt) {
-        try {
-            Map<String, Object> cnf = (Map<String, Object>) vcJwt.getJWTClaimsSet().getClaim("cnf");
-            if (cnf == null) return null;
-
-            Map<String, Object> jwk = (Map<String, Object>) cnf.get("jwk");
-            if (jwk == null) return null;
-
-            return ECKey.parse(jwk);
-        } catch (Exception e) {
-            log.warn("Failed to extract cnf.jwk from VC: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Validates cryptographic binding by comparing JWK Thumbprints (RFC 7638).
-     * The VP signer's public key must match the VC's cnf.jwk.
-     */
-    private void validateBindingByJwkThumbprint(ECPublicKey vpSignerKey, ECKey vcCnfJwk) {
-        try {
-            ECKey vpSignerEcKey = new ECKey.Builder(Curve.P_256, vpSignerKey).build();
-            String vpThumbprint = vpSignerEcKey.computeThumbprint().toString();
-            String vcThumbprint = vcCnfJwk.computeThumbprint().toString();
-
-            log.debug("[BIND] VP signer thumbprint: {}", vpThumbprint);
-            log.debug("[BIND] VC cnf.jwk thumbprint: {}", vcThumbprint);
-
-            if (!vpThumbprint.equals(vcThumbprint)) {
-                throw new InvalidScopeException(
-                        "Cryptographic binding mismatch: VP signer JWK Thumbprint (" + vpThumbprint +
-                        ") != VC cnf.jwk Thumbprint (" + vcThumbprint + ")"
-                );
-            }
-            log.info("Cryptographic binding validated via JWK Thumbprint (RFC 7638)");
-        } catch (InvalidScopeException e) {
+        } catch (JsonConversionException e) {
             throw e;
-        } catch (JOSEException e) {
-            throw new InvalidScopeException("Failed to compute JWK Thumbprint for binding validation: " + e.getMessage());
+        } catch (Exception e) {
+            throw new JsonConversionException("Error during JsonNode conversion.");
         }
     }
-
 }

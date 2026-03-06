@@ -94,7 +94,7 @@ class CustomAuthenticationProviderTest {
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
                 "signed-id-jwt", "openid learcredential", "did:key:zDnaeTest123");
-        when(tokenGenerationWorkflow.execute(any(JsonNode.class), anyString(), anyMap(), eq(true)))
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true)))
                 .thenReturn(tokenResult);
 
         Map<String, Object> additionalParams = new HashMap<>();
@@ -124,7 +124,7 @@ class CustomAuthenticationProviderTest {
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
                 null, "machine learcredential", "did:key:zDnaeMachine123");
-        when(tokenGenerationWorkflow.execute(any(JsonNode.class), anyString(), anyMap(), eq(false)))
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false)))
                 .thenReturn(tokenResult);
 
         Map<String, Object> additionalParams = new HashMap<>();

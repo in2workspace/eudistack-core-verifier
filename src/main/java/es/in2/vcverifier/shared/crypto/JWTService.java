@@ -7,19 +7,19 @@ import java.security.PublicKey;
 
 public interface JWTService {
 
-    String generateJWT(String payload);
+    String issueJWT(String payload);
 
     void verifyJWTWithECKey(String jwt, PublicKey publicKey);
 
     SignedJWT parseJWT(String jwt);
 
-    Payload getPayloadFromSignedJWT(SignedJWT signedJWT);
+    Payload extractPayloadFromSignedJWT(SignedJWT signedJWT);
 
-    String getClaimFromPayload(Payload payload, String claimName);
+    String extractClaimFromPayload(Payload payload, String claimName);
 
-    long getExpirationFromPayload(Payload payload);
+    long extractExpirationFromPayload(Payload payload);
 
-    Object getVCFromPayload(Payload payload);
+    Object extractVCFromPayload(Payload payload);
 
-    String generateJWTwithOI4VPType(String s);
+    String issueJWTwithOI4VPType(String s);
 }

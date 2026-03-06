@@ -30,7 +30,7 @@ public class RemoteClientRegistryProvider implements ClientRegistryProvider {
     private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
 
     @Override
-    public ExternalTrustedListYamlData loadClients() {
+    public ExternalTrustedListYamlData retrieveClients() {
         String url = backendConfig.getClientsRepositoryUri();
         log.info("Fetching client registry from: {}", url);
         try {

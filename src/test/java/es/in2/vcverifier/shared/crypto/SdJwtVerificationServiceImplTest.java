@@ -92,7 +92,7 @@ class SdJwtVerificationServiceImplTest {
 
         String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
 
-        when(didService.getPublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
+        when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
         when(trustFrameworkService.getTrustedIssuerListData(issuerDid)).thenReturn(List.of());
 
         SdJwtVerificationResult result = service.verifyPresentation(compact, expectedAud, expectedNonce);
@@ -121,7 +121,7 @@ class SdJwtVerificationServiceImplTest {
         String compact = issuerJwtString + "~";
 
         // Return a DIFFERENT public key than what signed the JWT
-        when(didService.getPublicKeyFromDid(issuerDid)).thenReturn(wrongKey.toECPublicKey());
+        when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(wrongKey.toECPublicKey());
 
         assertThrows(JWTVerificationException.class,
                 () -> service.verifyPresentation(compact, "https://v.example.com", "nonce"));
@@ -141,7 +141,7 @@ class SdJwtVerificationServiceImplTest {
         String issuerJwtString = signJwt(claims, issuerKey);
         String compact = issuerJwtString + "~";
 
-        when(didService.getPublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
+        when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
 
         assertThrows(JWTVerificationException.class,
                 () -> service.verifyPresentation(compact, "https://v.example.com", "nonce"));
@@ -164,7 +164,7 @@ class SdJwtVerificationServiceImplTest {
         String issuerJwtString = signJwt(claims, issuerKey);
         String compact = issuerJwtString + "~" + disclosureEncoded + "~";
 
-        when(didService.getPublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
+        when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
 
         assertThrows(JWTVerificationException.class,
                 () -> service.verifyPresentation(compact, "https://v.example.com", "nonce"));
@@ -200,7 +200,7 @@ class SdJwtVerificationServiceImplTest {
 
         String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
 
-        when(didService.getPublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
+        when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
 
         assertThrows(JWTVerificationException.class,
                 () -> service.verifyPresentation(compact, "https://verifier.example.com", "correct-nonce"));
@@ -236,7 +236,7 @@ class SdJwtVerificationServiceImplTest {
 
         String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
 
-        when(didService.getPublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
+        when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
 
         assertThrows(JWTVerificationException.class,
                 () -> service.verifyPresentation(compact, "https://verifier.example.com", "nonce1"));
@@ -257,7 +257,7 @@ class SdJwtVerificationServiceImplTest {
         String issuerJwtString = signJwt(claims, issuerKey);
         String compact = issuerJwtString + "~";
 
-        when(didService.getPublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
+        when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
         when(trustFrameworkService.getTrustedIssuerListData(issuerDid)).thenReturn(List.of());
 
         SdJwtVerificationResult result = service.verifyPresentation(compact, "https://v.example.com", "nonce");

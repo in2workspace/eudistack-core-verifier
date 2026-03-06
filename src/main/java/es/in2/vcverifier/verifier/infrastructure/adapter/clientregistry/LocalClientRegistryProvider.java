@@ -33,7 +33,7 @@ public class LocalClientRegistryProvider implements ClientRegistryProvider {
     }
 
     @Override
-    public ExternalTrustedListYamlData loadClients() {
+    public ExternalTrustedListYamlData retrieveClients() {
         try (InputStream is = openInputStream()) {
             return yamlMapper.readValue(is, ExternalTrustedListYamlData.class);
         } catch (IOException e) {

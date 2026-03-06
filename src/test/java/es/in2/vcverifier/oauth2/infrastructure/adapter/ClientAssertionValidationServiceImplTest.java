@@ -38,88 +38,88 @@ class ClientAssertionValidationServiceImplTest {
         Payload payloadMock = mock(Payload.class);
 
         when(backendConfig.getUrl()).thenReturn(authServer);
-        when(jwtService.getClaimFromPayload(payloadMock,"iss")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(payloadMock,"sub")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(payloadMock,"aud")).thenReturn("authorization-server");
-        when(jwtService.getClaimFromPayload(payloadMock,"jti")).thenReturn(jti);
+        when(jwtService.extractClaimFromPayload(payloadMock,"iss")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payloadMock,"sub")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payloadMock,"aud")).thenReturn("authorization-server");
+        when(jwtService.extractClaimFromPayload(payloadMock,"jti")).thenReturn(jti);
         when(jtiTokenCache.isJtiPresent(jti)).thenReturn(false);
-        when(jwtService.getExpirationFromPayload(payloadMock)).thenReturn(System.currentTimeMillis() / 1000 + 3600);
+        when(jwtService.extractExpirationFromPayload(payloadMock)).thenReturn(System.currentTimeMillis() / 1000 + 3600);
 
-        boolean result = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, payloadMock);
+        boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, payloadMock);
 
         assertTrue(result);
 
     }
 
     @Test
-    void validateClientAssertionJWTClaims_invalidIssuer_shouldReturnFalse() {
+    void verifyClientAssertionJWTClaims_invalidIssuer_shouldReturnFalse() {
         String clientId = "1234";
         Payload mockPayload = mock(Payload.class);
 
-        when(jwtService.getClaimFromPayload(mockPayload, "iss")).thenReturn("invalidClient");
+        when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn("invalidClient");
 
-        boolean result = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, mockPayload);
+        boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, mockPayload);
 
         assertFalse(result);
     }
 
     @Test
-    void validateClientAssertionJWTClaims_invalidSubject_shouldReturnFalse() {
+    void verifyClientAssertionJWTClaims_invalidSubject_shouldReturnFalse() {
         String clientId = "1234";
         Payload mockPayload = mock(Payload.class);
 
-        when(jwtService.getClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(mockPayload, "sub")).thenReturn("invalidSubject");
+        when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(mockPayload, "sub")).thenReturn("invalidSubject");
 
-        boolean result = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, mockPayload);
+        boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, mockPayload);
 
         assertFalse(result);
     }
 
     @Test
-    void validateClientAssertionJWTClaims_invalidAudience_shouldReturnFalse() {
+    void verifyClientAssertionJWTClaims_invalidAudience_shouldReturnFalse() {
         String clientId = "1234";
         Payload mockPayload = mock(Payload.class);
 
-        when(jwtService.getClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(mockPayload, "aud")).thenReturn("wrongAudience");
+        when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(mockPayload, "aud")).thenReturn("wrongAudience");
         when(backendConfig.getUrl()).thenReturn("expectedAudience");
 
-        boolean result = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, mockPayload);
+        boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, mockPayload);
 
         assertFalse(result);
     }
 
     @Test
-    void validateClientAssertionJWTClaims_jtiAlreadyUsed_shouldReturnFalse() {
+    void verifyClientAssertionJWTClaims_jtiAlreadyUsed_shouldReturnFalse() {
         String clientId = "1234";
         Payload mockPayload = mock(Payload.class);
 
-        when(jwtService.getClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(mockPayload, "aud")).thenReturn("expectedAudience");
+        when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(mockPayload, "aud")).thenReturn("expectedAudience");
         when(backendConfig.getUrl()).thenReturn("expectedAudience");
-        when(jwtService.getClaimFromPayload(mockPayload, "jti")).thenReturn("duplicate-jti");
+        when(jwtService.extractClaimFromPayload(mockPayload, "jti")).thenReturn("duplicate-jti");
         when(jtiTokenCache.isJtiPresent("duplicate-jti")).thenReturn(true);
 
-        boolean result = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, mockPayload);
+        boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, mockPayload);
 
         assertFalse(result);
     }
 
     @Test
-    void validateClientAssertionJWTClaims_expiredToken_shouldReturnFalse() {
+    void verifyClientAssertionJWTClaims_expiredToken_shouldReturnFalse() {
         String clientId = "1234";
         Payload mockPayload = mock(Payload.class);
 
-        when(jwtService.getClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(mockPayload, "aud")).thenReturn("expectedAudience");
+        when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(mockPayload, "aud")).thenReturn("expectedAudience");
         when(backendConfig.getUrl()).thenReturn("expectedAudience");
-        when(jwtService.getExpirationFromPayload(mockPayload)).thenReturn(System.currentTimeMillis() / 1000 - 3600);
+        when(jwtService.extractExpirationFromPayload(mockPayload)).thenReturn(System.currentTimeMillis() / 1000 - 3600);
 
-        boolean result = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, mockPayload);
+        boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, mockPayload);
 
         assertFalse(result);
     }

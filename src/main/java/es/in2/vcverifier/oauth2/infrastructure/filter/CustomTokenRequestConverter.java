@@ -110,7 +110,7 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         String clientAssertion = parameters.getFirst(OAuth2ParameterNames.CLIENT_ASSERTION);
 
         // Delegate full M2M validation to the workflow
-        JsonNode vc = clientCredentialsValidationWorkflow.execute(clientId, clientAssertion);
+        JsonNode vc = clientCredentialsValidationWorkflow.validateClientCredentialsGrant(clientId, clientAssertion);
 
         log.info("VP Token validated successfully");
         Map<String, Object> additionalParameters = new HashMap<>();

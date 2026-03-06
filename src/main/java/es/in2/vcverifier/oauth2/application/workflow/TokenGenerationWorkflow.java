@@ -57,7 +57,7 @@ public class TokenGenerationWorkflow {
      * @param generateIdToken      true to generate an ID token (for authorization_code and refresh_token grants)
      * @return a Result with the JWT strings and metadata
      */
-    public Result execute(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken) {
+    public Result issueAccessToken(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 Long.parseLong(ACCESS_TOKEN_EXPIRATION_TIME),
@@ -165,7 +165,7 @@ public class TokenGenerationWorkflow {
         }
 
         JWTClaimsSet payload = payloadBuilder.build();
-        return jwtService.generateJWT(payload.toString());
+        return jwtService.issueJWT(payload.toString());
     }
 
     private String buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
@@ -202,6 +202,6 @@ public class TokenGenerationWorkflow {
         }
 
         JWTClaimsSet idTokenClaims = idTokenClaimsBuilder.build();
-        return jwtService.generateJWT(idTokenClaims.toString());
+        return jwtService.issueJWT(idTokenClaims.toString());
     }
 }

@@ -60,7 +60,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final CryptoComponent cryptoComponent;
 
     @Override
-    public void processAuthResponse(String state, String vpToken){
+    public void handleAuthResponse(String state, String vpToken){
         log.info("Processing authorization response");
 
         // Validate if the state exists in the cache
@@ -104,12 +104,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             // JWT VP path (existing logic, unchanged)
             validateVpTokenNonceAndAudience(resolvedVpToken, state);
             try {
-                vpService.validateVerifiablePresentation(resolvedVpToken);
+                vpService.verifyVerifiablePresentation(resolvedVpToken);
             } catch (Exception e) {
                 log.error("VP Token is invalid - VP Token used in H2M flow is invalid: {}", e.getMessage(), e);
                 throw e;
             }
-            credentialJson = vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(resolvedVpToken);
+            credentialJson = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(resolvedVpToken);
             log.info("JWT VP Token validated successfully");
         }
 

@@ -8,10 +8,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class LocalClientRegistryProviderTest {
 
     @Test
-    void loadClients_fromDefaultLocalYaml_success() {
+    void retrieveClients_fromDefaultLocalYaml_success() {
         LocalClientRegistryProvider provider = new LocalClientRegistryProvider();
 
-        ExternalTrustedListYamlData data = provider.loadClients();
+        ExternalTrustedListYamlData data = provider.retrieveClients();
 
         assertNotNull(data);
         assertNotNull(data.clients());
@@ -20,10 +20,10 @@ class LocalClientRegistryProviderTest {
     }
 
     @Test
-    void loadClients_containsExpectedDevClient() {
+    void retrieveClients_containsExpectedDevClient() {
         LocalClientRegistryProvider provider = new LocalClientRegistryProvider();
 
-        ExternalTrustedListYamlData data = provider.loadClients();
+        ExternalTrustedListYamlData data = provider.retrieveClients();
 
         var client = data.clients().get(0);
         assertEquals("vc-auth-client", client.clientId());

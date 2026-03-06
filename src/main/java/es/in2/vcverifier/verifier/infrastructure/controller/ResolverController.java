@@ -26,7 +26,7 @@ public class ResolverController {
     @GetMapping("/{id}")
     @ResponseStatus(HttpStatus.OK)
     public CustomJWKS resolveDid(@PathVariable String id) {
-        PublicKey publicKey = didService.getPublicKeyFromDid(id);
+        PublicKey publicKey = didService.resolvePublicKeyFromDid(id);
         ECPublicKey ecPublicKey = (ECPublicKey) publicKey;
         ECPoint point = ecPublicKey.getW();
 

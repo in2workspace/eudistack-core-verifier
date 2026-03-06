@@ -26,16 +26,16 @@ import java.util.Arrays;
 public class DIDServiceImpl implements DIDService {
 
     @Override
-    public PublicKey getPublicKeyFromDid(String did) {
+    public PublicKey resolvePublicKeyFromDid(String did) {
         log.info("Attempting to retrieve public key from DID: {}", did);
         if (!did.startsWith("did:key:")) {
-            log.error("DIDServiceImpl -- getPublicKeyFromDid -- Unsupported DID format detected: {}", did);
+            log.error("DIDServiceImpl -- resolvePublicKeyFromDid -- Unsupported DID format detected: {}", did);
             throw new UnsupportedDIDTypeException("Unsupported DID type. Only did:key is supported for the moment.");
         }
 
         // Remove the "did:key:" prefix to get the actual encoded public key
         String encodedPublicKey = did.substring("did:key:".length());
-        log.debug("DIDServiceImpl -- getPublicKeyFromDid -- Encoded public key extracted from DID: {}", encodedPublicKey);
+        log.debug("DIDServiceImpl -- resolvePublicKeyFromDid -- Encoded public key extracted from DID: {}", encodedPublicKey);
 
         // Decode the public key from its encoded representation
         return decodePublicKeyIntoPubKey(encodedPublicKey);

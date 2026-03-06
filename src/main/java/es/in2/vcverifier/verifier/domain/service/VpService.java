@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 
 public interface VpService {
-    void validateVerifiablePresentation(String verifiablePresentation);
-    Object getCredentialFromTheVerifiablePresentation(String verifiablePresentation);
-    JsonNode getCredentialFromTheVerifiablePresentationAsJsonNode(String verifiablePresentation);
+    void verifyVerifiablePresentation(String verifiablePresentation);
+    Object extractCredentialFromVerifiablePresentation(String verifiablePresentation);
+    JsonNode extractCredentialFromVerifiablePresentationAsJsonNode(String verifiablePresentation);
     public List<String> extractContextFromJson(JsonNode verifiableCredential);
 }

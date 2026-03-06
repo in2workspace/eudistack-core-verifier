@@ -125,7 +125,7 @@ class CustomAuthorizationRequestConverterTest {
         // Mock the workflow to return a result
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
                 "signed-jwt", "openid4vp://?client_id=key-id&request_uri=https%3A%2F%2Fauth.server.com", "nonce-123", clientName);
-        when(authorizationRequestBuildWorkflow.execute(clientName, scope, state)).thenReturn(workflowResult);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state)).thenReturn(workflowResult);
 
         // Act & Assert
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
@@ -229,9 +229,9 @@ class CustomAuthorizationRequestConverterTest {
         Payload payload = mock(Payload.class);
         when(signedJWT.getPayload()).thenReturn(payload);
         when(jwtService.parseJWT(jwt)).thenReturn(signedJWT);
-        when(jwtService.getClaimFromPayload(payload, OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(payload, OAuth2ParameterNames.SCOPE)).thenReturn(scope);
-        when(jwtService.getClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(jwtRedirectUri);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(jwtRedirectUri);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
                 OAuth2AuthorizationCodeRequestAuthenticationException.class,
@@ -283,12 +283,12 @@ class CustomAuthorizationRequestConverterTest {
         Payload payload = mock(Payload.class);
         when(signedJWT.getPayload()).thenReturn(payload);
         when(jwtService.parseJWT(jwt)).thenReturn(signedJWT);
-        when(jwtService.getClaimFromPayload(payload, OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
-        when(jwtService.getClaimFromPayload(payload, OAuth2ParameterNames.SCOPE)).thenReturn(scope);
-        when(jwtService.getClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
 
         PublicKey publicKey = mock(PublicKey.class);
-        when(didService.getPublicKeyFromDid(clientId)).thenReturn(publicKey);
+        when(didService.resolvePublicKeyFromDid(clientId)).thenReturn(publicKey);
         when(signedJWT.serialize()).thenReturn("serialized-jwt");
         doNothing().when(jwtService).verifyJWTWithECKey(anyString(), eq(publicKey));
 
@@ -297,7 +297,7 @@ class CustomAuthorizationRequestConverterTest {
         // Mock the workflow
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
                 "signed-auth-jwt", "openid4vp://...", "nonce-456", clientName);
-        when(authorizationRequestBuildWorkflow.execute(clientName, scope, state)).thenReturn(workflowResult);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
                 OAuth2AuthorizationCodeRequestAuthenticationException.class,
@@ -361,7 +361,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         // The workflow will throw InvalidScopeException for unsupported scope
-        when(authorizationRequestBuildWorkflow.execute(clientName, scope, state))
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state))
                 .thenThrow(new es.in2.vcverifier.verifier.domain.exception.InvalidScopeException(
                         "The requested scope does not contain 'learcredential'."));
 
@@ -488,7 +488,7 @@ class CustomAuthorizationRequestConverterTest {
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
                 "signed-jwt", "openid4vp://...", "nonce-789", clientName);
-        when(authorizationRequestBuildWorkflow.execute(clientName, scope, state)).thenReturn(workflowResult);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
                 OAuth2AuthorizationCodeRequestAuthenticationException.class,
@@ -540,7 +540,7 @@ class CustomAuthorizationRequestConverterTest {
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
                 "signed-jwt", "openid4vp://...", "nonce-000", clientName);
-        when(authorizationRequestBuildWorkflow.execute(clientName, scope, state)).thenReturn(workflowResult);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
                 OAuth2AuthorizationCodeRequestAuthenticationException.class,

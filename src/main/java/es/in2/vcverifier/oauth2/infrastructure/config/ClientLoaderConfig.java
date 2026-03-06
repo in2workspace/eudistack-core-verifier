@@ -54,13 +54,13 @@ public class ClientLoaderConfig {
     }
 
     private RegisteredClientRepository buildRepository() {
-        List<RegisteredClient> clients = loadClients();
+        List<RegisteredClient> clients = retrieveClients();
         return new InMemoryRegisteredClientRepository(clients);
     }
 
-    private List<RegisteredClient> loadClients() {
+    private List<RegisteredClient> retrieveClients() {
         try {
-            ExternalTrustedListYamlData clientsYamlData = clientRegistryProvider.loadClients();
+            ExternalTrustedListYamlData clientsYamlData = clientRegistryProvider.retrieveClients();
             List<RegisteredClient> registeredClients = new ArrayList<>();
             for (ClientData clientData : clientsYamlData.clients()) {
                 RegisteredClient.Builder registeredClientBuilder = RegisteredClient

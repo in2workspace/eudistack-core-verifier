@@ -153,12 +153,12 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports("LEARCredentialEmployee")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.generateJWT(anyString())).thenReturn("access-jwt", "id-jwt");
+            when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
 
             Map<String, Object> additionalParams = Map.of(
                     OAuth2ParameterNames.SCOPE, "openid learcredential"
             );
-            TokenGenerationWorkflow.Result result = workflow.execute(credential, "did:key:client", additionalParams, true);
+            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(credential, "did:key:client", additionalParams, true);
 
             assertThat(result.accessTokenJwt()).isEqualTo("access-jwt");
             assertThat(result.idTokenJwt()).isEqualTo("id-jwt");
@@ -167,7 +167,7 @@ class TokenGenerationWorkflowTest {
             assertThat(result.issueTime()).isNotNull();
             assertThat(result.expirationTime()).isAfter(result.issueTime());
 
-            verify(jwtService, times(2)).generateJWT(anyString());
+            verify(jwtService, times(2)).issueJWT(anyString());
         }
 
         @Test
@@ -184,14 +184,14 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports("LEARCredentialMachine")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.generateJWT(anyString())).thenReturn("access-jwt-only");
+            when(jwtService.issueJWT(anyString())).thenReturn("access-jwt-only");
 
-            TokenGenerationWorkflow.Result result = workflow.execute(credential, "https://verifier.example.com", Map.of(), false);
+            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(credential, "https://verifier.example.com", Map.of(), false);
 
             assertThat(result.accessTokenJwt()).isEqualTo("access-jwt-only");
             assertThat(result.idTokenJwt()).isNull();
 
-            verify(jwtService, times(1)).generateJWT(anyString());
+            verify(jwtService, times(1)).issueJWT(anyString());
         }
 
         @Test
@@ -208,12 +208,12 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports("LEARCredentialEmployee")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.generateJWT(anyString())).thenReturn("jwt");
+            when(jwtService.issueJWT(anyString())).thenReturn("jwt");
 
-            workflow.execute(credential, "did:key:client", Map.of(), false);
+            workflow.issueAccessToken(credential, "did:key:client", Map.of(), false);
 
             ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-            verify(jwtService).generateJWT(captor.capture());
+            verify(jwtService).issueJWT(captor.capture());
             assertThat(captor.getValue()).contains("\"tenant\":\"VATES-B12345678\"");
         }
 
@@ -223,7 +223,7 @@ class TokenGenerationWorkflowTest {
             ObjectNode credential = buildW3cCredential("UnknownCredential");
             when(claimsExtractor.supports("UnknownCredential")).thenReturn(false);
 
-            assertThatThrownBy(() -> workflow.execute(credential, "aud", Map.of(), false))
+            assertThatThrownBy(() -> workflow.issueAccessToken(credential, "aud", Map.of(), false))
                     .isInstanceOf(OAuth2AuthenticationException.class);
         }
     }

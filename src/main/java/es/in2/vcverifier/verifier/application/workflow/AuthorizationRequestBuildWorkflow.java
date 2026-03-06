@@ -53,12 +53,12 @@ public class AuthorizationRequestBuildWorkflow {
      * @param state        the OAuth2 state parameter
      * @return a Result with the signed JWT, openid4vp URL, nonce and homeUri
      */
-    public Result execute(String clientName, String scope, String state) {
+    public Result buildAuthorizationRequest(String clientName, String scope, String state) {
         DcqlQuery dcqlQuery = dcqlProfileResolver.resolve(scope);
 
         String nonce = UUID.randomUUID().toString();
         String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery);
-        String signedJwt = jwtService.generateJWTwithOI4VPType(jwtPayload);
+        String signedJwt = jwtService.issueJWTwithOI4VPType(jwtPayload);
 
         // Cache the auth request JWT keyed by a new nonce for the QR
         String qrNonce = UUID.randomUUID().toString();

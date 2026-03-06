@@ -58,13 +58,13 @@ class Oid4vpControllerTest {
     }
 
     @Test
-    void processAuthResponse_validParameters_shouldInvokeService() {
+    void handleAuthResponse_validParameters_shouldInvokeService() {
         String state = "validState";
         String vpToken = "validVpToken";
 
-        oid4vpController.processAuthResponse(state, vpToken);
+        oid4vpController.handleAuthResponse(state, vpToken);
 
-        Mockito.verify(authorizationResponseProcessorService).processAuthResponse(state, vpToken);
+        Mockito.verify(authorizationResponseProcessorService).handleAuthResponse(state, vpToken);
     }
 
 }

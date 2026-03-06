@@ -22,14 +22,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public GlobalErrorMessage handleResourceNotFoundException(ResourceNotFoundException ex) {
         log.error("Resource not found", ex);
-        return new GlobalErrorMessage("","","");
+        return new GlobalErrorMessage("Resource not found", ex.getMessage(), "");
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public GlobalErrorMessage handleNoSuchElementException(NoSuchElementException ex) {
         log.error("Element not found", ex);
-        return new GlobalErrorMessage("","","");
+        return new GlobalErrorMessage("Element not found", ex.getMessage(), "");
     }
 
     @ExceptionHandler(CredentialRevokedException.class)
@@ -43,21 +43,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public GlobalErrorMessage handleException(MismatchOrganizationIdentifierException ex) {
         log.error("The organization identifier of the cert does not match the organization identifier from the credential payload: ", ex);
-        return new GlobalErrorMessage("","","");
+        return new GlobalErrorMessage("Organization identifier mismatch", ex.getMessage(), "");
     }
 
     @ExceptionHandler(CredentialExpiredException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public GlobalErrorMessage handleException(CredentialExpiredException ex) {
         log.error("The credential has expired: ", ex);
-        return new GlobalErrorMessage("","","");
+        return new GlobalErrorMessage("Credential expired", ex.getMessage(), "");
     }
 
     @ExceptionHandler(CredentialNotActiveException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public GlobalErrorMessage handleException(CredentialNotActiveException ex) {
         log.error("The credential is not active yet: ", ex);
-        return new GlobalErrorMessage("","","");
+        return new GlobalErrorMessage("Credential not active", ex.getMessage(), "");
     }
 
     @ExceptionHandler(IssuerNotAuthorizedException.class)

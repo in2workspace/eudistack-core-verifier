@@ -36,7 +36,7 @@ public class JWTServiceImpl implements JWTService {
     private final ObjectMapper objectMapper;
 
     @Override
-    public String generateJWT(String payload) {
+    public String issueJWT(String payload) {
         log.info("Starting standard JWT generation. Payload: {}", payload);
         return generateJWTInternal(payload,JOSEObjectType.JWT);
     }
@@ -94,40 +94,40 @@ public class JWTServiceImpl implements JWTService {
     }
 
     @Override
-    public Payload getPayloadFromSignedJWT(SignedJWT signedJWT) {
+    public Payload extractPayloadFromSignedJWT(SignedJWT signedJWT) {
         return signedJWT.getPayload();
     }
 
     @Override
-    public String getClaimFromPayload(Payload payload, String claimName) {
+    public String extractClaimFromPayload(Payload payload, String claimName) {
         String claimValue = (String) payload.toJSONObject().get(claimName);
         if (claimValue == null || claimValue.trim().isEmpty()) {
-            log.error("JWTServiceImpl -- getClaimFromPayload -- Claim '{}' is missing or empty in the JWT payload", claimName);
+            log.error("JWTServiceImpl -- extractClaimFromPayload -- Claim '{}' is missing or empty in the JWT payload", claimName);
             throw new JWTClaimMissingException(String.format("The '%s' claim is missing or empty in the JWT payload.", claimName));
         }
         return claimValue;
     }
 
     @Override
-    public long getExpirationFromPayload(Payload payload) {
+    public long extractExpirationFromPayload(Payload payload) {
         log.info("Retrieving expiration ('exp') from JWT payload");
         Long exp = (Long) payload.toJSONObject().get("exp");
         if (exp == null || exp <= 0) {
-            log.error("JWTServiceImpl -- getExpirationFromPayload -- Expiration claim ('exp') is missing or invalid in the JWT payload");
+            log.error("JWTServiceImpl -- extractExpirationFromPayload -- Expiration claim ('exp') is missing or invalid in the JWT payload");
             throw new JWTClaimMissingException("The 'exp' (expiration) claim is missing or invalid in the JWT payload.");
         }
-        log.debug("JWTServiceImpl -- getExpirationFromPayload -- Expiration claim ('exp') retrieved successfully: {}", exp);
+        log.debug("JWTServiceImpl -- extractExpirationFromPayload -- Expiration claim ('exp') retrieved successfully: {}", exp);
         return exp;
     }
 
     @Override
-    public Object getVCFromPayload(Payload payload) {
+    public Object extractVCFromPayload(Payload payload) {
         log.info("Retrieving verifiable credential ('vc') from JWT payload");
         return payload.toJSONObject().get("vc");
     }
 
     @Override
-    public String generateJWTwithOI4VPType(String payload) {
+    public String issueJWTwithOI4VPType(String payload) {
         log.info("Starting OID4VP JWT generation with typ={}. Payload: {}", OID4VP_TYPE, payload);
         return generateJWTInternal(payload,new JOSEObjectType(OID4VP_TYPE));
     }
