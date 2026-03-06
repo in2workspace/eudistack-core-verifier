@@ -86,12 +86,22 @@ public class VpServiceImpl implements VpService {
         validateCredentialTimeWindow(learCredential);
 
         // Step 3: Validate revocation (only if credentialStatus is present)
+        // Non-blocking: if the status list endpoint is unreachable or returns an error,
+        // log a warning and let the presentation pass. Only block if revocation is confirmed.
         if (hasCredentialStatus(learCredential)) {
             log.debug("CredentialStatus detected: {}", learCredential.credentialStatusId());
-            if (!validateCredentialNotRevoked(learCredential)) {
-                throw new CredentialRevokedException("Credential ID " + learCredential.id() + " is revoked.");
+            try {
+                if (!validateCredentialNotRevoked(learCredential)) {
+                    throw new CredentialRevokedException("Credential ID " + learCredential.id() + " is revoked.");
+                }
+                log.info("Credential is not revoked");
+            } catch (CredentialRevokedException e) {
+                throw e;
+            } catch (Exception e) {
+                log.warn("Could not verify credential revocation status for credential {}. " +
+                        "Status list may be unreachable. Proceeding with presentation. Error: {}",
+                        learCredential.id(), e.getMessage());
             }
-            log.info("Credential is not revoked");
         } else {
             log.debug("No CredentialStatus block found; skipping revocation check for credential {}", learCredential.id());
         }

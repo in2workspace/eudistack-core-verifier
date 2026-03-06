@@ -127,4 +127,83 @@ class GlobalExceptionHandlerTest {
         assertThat(response.message()).isEqualTo("Status list error");
         assertThat(response.path()).isEmpty();
     }
+
+    @Test
+    void testHandleIssuerNotAuthorizedException() {
+        IssuerNotAuthorizedException exception = new IssuerNotAuthorizedException("unauthorized issuer");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleIssuerNotAuthorizedException(exception);
+
+        assertThat(response.title()).isEqualTo("Issuer not authorized");
+        assertThat(response.message()).isEqualTo("unauthorized issuer");
+    }
+
+    @Test
+    void testHandleInvalidCredentialTypeException() {
+        InvalidCredentialTypeException exception = new InvalidCredentialTypeException("bad type");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleInvalidCredentialTypeException(exception);
+
+        assertThat(response.title()).isEqualTo("Invalid credential type");
+        assertThat(response.message()).isEqualTo("bad type");
+    }
+
+    @Test
+    void testHandleJWTClaimMissingException() {
+        JWTClaimMissingException exception = new JWTClaimMissingException("missing nonce");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleJWTClaimMissingException(exception);
+
+        assertThat(response.title()).isEqualTo("JWT claim error");
+        assertThat(response.message()).isEqualTo("missing nonce");
+    }
+
+    @Test
+    void testHandleJWTVerificationException() {
+        JWTVerificationException exception = new JWTVerificationException("bad signature");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleJWTVerificationException(exception);
+
+        assertThat(response.title()).isEqualTo("JWT verification failed");
+        assertThat(response.message()).isEqualTo("bad signature");
+    }
+
+    @Test
+    void testHandleJWTParsingException() {
+        JWTParsingException exception = new JWTParsingException("parse error");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleJWTParsingException(exception);
+
+        assertThat(response.title()).isEqualTo("JWT parsing failed");
+        assertThat(response.message()).isEqualTo("parse error");
+    }
+
+    @Test
+    void testHandleInvalidScopeException() {
+        InvalidScopeException exception = new InvalidScopeException("bad scope");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleInvalidScopeException(exception);
+
+        assertThat(response.title()).isEqualTo("Scope/binding error");
+        assertThat(response.message()).isEqualTo("bad scope");
+    }
+
+    @Test
+    void testHandleCredentialMappingException() {
+        CredentialMappingException exception = new CredentialMappingException("mapping error");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleCredentialMappingException(exception);
+
+        assertThat(response.title()).isEqualTo("Credential mapping error");
+        assertThat(response.message()).isEqualTo("mapping error");
+    }
+
+    @Test
+    void testHandleLoginTimeoutException() {
+        LoginTimeoutException exception = new LoginTimeoutException("timeout");
+
+        GlobalErrorMessage response = globalExceptionHandler.handleException(exception);
+
+        assertThat(response.title()).contains("Login time has expired");
+    }
 }

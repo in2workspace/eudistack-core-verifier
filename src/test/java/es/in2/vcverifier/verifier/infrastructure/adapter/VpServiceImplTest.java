@@ -429,6 +429,7 @@ class VpServiceImplTest {
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
             when(issuer.getId()).thenReturn("did:elsi:VATES-FOO"); // IMPORTANT: must start with did:elsi:
+            when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
 
             // Issuer capabilities include this credential type
             List<IssuerCredentialsCapabilities> issuerCapabilitiesList = List.of(
@@ -816,6 +817,7 @@ class VpServiceImplTest {
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
             when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
+            when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
             List<IssuerCredentialsCapabilities> caps = List.of(
@@ -895,6 +897,7 @@ class VpServiceImplTest {
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
             when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
+            when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
             List<IssuerCredentialsCapabilities> caps = List.of(
@@ -969,6 +972,7 @@ class VpServiceImplTest {
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
             when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
+            when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
             List<IssuerCredentialsCapabilities> caps = List.of(
@@ -1042,6 +1046,7 @@ class VpServiceImplTest {
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
             when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
+            when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
             List<IssuerCredentialsCapabilities> caps = List.of(
@@ -1065,6 +1070,147 @@ class VpServiceImplTest {
                     () -> vpServiceImpl.validateVerifiablePresentation(vpToken));
 
             assertEquals("Public key not found", ex.getMessage());
+        }
+    }
+
+    @Test
+    void validateVerifiablePresentation_statusListUnreachable_doesNotThrow() throws Exception {
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+        String holderDid = "did:example:holder";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+
+        try (MockedStatic<SignedJWT> mocked = mockStatic(SignedJWT.class)) {
+            mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            var vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
+            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
+            when(vpHeader.getKeyID()).thenReturn(holderDid);
+
+            JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
+            when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
+            when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
+            when(vcClaims.getSubject()).thenReturn(holderDid);
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.getPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            var vcFromPayload = new LinkedTreeMap<String, Object>();
+            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
+            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
+            when(jwtService.getVCFromPayload(payload)).thenReturn(vcFromPayload);
+
+            var cred = mock(LEARCredentialEmployeeV1.class);
+            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+
+            when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
+            when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
+
+            // Credential HAS status -> revocation check will be triggered
+            when(cred.learCredentialStatusExist()).thenReturn(true);
+            when(cred.credentialStatusId()).thenReturn("urn:uuid:status-1");
+            when(cred.credentialStatusType()).thenReturn("BitstringStatusListEntry");
+            when(cred.credentialStatusPurpose()).thenReturn("revocation");
+            when(cred.id()).thenReturn("urn:uuid:cred-1");
+
+            // Status list fetch THROWS (unreachable endpoint)
+            when(cred.statusListCredential()).thenReturn("https://status-list.example.com/status/1");
+            when(cred.credentialStatusListIndex()).thenReturn("42");
+            when(trustFrameworkService.isCredentialRevokedInBitstringStatusList(
+                    "https://status-list.example.com/status/1", "42", "revocation"))
+                    .thenThrow(new es.in2.vcverifier.shared.domain.exception.FailedCommunicationException("Connection refused"));
+
+            // Issuer + capabilities
+            var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
+            when(cred.issuer()).thenReturn(issuer);
+            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
+            when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
+            when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder().credentialsType("LEARCredentialEmployee").validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("did:elsi:VATES-FOO")).thenReturn(caps);
+
+            when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
+            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
+
+            when(cred.credentialSubjectId()).thenReturn(holderDid);
+
+            PublicKey publicKey = generateECPublicKey();
+            when(didService.getPublicKeyFromDid(holderDid)).thenReturn(publicKey);
+            doNothing().when(jwtService).verifyJWTWithECKey(vpToken, publicKey);
+
+            // Should NOT throw despite status list being unreachable
+            assertDoesNotThrow(() -> vpServiceImpl.validateVerifiablePresentation(vpToken));
+        }
+    }
+
+    @Test
+    void validateVerifiablePresentation_credentialConfirmedRevoked_stillThrows() throws Exception {
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+
+        try (MockedStatic<SignedJWT> mocked = mockStatic(SignedJWT.class)) {
+            mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            // VP claims -> vp.verifiableCredential (needed for VC extraction at step 1)
+            JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
+            when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            // VC claims -> sub (read at step 1 for binding log)
+            JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
+            when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
+            when(vcClaims.getSubject()).thenReturn("did:example:holder");
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.getPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            var vcFromPayload = new LinkedTreeMap<String, Object>();
+            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
+            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
+            when(jwtService.getVCFromPayload(payload)).thenReturn(vcFromPayload);
+
+            var cred = mock(LEARCredentialEmployeeV1.class);
+            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+
+            when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
+            when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
+
+            // Credential HAS status and IS revoked
+            when(cred.learCredentialStatusExist()).thenReturn(true);
+            when(cred.credentialStatusId()).thenReturn("urn:uuid:status-1");
+            when(cred.credentialStatusType()).thenReturn("BitstringStatusListEntry");
+            when(cred.credentialStatusPurpose()).thenReturn("revocation");
+            when(cred.id()).thenReturn("urn:uuid:cred-1");
+            when(cred.statusListCredential()).thenReturn("https://status-list.example.com/status/1");
+            when(cred.credentialStatusListIndex()).thenReturn("42");
+
+            // Status list confirms revocation (returns true = IS revoked)
+            when(trustFrameworkService.isCredentialRevokedInBitstringStatusList(
+                    "https://status-list.example.com/status/1", "42", "revocation"))
+                    .thenReturn(true);
+
+            // Should throw CredentialRevokedException — stops at step 3
+            assertThrows(CredentialRevokedException.class,
+                    () -> vpServiceImpl.validateVerifiablePresentation(vpToken));
         }
     }
 
@@ -1114,6 +1260,7 @@ class VpServiceImplTest {
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
             when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
+            when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
 
             List<IssuerCredentialsCapabilities> caps = List.of(
                     IssuerCredentialsCapabilities.builder()

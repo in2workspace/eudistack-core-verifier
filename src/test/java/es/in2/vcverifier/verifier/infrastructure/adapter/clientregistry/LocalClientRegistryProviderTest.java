@@ -1,7 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry;
 
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
-import es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry.LocalClientRegistryProvider;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -17,7 +16,7 @@ class LocalClientRegistryProviderTest {
         assertNotNull(data);
         assertNotNull(data.clients());
         assertFalse(data.clients().isEmpty());
-        assertEquals("dev-client", data.clients().get(0).clientId());
+        assertEquals("vc-auth-client", data.clients().get(0).clientId());
     }
 
     @Test
@@ -27,8 +26,19 @@ class LocalClientRegistryProviderTest {
         ExternalTrustedListYamlData data = provider.loadClients();
 
         var client = data.clients().get(0);
-        assertEquals("dev-client", client.clientId());
-        assertTrue(client.redirectUris().contains("http://localhost:4200/callback"));
+        assertEquals("vc-auth-client", client.clientId());
+        assertTrue(client.redirectUris().contains("http://localhost:4200"));
         assertTrue(client.scopes().contains("openid"));
+        assertTrue(client.scopes().contains("learcredential"));
+    }
+
+    @Test
+    void loadClients_externalPathNotFound_fallsBackToClasspath() {
+        LocalClientRegistryProvider provider = new LocalClientRegistryProvider("/nonexistent/path.yaml");
+
+        ExternalTrustedListYamlData data = provider.loadClients();
+
+        assertNotNull(data);
+        assertFalse(data.clients().isEmpty());
     }
 }

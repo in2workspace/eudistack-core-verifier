@@ -1,11 +1,14 @@
 package es.in2.vcverifier.verifier.application.workflow;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
-import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
+import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,10 +17,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,20 +33,28 @@ class AuthorizationRequestBuildWorkflowTest {
     @Mock private BackendConfig backendConfig;
     @Mock private CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
     @Mock private CacheStore<String> cacheForNonceByState;
+    @Mock private DcqlProfileResolver dcqlProfileResolver;
 
     private AuthorizationRequestBuildWorkflow workflow;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
         workflow = new AuthorizationRequestBuildWorkflow(
                 jwtService, cryptoComponent, backendConfig,
-                cacheStoreForAuthorizationRequestJWT, cacheForNonceByState
+                cacheStoreForAuthorizationRequestJWT, cacheForNonceByState,
+                dcqlProfileResolver, objectMapper
         );
     }
 
     @Test
     @DisplayName("execute() builds JWT, generates openid4vp URL, and caches the result")
     void execute_buildsJwtAndGeneratesUrl() {
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
@@ -63,16 +76,31 @@ class AuthorizationRequestBuildWorkflowTest {
     }
 
     @Test
-    @DisplayName("execute() throws InvalidScopeException when scope lacks 'learcredential'")
-    void execute_throwsOnInvalidScope() {
-        assertThatThrownBy(() -> workflow.execute("Client", "openid email", "state-1"))
-                .isInstanceOf(InvalidScopeException.class)
-                .hasMessageContaining("learcredential");
+    @DisplayName("execute() delegates scope resolution to DcqlProfileResolver")
+    void execute_delegatesScopeResolution() {
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve("openid learcredential.employee")).thenReturn(dcqlQuery);
+        when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
+        when(cryptoComponent.getClientIdScheme()).thenReturn("did");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.generateJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        workflow.execute("Client", "openid learcredential.employee", "my-state");
+
+        verify(dcqlProfileResolver).resolve("openid learcredential.employee");
     }
 
     @Test
     @DisplayName("execute() passes the correct payload structure to JWTService")
     void execute_passesCorrectPayload() {
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");

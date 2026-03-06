@@ -51,8 +51,10 @@ dependencies {
     // --- Caching ---
     implementation 'com.google.guava:guava:33.4.0-jre'
 
-    // --- Monitoring ---
+    // --- Monitoring & Telemetry ---
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+    implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+    implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
 
     // --- DevTools ---
     compileOnly 'org.projectlombok:lombok'
