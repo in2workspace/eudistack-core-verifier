@@ -5,12 +5,8 @@ import com.nimbusds.jose.Payload;
 import es.in2.vcverifier.verifier.domain.exception.CredentialMappingException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.LEARCredential;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV1;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV2;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV3;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.LEARCredentialMachineV1;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.LEARCredentialMachineV2;
-import es.in2.vcverifier.verifier.domain.model.enums.LEARCredentialType;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,8 +14,6 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
 
 /**
  * Maps a JWT VC payload to a typed {@link LEARCredential} based on credential type and context version.
@@ -86,26 +80,22 @@ public class CredentialMapperService {
     }
 
     private LEARCredential mapToSpecificCredential(Map<String, Object> vcMap, List<String> types) {
-        List<String> contextList = extractContext(vcMap);
+        // Resolve the config ID from the type array
+        String configId = types.stream()
+                .filter(t -> !"VerifiableCredential".equals(t) && !"VerifiableAttestation".equals(t))
+                .findFirst()
+                .orElseThrow(() -> new InvalidCredentialTypeException("No credential config ID found in types: " + types));
 
-        if (types.contains(LEARCredentialType.LEAR_CREDENTIAL_EMPLOYEE.getValue())) {
-            if (contextList.equals(LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT)) {
-                return objectMapper.convertValue(vcMap, LEARCredentialEmployeeV1.class);
-            } else if (contextList.equals(LEAR_CREDENTIAL_EMPLOYEE_V2_CONTEXT)) {
-                return objectMapper.convertValue(vcMap, LEARCredentialEmployeeV2.class);
-            } else if (contextList.equals(LEAR_CREDENTIAL_EMPLOYEE_V3_CONTEXT)) {
-                return objectMapper.convertValue(vcMap, LEARCredentialEmployeeV3.class);
-            } else {
-                throw new InvalidCredentialTypeException("Unknown LEARCredentialEmployee version: " + contextList);
-            }
-        } else if (types.contains(LEARCredentialType.LEAR_CREDENTIAL_MACHINE.getValue())) {
-            if (contextList.equals(LEAR_CREDENTIAL_MACHINE_V2_CONTEXT)) {
-                return objectMapper.convertValue(vcMap, LEARCredentialMachineV2.class);
-            } else {
-                return objectMapper.convertValue(vcMap, LEARCredentialMachineV1.class);
-            }
-        } else {
-            throw new InvalidCredentialTypeException("Unsupported credential type: " + types);
+        // Employee credentials
+        if (configId.startsWith("learcredential.employee.")) {
+            // Use the latest POJO (V3) for all employee credentials since it's the most flexible
+            return objectMapper.convertValue(vcMap, LEARCredentialEmployeeV3.class);
         }
+        // Machine credentials
+        if (configId.startsWith("learcredential.machine.")) {
+            return objectMapper.convertValue(vcMap, LEARCredentialMachineV2.class);
+        }
+
+        throw new InvalidCredentialTypeException("Unsupported credential type: " + configId);
     }
 }

@@ -1,13 +1,12 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
-import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.Payload;
-import com.nimbusds.jose.shaded.gson.internal.LinkedTreeMap;
+
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.*;
@@ -31,12 +30,6 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Method;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
-import java.security.PublicKey;
-import java.security.interfaces.ECPublicKey;
-import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
@@ -44,13 +37,17 @@ import java.util.List;
 import java.util.Map;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.DID_ELSI_PREFIX;
-import static es.in2.vcverifier.shared.domain.util.Constants.LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class VpServiceImplTest {
+
+    private static final List<String> LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT = List.of(
+            "https://www.w3.org/ns/credentials/v2",
+            "https://trust-framework.dome-marketplace.eu/credentials/learcredentialemployee/v1"
+    );
 
     @Mock
     private JWTService jwtService;
@@ -59,9 +56,11 @@ class VpServiceImplTest {
     private TrustFrameworkService trustFrameworkService;
 
     @Mock
-    private DIDService didService;
-    @Mock
     private CertificateValidationService certificateValidationService;
+    @Mock
+    private CredentialMapperService credentialMapperService;
+    @Mock
+    private CryptographicBindingValidator cryptographicBindingValidator;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -132,7 +131,8 @@ class VpServiceImplTest {
         Payload payload = mock(Payload.class);
         when(jwtService.extractPayloadFromSignedJWT(any(SignedJWT.class))).thenReturn(payload);
 
-        when(jwtService.extractVCFromPayload(payload)).thenReturn("not-a-map");
+        when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                .thenThrow(new CredentialMappingException("Invalid payload format for Verifiable Credential."));
 
         assertThrows(
                 CredentialMappingException.class,
@@ -146,9 +146,8 @@ class VpServiceImplTest {
 
         Payload payload = mock(Payload.class);
         when(jwtService.extractPayloadFromSignedJWT(any(SignedJWT.class))).thenReturn(payload);
-        Map<Integer, Object> vcMap = new HashMap<>();
-        vcMap.put(123, "test"); // incorrecto a propósito
-        when(jwtService.extractVCFromPayload(payload)).thenReturn(vcMap);
+        when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                .thenThrow(new CredentialMappingException("Invalid key type found in Verifiable Credential map."));
 
         assertThrows(
                 CredentialMappingException.class,
@@ -162,9 +161,8 @@ class VpServiceImplTest {
 
         Payload payload = mock(Payload.class);
         when(jwtService.extractPayloadFromSignedJWT(any(SignedJWT.class))).thenReturn(payload);
-        Map<String, Object> vcMap = new HashMap<>();
-        vcMap.put("type", "not a list"); // incorrecto a propósito
-        when(jwtService.extractVCFromPayload(payload)).thenReturn(vcMap);
+        when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                .thenThrow(new CredentialMappingException("'type' key is not a list."));
 
         assertThrows(
                 CredentialMappingException.class,
@@ -178,9 +176,8 @@ class VpServiceImplTest {
 
         Payload payload = mock(Payload.class);
         when(jwtService.extractPayloadFromSignedJWT(any(SignedJWT.class))).thenReturn(payload);
-        Map<String, Object> vcMap = new HashMap<>();
-        vcMap.put("type", List.of(1,2)); // incorrecto a propósito
-        when(jwtService.extractVCFromPayload(payload)).thenReturn(vcMap);
+        when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                .thenThrow(new CredentialMappingException("'type' list contains non-string elements."));
 
         assertThrows(
                 CredentialMappingException.class,
@@ -217,7 +214,8 @@ class VpServiceImplTest {
             Map<String, Object> vcMap = new HashMap<>();
             vcMap.put("type", List.of("invalid")); // unsupported type
             vcMap.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT); // must be a list of strings
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcMap);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                    .thenThrow(new InvalidCredentialTypeException("Unsupported credential type: [invalid]"));
 
             assertThrows(
                     InvalidCredentialTypeException.class,
@@ -237,7 +235,8 @@ class VpServiceImplTest {
         vcMap.put("type", List.of("LEARCredentialEmployee"));
         vcMap.put("@context", "not-a-list"); //worng on propouse
 
-        when(jwtService.extractVCFromPayload(payload)).thenReturn(vcMap);
+        when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                .thenThrow(new CredentialMappingException("The field '@context' is not a list."));
 
         assertThrows(
                 CredentialMappingException.class,
@@ -255,7 +254,8 @@ class VpServiceImplTest {
         vcMap.put("type", List.of("LEARCredentialEmployee"));
         vcMap.put("@context", List.of("https://example.com", 42));
 
-        when(jwtService.extractVCFromPayload(payload)).thenReturn(vcMap);
+        when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                .thenThrow(new CredentialMappingException("The field '@context' contains non-string elements."));
 
         assertThrows(
                 CredentialMappingException.class,
@@ -273,7 +273,8 @@ class VpServiceImplTest {
         vcMap.put("type", List.of("LEARCredentialEmployee"));
         vcMap.put("@context", List.of());
 
-        when(jwtService.extractVCFromPayload(payload)).thenReturn(vcMap);
+        when(credentialMapperService.mapPayloadToVerifiableCredential(payload))
+                .thenThrow(new InvalidCredentialTypeException("Unknown LEARCredentialEmployee version: []"));
 
         assertThrows(
                 InvalidCredentialTypeException.class,
@@ -321,12 +322,8 @@ class VpServiceImplTest {
 
             // Step 3: Validate the credential id is not in the revoked list
             // Create a vcFromPayload Map
-            LinkedTreeMap<String, Object> vcFromPayload = new LinkedTreeMap<>();
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-
-            // Step 4: Extract and validate credential types
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
+            // Step 2: Map payload to credential
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(learCredentialEmployeeV1);
 
             // Step 5: Retrieve the list of issuer capabilities
             List<IssuerCredentialsCapabilities> issuerCapabilitiesList = List.of(
@@ -337,8 +334,6 @@ class VpServiceImplTest {
                             .build()
             );
             when(trustFrameworkService.getTrustedIssuerListData(learCredentialEmployeeV1.issuer().getId())).thenReturn(issuerCapabilitiesList);
-
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(learCredentialEmployeeV1);
 
             // Step 7: Validate the mandator with trusted issuer service
             when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + learCredentialEmployeeV1.mandatorOrganizationIdentifier())).thenReturn(issuerCapabilitiesList);
@@ -355,19 +350,17 @@ class VpServiceImplTest {
 
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), eq(vcHeader),eq("issuer"));
 
-            // Step 8: Get the holder's public key
-            PublicKey holderPublicKey = generateECPublicKey();
-            when(didService.resolvePublicKeyFromDid(learCredentialEmployeeV1.mandateeId())).thenReturn(holderPublicKey);
-
-            // Mock jwtService.verifyJWTSignature for the Verifiable Presentation
-            doNothing().when(jwtService).verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
+            // Step 9: Validate VP signature + cryptographic binding
+            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(
+                    any(), any(), any());
 
             assertDoesNotThrow(() ->
                     vpServiceImpl.verifyVerifiablePresentation(verifiablePresentation)
             );
 
             // Verify interactions
-            verify(jwtService).verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
+            verify(cryptographicBindingValidator).validateVpSignatureAndBinding(
+                    any(), any(), any());
         }
     }
 
@@ -406,14 +399,9 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
-            Map<String, Object> vcFromPayload = new HashMap<>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-
             // Map -> credential domain object
             LEARCredentialEmployeeV1 cred = mock(LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             // Time window ok
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
@@ -458,19 +446,15 @@ class VpServiceImplTest {
             doNothing().when(certificateValidationService)
                     .extractAndVerifyCertificate(vcJwt, vcHeaderMap, "VATES-FOO");
 
-            // PoP signature verification of VP
-            PublicKey holderPublicKey = generateECPublicKey();
-            when(didService.resolvePublicKeyFromDid("did:example:holder")).thenReturn(holderPublicKey);
-            doNothing().when(jwtService).verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
-
-            // Binding: make VC bound DID == holder DID via credentialSubjectId
-            when(cred.credentialSubjectId()).thenReturn("did:example:holder");
+            // VP signature + cryptographic binding
+            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(
+                    any(), any(), any());
 
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(verifiablePresentation));
 
-            verify(jwtService).verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
             verify(certificateValidationService).extractAndVerifyCertificate(vcJwt, vcHeaderMap, "VATES-FOO");
-            verify(didService).resolvePublicKeyFromDid("did:example:holder");
+            verify(cryptographicBindingValidator).validateVpSignatureAndBinding(
+                    any(), any(), any());
         }
     }
 
@@ -505,11 +489,7 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(jwtCredential)).thenReturn(payload);
 
-            LinkedTreeMap<String, Object> vcFromPayload = new LinkedTreeMap<>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(expiredCredential);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(expiredCredential);
 
             assertThrows(CredentialExpiredException.class, () ->
                     vpServiceImpl.verifyVerifiablePresentation(invalidVP)
@@ -549,23 +529,13 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(jwtCredential)).thenReturn(payload);
 
-            LinkedTreeMap<String, Object> vcFromPayload = new LinkedTreeMap<>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(expiredCredential);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(expiredCredential);
 
             assertThrows(CredentialNotActiveException.class, () ->
                     vpServiceImpl.verifyVerifiablePresentation(invalidVP)
             );
 
         }
-    }
-
-    private ECPublicKey generateECPublicKey() throws NoSuchAlgorithmException, InvalidAlgorithmParameterException {
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("EC");
-        keyPairGenerator.initialize(new ECGenParameterSpec("secp256r1"));
-        return (ECPublicKey) keyPairGenerator.generateKeyPair().getPublic();
     }
 
     private LEARCredentialEmployeeV1 getLEARCredentialEmployee(){
@@ -639,8 +609,8 @@ class VpServiceImplTest {
 
     @Test
     void extractDidFromKidIssSub_validKidWithFragment_returnsDidWithoutFragment() throws Exception {
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
         method.setAccessible(true);
 
         String kid = "did:example:12345#fragment";
@@ -653,8 +623,8 @@ class VpServiceImplTest {
 
     @Test
     void extractDidFromKidIssSub_validKidWithoutFragment_returnsKid() throws Exception {
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
         method.setAccessible(true);
 
         String kid = "did:example:12345";
@@ -667,8 +637,8 @@ class VpServiceImplTest {
 
     @Test
     void extractDidFromKidIssSub_invalidKid_validIss_returnsIss() throws Exception {
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
         method.setAccessible(true);
 
         String kid = "invalid-kid";
@@ -681,8 +651,8 @@ class VpServiceImplTest {
 
     @Test
     void extractDidFromKidIssSub_invalidKid_invalidIss_validSub_returnsSub() throws Exception {
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
         method.setAccessible(true);
 
         String kid = "invalid-kid";
@@ -695,8 +665,8 @@ class VpServiceImplTest {
 
     @Test
     void extractDidFromKidIssSub_allInvalid_returnsNull() throws Exception {
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("extractDidFromKidIssSub", String.class, String.class, String.class);
         method.setAccessible(true);
 
         String kid = "invalid-kid";
@@ -710,8 +680,8 @@ class VpServiceImplTest {
     @Test
     void safeGetCredentialSubjectId_throwsException_returnsNull() throws Exception {
         // Arrange
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("safeGetCredentialSubjectId", LEARCredential.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("safeGetCredentialSubjectId", LEARCredential.class);
         method.setAccessible(true);
 
         LEARCredential mockCredential = mock(LEARCredential.class);
@@ -727,8 +697,8 @@ class VpServiceImplTest {
     @Test
     void safeGetCredentialSubjectId_validId_returnsId() throws Exception {
         // Arrange
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("safeGetCredentialSubjectId", LEARCredential.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("safeGetCredentialSubjectId", LEARCredential.class);
         method.setAccessible(true);
 
         LEARCredential mockCredential = mock(LEARCredential.class);
@@ -743,8 +713,8 @@ class VpServiceImplTest {
     @Test
     void extractBoundDidFromCredential_csIdValidAndMismatchWithVcSub_returnsCsIdWithWarning() throws Exception {
         // Arrange
-        VpServiceImpl service = new VpServiceImpl(null, null, null, null, null);
-        Method method = VpServiceImpl.class.getDeclaredMethod("extractBoundDidFromCredential", LEARCredential.class, String.class);
+        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
+        Method method = CryptographicBindingValidator.class.getDeclaredMethod("extractBoundDidFromCredential", LEARCredential.class, String.class);
         method.setAccessible(true);
 
         // Mock LEARCredential to return a valid csId
@@ -768,8 +738,6 @@ class VpServiceImplTest {
         String vpToken = "valid.vp.jwt";
         String vcToken = "valid.vc.jwt";
 
-        VpServiceImpl service = new VpServiceImpl(jwtService, objectMapper, trustFrameworkService, didService, certificateValidationService);
-
         SignedJWT vpSignedJWT = mock(SignedJWT.class);
         SignedJWT vcSignedJWT = mock(SignedJWT.class);
 
@@ -777,17 +745,12 @@ class VpServiceImplTest {
             mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
             mocked.when(() -> SignedJWT.parse(vcToken)).thenReturn(vcSignedJWT);
 
-            // --- VP header -> holder DID (kid)
-            com.nimbusds.jose.JWSHeader vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn("did:example:holder");
-
             // --- VP claims -> vp.verifiableCredential = [vcToken]
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcToken)));
 
-            // --- VC claims -> sub (opcional, pero evita NPE en tu log de [BIND] VC JWT sub=...)
+            // --- VC claims -> sub
             JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
             when(vcClaims.getSubject()).thenReturn("did:example:somebody-else");
@@ -796,15 +759,9 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
-            // --- VC from payload must be a Map (NO un LEARCredential mock), o caerás en CredentialMappingException
-            LinkedTreeMap<String, Object> vcFromPayload = new LinkedTreeMap<>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-
-            // --- Convert to credential object
+            // --- Map to credential object
             LEARCredentialEmployeeV1 cred = mock(LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             // Time window OK
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
@@ -839,15 +796,13 @@ class VpServiceImplTest {
             when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
             when(vcSignedJWT.serialize()).thenReturn(vcToken);
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
-            when(cred.credentialSubjectId()).thenReturn("did:example:bound-did");
 
-            // PoP signature OK
-            PublicKey publicKey = mock(PublicKey.class);
-            when(didService.resolvePublicKeyFromDid("did:example:holder")).thenReturn(publicKey);
-            doNothing().when(jwtService).verifyJWTWithECKey(vpToken, publicKey);
+            // Binding validator throws InvalidScopeException
+            doThrow(new InvalidScopeException("Cryptographic binding mismatch"))
+                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
 
             // Act & Assert
-            assertThrows(InvalidScopeException.class, () -> service.verifyVerifiablePresentation(vpToken));
+            assertThrows(InvalidScopeException.class, () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
         }
     }
 
@@ -881,14 +836,8 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
-            var vcFromPayload = new LinkedTreeMap<String, Object>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-
             var cred = mock(es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV1.class))
-                    .thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
             when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
@@ -914,11 +863,8 @@ class VpServiceImplTest {
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
 
-            PublicKey publicKey = mock(PublicKey.class);
-            when(didService.resolvePublicKeyFromDid(holderDid)).thenReturn(publicKey);
-
             doThrow(new RuntimeException("Signature verification failed"))
-                    .when(jwtService).verifyJWTWithECKey(vpToken, publicKey);
+                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
 
             RuntimeException ex = assertThrows(RuntimeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -957,13 +903,8 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
-            var vcFromPayload = new LinkedTreeMap<String, Object>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-
             LEARCredentialEmployeeV1 cred = mock(LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
             when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
@@ -989,6 +930,9 @@ class VpServiceImplTest {
 
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+
+            doThrow(new InvalidScopeException("Cannot extract holder identity from VP"))
+                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
 
             assertThrows(InvalidScopeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -1030,14 +974,8 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
-            var vcFromPayload = new LinkedTreeMap<String, Object>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-
             var cred = mock(es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV1.class))
-                    .thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
             when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
@@ -1063,8 +1001,8 @@ class VpServiceImplTest {
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
 
-            when(didService.resolvePublicKeyFromDid(holderDid))
-                    .thenThrow(new RuntimeException("Public key not found"));
+            doThrow(new RuntimeException("Public key not found"))
+                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
 
             RuntimeException ex = assertThrows(RuntimeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -1099,15 +1037,10 @@ class VpServiceImplTest {
             when(vcClaims.getSubject()).thenReturn(holderDid);
 
             Payload payload = mock(Payload.class);
-            when(jwtService.getPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
-
-            var vcFromPayload = new LinkedTreeMap<String, Object>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.getVCFromPayload(payload)).thenReturn(vcFromPayload);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
             var cred = mock(LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
             when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
@@ -1147,11 +1080,8 @@ class VpServiceImplTest {
             when(vcSignedJWT.serialize()).thenReturn(vcJwt);
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
 
-            when(cred.credentialSubjectId()).thenReturn(holderDid);
-
-            PublicKey publicKey = generateECPublicKey();
-            when(didService.getPublicKeyFromDid(holderDid)).thenReturn(publicKey);
-            doNothing().when(jwtService).verifyJWTWithECKey(vpToken, publicKey);
+            // VP signature + cryptographic binding
+            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
 
             // Should NOT throw despite status list being unreachable
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -1181,15 +1111,10 @@ class VpServiceImplTest {
             when(vcClaims.getSubject()).thenReturn("did:example:holder");
 
             Payload payload = mock(Payload.class);
-            when(jwtService.getPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
-
-            var vcFromPayload = new LinkedTreeMap<String, Object>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.getVCFromPayload(payload)).thenReturn(vcFromPayload);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
             var cred = mock(LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
             when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
@@ -1243,13 +1168,8 @@ class VpServiceImplTest {
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
-            LinkedTreeMap<String, Object> vcFromPayload = new LinkedTreeMap<>();
-            vcFromPayload.put("type", List.of("LEARCredentialEmployee"));
-            vcFromPayload.put("@context", LEAR_CREDENTIAL_EMPLOYEE_V1_CONTEXT);
-            when(jwtService.extractVCFromPayload(payload)).thenReturn(vcFromPayload);
-
             LEARCredentialEmployeeV1 cred = mock(LEARCredentialEmployeeV1.class);
-            when(objectMapper.convertValue(vcFromPayload, LEARCredentialEmployeeV1.class)).thenReturn(cred);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(cred);
 
             when(cred.validFrom()).thenReturn(ZonedDateTime.now().minusMinutes(1).toString());
             when(cred.validUntil()).thenReturn(ZonedDateTime.now().plusMinutes(5).toString());
@@ -1280,10 +1200,10 @@ class VpServiceImplTest {
             when(vcSignedJWT.serialize()).thenReturn(vcJwt);
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
 
-            assertThrows(InvalidScopeException.class, () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
+            doThrow(new InvalidScopeException("Cannot extract holder identity from VP"))
+                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
 
-            verifyNoInteractions(didService);
-            verify(jwtService, never()).verifyJWTWithECKey(anyString(), any());
+            assertThrows(InvalidScopeException.class, () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
         }
     }
 

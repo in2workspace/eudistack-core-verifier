@@ -13,27 +13,22 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 /**
- * Resolves JSON Schemas from local resources using the naming pattern:
- * {@code {CredentialType}.{credential_format}.{version}.json}
- * where {@code credential_format} uses underscores instead of + or -
- * (e.g. {@code jwt_vc_json}, {@code dc_sd_jwt}).
+ * Resolves JSON Schemas from local resources.
  * <p>
- * Resolution priority: external directory (if configured) → classpath fallback.
- * SD-JWT credentials are identified by the presence of a {@code vct} claim.
+ * Since credential types now use the credential_configuration_id as their type/vct value
+ * (e.g., "learcredential.employee.w3c.4"), the schema file name is simply {@code {configId}.json}.
+ * <p>
+ * Resolution priority: external directory (if configured) → legacy subdirectory → classpath fallback.
  */
 @Slf4j
 public class LocalSchemaResolver implements CredentialSchemaResolver {
 
     private static final String CLASSPATH_SCHEMA_BASE = "schemas/";
-    private static final String FORMAT_JWT_VC_JSON             = "jwt_vc_json";
-    private static final String FORMAT_DC_SD_JWT               = "dc_sd_jwt";
-    private static final String TYPE_LEAR_CREDENTIAL_EMPLOYEE  = "LEARCredentialEmployee";
-    private static final String TYPE_LEAR_CREDENTIAL_MACHINE   = "LEARCredentialMachine";
 
     private final Map<String, JsonSchema> cache = new ConcurrentHashMap<>();
     private final String externalSchemasDir;
@@ -46,33 +41,6 @@ public class LocalSchemaResolver implements CredentialSchemaResolver {
         this.externalSchemasDir = externalSchemasDir;
     }
 
-    private record CredentialTypeVersion(String type, String format, String version) {}
-
-    // Context URL → (credentialType, format, version) for W3C VC credentials
-    private static final Map<String, CredentialTypeVersion> CONTEXT_MAP = Map.of(
-            "https://trust-framework.dome-marketplace.eu/credentials/learcredentialemployee/v1",
-            new CredentialTypeVersion(TYPE_LEAR_CREDENTIAL_EMPLOYEE, FORMAT_JWT_VC_JSON, "v1"),
-
-            "https://www.dome-marketplace.eu/2025/credentials/learcredentialemployee/v2",
-            new CredentialTypeVersion(TYPE_LEAR_CREDENTIAL_EMPLOYEE, FORMAT_JWT_VC_JSON, "v2"),
-
-            "https://credentials.eudistack.eu/.well-known/credentials/lear_credential_employee/w3c/v3",
-            new CredentialTypeVersion(TYPE_LEAR_CREDENTIAL_EMPLOYEE, FORMAT_JWT_VC_JSON, "v3"),
-
-            "https://credentials.eudistack.eu/.well-known/credentials/lear_credential_machine/w3c/v2",
-            new CredentialTypeVersion(TYPE_LEAR_CREDENTIAL_MACHINE, FORMAT_JWT_VC_JSON, "v2")
-    );
-
-    // VCT URI → (credentialType, format, version) for SD-JWT VC credentials
-    private static final Map<String, CredentialTypeVersion> VCT_MAP = Map.of(
-            "eu.europa.ec.eudi.lce.1", new CredentialTypeVersion(TYPE_LEAR_CREDENTIAL_EMPLOYEE, FORMAT_DC_SD_JWT, "v3"),
-            "eu.europa.ec.eudi.lcm.1", new CredentialTypeVersion(TYPE_LEAR_CREDENTIAL_MACHINE,  FORMAT_DC_SD_JWT, "v2")
-    );
-
-    // Default for LEARCredentialMachine without any recognised context (legacy)
-    private static final CredentialTypeVersion MACHINE_V1_DEFAULT =
-            new CredentialTypeVersion(TYPE_LEAR_CREDENTIAL_MACHINE, FORMAT_JWT_VC_JSON, "v1");
-
     @Override
     public int order() {
         return 20;
@@ -80,47 +48,26 @@ public class LocalSchemaResolver implements CredentialSchemaResolver {
 
     @Override
     public Optional<JsonSchema> resolve(String credentialType, List<String> context, JsonNode credential) {
-        CredentialTypeVersion tv = resolveTypeVersion(credentialType, context, credential);
-        if (tv == null) {
-            log.debug("No local schema mapping found for type={}, context={}", credentialType, context);
-            return Optional.empty();
+        // For SD-JWT, the vct IS the config ID; for W3C, the type IS the config ID
+        String configId = credentialType;
+        if (credential != null && credential.has("vct")) {
+            configId = credential.get("vct").asText();
         }
 
-        String schemaFileName = tv.type() + "." + tv.format() + "." + tv.version() + ".json";
+        String schemaFileName = configId + ".json";
+        log.debug("Resolving schema for configId={}, file={}", configId, schemaFileName);
+
         return Optional.ofNullable(cache.computeIfAbsent(schemaFileName, this::loadSchema));
     }
 
     public static String resolveVersion(String credentialType, List<String> context) {
-        CredentialTypeVersion tv = resolveTypeVersion(credentialType, context, null);
-        return tv != null ? tv.version() : null;
+        // No longer needed — the config ID encodes the version
+        return null;
     }
 
     public static String resolveTypeName(String credentialType, List<String> context) {
-        CredentialTypeVersion tv = resolveTypeVersion(credentialType, context, null);
-        return tv != null ? tv.type() : credentialType;
-    }
-
-    private static CredentialTypeVersion resolveTypeVersion(String credentialType, List<String> context, JsonNode credential) {
-        // SD-JWT: detected by presence of 'vct' claim (no @context in SD-JWT payloads)
-        if (credential != null && credential.has("vct")) {
-            CredentialTypeVersion tv = VCT_MAP.get(credential.get("vct").asText());
-            if (tv != null) return tv;
-        }
-
-        // W3C VC: resolve from @context URLs
-        if (context != null) {
-            for (String ctx : context) {
-                CredentialTypeVersion tv = CONTEXT_MAP.get(ctx);
-                if (tv != null) return tv;
-            }
-        }
-
-        // Default: LEARCredentialMachine V1 (legacy credentials without recognised context)
-        if (TYPE_LEAR_CREDENTIAL_MACHINE.equals(credentialType)) {
-            return MACHINE_V1_DEFAULT;
-        }
-
-        return null;
+        // The credential type IS the config ID — return as-is
+        return credentialType;
     }
 
     private JsonSchema loadSchema(String schemaFileName) {

@@ -1,6 +1,6 @@
 trustedIssuers:
-  "did:elsi:VATES-12345678":
-    - credentialsType: "LEARCredentialEmployee"
-  "did:elsi:VATES-87654321":
-    - credentialsType: "LEARCredentialEmployee"
-    - credentialsType: "LEARCredentialMachine"
+  "VATES-12345678":
+    - credentialsType: "learcredential.employee.w3c.4"
+  "VATES-87654321":
+    - credentialsType: "learcredential.employee.w3c.4"
+    - credentialsType: "learcredential.machine.w3c.3"

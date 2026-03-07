@@ -16,13 +16,26 @@ public record BackendProperties(
         @NotBlank @URL String url,
         Identity identity,
         @NotNull @Valid List<TrustFramework> trustFrameworks,
-        LocalFiles localFiles
+        LocalFiles localFiles,
+        TokenExpiration tokenExpiration
 ) {
 
     public record Identity(
             String didKey,
             String privateKey,
             String certificate) {}
+
+    public record TokenExpiration(
+            long accessTokenSeconds,
+            long idTokenSeconds,
+            long refreshTokenSeconds
+    ) {
+        public TokenExpiration {
+            if (accessTokenSeconds <= 0) accessTokenSeconds = 900;
+            if (idTokenSeconds <= 0) idTokenSeconds = 60;
+            if (refreshTokenSeconds <= 0) refreshTokenSeconds = 43200;
+        }
+    }
 
     public record TrustFramework(
             @NotBlank String name,

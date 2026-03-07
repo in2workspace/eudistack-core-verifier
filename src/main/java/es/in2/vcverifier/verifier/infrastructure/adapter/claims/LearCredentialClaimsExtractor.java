@@ -7,20 +7,32 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Extracts claims from LEAR Credentials (Employee and Machine, all versions)
  * using JSON path navigation with coalesce for field name differences across versions.
  * <p>
- * Replaces the instanceof chain pattern in CustomAuthenticationProvider.
+ * Supports all credential_configuration_ids that follow the LEAR credential structure
+ * (mandate with mandatee, mandator, and power arrays).
  */
 @Slf4j
 public class LearCredentialClaimsExtractor implements ClaimsExtractor {
 
+    private static final Set<String> EMPLOYEE_CONFIG_IDS = Set.of(
+            "learcredential.employee.w3c.4",
+            "learcredential.employee.sd.1"
+    );
+
+    private static final Set<String> MACHINE_CONFIG_IDS = Set.of(
+            "learcredential.machine.w3c.3",
+            "learcredential.machine.sd.1"
+    );
+
     @Override
     public boolean supports(String credentialType) {
-        return "LEARCredentialEmployee".equals(credentialType)
-                || "LEARCredentialMachine".equals(credentialType);
+        return EMPLOYEE_CONFIG_IDS.contains(credentialType)
+                || MACHINE_CONFIG_IDS.contains(credentialType);
     }
 
     @Override
@@ -36,7 +48,7 @@ public class LearCredentialClaimsExtractor implements ClaimsExtractor {
 
         // Determine credential type for scope
         String credentialType = extractCredentialType(credential);
-        boolean isEmployee = "LEARCredentialEmployee".equals(credentialType);
+        boolean isEmployee = EMPLOYEE_CONFIG_IDS.contains(credentialType);
 
         String scope = isEmployee ? "openid learcredential" : "machine learcredential";
 
@@ -98,12 +110,14 @@ public class LearCredentialClaimsExtractor implements ClaimsExtractor {
     }
 
     private String resolveIssuerDid(JsonNode credential) {
-        // W3C VCDM: issuer as string or object with id
+        // W3C VCDM: issuer as string or object with organizationIdentifier
         JsonNode issuerNode = credential.path("issuer");
         if (issuerNode.isTextual()) {
             return issuerNode.asText();
         }
         if (issuerNode.isObject()) {
+            String orgId = issuerNode.path("organizationIdentifier").asText(null);
+            if (orgId != null) return orgId;
             return issuerNode.path("id").asText(null);
         }
         // SD-JWT VC: iss claim at top level
@@ -115,7 +129,7 @@ public class LearCredentialClaimsExtractor implements ClaimsExtractor {
     }
 
     private String extractCredentialType(JsonNode credential) {
-        // W3C VCDM: type array
+        // W3C VCDM: type array — returns the config ID directly
         JsonNode typeNode = credential.get("type");
         if (typeNode != null && typeNode.isArray()) {
             for (JsonNode t : typeNode) {
@@ -125,19 +139,10 @@ public class LearCredentialClaimsExtractor implements ClaimsExtractor {
                 }
             }
         }
-        // SD-JWT VC: vct claim
+        // SD-JWT VC: vct claim — returns the config ID directly
         JsonNode vctNode = credential.get("vct");
         if (vctNode != null && vctNode.isTextual()) {
-            String vct = vctNode.asText();
-            if (vct.contains("LEARCredentialEmployee") || vct.contains("lear_credential_employee")
-                    || vct.equals("eu.europa.ec.eudi.lce.1")) {
-                return "LEARCredentialEmployee";
-            }
-            if (vct.contains("LEARCredentialMachine") || vct.contains("lear_credential_machine")
-                    || vct.equals("eu.europa.ec.eudi.lcm.1")) {
-                return "LEARCredentialMachine";
-            }
-            return vct;
+            return vctNode.asText();
         }
         return "Unknown";
     }

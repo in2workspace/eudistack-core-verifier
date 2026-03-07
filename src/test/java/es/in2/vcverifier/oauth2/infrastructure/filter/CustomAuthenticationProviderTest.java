@@ -112,7 +112,7 @@ class CustomAuthenticationProviderTest {
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
-        verify(tokenGenerationWorkflow).execute(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true));
+        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true));
     }
 
     @Test
@@ -138,7 +138,7 @@ class CustomAuthenticationProviderTest {
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
-        verify(tokenGenerationWorkflow).execute(any(JsonNode.class), eq("https://verifier.example.com"), anyMap(), eq(false));
+        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://verifier.example.com"), anyMap(), eq(false));
     }
 
     @Test

@@ -8,7 +8,6 @@ import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidVPtokenException;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.LEARCredential;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,8 +17,8 @@ import java.security.interfaces.ECPublicKey;
 import java.util.Map;
 
 /**
- * Validates VP signature (PoP) and cryptographic binding between VP holder and VC subject.
- * Supports two resolution strategies: embedded JWK (preferred) and DID-based (legacy).
+ * Validates VP signature (PoP) and cryptographic binding between VP holder and VC subject
+ * via cnf.jwk thumbprint comparison (RFC 7638).
  */
 @Slf4j
 @Service
@@ -31,20 +30,16 @@ public class CryptographicBindingValidator {
 
     /**
      * Verifies the VP's signature and validates cryptographic binding between the VP signer
-     * and the VC subject.
+     * and the VC subject via cnf.jwk thumbprint (RFC 7638).
      *
      * @param verifiablePresentation the raw VP JWT string
      * @param vpJwt                  the parsed VP JWT
      * @param jwtCredential          the parsed VC JWT (first credential in the VP)
-     * @param learCredential         the mapped credential object
-     * @param vcSub                  the VC JWT 'sub' claim (normalized DID), may be null
      */
     public void validateVpSignatureAndBinding(
             String verifiablePresentation,
             SignedJWT vpJwt,
-            SignedJWT jwtCredential,
-            LEARCredential learCredential,
-            String vcSub) {
+            SignedJWT jwtCredential) {
 
         ECPublicKey vpSignerKey = null;
         String holderDid = null;
@@ -89,27 +84,15 @@ public class CryptographicBindingValidator {
             log.info("VP signature verified via DID resolution (legacy)");
         }
 
-        // Cryptographic binding — try cnf.jwk first, fall back to DID comparison
+        // Cryptographic binding via cnf.jwk (RFC 7800)
         ECKey vcCnfJwk = extractCnfJwkFromVc(jwtCredential);
-
-        if (vcCnfJwk != null && vpSignerKey != null) {
-            validateBindingByJwkThumbprint(vpSignerKey, vcCnfJwk);
-        } else {
-            if (holderDid == null) {
-                throw new InvalidScopeException("Credential has no cnf.jwk and VP has no DID — cannot validate binding");
-            }
-            String boundDidFromVc = extractBoundDidFromCredential(learCredential, vcSub);
-            if (boundDidFromVc == null || boundDidFromVc.isBlank()) {
-                throw new InvalidScopeException("Credential missing cryptographic binding (no cnf.jwk and no DID in credentialSubject.id/sub/mandatee.id)");
-            }
-            log.info("[BIND] VC bound DID resolved as {}", boundDidFromVc);
-            if (!holderDid.equals(boundDidFromVc)) {
-                throw new InvalidScopeException(
-                        "Cryptographic binding mismatch: VP holder DID (" + holderDid + ") != VC bound DID (" + boundDidFromVc + ")"
-                );
-            }
-            log.info("Cryptographic binding validated via DID comparison (legacy)");
+        if (vcCnfJwk == null) {
+            throw new InvalidScopeException("Credential missing cnf.jwk — cannot validate cryptographic binding");
         }
+        if (vpSignerKey == null) {
+            throw new InvalidScopeException("Cannot extract VP signer key — cannot validate cryptographic binding");
+        }
+        validateBindingByJwkThumbprint(vpSignerKey, vcCnfJwk);
     }
 
     String normalizeDid(String did) {
@@ -174,32 +157,4 @@ public class CryptographicBindingValidator {
         }
     }
 
-    private String extractBoundDidFromCredential(LEARCredential cred, String vcSub) {
-        // 1) credentialSubject.id (preferred)
-        String csId = safeGetCredentialSubjectId(cred);
-        csId = normalizeDid(csId);
-        if (csId != null && !csId.isBlank()) {
-            if (vcSub != null && vcSub.startsWith("did:") && !csId.equals(vcSub)) {
-                log.warn("[BIND] VC mismatch: credentialSubject.id={} != vcSub={}", csId, vcSub);
-            }
-            return csId;
-        }
-
-        // 2) VC JWT sub
-        if (vcSub != null && vcSub.startsWith("did:")) return vcSub;
-
-        // 3) LEGACY: mandatee.id
-        String mandateeId = normalizeDid(cred.mandateeId());
-        if (mandateeId != null && !mandateeId.isBlank()) return mandateeId;
-
-        return null;
-    }
-
-    private String safeGetCredentialSubjectId(LEARCredential cred) {
-        try {
-            return cred.credentialSubjectId();
-        } catch (Exception ignore) {
-            return null;
-        }
-    }
 }

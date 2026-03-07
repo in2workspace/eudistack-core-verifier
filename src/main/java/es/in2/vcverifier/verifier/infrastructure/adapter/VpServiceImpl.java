@@ -45,8 +45,6 @@ public class VpServiceImpl implements VpService {
 
         // Step 1: Extract the first VC from the VP
         SignedJWT jwtCredential = extractFirstVerifiableCredential(verifiablePresentation);
-        String vcSub = extractVcSub(jwtCredential);
-        log.info("[BIND] VC JWT sub={}", vcSub);
 
         Payload payload = jwtService.extractPayloadFromSignedJWT(jwtCredential);
 
@@ -77,32 +75,32 @@ public class VpServiceImpl implements VpService {
             log.debug("No CredentialStatus block found; skipping revocation check for credential {}", learCredential.id());
         }
 
-        // Step 5: Validate issuer
-        String credentialIssuerDid = learCredential.issuer().getId();
+        // Step 5: Extract issuer identifier from JWT iss claim
+        String credentialIssuer = extractIssFromJwt(jwtCredential);
 
         // Step 6: Validate credential types against issuer capabilities
         List<String> credentialTypes = learCredential.type();
-        List<IssuerCredentialsCapabilities> issuerCapabilitiesList = trustFrameworkService.getTrustedIssuerListData(credentialIssuerDid);
+        List<IssuerCredentialsCapabilities> issuerCapabilitiesList = trustFrameworkService.getTrustedIssuerListData(credentialIssuer);
         validateCredentialTypeWithIssuerCapabilities(issuerCapabilitiesList, credentialTypes);
-        log.info("Issuer DID {} is a trusted participant", credentialIssuerDid);
+        log.info("Issuer {} is a trusted participant", credentialIssuer);
 
         // Step 7: Verify VC signature and certificate
         String issuerOrgId = learCredential.issuer().getOrganizationIdentifier();
         if (issuerOrgId == null || issuerOrgId.isBlank()) {
-            throw new IllegalArgumentException("Cannot determine organizationIdentifier from issuer: " + credentialIssuerDid);
+            issuerOrgId = credentialIssuer;
         }
         Map<String, Object> vcHeader = jwtCredential.getHeader().toJSONObject();
         certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, issuerOrgId);
 
         // Step 8: Validate mandator organization
         String mandatorOrganizationIdentifier = learCredential.mandatorOrganizationIdentifier();
-        trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + mandatorOrganizationIdentifier);
+        trustFrameworkService.getTrustedIssuerListData(mandatorOrganizationIdentifier);
         log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrganizationIdentifier);
 
         // Step 9: Validate VP signature + cryptographic binding
         SignedJWT vpJwt = parseVpJwt(verifiablePresentation);
         cryptographicBindingValidator.validateVpSignatureAndBinding(
-                verifiablePresentation, vpJwt, jwtCredential, learCredential, vcSub
+                verifiablePresentation, vpJwt, jwtCredential
         );
 
         log.info("Verifiable Presentation validation completed successfully");
@@ -145,13 +143,15 @@ public class VpServiceImpl implements VpService {
 
     // --- Private helpers ---
 
-    private String extractVcSub(SignedJWT jwtCredential) {
+    private String extractIssFromJwt(SignedJWT jwtCredential) {
         try {
-            String vcSub = jwtCredential.getJWTClaimsSet().getSubject();
-            return cryptographicBindingValidator.normalizeDid(vcSub);
-        } catch (Exception e) {
-            log.warn("[BIND] Cannot read VC 'sub' from VC JWT claims", e);
-            return null;
+            String iss = jwtCredential.getJWTClaimsSet().getIssuer();
+            if (iss == null || iss.isBlank()) {
+                throw new JWTClaimMissingException("The 'iss' claim is missing from the VC JWT");
+            }
+            return iss;
+        } catch (ParseException e) {
+            throw new JWTParsingException("Error extracting 'iss' claim from VC JWT");
         }
     }
 

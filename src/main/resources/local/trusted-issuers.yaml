@@ -1,19 +1,11 @@
 # Local Trusted Issuers configuration.
-# Use "*" as key to trust ALL issuers (development mode).
-# For production, list specific issuer DIDs with their capabilities.
-#
-# Examples:
-#   Trust all issuers:
-#     trustedIssuers:
-#       "*": []
-#
-#   Trust specific issuers:
-#     trustedIssuers:
-#       "did:elsi:VATES-12345678":
-#         - credentialsType: "LEARCredentialEmployee"
-#       "did:elsi:VATES-87654321":
-#         - credentialsType: "LEARCredentialEmployee"
-#         - credentialsType: "LEARCredentialMachine"
+# Each key is the issuer identifier (must match the "iss" claim in the VC).
+# Each issuer lists the credential types it is authorized to emit.
 
 trustedIssuers:
-  "*": []
+  "VATES-A15456585":
+    - credentialsType: "learcredential.employee.w3c.4"
+    - credentialsType: "learcredential.employee.sd.1"
+    - credentialsType: "learcredential.machine.w3c.3"
+    - credentialsType: "learcredential.machine.sd.1"
+    - credentialsType: "gx.labelcredential.w3c.1"

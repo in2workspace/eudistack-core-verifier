@@ -55,8 +55,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final RegisteredClientRepository registeredClientRepository;
     private final OAuth2AuthorizationService oAuth2AuthorizationService;
     private final SseEmitterStore sseEmitterStore;
-    private final CacheStore<String> cacheForNonceByState;
     private final BackendConfig backendConfig;
+    private final CacheStore<String> cacheForNonceByState;
     private final CryptoComponent cryptoComponent;
 
     @Override
@@ -129,7 +129,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         String codeChallengeMethod = (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD);
 
 
-        Instant expirationTime = issueTime.plus(Long.parseLong(ACCESS_TOKEN_EXPIRATION_TIME), ChronoUnit.valueOf(ACCESS_TOKEN_EXPIRATION_CHRONO_UNIT));
+        Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
         // Register the Oauth2Authorization because is needed for verifications
         OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
                 .id(registeredClient.getId())

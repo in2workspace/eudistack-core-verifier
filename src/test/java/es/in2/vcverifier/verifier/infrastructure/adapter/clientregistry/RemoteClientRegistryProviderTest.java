@@ -35,7 +35,7 @@ class RemoteClientRegistryProviderTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void loadClients_success() throws Exception {
+    void retrieveClients_success() throws Exception {
         String yamlBody = """
                 clients:
                   - clientId: "test-client"
@@ -53,7 +53,7 @@ class RemoteClientRegistryProviderTest {
         when(httpResponse.statusCode()).thenReturn(200);
         when(httpResponse.body()).thenReturn(yamlBody);
 
-        ExternalTrustedListYamlData result = provider.loadClients();
+        ExternalTrustedListYamlData result = provider.retrieveClients();
 
         assertThat(result).isNotNull();
         assertThat(result.clients()).hasSize(1);
@@ -62,24 +62,24 @@ class RemoteClientRegistryProviderTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void loadClients_non200_throwsRemoteFileFetchException() throws Exception {
+    void retrieveClients_non200_throwsRemoteFileFetchException() throws Exception {
         when(backendConfig.getClientsRepositoryUri()).thenReturn("https://remote.example.com/clients.yaml");
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
         when(httpResponse.statusCode()).thenReturn(500);
 
-        assertThatThrownBy(() -> provider.loadClients())
+        assertThatThrownBy(() -> provider.retrieveClients())
                 .isInstanceOf(RemoteFileFetchException.class)
                 .hasMessageContaining("500");
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void loadClients_ioException_throwsRemoteFileFetchException() throws Exception {
+    void retrieveClients_ioException_throwsRemoteFileFetchException() throws Exception {
         when(backendConfig.getClientsRepositoryUri()).thenReturn("https://remote.example.com/clients.yaml");
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
                 .thenThrow(new IOException("Connection timeout"));
 
-        assertThatThrownBy(() -> provider.loadClients())
+        assertThatThrownBy(() -> provider.retrieveClients())
                 .isInstanceOf(RemoteFileFetchException.class)
                 .hasMessageContaining("remote");
     }

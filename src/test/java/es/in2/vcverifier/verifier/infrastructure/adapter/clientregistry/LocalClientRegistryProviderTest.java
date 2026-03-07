@@ -33,10 +33,10 @@ class LocalClientRegistryProviderTest {
     }
 
     @Test
-    void loadClients_externalPathNotFound_fallsBackToClasspath() {
+    void retrieveClients_externalPathNotFound_fallsBackToClasspath() {
         LocalClientRegistryProvider provider = new LocalClientRegistryProvider("/nonexistent/path.yaml");
 
-        ExternalTrustedListYamlData data = provider.loadClients();
+        ExternalTrustedListYamlData data = provider.retrieveClients();
 
         assertNotNull(data);
         assertFalse(data.clients().isEmpty());

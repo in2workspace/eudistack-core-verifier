@@ -95,8 +95,8 @@ class AuthorizationResponseProcessorServiceImplTest {
                 registeredClientRepository,
                 oAuth2AuthorizationService,
                 sseEmitterStore,
-                cacheForNonceByState,
                 backendConfig,
+                cacheForNonceByState,
                 cryptoComponent
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");

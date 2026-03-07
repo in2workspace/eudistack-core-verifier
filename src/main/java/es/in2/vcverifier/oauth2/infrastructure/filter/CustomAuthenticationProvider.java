@@ -77,9 +77,9 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             if (additionalParameters.containsKey(OAuth2ParameterNames.AUDIENCE)) {
                 audience = additionalParameters.get(OAuth2ParameterNames.AUDIENCE).toString();
             } else {
-                // Fallback: check credential type via workflow
+                // Fallback: check credential type via workflow — machine credentials use verifier as audience
                 String credType = tokenGenerationWorkflow.extractCredentialType(credentialJson);
-                if ("LEARCredentialMachine".equals(credType)) {
+                if (credType.startsWith("learcredential.machine.")) {
                     audience = backendConfig.getUrl();
                 } else {
                     throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
@@ -237,8 +237,8 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         secureRandom.nextBytes(refreshTokenBytes);
         String refreshTokenValue = Base64.getUrlEncoder().withoutPadding().encodeToString(refreshTokenBytes);
         Instant refreshTokenExpirationTime = issueTime.plus(
-                Long.parseLong(ACCESS_TOKEN_EXPIRATION_TIME),
-                ChronoUnit.valueOf(ACCESS_TOKEN_EXPIRATION_CHRONO_UNIT)
+                backendConfig.getRefreshTokenExpirationSeconds(),
+                ChronoUnit.SECONDS
         );
         return new OAuth2RefreshToken(refreshTokenValue, issueTime, refreshTokenExpirationTime);
     }
