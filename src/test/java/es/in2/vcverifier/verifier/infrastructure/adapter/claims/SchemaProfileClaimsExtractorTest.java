@@ -49,7 +49,7 @@ class SchemaProfileClaimsExtractorTest {
                 "learcredential.employee.w3c.1",
                 "lear_credential_employee",
                 new TokenClaimsMapping(
-                        List.of("credentialSubject.id", "credentialSubject.mandate.mandatee.id"),
+                        List.of("credentialSubject.mandate.mandatee.email"),
                         Map.of(
                                 "given_name", new ClaimMapping.DirectPath("credentialSubject.mandate.mandatee.firstName"),
                                 "family_name", new ClaimMapping.DirectPath("credentialSubject.mandate.mandatee.lastName"),
@@ -73,7 +73,7 @@ class SchemaProfileClaimsExtractorTest {
                 "learcredential.machine.w3c.1",
                 "lear_credential_machine",
                 new TokenClaimsMapping(
-                        List.of("credentialSubject.id", "credentialSubject.mandate.mandatee.id"),
+                        List.of("credentialSubject.mandate.mandatee.ipAddress", "credentialSubject.mandate.mandatee.domain"),
                         Map.of(),
                         Map.of("tenant", new ClaimMapping.DirectPath("credentialSubject.mandate.mandator.organizationIdentifier")),
                         W3C_EMBED,
@@ -98,11 +98,11 @@ class SchemaProfileClaimsExtractorTest {
     @Test
     void extract_employee_allClaims() {
         var extractor = buildExtractor(employeeW3cProfile());
-        JsonNode vc = buildEmployeeCredential("sub-123", "John", "Doe", "john@example.com");
+        JsonNode vc = buildEmployeeCredential("John", "Doe", "john@example.com");
 
         ExtractedClaims claims = extractor.extract(vc);
 
-        assertEquals("sub-123", claims.subject());
+        assertEquals("john@example.com", claims.subject());
         assertEquals("openid learcredential", claims.scope());
         assertEquals("VATES-12345678", claims.accessTokenClaims().get("tenant"));
         assertEquals("John", claims.idTokenClaims().get("given_name"));
@@ -115,35 +115,34 @@ class SchemaProfileClaimsExtractorTest {
     @Test
     void extract_machine_noIdTokenClaims() {
         var extractor = buildExtractor(machineW3cProfile());
-        JsonNode vc = buildMachineCredential("machine-sub");
+        JsonNode vc = buildMachineCredential("192.168.1.100");
 
         ExtractedClaims claims = extractor.extract(vc);
 
-        assertEquals("machine-sub", claims.subject());
+        assertEquals("192.168.1.100", claims.subject());
         assertEquals("machine learcredential", claims.scope());
         assertEquals("VATES-12345678", claims.accessTokenClaims().get("tenant"));
         assertTrue(claims.idTokenClaims().isEmpty());
     }
 
     @Test
-    void extract_subjectFallsBackToMandateeId() {
+    void extract_subjectResolvesFromMandateeEmail() {
         var extractor = buildExtractor(employeeW3cProfile());
 
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
         type.add("learcredential.employee.w3c.1");
-        // No credentialSubject.id
         ObjectNode cs = vc.putObject("credentialSubject");
         ObjectNode mandate = cs.putObject("mandate");
         ObjectNode mandatee = mandate.putObject("mandatee");
-        mandatee.put("id", "fallback-sub");
+        mandatee.put("email", "test@example.com");
         mandatee.put("firstName", "Test");
         mandatee.put("lastName", "User");
         mandate.putObject("mandator").put("organizationIdentifier", "VATES-12345678");
 
         ExtractedClaims claims = extractor.extract(vc);
-        assertEquals("fallback-sub", claims.subject());
+        assertEquals("test@example.com", claims.subject());
     }
 
     @Test
@@ -155,9 +154,9 @@ class SchemaProfileClaimsExtractorTest {
         type.add("VerifiableCredential");
         type.add("learcredential.employee.w3c.1");
         ObjectNode cs = vc.putObject("credentialSubject");
-        cs.put("id", "sub-1");
         ObjectNode mandate = cs.putObject("mandate");
         ObjectNode mandatee = mandate.putObject("mandatee");
+        mandatee.put("email", "only@example.com");
         mandatee.put("firstName", "OnlyFirst");
         // no lastName
         mandate.putObject("mandator").put("organizationIdentifier", "VATES-12345678");
@@ -175,7 +174,6 @@ class SchemaProfileClaimsExtractorTest {
         type.add("VerifiableCredential");
         type.add("learcredential.employee.w3c.1");
         ObjectNode cs = vc.putObject("credentialSubject");
-        cs.put("id", "sub-1");
         ObjectNode mandate = cs.putObject("mandate");
         mandate.putObject("mandatee");
         // no email, no names
@@ -192,7 +190,7 @@ class SchemaProfileClaimsExtractorTest {
     @SuppressWarnings("unchecked")
     void extract_employee_accessTokenEmbeds() {
         var extractor = buildExtractor(employeeW3cProfile());
-        JsonNode vc = buildEmployeeCredential("sub-123", "John", "Doe", "john@example.com");
+        JsonNode vc = buildEmployeeCredential("John", "Doe", "john@example.com");
 
         ExtractedClaims claims = extractor.extract(vc);
 
@@ -212,7 +210,7 @@ class SchemaProfileClaimsExtractorTest {
     @SuppressWarnings("unchecked")
     void extract_employee_idTokenEmbeds() {
         var extractor = buildExtractor(employeeW3cProfile());
-        JsonNode vc = buildEmployeeCredential("sub-123", "John", "Doe", "john@example.com");
+        JsonNode vc = buildEmployeeCredential("John", "Doe", "john@example.com");
 
         ExtractedClaims claims = extractor.extract(vc);
 
@@ -237,14 +235,13 @@ class SchemaProfileClaimsExtractorTest {
 
     // --- Helpers ---
 
-    private JsonNode buildEmployeeCredential(String subjectId, String firstName, String lastName, String email) {
+    private JsonNode buildEmployeeCredential(String firstName, String lastName, String email) {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
         type.add("learcredential.employee.w3c.1");
 
         ObjectNode cs = vc.putObject("credentialSubject");
-        cs.put("id", subjectId);
         ObjectNode mandate = cs.putObject("mandate");
         ObjectNode mandatee = mandate.putObject("mandatee");
         mandatee.put("firstName", firstName);
@@ -261,16 +258,16 @@ class SchemaProfileClaimsExtractorTest {
         return vc;
     }
 
-    private JsonNode buildMachineCredential(String subjectId) {
+    private JsonNode buildMachineCredential(String ipAddress) {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
         type.add("learcredential.machine.w3c.1");
 
         ObjectNode cs = vc.putObject("credentialSubject");
-        cs.put("id", subjectId);
         ObjectNode mandate = cs.putObject("mandate");
-        mandate.putObject("mandatee");
+        ObjectNode mandatee = mandate.putObject("mandatee");
+        mandatee.put("ipAddress", ipAddress);
         mandate.putObject("mandator").put("organizationIdentifier", "VATES-12345678");
 
         return vc;
