@@ -6,9 +6,7 @@ import java.util.Map;
 
 @Builder
 public record ExtractedClaims(
-        String subjectDid,
-        String mandatorOrgId,
-        String issuerDid,
+        String subject,
         Map<String, Object> idTokenClaims,
         Map<String, Object> accessTokenClaims,
         String scope

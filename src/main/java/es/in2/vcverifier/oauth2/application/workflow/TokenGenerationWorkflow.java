@@ -65,7 +65,7 @@ public class TokenGenerationWorkflow {
 
         String credentialType = extractCredentialType(credentialJson);
         ExtractedClaims extractedClaims = extractClaims(credentialType, credentialJson);
-        String subject = resolveSubjectDid(extractedClaims, credentialJson);
+        String subject = extractedClaims.subject();
 
         String accessTokenJwt = buildAccessToken(credentialJson, extractedClaims, issueTime, expirationTime, subject, audience);
 
@@ -99,27 +99,7 @@ public class TokenGenerationWorkflow {
                 null));
     }
 
-    public String resolveSubjectDid(ExtractedClaims extractedClaims, JsonNode credentialJson) {
-        // Priority 1: from ClaimsExtractor
-        if (extractedClaims.subjectDid() != null && !extractedClaims.subjectDid().isBlank()) {
-            log.info("Subject DID resolved via ClaimsExtractor");
-            return extractedClaims.subjectDid();
-        }
-        // Priority 2: credentialSubject.id from JSON
-        String csId = credentialJson.at("/credentialSubject/id").asText(null);
-        if (csId != null && !csId.isBlank()) {
-            log.info("Subject DID resolved via credentialSubject.id JSON path");
-            return csId;
-        }
-        // Priority 3: mandatee.id from JSON (legacy)
-        String mandateeId = credentialJson.at("/credentialSubject/mandate/mandatee/id").asText(null);
-        if (mandateeId != null && !mandateeId.isBlank()) {
-            log.info("Subject DID resolved via mandatee.id JSON path");
-            return mandateeId;
-        }
-        log.error("[GRANT] Cannot resolve subject DID");
-        throw new IllegalStateException("Missing cryptographic binding DID in credential");
-    }
+
 
     private ExtractedClaims extractClaims(String credentialType, JsonNode credentialJson) {
         for (ClaimsExtractor extractor : claimsExtractors) {

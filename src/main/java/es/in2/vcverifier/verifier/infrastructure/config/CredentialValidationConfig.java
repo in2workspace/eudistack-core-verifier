@@ -4,7 +4,8 @@ import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.verifier.domain.service.*;
 import es.in2.vcverifier.shared.crypto.*;
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.JsonSchemaCredentialValidator;
-import es.in2.vcverifier.verifier.infrastructure.adapter.claims.LearCredentialClaimsExtractor;
+import es.in2.vcverifier.verifier.infrastructure.adapter.claims.SchemaProfileClaimsExtractor;
+import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaProfileRegistry;
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaResolver;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -30,9 +31,15 @@ public class CredentialValidationConfig {
     }
 
     @Bean
-    public ClaimsExtractor learCredentialClaimsExtractor() {
-        log.info("Registering LEAR Credential Claims Extractor");
-        return new LearCredentialClaimsExtractor();
+    public SchemaProfileRegistry schemaProfileRegistry(BackendConfig backendConfig) {
+        log.info("Registering Schema Profile Registry");
+        return new LocalSchemaProfileRegistry(backendConfig.getLocalSchemasDir());
+    }
+
+    @Bean
+    public ClaimsExtractor schemaProfileClaimsExtractor(SchemaProfileRegistry schemaProfileRegistry) {
+        log.info("Registering Schema Profile Claims Extractor");
+        return new SchemaProfileClaimsExtractor(schemaProfileRegistry);
     }
 
     @Bean

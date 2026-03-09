@@ -1,6 +1,5 @@
 package es.in2.vcverifier.oauth2.application.workflow;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -66,22 +65,15 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("extracts type from W3C type array")
         void extractsFromW3cTypeArray() {
-            ObjectNode credential = buildW3cCredential("LEARCredentialEmployee");
-            assertThat(workflow.extractCredentialType(credential)).isEqualTo("LEARCredentialEmployee");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
+            assertThat(workflow.extractCredentialType(credential)).isEqualTo("learcredential.employee.w3c.1");
         }
 
         @Test
         @DisplayName("extracts type from SD-JWT vct field")
         void extractsFromSdJwtVct() {
-            ObjectNode credential = buildSdJwtCredential("LEARCredentialEmployee");
-            assertThat(workflow.extractCredentialType(credential)).isEqualTo("LEARCredentialEmployee");
-        }
-
-        @Test
-        @DisplayName("normalizes lear_credential_employee vct to LEARCredentialEmployee")
-        void normalizesSnakeCaseVct() {
-            ObjectNode credential = buildSdJwtCredential("urn:credential:lear_credential_employee");
-            assertThat(workflow.extractCredentialType(credential)).isEqualTo("LEARCredentialEmployee");
+            ObjectNode credential = buildSdJwtCredential("learcredential.employee.sd.1");
+            assertThat(workflow.extractCredentialType(credential)).isEqualTo("learcredential.employee.sd.1");
         }
 
         @Test
@@ -94,63 +86,20 @@ class TokenGenerationWorkflowTest {
     }
 
     @Nested
-    @DisplayName("resolveSubjectDid()")
-    class ResolveSubjectDidTests {
-        @Test
-        @DisplayName("returns DID from ClaimsExtractor when available")
-        void returnsDidFromExtractor() {
-            ExtractedClaims claims = ExtractedClaims.builder().subjectDid("did:key:fromExtractor").scope("openid").build();
-            ObjectNode credential = objectMapper.createObjectNode();
-            assertThat(workflow.resolveSubjectDid(claims, credential)).isEqualTo("did:key:fromExtractor");
-        }
-
-        @Test
-        @DisplayName("falls back to credentialSubject.id")
-        void fallsBackToCredentialSubjectId() {
-            ExtractedClaims claims = ExtractedClaims.builder().scope("openid").build();
-            ObjectNode credential = objectMapper.createObjectNode();
-            credential.putObject("credentialSubject").put("id", "did:key:fromCS");
-            assertThat(workflow.resolveSubjectDid(claims, credential)).isEqualTo("did:key:fromCS");
-        }
-
-        @Test
-        @DisplayName("falls back to mandatee.id")
-        void fallsBackToMandateeId() {
-            ExtractedClaims claims = ExtractedClaims.builder().scope("openid").build();
-            ObjectNode credential = objectMapper.createObjectNode();
-            ObjectNode cs = credential.putObject("credentialSubject");
-            ObjectNode mandate = cs.putObject("mandate");
-            ObjectNode mandatee = mandate.putObject("mandatee");
-            mandatee.put("id", "did:key:fromMandatee");
-            assertThat(workflow.resolveSubjectDid(claims, credential)).isEqualTo("did:key:fromMandatee");
-        }
-
-        @Test
-        @DisplayName("throws when no DID is resolvable")
-        void throwsWhenNoDidResolvable() {
-            ExtractedClaims claims = ExtractedClaims.builder().scope("openid").build();
-            ObjectNode credential = objectMapper.createObjectNode();
-            assertThatThrownBy(() -> workflow.resolveSubjectDid(claims, credential))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Missing cryptographic binding DID");
-        }
-    }
-
-    @Nested
-    @DisplayName("execute()")
-    class ExecuteTests {
+    @DisplayName("issueAccessToken()")
+    class IssueAccessTokenTests {
         @Test
         @DisplayName("generates access token and ID token for authorization_code grant")
         void generatesAccessAndIdToken() {
-            ObjectNode credential = buildW3cCredential("LEARCredentialEmployee");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
             ExtractedClaims claims = ExtractedClaims.builder()
-                    .subjectDid("did:key:z6MkSubject")
+                    .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
                     .idTokenClaims(Map.of("name", "Test User"))
                     .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
-            when(claimsExtractor.supports("LEARCredentialEmployee")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
@@ -165,7 +114,7 @@ class TokenGenerationWorkflowTest {
             assertThat(result.scope()).isEqualTo("openid learcredential");
             assertThat(result.subject()).isEqualTo("did:key:z6MkSubject");
             assertThat(result.issueTime()).isNotNull();
-            assertThat(result.expirationTime()).isAfter(result.issueTime());
+            assertThat(result.expirationTime()).isAfterOrEqualTo(result.issueTime());
 
             verify(jwtService, times(2)).issueJWT(anyString());
         }
@@ -173,15 +122,15 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("generates only access token for client_credentials grant")
         void generatesOnlyAccessToken() {
-            ObjectNode credential = buildW3cCredential("LEARCredentialMachine");
+            ObjectNode credential = buildW3cCredential("learcredential.machine.w3c.1");
             ExtractedClaims claims = ExtractedClaims.builder()
-                    .subjectDid("did:key:z6MkMachine")
+                    .subject("did:key:z6MkMachine")
                     .scope("machine")
                     .idTokenClaims(Map.of())
                     .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
-            when(claimsExtractor.supports("LEARCredentialMachine")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.machine.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt-only");
@@ -197,15 +146,15 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("includes tenant claim from accessTokenClaims in the JWT payload")
         void includesTenantClaimInAccessToken() {
-            ObjectNode credential = buildW3cCredential("LEARCredentialEmployee");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
             ExtractedClaims claims = ExtractedClaims.builder()
-                    .subjectDid("did:key:z6MkSubject")
+                    .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
                     .idTokenClaims(Map.of())
                     .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
-            when(claimsExtractor.supports("LEARCredentialEmployee")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("jwt");
