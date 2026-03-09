@@ -1,6 +1,5 @@
 package es.in2.vcverifier.oauth2.application.workflow;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -116,8 +115,7 @@ public class TokenGenerationWorkflow {
     private String buildAccessToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                      Instant issueTime, Instant expirationTime,
                                      String subject, String audience) {
-        log.info("Generating access token with verifiableCredential");
-        Map<String, Object> credentialData = objectMapper.convertValue(credentialJson, new TypeReference<>() {});
+        log.info("Generating access token for credential_type: {}", extractCredentialType(credentialJson));
 
         JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
                 .issuer(backendConfig.getUrl())
@@ -127,10 +125,14 @@ public class TokenGenerationWorkflow {
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
                 .claim(OAuth2ParameterNames.SCOPE, extractedClaims.scope())
-                .claim("vc", credentialData);
+                .claim("credential_type", extractCredentialType(credentialJson));
 
         if (extractedClaims.accessTokenClaims() != null) {
             extractedClaims.accessTokenClaims().forEach(payloadBuilder::claim);
+        }
+
+        if (extractedClaims.accessTokenEmbeds() != null) {
+            extractedClaims.accessTokenEmbeds().forEach(payloadBuilder::claim);
         }
 
         JWTClaimsSet payload = payloadBuilder.build();
@@ -160,10 +162,15 @@ public class TokenGenerationWorkflow {
                 .expirationTime(Date.from(expirationTime))
                 .claim("auth_time", Date.from(issueTime))
                 .claim("acr", "0")
+                .claim("credential_type", extractCredentialType(credentialJson))
                 .claim("vc_json", verifiableCredentialJson);
 
         if (additionalParameters.containsKey(OAuth2ParameterNames.SCOPE)) {
             extractedClaims.idTokenClaims().forEach(idTokenClaimsBuilder::claim);
+        }
+
+        if (extractedClaims.idTokenEmbeds() != null) {
+            extractedClaims.idTokenEmbeds().forEach(idTokenClaimsBuilder::claim);
         }
 
         if (additionalParameters.containsKey(NONCE)) {

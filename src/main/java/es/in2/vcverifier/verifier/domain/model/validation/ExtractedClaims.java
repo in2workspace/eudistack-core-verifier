@@ -8,6 +8,8 @@ import java.util.Map;
 public record ExtractedClaims(
         String subject,
         Map<String, Object> idTokenClaims,
+        Map<String, Object> idTokenEmbeds,
         Map<String, Object> accessTokenClaims,
+        Map<String, Object> accessTokenEmbeds,
         String scope
 ) {}

@@ -37,9 +37,9 @@ public class CredentialValidationConfig {
     }
 
     @Bean
-    public ClaimsExtractor schemaProfileClaimsExtractor(SchemaProfileRegistry schemaProfileRegistry) {
+    public ClaimsExtractor schemaProfileClaimsExtractor(SchemaProfileRegistry schemaProfileRegistry, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         log.info("Registering Schema Profile Claims Extractor");
-        return new SchemaProfileClaimsExtractor(schemaProfileRegistry);
+        return new SchemaProfileClaimsExtractor(schemaProfileRegistry, objectMapper);
     }
 
     @Bean

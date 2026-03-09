@@ -12,6 +12,8 @@ public record SchemaProfile(
             List<String> subjectPaths,
             Map<String, ClaimMapping> idTokenClaims,
             Map<String, ClaimMapping> accessTokenClaims,
+            Map<String, String> idTokenEmbed,
+            Map<String, String> accessTokenEmbed,
             String scope
     ) {
         public String effectiveScope(String fallbackScope) {

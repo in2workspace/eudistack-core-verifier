@@ -116,9 +116,11 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
         List<String> subjectPaths = parseStringList(node.get("subject_paths"));
         Map<String, ClaimMapping> idTokenClaims = parseClaimMappings(node.get("id_token"));
         Map<String, ClaimMapping> accessTokenClaims = parseClaimMappings(node.get("access_token"));
+        Map<String, String> idTokenEmbed = parseStringMap(node.get("id_token_embed"));
+        Map<String, String> accessTokenEmbed = parseStringMap(node.get("access_token_embed"));
         String scope = node.has("scope") ? node.get("scope").asText() : null;
 
-        return new TokenClaimsMapping(subjectPaths, idTokenClaims, accessTokenClaims, scope);
+        return new TokenClaimsMapping(subjectPaths, idTokenClaims, accessTokenClaims, idTokenEmbed, accessTokenEmbed, scope);
     }
 
     private Map<String, ClaimMapping> parseClaimMappings(JsonNode node) {
@@ -165,6 +167,13 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             };
         }
         return null;
+    }
+
+    private Map<String, String> parseStringMap(JsonNode node) {
+        if (node == null || !node.isObject()) return Map.of();
+        Map<String, String> map = new LinkedHashMap<>();
+        node.fields().forEachRemaining(entry -> map.put(entry.getKey(), entry.getValue().asText()));
+        return Collections.unmodifiableMap(map);
     }
 
     private List<String> parseStringList(JsonNode node) {

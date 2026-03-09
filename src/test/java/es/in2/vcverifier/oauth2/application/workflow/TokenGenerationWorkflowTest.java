@@ -144,14 +144,15 @@ class TokenGenerationWorkflowTest {
         }
 
         @Test
-        @DisplayName("includes tenant claim from accessTokenClaims in the JWT payload")
-        void includesTenantClaimInAccessToken() {
+        @DisplayName("includes credential_type, tenant and embeds in the JWT payload")
+        void includesCredentialTypeAndEmbedsInAccessToken() {
             ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
                     .idTokenClaims(Map.of())
                     .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
+                    .accessTokenEmbeds(Map.of("mandatee", Map.of("firstName", "John")))
                     .build();
 
             when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
@@ -163,7 +164,49 @@ class TokenGenerationWorkflowTest {
 
             ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
             verify(jwtService).issueJWT(captor.capture());
-            assertThat(captor.getValue()).contains("\"tenant\":\"VATES-B12345678\"");
+            String payload = captor.getValue();
+            assertThat(payload).contains("\"credential_type\":\"learcredential.employee.w3c.1\"");
+            assertThat(payload).contains("\"tenant\":\"VATES-B12345678\"");
+            assertThat(payload).contains("\"mandatee\":");
+            assertThat(payload).doesNotContain("\"vc\":");
+        }
+
+        @Test
+        @DisplayName("includes credential_type and embeds in the ID token payload")
+        void includesCredentialTypeAndEmbedsInIdToken() {
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
+            ExtractedClaims claims = ExtractedClaims.builder()
+                    .subject("did:key:z6MkSubject")
+                    .scope("openid learcredential")
+                    .idTokenClaims(Map.of("name", "John Doe"))
+                    .idTokenEmbeds(Map.of(
+                            "mandatee", Map.of("firstName", "John", "lastName", "Doe"),
+                            "mandator", Map.of("organizationIdentifier", "VATES-B12345678"),
+                            "power", List.of(Map.of("function", "Onboarding", "action", "Execute"))
+                    ))
+                    .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
+                    .accessTokenEmbeds(Map.of("mandatee", Map.of("firstName", "John")))
+                    .build();
+
+            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
+            when(claimsExtractor.extract(credential)).thenReturn(claims);
+            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
+
+            Map<String, Object> additionalParams = Map.of(
+                    OAuth2ParameterNames.SCOPE, "openid learcredential"
+            );
+            workflow.issueAccessToken(credential, "did:key:client", additionalParams, true);
+
+            ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+            verify(jwtService, times(2)).issueJWT(captor.capture());
+            // Second call is the ID token
+            String idTokenPayload = captor.getAllValues().get(1);
+            assertThat(idTokenPayload).contains("\"credential_type\":\"learcredential.employee.w3c.1\"");
+            assertThat(idTokenPayload).contains("\"mandatee\":");
+            assertThat(idTokenPayload).contains("\"mandator\":");
+            assertThat(idTokenPayload).contains("\"power\":");
+            assertThat(idTokenPayload).contains("\"name\":\"John Doe\"");
         }
 
         @Test

@@ -1,6 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter.claims;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -34,8 +35,14 @@ class SchemaProfileClaimsExtractorTest {
                 return map.containsKey(id);
             }
         };
-        return new SchemaProfileClaimsExtractor(registry);
+        return new SchemaProfileClaimsExtractor(registry, new ObjectMapper());
     }
+
+    private static final Map<String, String> W3C_EMBED = Map.of(
+            "mandatee", "credentialSubject.mandate.mandatee",
+            "mandator", "credentialSubject.mandate.mandator",
+            "power", "credentialSubject.mandate.power"
+    );
 
     private SchemaProfile employeeW3cProfile() {
         return new SchemaProfile(
@@ -54,6 +61,8 @@ class SchemaProfileClaimsExtractorTest {
                                 "email_verified", new ClaimMapping.Constant(true)
                         ),
                         Map.of("tenant", new ClaimMapping.DirectPath("credentialSubject.mandate.mandator.organizationIdentifier")),
+                        W3C_EMBED,
+                        W3C_EMBED,
                         "openid learcredential"
                 )
         );
@@ -67,6 +76,8 @@ class SchemaProfileClaimsExtractorTest {
                         List.of("credentialSubject.id", "credentialSubject.mandate.mandatee.id"),
                         Map.of(),
                         Map.of("tenant", new ClaimMapping.DirectPath("credentialSubject.mandate.mandator.organizationIdentifier")),
+                        W3C_EMBED,
+                        W3C_EMBED,
                         "machine learcredential"
                 )
         );
@@ -177,6 +188,53 @@ class SchemaProfileClaimsExtractorTest {
         assertEquals(true, claims.idTokenClaims().get("email_verified"));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void extract_employee_accessTokenEmbeds() {
+        var extractor = buildExtractor(employeeW3cProfile());
+        JsonNode vc = buildEmployeeCredential("sub-123", "John", "Doe", "john@example.com");
+
+        ExtractedClaims claims = extractor.extract(vc);
+
+        assertNotNull(claims.accessTokenEmbeds());
+        assertNotNull(claims.accessTokenEmbeds().get("mandatee"));
+        assertNotNull(claims.accessTokenEmbeds().get("mandator"));
+
+        Map<String, Object> mandatee = (Map<String, Object>) claims.accessTokenEmbeds().get("mandatee");
+        assertEquals("John", mandatee.get("firstName"));
+        assertEquals("Doe", mandatee.get("lastName"));
+
+        Map<String, Object> mandator = (Map<String, Object>) claims.accessTokenEmbeds().get("mandator");
+        assertEquals("VATES-12345678", mandator.get("organizationIdentifier"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void extract_employee_idTokenEmbeds() {
+        var extractor = buildExtractor(employeeW3cProfile());
+        JsonNode vc = buildEmployeeCredential("sub-123", "John", "Doe", "john@example.com");
+
+        ExtractedClaims claims = extractor.extract(vc);
+
+        assertNotNull(claims.idTokenEmbeds());
+        assertNotNull(claims.idTokenEmbeds().get("mandatee"));
+        assertNotNull(claims.idTokenEmbeds().get("mandator"));
+        assertNotNull(claims.idTokenEmbeds().get("power"));
+
+        Map<String, Object> mandatee = (Map<String, Object>) claims.idTokenEmbeds().get("mandatee");
+        assertEquals("John", mandatee.get("firstName"));
+        assertEquals("Doe", mandatee.get("lastName"));
+        assertEquals("john@example.com", mandatee.get("email"));
+
+        Map<String, Object> mandator = (Map<String, Object>) claims.idTokenEmbeds().get("mandator");
+        assertEquals("VATES-12345678", mandator.get("organizationIdentifier"));
+
+        List<Map<String, Object>> powers = (List<Map<String, Object>>) claims.idTokenEmbeds().get("power");
+        assertEquals(1, powers.size());
+        assertEquals("Onboarding", powers.get(0).get("function"));
+        assertEquals("Execute", powers.get(0).get("action"));
+    }
+
     // --- Helpers ---
 
     private JsonNode buildEmployeeCredential(String subjectId, String firstName, String lastName, String email) {
@@ -192,7 +250,13 @@ class SchemaProfileClaimsExtractorTest {
         mandatee.put("firstName", firstName);
         mandatee.put("lastName", lastName);
         mandatee.put("email", email);
-        mandate.putObject("mandator").put("organizationIdentifier", "VATES-12345678");
+        ObjectNode mandator = mandate.putObject("mandator");
+        mandator.put("organizationIdentifier", "VATES-12345678");
+        ArrayNode power = mandate.putArray("power");
+        ObjectNode p = power.addObject();
+        p.put("type", "LEARCredential");
+        p.put("function", "Onboarding");
+        p.put("action", "Execute");
 
         return vc;
     }
