@@ -6,7 +6,7 @@ WORKDIR /home/gradle/src
 COPY build.gradle settings.gradle /home/gradle/src/
 COPY src /home/gradle/src/src
 COPY gradle /home/gradle/src/gradle
-COPY checkstyle /home/gradle/src/checkstyle
+COPY config /home/gradle/src/config
 # Build the project
 RUN if [ "$SKIP_TESTS" = "true" ]; then \
     gradle build --no-daemon -x test; \
