@@ -20,6 +20,8 @@ import java.text.ParseException;
 import java.time.Duration;
 import java.util.Map;
 
+import static es.in2.vcverifier.shared.domain.util.SafeUrlValidator.validate;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -88,6 +90,8 @@ public class BitstringStatusListVerifier implements CredentialStatusVerifier {
     }
 
     private String fetchStatusListCredentialJwt(String statusListCredentialUrl) {
+        // SEC-14: SSRF protection — validate URL before outbound request
+        validate(statusListCredentialUrl);
         final HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(statusListCredentialUrl))
                 .header("Accept", "application/vc+jwt")

@@ -1,6 +1,13 @@
 package es.in2.vcverifier.shared.domain.model;
 
-import lombok.Builder;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
-@Builder
-public record GlobalErrorMessage(String title, String message, String path) { }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record GlobalErrorMessage(
+        String type,
+        String title,
+        int status,
+        String detail,
+        String instance
+) {
+}

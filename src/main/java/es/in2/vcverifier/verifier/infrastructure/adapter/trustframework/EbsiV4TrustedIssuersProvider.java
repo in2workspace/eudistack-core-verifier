@@ -22,6 +22,8 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 
+import static es.in2.vcverifier.shared.domain.util.SafeUrlValidator.validate;
+
 /**
  * Resolves trusted issuer capabilities from an EBSI v4 Trusted Issuers Registry.
  */
@@ -38,8 +40,11 @@ public class EbsiV4TrustedIssuersProvider implements TrustedIssuersProvider {
     @Override
     public List<IssuerCredentialsCapabilities> getIssuerCapabilities(String issuerId) {
         try {
+            // SEC-14: SSRF protection — validate composed URL before outbound request
+            String resolvedUrl = backendConfig.getTrustedIssuerListUri() + issuerId;
+            validate(resolvedUrl);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(backendConfig.getTrustedIssuerListUri() + issuerId))
+                    .uri(URI.create(resolvedUrl))
                     .timeout(REQUEST_TIMEOUT)
                     .build();
 

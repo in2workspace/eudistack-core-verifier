@@ -38,6 +38,7 @@ import java.time.Instant;
 import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.SafeUrlValidator.validate;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
 @Slf4j
@@ -183,6 +184,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                                                       RegisteredClient registeredClient, String originalRequestURL) {
         if (requestUri != null) {
             try {
+                // SEC-14: SSRF protection — validate URL before outbound request
+                validate(requestUri);
                 log.info("Retrieving JWT from request_uri: {}", requestUri);
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                         .uri(URI.create(requestUri)).timeout(REQUEST_TIMEOUT).GET().build();

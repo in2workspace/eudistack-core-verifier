@@ -24,6 +24,8 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.zip.GZIPInputStream;
 
+import static es.in2.vcverifier.shared.domain.util.SafeUrlValidator.validate;
+
 /**
  * Verifies credential revocation using Token Status List (draft-ietf-oauth-status-list).
  * Used for SD-JWT credentials with status.status_list references.
@@ -190,6 +192,8 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
     }
 
     private String fetchTokenStatusListJwt(String statusListUrl) {
+        // SEC-14: SSRF protection — validate URL before outbound request
+        validate(statusListUrl);
         final HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(statusListUrl))
                 .header("Accept", "application/statuslist+jwt")
