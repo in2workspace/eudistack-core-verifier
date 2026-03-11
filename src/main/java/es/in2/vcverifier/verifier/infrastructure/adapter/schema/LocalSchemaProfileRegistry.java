@@ -60,10 +60,15 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
         // This is a fallback — external dir is the primary source in production
         String[] knownSchemas = {
                 "learcredential.employee.w3c.1.json",
+                "learcredential.employee.w3c.1.profile.json",
                 "learcredential.employee.sd.1.json",
+                "learcredential.employee.sd.1.profile.json",
                 "learcredential.machine.w3c.1.json",
+                "learcredential.machine.w3c.1.profile.json",
                 "learcredential.machine.sd.1.json",
-                "gx.labelcredential.w3c.1.json"
+                "learcredential.machine.sd.1.profile.json",
+                "gx.labelcredential.w3c.1.json",
+                "gx.labelcredential.w3c.1.profile.json"
         };
         for (String schemaFile : knownSchemas) {
             String path = CLASSPATH_SCHEMA_BASE + schemaFile;
