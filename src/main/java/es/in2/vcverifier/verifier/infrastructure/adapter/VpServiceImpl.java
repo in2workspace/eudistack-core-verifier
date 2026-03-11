@@ -38,6 +38,7 @@ public class VpServiceImpl implements VpService {
     private final CertificateValidationService certificateValidationService;
     private final CredentialMapperService credentialMapperService;
     private final CryptographicBindingValidator cryptographicBindingValidator;
+    private final List<CredentialStatusVerifier> credentialStatusVerifiers;
 
     @Override
     public void verifyVerifiablePresentation(String verifiablePresentation) {
@@ -197,16 +198,17 @@ public class VpServiceImpl implements VpService {
 
         String type = learCredential.credentialStatusType();
 
-        if ("BitstringStatusListEntry".equals(type)) {
-            log.info("Validating credential with BitstringStatusListEntry credential status");
-            return !trustFrameworkService.isCredentialRevokedInBitstringStatusList(
-                    learCredential.statusListCredential(),
-                    learCredential.credentialStatusListIndex(),
-                    learCredential.credentialStatusPurpose()
-            );
-        }
+        CredentialStatusVerifier verifier = credentialStatusVerifiers.stream()
+                .filter(v -> v.supports(type))
+                .findFirst()
+                .orElseThrow(() -> new CredentialException("Unsupported credentialStatus.type: " + type));
 
-        throw new CredentialException("Unsupported credentialStatus.type: " + type);
+        log.info("Validating credential revocation with {} verifier", type);
+        return !verifier.isRevoked(
+                learCredential.statusListCredential(),
+                learCredential.credentialStatusListIndex(),
+                learCredential.credentialStatusPurpose()
+        );
     }
 
     private void validateCredentialTypeWithIssuerCapabilities(List<IssuerCredentialsCapabilities> issuerCapabilitiesList, List<String> credentialTypes) {

@@ -52,7 +52,7 @@ class VpSecurityTest {
 
     @BeforeEach
     void setUp() {
-        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, cryptographicBindingValidator);
+        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, cryptographicBindingValidator, java.util.List.of());
     }
 
     // --- Malformed VP Token ---

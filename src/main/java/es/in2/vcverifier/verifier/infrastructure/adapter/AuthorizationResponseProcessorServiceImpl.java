@@ -11,7 +11,9 @@ import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
+import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
+import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
@@ -37,6 +39,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
@@ -58,6 +61,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final BackendConfig backendConfig;
     private final CacheStore<String> cacheForNonceByState;
     private final CryptoComponent cryptoComponent;
+    private final List<CredentialStatusVerifier> credentialStatusVerifiers;
 
     @Override
     public void handleAuthResponse(String state, String vpToken){
@@ -100,6 +104,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                     resolvedVpToken, expectedAud, cachedNonce);
             credentialJson = objectMapper.valueToTree(result.resolvedClaims());
             log.info("SD-JWT VC validated successfully. vct={}", result.vct());
+
+            // Check revocation via Token Status List (status.status_list)
+            validateSdJwtRevocationStatus(result.resolvedClaims());
         } else {
             // JWT VP path (existing logic, unchanged)
             validateVpTokenNonceAndAudience(resolvedVpToken, state);
@@ -223,6 +230,61 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
         // Legacy format: direct JWT or SD-JWT string
         return trimmed;
+    }
+
+    /**
+     * Validates revocation status for SD-JWT credentials using Token Status List.
+     * SD-JWT credentials embed status as: { "status": { "status_list": { "uri": "...", "idx": N } } }
+     * Non-blocking: if the status list endpoint is unreachable, log a warning and proceed.
+     */
+    @SuppressWarnings("unchecked")
+    private void validateSdJwtRevocationStatus(Map<String, Object> resolvedClaims) {
+        Object statusObj = resolvedClaims.get("status");
+        if (!(statusObj instanceof Map<?, ?> statusMap)) {
+            log.debug("No 'status' block in SD-JWT claims; skipping revocation check");
+            return;
+        }
+
+        Object statusListObj = statusMap.get("status_list");
+        if (!(statusListObj instanceof Map<?, ?> statusListMap)) {
+            log.debug("No 'status_list' in status block; skipping revocation check");
+            return;
+        }
+
+        String uri = statusListMap.get("uri") instanceof String s ? s : null;
+        Object idxObj = statusListMap.get("idx");
+        String idx = idxObj != null ? String.valueOf(idxObj) : null;
+
+        if (uri == null || uri.isBlank() || idx == null) {
+            log.debug("Incomplete status_list (uri={}, idx={}); skipping revocation check", uri, idx);
+            return;
+        }
+
+        log.debug("Token Status List detected: uri={}, idx={}", uri, idx);
+
+        CredentialStatusVerifier verifier = credentialStatusVerifiers.stream()
+                .filter(v -> v.supports("TokenStatusListEntry"))
+                .findFirst()
+                .orElse(null);
+
+        if (verifier == null) {
+            log.warn("No CredentialStatusVerifier registered for TokenStatusListEntry; skipping revocation check");
+            return;
+        }
+
+        try {
+            boolean revoked = verifier.isRevoked(uri, idx, "revocation");
+            if (revoked) {
+                throw new CredentialRevokedException("SD-JWT credential is revoked (Token Status List uri=" + uri + ", idx=" + idx + ")");
+            }
+            log.info("SD-JWT credential is not revoked");
+        } catch (CredentialRevokedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Could not verify SD-JWT credential revocation status. " +
+                    "Token Status List may be unreachable. Proceeding with presentation. Error: {}",
+                    e.getMessage());
+        }
     }
 
     private void validateVpTokenNonceAndAudience(String decodedVpToken, String state) {

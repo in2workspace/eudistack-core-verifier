@@ -1,4 +1,5 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
+import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -21,10 +22,8 @@ import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.subject
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.subject.mandate.mandatee.MandateeV1;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import es.in2.vcverifier.verifier.domain.model.issuer.TimeRange;
-import es.in2.vcverifier.verifier.infrastructure.adapter.VpServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -65,8 +64,20 @@ class VpServiceImplTest {
     @Mock
     private ObjectMapper objectMapper;
 
-    @InjectMocks
+    @Mock
+    private CredentialStatusVerifier bitstringStatusListVerifier;
+
     private VpServiceImpl vpServiceImpl;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        vpServiceImpl = new VpServiceImpl(
+                jwtService, objectMapper, trustFrameworkService,
+                certificateValidationService, credentialMapperService,
+                cryptographicBindingValidator,
+                java.util.List.of(bitstringStatusListVerifier)
+        );
+    }
 
 
 
@@ -1055,7 +1066,8 @@ class VpServiceImplTest {
             // Status list fetch THROWS (unreachable endpoint)
             when(cred.statusListCredential()).thenReturn("https://status-list.example.com/status/1");
             when(cred.credentialStatusListIndex()).thenReturn("42");
-            when(trustFrameworkService.isCredentialRevokedInBitstringStatusList(
+            when(bitstringStatusListVerifier.supports("BitstringStatusListEntry")).thenReturn(true);
+            when(bitstringStatusListVerifier.isRevoked(
                     "https://status-list.example.com/status/1", "42", "revocation"))
                     .thenThrow(new es.in2.vcverifier.shared.domain.exception.FailedCommunicationException("Connection refused"));
 
@@ -1129,7 +1141,8 @@ class VpServiceImplTest {
             when(cred.credentialStatusListIndex()).thenReturn("42");
 
             // Status list confirms revocation (returns true = IS revoked)
-            when(trustFrameworkService.isCredentialRevokedInBitstringStatusList(
+            when(bitstringStatusListVerifier.supports("BitstringStatusListEntry")).thenReturn(true);
+            when(bitstringStatusListVerifier.isRevoked(
                     "https://status-list.example.com/status/1", "42", "revocation"))
                     .thenReturn(true);
 
