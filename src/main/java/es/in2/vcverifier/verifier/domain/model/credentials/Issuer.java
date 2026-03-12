@@ -6,4 +6,6 @@ public interface Issuer {
 
     @JsonProperty("id")
     String getId();
+
+    String getOrganizationIdentifier();
 }

@@ -95,17 +95,19 @@ class AuthorizationResponseProcessorServiceImplTest {
                 registeredClientRepository,
                 oAuth2AuthorizationService,
                 sseEmitterStore,
-                cacheForNonceByState,
                 backendConfig,
-                cryptoComponent
+                cacheForNonceByState,
+                cryptoComponent,
+                java.util.List.of()
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
+        lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
         lenient().when(cryptoComponent.getClientId()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
     }
 
 
     @Test
-    void processAuthResponse_validInput_shouldProcessSuccessfully() throws JOSEException {
+    void handleAuthResponse_validInput_shouldProcessSuccessfully() throws JOSEException {
         // Arrange
         String state = "test-state";
         String nonce = "test-nonce";
@@ -140,14 +142,14 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
         doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
 
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(registeredClient);
 
         doNothing().when(oAuth2AuthorizationService).save(any(OAuth2Authorization.class));
 
         // Act
-        authorizationResponseProcessorService.processAuthResponse(state, vpToken);
+        authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
 
         // Assert
         ArgumentCaptor<String> stateCaptor = ArgumentCaptor.forClass(String.class);
@@ -165,7 +167,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     }
 
     @Test
-    void processAuthResponse_invalidState_shouldThrowNoSuchElementException() {
+    void handleAuthResponse_invalidState_shouldThrowNoSuchElementException() {
         // Arrange
         String state = "invalid-state";
         String vpToken = Base64.getEncoder().encodeToString("valid-vp-token".getBytes(StandardCharsets.UTF_8));
@@ -174,7 +176,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         // Act & Assert
         NoSuchElementException exception = assertThrows(NoSuchElementException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(state, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(state, vpToken)
         );
 
         assertEquals("Value is not present.", exception.getMessage());
@@ -185,7 +187,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
 
     @Test
-    void processAuthResponse_invalidVpToken_shouldThrowException() throws JOSEException {
+    void handleAuthResponse_invalidVpToken_shouldThrowException() throws JOSEException {
         // Arrange
         String state = "test-state";
         String vpToken = createVpToken(state);
@@ -205,17 +207,17 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         when(cacheForNonceByState.get(state)).thenReturn(state);
 
-        doThrow(new RuntimeException("Something failed")).when(vpService).validateVerifiablePresentation(anyString());
+        doThrow(new RuntimeException("Something failed")).when(vpService).verifyVerifiablePresentation(anyString());
 
         // Act & Assert
         assertThrows(RuntimeException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(state, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(state, vpToken)
         );
 
     }
 
     @Test
-    void processAuthResponse_noRegisteredClient_shouldThrowException() throws JOSEException {
+    void handleAuthResponse_noRegisteredClient_shouldThrowException() throws JOSEException {
         // Arrange
         String state = "test-state";
         long timeout = Long.parseLong(LOGIN_TIMEOUT);
@@ -238,7 +240,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         // Act & Assert
         when(cacheForNonceByState.get(state)).thenReturn(state);
         OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(state, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(state, vpToken)
         );
         assertEquals(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT, exception.getError().getErrorCode());
 
@@ -269,7 +271,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     }
 
     @Test
-    void processAuthResponse_validInput_shouldThrowLoginTimeoutException() {
+    void handleAuthResponse_validInput_shouldThrowLoginTimeoutException() {
         String state = "test-state";
         String vpToken = Base64.getEncoder().encodeToString("valid-vp-token".getBytes(StandardCharsets.UTF_8));
         long timeout = Long.parseLong(LOGIN_TIMEOUT);
@@ -292,7 +294,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
 
         LoginTimeoutException exception = assertThrows(LoginTimeoutException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(state, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(state, vpToken)
         );
 
         assertEquals("Login time has expired", exception.getMessage());
@@ -324,7 +326,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         // Act & Assert
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(stateKey, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(stateKey, vpToken)
         );
         String errorMsg ="The 'aud' claim is missing in the VP token.";
         assertEquals(errorMsg, exception.getMessage());
@@ -348,7 +350,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
             // Act & Assert
             JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
-                    authorizationResponseProcessorService.processAuthResponse(stateKey, vpToken)
+                    authorizationResponseProcessorService.handleAuthResponse(stateKey, vpToken)
             );
 
             assertEquals("The 'nonce' claim is missing in the VP token.", exception.getMessage());
@@ -375,7 +377,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         // Act & Assert
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(stateKey, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(stateKey, vpToken)
         );
         assertEquals("VP nonce does not match the cached nonce for the given state.", exception.getMessage());
     }
@@ -399,7 +401,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         // Act & Assert
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(blankState, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(blankState, vpToken)
         );
 
         assertEquals("The 'state' claim is missing in the VP token.", exception.getMessage());
@@ -422,7 +424,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheForNonceByState.get(stateKey)).thenReturn(null);
 
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(stateKey, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(stateKey, vpToken)
         );
 
         assertEquals("No nonce found in cache for state=state", exception.getMessage());
@@ -430,7 +432,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
 
     @Test
-    void processAuthResponse_shouldThrowJwtParsingException_whenVpTokenIsMalformed() {
+    void handleAuthResponse_shouldThrowJwtParsingException_whenVpTokenIsMalformed() {
         // Arrange
         String invalidJwt = "malformed.token.value"; // not a valid JWT
         String vpToken = Base64.getEncoder().encodeToString(invalidJwt.getBytes(StandardCharsets.UTF_8));
@@ -447,7 +449,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         // Act & Assert
         JWTParsingException exception = assertThrows(JWTParsingException.class, () ->
-                authorizationResponseProcessorService.processAuthResponse(stateKey, vpToken)
+                authorizationResponseProcessorService.handleAuthResponse(stateKey, vpToken)
         );
 
         assertEquals("Failed to parse the VP JWT or extract claims.", exception.getMessage());
@@ -474,7 +476,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     }
 
     @Test
-    void processAuthResponse_withPkce_setsCodeChallengeAttributes() throws Exception {
+    void handleAuthResponse_withPkce_setsCodeChallengeAttributes() throws Exception {
 
         String state  = "state-pkce";
         String nonce  = "nonce-pkce";
@@ -511,15 +513,15 @@ class AuthorizationResponseProcessorServiceImplTest {
         doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
         when(cacheForNonceByState.get(state)).thenReturn(nonce);
 
-        doNothing().when(vpService).validateVerifiablePresentation(anyString());
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
+        doNothing().when(vpService).verifyVerifiablePresentation(anyString());
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(rc);
 
         ArgumentCaptor<OAuth2Authorization> authCap = ArgumentCaptor.forClass(OAuth2Authorization.class);
         doNothing().when(oAuth2AuthorizationService).save(authCap.capture());
 
-        authorizationResponseProcessorService.processAuthResponse(state, vpToken);
+        authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
 
         OAuth2Authorization saved = authCap.getValue();
         assertNotNull(saved);
@@ -531,7 +533,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     }
 
     @Test
-    void processAuthResponse_withoutPkce_doesNotSetPkceAttributes() throws Exception {
+    void handleAuthResponse_withoutPkce_doesNotSetPkceAttributes() throws Exception {
         String state = "state-no-pkce";
         String nonce = "nonce-no-pkce";
         String vpToken = createVpToken(nonce);
@@ -564,15 +566,15 @@ class AuthorizationResponseProcessorServiceImplTest {
         doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
         when(cacheForNonceByState.get(state)).thenReturn(nonce);
 
-        doNothing().when(vpService).validateVerifiablePresentation(anyString());
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
+        doNothing().when(vpService).verifyVerifiablePresentation(anyString());
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(rc);
 
         ArgumentCaptor<OAuth2Authorization> authCap = ArgumentCaptor.forClass(OAuth2Authorization.class);
         doNothing().when(oAuth2AuthorizationService).save(authCap.capture());
 
-        authorizationResponseProcessorService.processAuthResponse(state, vpToken);
+        authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
 
         OAuth2Authorization saved = authCap.getValue();
         assertNotNull(saved);

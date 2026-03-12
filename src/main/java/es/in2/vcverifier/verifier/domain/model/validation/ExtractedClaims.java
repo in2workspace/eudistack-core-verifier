@@ -6,10 +6,10 @@ import java.util.Map;
 
 @Builder
 public record ExtractedClaims(
-        String subjectDid,
-        String mandatorOrgId,
-        String issuerDid,
+        String subject,
         Map<String, Object> idTokenClaims,
+        Map<String, Object> idTokenEmbeds,
         Map<String, Object> accessTokenClaims,
+        Map<String, Object> accessTokenEmbeds,
         String scope
 ) {}

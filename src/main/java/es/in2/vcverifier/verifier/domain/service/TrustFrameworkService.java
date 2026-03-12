@@ -6,5 +6,4 @@ import java.util.List;
 
 public interface TrustFrameworkService {
     List<IssuerCredentialsCapabilities> getTrustedIssuerListData(String id);
-    boolean isCredentialRevokedInBitstringStatusList(String statusListCredentialUrl, String statusListIndex, String credentialStatusPurpose);
 }

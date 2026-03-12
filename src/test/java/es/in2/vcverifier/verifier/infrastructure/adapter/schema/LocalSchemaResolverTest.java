@@ -28,48 +28,36 @@ class LocalSchemaResolverTest {
 
     @Test
     void resolve_employeeV1Context_returnsSchema() {
-        List<String> context = List.of(
-                "https://www.w3.org/ns/credentials/v2",
-                "https://trust-framework.dome-marketplace.eu/credentials/learcredentialemployee/v1"
-        );
-        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialEmployee", context, JsonNodeFactory.instance.objectNode());
+        List<String> context = List.of("https://www.w3.org/ns/credentials/v2");
+        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialEmployee.jwt_vc_json.v1", context, JsonNodeFactory.instance.objectNode());
         assertTrue(schema.isPresent());
     }
 
     @Test
     void resolve_employeeV2Context_returnsSchema() {
-        List<String> context = List.of(
-                "https://www.w3.org/ns/credentials/v2",
-                "https://www.dome-marketplace.eu/2025/credentials/learcredentialemployee/v2"
-        );
-        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialEmployee", context, JsonNodeFactory.instance.objectNode());
+        List<String> context = List.of("https://www.w3.org/ns/credentials/v2");
+        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialEmployee.jwt_vc_json.v2", context, JsonNodeFactory.instance.objectNode());
         assertTrue(schema.isPresent());
     }
 
     @Test
     void resolve_employeeV3Context_returnsSchema() {
-        List<String> context = List.of(
-                "https://www.w3.org/ns/credentials/v2",
-                "https://credentials.eudistack.eu/.well-known/credentials/lear_credential_employee/w3c/v3"
-        );
-        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialEmployee", context, JsonNodeFactory.instance.objectNode());
+        List<String> context = List.of("https://www.w3.org/ns/credentials/v2");
+        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialEmployee.jwt_vc_json.v3", context, JsonNodeFactory.instance.objectNode());
         assertTrue(schema.isPresent());
     }
 
     @Test
     void resolve_machineWithoutSpecificContext_defaultsToV1() {
         List<String> context = List.of("https://www.w3.org/ns/credentials/v2");
-        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialMachine", context, JsonNodeFactory.instance.objectNode());
+        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialMachine.jwt_vc_json.v1", context, JsonNodeFactory.instance.objectNode());
         assertTrue(schema.isPresent());
     }
 
     @Test
     void resolve_machineV2Context_returnsSchema() {
-        List<String> context = List.of(
-                "https://www.w3.org/ns/credentials/v2",
-                "https://credentials.eudistack.eu/.well-known/credentials/lear_credential_machine/w3c/v2"
-        );
-        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialMachine", context, JsonNodeFactory.instance.objectNode());
+        List<String> context = List.of("https://www.w3.org/ns/credentials/v2");
+        Optional<JsonSchema> schema = resolver.resolve("LEARCredentialMachine.jwt_vc_json.v2", context, JsonNodeFactory.instance.objectNode());
         assertTrue(schema.isPresent());
     }
 
@@ -82,13 +70,10 @@ class LocalSchemaResolverTest {
 
     @Test
     void resolve_cachedSchema_returnsSameInstance() {
-        List<String> context = List.of(
-                "https://www.w3.org/ns/credentials/v2",
-                "https://trust-framework.dome-marketplace.eu/credentials/learcredentialemployee/v1"
-        );
+        List<String> context = List.of("https://www.w3.org/ns/credentials/v2");
         ObjectNode node = JsonNodeFactory.instance.objectNode();
-        Optional<JsonSchema> first = resolver.resolve("LEARCredentialEmployee", context, node);
-        Optional<JsonSchema> second = resolver.resolve("LEARCredentialEmployee", context, node);
+        Optional<JsonSchema> first = resolver.resolve("LEARCredentialEmployee.jwt_vc_json.v1", context, node);
+        Optional<JsonSchema> second = resolver.resolve("LEARCredentialEmployee.jwt_vc_json.v1", context, node);
 
         assertTrue(first.isPresent());
         assertTrue(second.isPresent());
@@ -96,18 +81,17 @@ class LocalSchemaResolverTest {
     }
 
     @Test
-    void resolveVersion_employeeV1() {
-        String version = LocalSchemaResolver.resolveVersion("LEARCredentialEmployee", List.of(
-                "https://www.w3.org/ns/credentials/v2",
-                "https://trust-framework.dome-marketplace.eu/credentials/learcredentialemployee/v1"
+    void resolveVersion_alwaysReturnsNull() {
+        String version = LocalSchemaResolver.resolveVersion("LEARCredentialEmployee.jwt_vc_json.v1", List.of(
+                "https://www.w3.org/ns/credentials/v2"
         ));
-        assertEquals("v1", version);
+        assertNull(version);
     }
 
     @Test
-    void resolveVersion_machineDefault() {
-        String version = LocalSchemaResolver.resolveVersion("LEARCredentialMachine", List.of("https://www.w3.org/ns/credentials/v2"));
-        assertEquals("v1", version);
+    void resolveVersion_machineDefault_returnsNull() {
+        String version = LocalSchemaResolver.resolveVersion("LEARCredentialMachine.jwt_vc_json.v1", List.of("https://www.w3.org/ns/credentials/v2"));
+        assertNull(version);
     }
 
     @Test
@@ -118,11 +102,10 @@ class LocalSchemaResolverTest {
 
     @Test
     void resolveTypeName_employeeV1() {
-        String type = LocalSchemaResolver.resolveTypeName("LEARCredentialEmployee", List.of(
-                "https://www.w3.org/ns/credentials/v2",
-                "https://trust-framework.dome-marketplace.eu/credentials/learcredentialemployee/v1"
+        String type = LocalSchemaResolver.resolveTypeName("LEARCredentialEmployee.jwt_vc_json.v1", List.of(
+                "https://www.w3.org/ns/credentials/v2"
         ));
-        assertEquals("LEARCredentialEmployee", type);
+        assertEquals("LEARCredentialEmployee.jwt_vc_json.v1", type);
     }
 
     @Test

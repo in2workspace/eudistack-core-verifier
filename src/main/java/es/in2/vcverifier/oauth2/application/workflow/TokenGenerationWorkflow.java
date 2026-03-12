@@ -1,6 +1,5 @@
 package es.in2.vcverifier.oauth2.application.workflow;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -21,7 +20,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 /**
@@ -57,16 +55,16 @@ public class TokenGenerationWorkflow {
      * @param generateIdToken      true to generate an ID token (for authorization_code and refresh_token grants)
      * @return a Result with the JWT strings and metadata
      */
-    public Result execute(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken) {
+    public Result issueAccessToken(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
-                Long.parseLong(ACCESS_TOKEN_EXPIRATION_TIME),
-                ChronoUnit.valueOf(ACCESS_TOKEN_EXPIRATION_CHRONO_UNIT)
+                backendConfig.getAccessTokenExpirationSeconds(),
+                ChronoUnit.SECONDS
         );
 
         String credentialType = extractCredentialType(credentialJson);
         ExtractedClaims extractedClaims = extractClaims(credentialType, credentialJson);
-        String subject = resolveSubjectDid(extractedClaims, credentialJson);
+        String subject = extractedClaims.subject();
 
         String accessTokenJwt = buildAccessToken(credentialJson, extractedClaims, issueTime, expirationTime, subject, audience);
 
@@ -89,17 +87,10 @@ public class TokenGenerationWorkflow {
                 }
             }
         }
-        // SD-JWT VC: vct claim
+        // SD-JWT VC: vct claim — returns the config ID directly
         JsonNode vctNode = credentialJson.get("vct");
         if (vctNode != null && vctNode.isTextual()) {
-            String vct = vctNode.asText();
-            if (vct.contains("LEARCredentialEmployee") || vct.contains("lear_credential_employee")) {
-                return "LEARCredentialEmployee";
-            }
-            if (vct.contains("LEARCredentialMachine") || vct.contains("lear_credential_machine")) {
-                return "LEARCredentialMachine";
-            }
-            return vct;
+            return vctNode.asText();
         }
         throw new OAuth2AuthenticationException(new OAuth2Error(
                 OAuth2ErrorCodes.INVALID_REQUEST,
@@ -107,27 +98,7 @@ public class TokenGenerationWorkflow {
                 null));
     }
 
-    public String resolveSubjectDid(ExtractedClaims extractedClaims, JsonNode credentialJson) {
-        // Priority 1: from ClaimsExtractor
-        if (extractedClaims.subjectDid() != null && !extractedClaims.subjectDid().isBlank()) {
-            log.info("Subject DID resolved via ClaimsExtractor");
-            return extractedClaims.subjectDid();
-        }
-        // Priority 2: credentialSubject.id from JSON
-        String csId = credentialJson.at("/credentialSubject/id").asText(null);
-        if (csId != null && !csId.isBlank()) {
-            log.info("Subject DID resolved via credentialSubject.id JSON path");
-            return csId;
-        }
-        // Priority 3: mandatee.id from JSON (legacy)
-        String mandateeId = credentialJson.at("/credentialSubject/mandate/mandatee/id").asText(null);
-        if (mandateeId != null && !mandateeId.isBlank()) {
-            log.info("Subject DID resolved via mandatee.id JSON path");
-            return mandateeId;
-        }
-        log.error("[GRANT] Cannot resolve subject DID");
-        throw new IllegalStateException("Missing cryptographic binding DID in credential");
-    }
+
 
     private ExtractedClaims extractClaims(String credentialType, JsonNode credentialJson) {
         for (ClaimsExtractor extractor : claimsExtractors) {
@@ -144,10 +115,9 @@ public class TokenGenerationWorkflow {
     private String buildAccessToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                      Instant issueTime, Instant expirationTime,
                                      String subject, String audience) {
-        log.info("Generating access token with verifiableCredential");
-        Map<String, Object> credentialData = objectMapper.convertValue(credentialJson, new TypeReference<>() {});
+        log.info("Generating access token for credential_type: {}", extractCredentialType(credentialJson));
 
-        JWTClaimsSet payload = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
                 .issuer(backendConfig.getUrl())
                 .audience(audience)
                 .subject(subject)
@@ -155,19 +125,26 @@ public class TokenGenerationWorkflow {
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
                 .claim(OAuth2ParameterNames.SCOPE, extractedClaims.scope())
-                .claim(CLIENT_ID, backendConfig.getUrl())
-                .claim("vc", credentialData)
-                .build();
+                .claim("credential_type", extractCredentialType(credentialJson));
 
-        return jwtService.generateJWT(payload.toString());
+        if (extractedClaims.accessTokenClaims() != null) {
+            extractedClaims.accessTokenClaims().forEach(payloadBuilder::claim);
+        }
+
+        if (extractedClaims.accessTokenEmbeds() != null) {
+            extractedClaims.accessTokenEmbeds().forEach(payloadBuilder::claim);
+        }
+
+        JWTClaimsSet payload = payloadBuilder.build();
+        return jwtService.issueJWT(payload.toString());
     }
 
     private String buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                  String subject, String audience, Map<String, Object> additionalParameters) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
-                Long.parseLong(ID_TOKEN_EXPIRATION_TIME),
-                ChronoUnit.valueOf(ID_TOKEN_EXPIRATION_CHRONO_UNIT)
+                backendConfig.getIdTokenExpirationSeconds(),
+                ChronoUnit.SECONDS
         );
 
         String verifiableCredentialJson;
@@ -185,10 +162,15 @@ public class TokenGenerationWorkflow {
                 .expirationTime(Date.from(expirationTime))
                 .claim("auth_time", Date.from(issueTime))
                 .claim("acr", "0")
+                .claim("credential_type", extractCredentialType(credentialJson))
                 .claim("vc_json", verifiableCredentialJson);
 
         if (additionalParameters.containsKey(OAuth2ParameterNames.SCOPE)) {
             extractedClaims.idTokenClaims().forEach(idTokenClaimsBuilder::claim);
+        }
+
+        if (extractedClaims.idTokenEmbeds() != null) {
+            extractedClaims.idTokenEmbeds().forEach(idTokenClaimsBuilder::claim);
         }
 
         if (additionalParameters.containsKey(NONCE)) {
@@ -196,6 +178,6 @@ public class TokenGenerationWorkflow {
         }
 
         JWTClaimsSet idTokenClaims = idTokenClaimsBuilder.build();
-        return jwtService.generateJWT(idTokenClaims.toString());
+        return jwtService.issueJWT(idTokenClaims.toString());
     }
 }

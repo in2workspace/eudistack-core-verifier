@@ -18,4 +18,12 @@ public record SimpleIssuer(@JsonProperty("id") String id) implements Issuer {
     public String getId() {
         return id;
     }
+
+    @Override
+    public String getOrganizationIdentifier() {
+        if (id != null && id.startsWith("did:elsi:")) {
+            return id.substring("did:elsi:".length());
+        }
+        return null;
+    }
 }

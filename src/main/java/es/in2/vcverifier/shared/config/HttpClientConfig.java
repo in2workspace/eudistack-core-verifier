@@ -13,7 +13,8 @@ public class HttpClientConfig {
     public HttpClient httpClient() {
         return HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                // SEC-14: Disable automatic redirects to prevent SSRF via open redirectors
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
 }

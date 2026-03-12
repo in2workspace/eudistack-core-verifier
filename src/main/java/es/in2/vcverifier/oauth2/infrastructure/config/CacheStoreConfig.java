@@ -4,6 +4,7 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
+import es.in2.vcverifier.shared.config.BackendConfig;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +22,8 @@ import static es.in2.vcverifier.shared.domain.util.Constants.*;
 @RequiredArgsConstructor
 public class CacheStoreConfig {
 
+    private final BackendConfig backendConfig;
+
     @Bean
     public CacheStore<String> cacheForNonceByState() {
         return new CacheStore<>(10, TimeUnit.MINUTES);
@@ -36,8 +39,8 @@ public class CacheStoreConfig {
     @Bean
     public CacheStore<RefreshTokenDataCache> cacheStoreForRefreshTokenData() {
         return new CacheStore<>(
-                Long.parseLong(ACCESS_TOKEN_EXPIRATION_TIME),
-                TimeUnit.of(ChronoUnit.valueOf(ACCESS_TOKEN_EXPIRATION_CHRONO_UNIT)));
+                backendConfig.getRefreshTokenExpirationSeconds(),
+                TimeUnit.SECONDS);
     }
 
     @Bean

@@ -4,7 +4,9 @@ import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import org.junit.jupiter.api.Test;
 
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Paths;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -12,52 +14,65 @@ import static org.junit.jupiter.api.Assertions.*;
 class LocalTrustedIssuersProviderTest {
 
     @Test
-    void wildcard_trustsAllIssuers() {
-        // The default local/trusted-issuers.yaml uses wildcard "*"
+    void knownIssuer_returnsCapabilities() {
+        // The default local/trusted-issuers.yaml has VATES-A15456585
         LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider();
 
-        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("did:elsi:VATES-99999999");
+        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("VATES-A15456585");
 
         assertNotNull(capabilities);
         assertFalse(capabilities.isEmpty());
-        assertTrue(capabilities.stream().anyMatch(c -> "LEARCredentialEmployee".equals(c.credentialsType())));
-        assertTrue(capabilities.stream().anyMatch(c -> "LEARCredentialMachine".equals(c.credentialsType())));
+        assertTrue(capabilities.stream().anyMatch(c -> "learcredential.employee.w3c.4".equals(c.credentialsType())));
+        assertTrue(capabilities.stream().anyMatch(c -> "learcredential.machine.w3c.3".equals(c.credentialsType())));
+        assertTrue(capabilities.stream().anyMatch(c -> "gx.labelcredential.w3c.1".equals(c.credentialsType())));
     }
 
     @Test
-    void missingFile_defaultsToTrustAll() {
+    void unknownIssuer_throwsException() {
+        LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider();
+
+        assertThrows(IssuerNotAuthorizedException.class,
+                () -> provider.getIssuerCapabilities("UNKNOWN-ISSUER"));
+    }
+
+    @Test
+    void missingFile_fallsBackToClasspath() {
         LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider("/nonexistent/file.yaml");
 
-        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("did:elsi:ANY");
-
+        // When external file is missing, falls back to classpath resource
+        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("VATES-A15456585");
         assertNotNull(capabilities);
         assertFalse(capabilities.isEmpty());
     }
 
     @Test
-    void specificIssuers_returnsCapabilities() {
+    void externalFile_returnsCapabilities() {
         String path = resolveTestFixture("test-fixtures/specific-issuers.yaml");
         LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider(path);
 
-        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("did:elsi:VATES-12345678");
+        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("VATES-12345678");
 
         assertNotNull(capabilities);
         assertEquals(1, capabilities.size());
-        assertEquals("LEARCredentialEmployee", capabilities.get(0).credentialsType());
+        assertEquals("learcredential.employee.w3c.4", capabilities.get(0).credentialsType());
     }
 
     @Test
-    void specificIssuers_unknownIssuer_throwsException() {
+    void externalFile_unknownIssuer_throwsException() {
         String path = resolveTestFixture("test-fixtures/specific-issuers.yaml");
         LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider(path);
 
         assertThrows(IssuerNotAuthorizedException.class,
-                () -> provider.getIssuerCapabilities("did:elsi:UNKNOWN"));
+                () -> provider.getIssuerCapabilities("UNKNOWN"));
     }
 
     private static String resolveTestFixture(String classpathResource) {
         URL url = LocalTrustedIssuersProviderTest.class.getClassLoader().getResource(classpathResource);
         assertNotNull(url, "Test fixture not found on classpath: " + classpathResource);
-        return url.getPath();
+        try {
+            return Paths.get(url.toURI()).toString();
+        } catch (URISyntaxException e) {
+            throw new AssertionError("Invalid URI for classpath resource: " + classpathResource, e);
+        }
     }
 }

@@ -5,6 +5,7 @@ import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.FrontendConfig;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -55,6 +56,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
     private final FrontendConfig frontendConfig;
+    private final SafeUrlValidator safeUrlValidator;
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -122,7 +124,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         cacheAuthorizationRequest(authorizationContext, registeredClient.getClientId(), authorizationContext.redirectUri());
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
-        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.execute(
+        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
 
         return throwRedirectAuthentication(authorizationContext.state(), result);
@@ -131,16 +133,16 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
                                                     SignedJWT signedJwt,
                                                     RegisteredClient registeredClient) {
-        PublicKey publicKey = didService.getPublicKeyFromDid(registeredClient.getClientId());
+        PublicKey publicKey = didService.resolvePublicKeyFromDid(registeredClient.getClientId());
         jwtService.verifyJWTWithECKey(signedJwt.serialize(), publicKey);
 
         cacheAuthorizationRequest(
                 authorizationContext,
                 registeredClient.getClientId(),
-                jwtService.getClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI));
+                jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI));
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
-        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.execute(
+        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
 
         return throwRedirectAuthentication(authorizationContext.state(), result);
@@ -183,6 +185,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                                                       RegisteredClient registeredClient, String originalRequestURL) {
         if (requestUri != null) {
             try {
+                // SEC-14: SSRF protection — validate URL before outbound request
+                safeUrlValidator.validate(requestUri);
                 log.info("Retrieving JWT from request_uri: {}", requestUri);
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                         .uri(URI.create(requestUri)).timeout(REQUEST_TIMEOUT).GET().build();
@@ -207,8 +211,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private void validateOAuth2Parameters(RegisteredClient registeredClient, String scope,
                                           SignedJWT signedJwt, String originalRequestURL) {
         Payload payload = signedJwt.getPayload();
-        String jwtClientId = jwtService.getClaimFromPayload(payload, CLIENT_ID);
-        String jwtScope = jwtService.getClaimFromPayload(payload, SCOPE);
+        String jwtClientId = jwtService.extractClaimFromPayload(payload, CLIENT_ID);
+        String jwtScope = jwtService.extractClaimFromPayload(payload, SCOPE);
 
         if (!registeredClient.getClientId().equals(jwtClientId) || !scope.equals(jwtScope)) {
             throwInvalidClientAuthenticationException("The OAuth 2.0 parameters do not match the JWT claims.",
@@ -219,7 +223,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private void validateRedirectUri(RegisteredClient registeredClient, String redirectUri,
                                      SignedJWT signedJwt, String originalRequestURL) {
         String jwtRedirectUri = signedJwt != null
-                ? jwtService.getClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI)
+                ? jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI)
                 : redirectUri;
 
         if (!registeredClient.getRedirectUris().contains(jwtRedirectUri)) {

@@ -66,4 +66,16 @@ public class BackendConfig {
     public String getLocalSchemasDir() {
         return properties.localFiles() != null ? properties.localFiles().schemasDir() : null;
     }
+
+    public long getAccessTokenExpirationSeconds() {
+        return properties.tokenExpiration() != null ? properties.tokenExpiration().accessTokenSeconds() : 900;
+    }
+
+    public long getIdTokenExpirationSeconds() {
+        return properties.tokenExpiration() != null ? properties.tokenExpiration().idTokenSeconds() : 60;
+    }
+
+    public long getRefreshTokenExpirationSeconds() {
+        return properties.tokenExpiration() != null ? properties.tokenExpiration().refreshTokenSeconds() : 43200;
+    }
 }

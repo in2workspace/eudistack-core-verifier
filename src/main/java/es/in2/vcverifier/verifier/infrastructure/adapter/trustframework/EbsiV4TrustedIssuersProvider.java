@@ -3,6 +3,7 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.trustframework;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerAttribute;
@@ -34,12 +35,16 @@ public class EbsiV4TrustedIssuersProvider implements TrustedIssuersProvider {
     private final BackendConfig backendConfig;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final SafeUrlValidator safeUrlValidator;
 
     @Override
     public List<IssuerCredentialsCapabilities> getIssuerCapabilities(String issuerId) {
         try {
+            // SEC-14: SSRF protection — validate composed URL before outbound request
+            String resolvedUrl = backendConfig.getTrustedIssuerListUri() + issuerId;
+            safeUrlValidator.validate(resolvedUrl);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(backendConfig.getTrustedIssuerListUri() + issuerId))
+                    .uri(URI.create(resolvedUrl))
                     .timeout(REQUEST_TIMEOUT)
                     .build();
 

@@ -1,7 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
-import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.config.JtiTokenCache;
 
@@ -24,11 +23,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.PublicKey;
-import java.security.interfaces.ECPublicKey;
-import java.security.spec.ECGenParameterSpec;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -48,15 +42,17 @@ class VpSecurityTest {
     @Mock
     private TrustFrameworkService trustFrameworkService;
     @Mock
-    private DIDService didService;
-    @Mock
     private CertificateValidationService certificateValidationService;
+    @Mock
+    private es.in2.vcverifier.verifier.infrastructure.adapter.CredentialMapperService credentialMapperService;
+    @Mock
+    private es.in2.vcverifier.verifier.infrastructure.adapter.CryptographicBindingValidator cryptographicBindingValidator;
 
     private VpServiceImpl vpService;
 
     @BeforeEach
     void setUp() {
-        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, didService, certificateValidationService);
+        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, cryptographicBindingValidator, java.util.List.of());
     }
 
     // --- Malformed VP Token ---
@@ -69,21 +65,21 @@ class VpSecurityTest {
         @DisplayName("Empty string VP should throw JWTParsingException")
         void emptyVpToken_throwsJwtParsingException() {
             assertThrows(JWTParsingException.class,
-                    () -> vpService.validateVerifiablePresentation(""));
+                    () -> vpService.verifyVerifiablePresentation(""));
         }
 
         @Test
         @DisplayName("Null-like string VP should throw")
         void nullStringVpToken_throwsException() {
             assertThrows(Exception.class,
-                    () -> vpService.validateVerifiablePresentation("null"));
+                    () -> vpService.verifyVerifiablePresentation("null"));
         }
 
         @Test
         @DisplayName("Random string VP should throw JWTParsingException")
         void randomStringVpToken_throwsJwtParsingException() {
             assertThrows(JWTParsingException.class,
-                    () -> vpService.validateVerifiablePresentation("not.a.jwt"));
+                    () -> vpService.verifyVerifiablePresentation("not.a.jwt"));
         }
 
         @Test
@@ -95,7 +91,7 @@ class VpSecurityTest {
                     + Base64.getUrlEncoder().withoutPadding()
                     .encodeToString("{\"vp\":{}}".getBytes());
             assertThrows(JWTParsingException.class,
-                    () -> vpService.validateVerifiablePresentation(headerPayload));
+                    () -> vpService.verifyVerifiablePresentation(headerPayload));
         }
 
         @Test
@@ -103,7 +99,7 @@ class VpSecurityTest {
         void vpWithoutVpClaim_throwsJwtClaimMissing() {
             String jwt = buildUnsignedJwt(Map.of("sub", "test"));
             assertThrows(JWTClaimMissingException.class,
-                    () -> vpService.validateVerifiablePresentation(jwt));
+                    () -> vpService.verifyVerifiablePresentation(jwt));
         }
 
         @Test
@@ -111,7 +107,7 @@ class VpSecurityTest {
         void vpClaimAsString_throwsJwtClaimMissing() {
             String jwt = buildUnsignedJwt(Map.of("vp", "not-an-object"));
             assertThrows(JWTClaimMissingException.class,
-                    () -> vpService.validateVerifiablePresentation(jwt));
+                    () -> vpService.verifyVerifiablePresentation(jwt));
         }
 
         @Test
@@ -120,7 +116,7 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", List.of());
             String jwt = buildUnsignedJwt(Map.of("vp", vp));
             assertThrows(CredentialException.class,
-                    () -> vpService.validateVerifiablePresentation(jwt));
+                    () -> vpService.verifyVerifiablePresentation(jwt));
         }
 
         @Test
@@ -129,7 +125,7 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", List.of(42));
             String jwt = buildUnsignedJwt(Map.of("vp", vp));
             assertThrows(CredentialException.class,
-                    () -> vpService.validateVerifiablePresentation(jwt));
+                    () -> vpService.verifyVerifiablePresentation(jwt));
         }
 
         @Test
@@ -138,7 +134,7 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", "single-string");
             String jwt = buildUnsignedJwt(Map.of("vp", vp));
             assertThrows(CredentialException.class,
-                    () -> vpService.validateVerifiablePresentation(jwt));
+                    () -> vpService.verifyVerifiablePresentation(jwt));
         }
     }
 
@@ -154,7 +150,7 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", List.of("not-a-jwt-string"));
             String jwt = buildUnsignedJwt(Map.of("vp", vp));
             assertThrows(JWTParsingException.class,
-                    () -> vpService.validateVerifiablePresentation(jwt));
+                    () -> vpService.verifyVerifiablePresentation(jwt));
         }
     }
 
@@ -173,11 +169,12 @@ class VpSecurityTest {
             String vpJwt = buildUnsignedJwt(Map.of("vp", vp));
 
             Payload mockPayload = mock(Payload.class);
-            when(jwtService.getPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(jwtService.getVCFromPayload(any())).thenReturn("string-not-map");
+            when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+                    .thenThrow(new CredentialMappingException("Invalid payload format for Verifiable Credential."));
 
             assertThrows(CredentialMappingException.class,
-                    () -> vpService.validateVerifiablePresentation(vpJwt));
+                    () -> vpService.verifyVerifiablePresentation(vpJwt));
         }
 
         @Test
@@ -187,16 +184,13 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", List.of(innerVcJwt));
             String vpJwt = buildUnsignedJwt(Map.of("vp", vp));
 
-            Map<String, Object> vcMap = new LinkedHashMap<>();
-            vcMap.put("issuer", Map.of("id", "did:key:z123"));
-            // No "type" field
-
             Payload mockPayload = mock(Payload.class);
-            when(jwtService.getPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(jwtService.getVCFromPayload(any())).thenReturn(vcMap);
+            when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+                    .thenThrow(new CredentialMappingException("'type' key is not a list."));
 
             assertThrows(CredentialMappingException.class,
-                    () -> vpService.validateVerifiablePresentation(vpJwt));
+                    () -> vpService.verifyVerifiablePresentation(vpJwt));
         }
 
         @Test
@@ -206,16 +200,13 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", List.of(innerVcJwt));
             String vpJwt = buildUnsignedJwt(Map.of("vp", vp));
 
-            Map<String, Object> vcMap = new LinkedHashMap<>();
-            vcMap.put("type", List.of("VerifiableCredential", "UnknownCredentialType"));
-            vcMap.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
-
             Payload mockPayload = mock(Payload.class);
-            when(jwtService.getPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(jwtService.getVCFromPayload(any())).thenReturn(vcMap);
+            when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+                    .thenThrow(new InvalidCredentialTypeException("Unsupported credential type"));
 
             assertThrows(InvalidCredentialTypeException.class,
-                    () -> vpService.validateVerifiablePresentation(vpJwt));
+                    () -> vpService.verifyVerifiablePresentation(vpJwt));
         }
     }
 
@@ -288,15 +279,13 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", List.of(innerVcJwt));
             String vpJwt = buildUnsignedJwt(Map.of("vp", vp));
 
-            Map<String, Object> vcMap = new LinkedHashMap<>();
-            vcMap.put("type", List.of("VerifiableCredential", 123));
-
             Payload mockPayload = mock(Payload.class);
-            when(jwtService.getPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(jwtService.getVCFromPayload(any())).thenReturn(vcMap);
+            when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+                    .thenThrow(new CredentialMappingException("'type' list contains non-string elements."));
 
             assertThrows(CredentialMappingException.class,
-                    () -> vpService.validateVerifiablePresentation(vpJwt));
+                    () -> vpService.verifyVerifiablePresentation(vpJwt));
         }
 
         @Test
@@ -306,15 +295,13 @@ class VpSecurityTest {
             Map<String, Object> vp = Map.of("verifiableCredential", List.of(innerVcJwt));
             String vpJwt = buildUnsignedJwt(Map.of("vp", vp));
 
-            Map<String, Object> vcMap = new LinkedHashMap<>();
-            vcMap.put("type", "LEARCredentialEmployee");
-
             Payload mockPayload = mock(Payload.class);
-            when(jwtService.getPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(jwtService.getVCFromPayload(any())).thenReturn(vcMap);
+            when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
+            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+                    .thenThrow(new CredentialMappingException("'type' key is not a list."));
 
             assertThrows(CredentialMappingException.class,
-                    () -> vpService.validateVerifiablePresentation(vpJwt));
+                    () -> vpService.verifyVerifiablePresentation(vpJwt));
         }
     }
 

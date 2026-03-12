@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
-import es.in2.vcverifier.verifier.domain.model.enums.LEARCredentialType;
+import java.util.Set;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
@@ -20,12 +20,17 @@ import java.util.List;
 /**
  * Application workflow that validates a client_credentials grant (M2M flow).
  * Parses the client_assertion JWT, extracts and validates the embedded VP token,
- * ensures the credential is a LEARCredentialMachine, and validates the assertion claims.
+ * ensures the credential is a machine credential, and validates the assertion claims.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ClientCredentialsValidationWorkflow {
+
+    private static final Set<String> MACHINE_CONFIG_IDS = Set.of(
+            "learcredential.machine.w3c.3",
+            "learcredential.machine.sd.1"
+    );
 
     private final JWTService jwtService;
     private final ClientAssertionValidationService clientAssertionValidationService;
@@ -35,7 +40,7 @@ public class ClientCredentialsValidationWorkflow {
      * Validates an M2M client_credentials grant by:
      * 1. Parsing the client_assertion JWT and extracting the vp_token claim
      * 2. Extracting the credential from the VP
-     * 3. Validating that the credential type is LEARCredentialMachine
+     * 3. Validating that the credential type is a machine credential
      * 4. Validating the client_assertion JWT claims
      * 5. Validating the VP (full pipeline)
      *
@@ -43,31 +48,32 @@ public class ClientCredentialsValidationWorkflow {
      * @param clientAssertion the client_assertion JWT containing the VP
      * @return the validated credential as a JsonNode
      */
-    public JsonNode execute(String clientId, String clientAssertion) {
+    public JsonNode validateClientCredentialsGrant(String clientId, String clientAssertion) {
         log.info("ClientCredentialsValidationWorkflow: validating M2M grant");
 
         SignedJWT signedJWT = jwtService.parseJWT(clientAssertion);
-        Payload payload = jwtService.getPayloadFromSignedJWT(signedJWT);
-        String vpToken = jwtService.getClaimFromPayload(payload, "vp_token");
+        Payload payload = jwtService.extractPayloadFromSignedJWT(signedJWT);
+        String vpToken = jwtService.extractClaimFromPayload(payload, "vp_token");
         String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
 
         // Extract and validate credential type
-        JsonNode vc = vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(decodedVpToken);
+        JsonNode vc = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(decodedVpToken);
         List<String> types = extractTypes(vc);
-        if (!types.contains(LEARCredentialType.LEAR_CREDENTIAL_MACHINE.getValue())) {
-            log.error("Invalid credential type. Expected: {}", LEARCredentialType.LEAR_CREDENTIAL_MACHINE.getValue());
-            throw new InvalidCredentialTypeException("Invalid LEARCredentialType. Expected LEARCredentialMachine");
+        boolean hasMachineCredential = types.stream().anyMatch(MACHINE_CONFIG_IDS::contains);
+        if (!hasMachineCredential) {
+            log.error("Invalid credential type. Expected one of: {}", MACHINE_CONFIG_IDS);
+            throw new InvalidCredentialTypeException("Invalid credential type. Expected a machine credential.");
         }
 
         // Validate client assertion JWT claims
-        boolean isValid = clientAssertionValidationService.validateClientAssertionJWTClaims(clientId, payload);
+        boolean isValid = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, payload);
         if (!isValid) {
             log.error("JWT claims from client_assertion are invalid");
             throw new IllegalArgumentException("Invalid JWT claims from assertion");
         }
 
         // Full VP validation
-        vpService.validateVerifiablePresentation(decodedVpToken);
+        vpService.verifyVerifiablePresentation(decodedVpToken);
         log.info("ClientCredentialsValidationWorkflow: VP validated successfully");
 
         return vc;

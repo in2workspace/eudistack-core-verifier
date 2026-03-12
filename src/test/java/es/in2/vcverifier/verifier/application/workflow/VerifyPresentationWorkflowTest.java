@@ -29,25 +29,25 @@ class VerifyPresentationWorkflowTest {
     @DisplayName("execute() validates VP and returns extracted credential")
     void execute_validatesAndExtractsCredential() {
         JsonNode expectedCredential = new ObjectMapper().createObjectNode().put("type", "LEARCredentialEmployee");
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(VP_TOKEN)).thenReturn(expectedCredential);
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN)).thenReturn(expectedCredential);
 
-        JsonNode result = workflow.execute(VP_TOKEN);
+        JsonNode result = workflow.verifyPresentation(VP_TOKEN);
 
         assertThat(result).isEqualTo(expectedCredential);
-        verify(vpService).validateVerifiablePresentation(VP_TOKEN);
-        verify(vpService).getCredentialFromTheVerifiablePresentationAsJsonNode(VP_TOKEN);
+        verify(vpService).verifyVerifiablePresentation(VP_TOKEN);
+        verify(vpService).extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN);
     }
 
     @Test
     @DisplayName("execute() propagates exception when VP validation fails")
     void execute_propagatesExceptionWhenValidationFails() {
-        doThrow(new RuntimeException("Invalid VP")).when(vpService).validateVerifiablePresentation(VP_TOKEN);
+        doThrow(new RuntimeException("Invalid VP")).when(vpService).verifyVerifiablePresentation(VP_TOKEN);
 
-        assertThatThrownBy(() -> workflow.execute(VP_TOKEN))
+        assertThatThrownBy(() -> workflow.verifyPresentation(VP_TOKEN))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Invalid VP");
 
-        verify(vpService).validateVerifiablePresentation(VP_TOKEN);
-        verify(vpService, never()).getCredentialFromTheVerifiablePresentationAsJsonNode(any());
+        verify(vpService).verifyVerifiablePresentation(VP_TOKEN);
+        verify(vpService, never()).extractCredentialFromVerifiablePresentationAsJsonNode(any());
     }
 }

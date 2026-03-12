@@ -1,6 +1,5 @@
 package es.in2.vcverifier.verifier.domain.model.credentials;
 
-import es.in2.vcverifier.verifier.domain.model.credentials.Issuer;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.CredentialStatus;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.Mandator;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.LEARCredentialMachineV1;
@@ -51,7 +50,7 @@ class LEARCredentialMachineTest {
                 .build();
 
         // Issuer implementation (record is not, but interface is used)
-        Issuer issuer = () -> "did:example:issuer";
+        Issuer issuer = new SimpleIssuer("did:example:issuer");
 
         // LEARCredentialMachine
         LEARCredentialMachineV1 credential = LEARCredentialMachineV1.builder()
@@ -85,7 +84,7 @@ class LEARCredentialMachineTest {
         Mandator mandator = Mandator.builder().organizationIdentifier("org-999").build();
         es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.subject.mandate.MandateV1 mandate = es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.subject.mandate.MandateV1.builder().mandatee(mandatee).mandator(mandator).build();
         CredentialSubjectV1 subject = CredentialSubjectV1.builder().mandate(mandate).build();
-        Issuer issuer = () -> "did:example:issuer";
+        Issuer issuer = new SimpleIssuer("did:example:issuer");
 
         LEARCredentialMachineV1 credential = LEARCredentialMachineV1.builder()
                 .credentialSubjectV1(subject)

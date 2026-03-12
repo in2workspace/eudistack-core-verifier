@@ -3,6 +3,8 @@ package es.in2.vcverifier.verifier.infrastructure.controller;
 import es.in2.vcverifier.shared.config.I18nConfig;
 import es.in2.vcverifier.verifier.infrastructure.controller.ResolverController;
 import es.in2.vcverifier.shared.crypto.DIDService;
+import es.in2.vcverifier.shared.domain.exception.handler.ErrorResponseFactory;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,13 +42,19 @@ class ResolverControllerTest {
     @MockBean
     private DIDService didService;
 
+    @MockBean
+    private SafeUrlValidator safeUrlValidator;
+
+    @MockBean
+    private ErrorResponseFactory errorResponseFactory;
+
     @Test
     void testResolveDid() throws Exception {
         // Mock a public EC key
         ECPublicKey mockPublicKey = mock(ECPublicKey.class);
         ECPoint mockECPoint = new ECPoint(new BigInteger("12345"), new BigInteger("67890"));
         Mockito.when(mockPublicKey.getW()).thenReturn(mockECPoint);
-        Mockito.when(didService.getPublicKeyFromDid("test-id")).thenReturn(mockPublicKey);
+        Mockito.when(didService.resolvePublicKeyFromDid("test-id")).thenReturn(mockPublicKey);
 
         // Perform GET request and verify response
         mockMvc.perform(get("/oidc/did/test-id"))
@@ -58,7 +66,7 @@ class ResolverControllerTest {
                 .andExpect(jsonPath("$.keys[0].y").exists());
 
         // Verify interactions with the service
-        verify(didService, times(1)).getPublicKeyFromDid("test-id");
+        verify(didService, times(1)).resolvePublicKeyFromDid("test-id");
     }
 
     @Test
@@ -73,7 +81,7 @@ class ResolverControllerTest {
 
         ECPublicKey mockPublicKey = mock(ECPublicKey.class);
         when(mockPublicKey.getW()).thenReturn(point);
-        when(didService.getPublicKeyFromDid("did-32")).thenReturn(mockPublicKey);
+        when(didService.resolvePublicKeyFromDid("did-32")).thenReturn(mockPublicKey);
 
         mockMvc.perform(get("/oidc/did/did-32"))
                 .andExpect(status().isOk())
@@ -103,7 +111,7 @@ class ResolverControllerTest {
 
         ECPublicKey mockPublicKey = mock(ECPublicKey.class);
         when(mockPublicKey.getW()).thenReturn(point);
-        when(didService.getPublicKeyFromDid("did-33")).thenReturn(mockPublicKey);
+        when(didService.resolvePublicKeyFromDid("did-33")).thenReturn(mockPublicKey);
 
         mockMvc.perform(get("/oidc/did/did-33"))
                 .andExpect(status().isOk())
@@ -129,7 +137,7 @@ class ResolverControllerTest {
 
         ECPublicKey mockPublicKey = mock(ECPublicKey.class);
         when(mockPublicKey.getW()).thenReturn(point);
-        when(didService.getPublicKeyFromDid("did-short")).thenReturn(mockPublicKey);
+        when(didService.resolvePublicKeyFromDid("did-short")).thenReturn(mockPublicKey);
 
         mockMvc.perform(get("/oidc/did/did-short"))
                 .andExpect(status().isOk())
@@ -153,7 +161,7 @@ class ResolverControllerTest {
 
         ECPublicKey mockPublicKey = mock(ECPublicKey.class);
         when(mockPublicKey.getW()).thenReturn(point);
-        when(didService.getPublicKeyFromDid("did-long")).thenReturn(mockPublicKey);
+        when(didService.resolvePublicKeyFromDid("did-long")).thenReturn(mockPublicKey);
 
         mockMvc.perform(get("/oidc/did/did-long"))
                 .andExpect(status().isInternalServerError());

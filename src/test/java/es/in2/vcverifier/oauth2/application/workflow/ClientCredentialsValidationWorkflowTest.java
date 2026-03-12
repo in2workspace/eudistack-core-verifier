@@ -46,7 +46,7 @@ class ClientCredentialsValidationWorkflowTest {
         ObjectNode credential = OBJECT_MAPPER.createObjectNode();
         ArrayNode typeArray = credential.putArray("type");
         typeArray.add("VerifiableCredential");
-        typeArray.add("LEARCredentialMachine");
+        typeArray.add("learcredential.machine.w3c.3");
         return credential;
     }
 
@@ -54,7 +54,7 @@ class ClientCredentialsValidationWorkflowTest {
         ObjectNode credential = OBJECT_MAPPER.createObjectNode();
         ArrayNode typeArray = credential.putArray("type");
         typeArray.add("VerifiableCredential");
-        typeArray.add("LEARCredentialEmployee");
+        typeArray.add("learcredential.employee.w3c.4");
         return credential;
     }
 
@@ -66,34 +66,34 @@ class ClientCredentialsValidationWorkflowTest {
         ObjectNode credential = buildMachineCredential();
 
         when(jwtService.parseJWT(CLIENT_ASSERTION)).thenReturn(signedJWT);
-        when(jwtService.getPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
-        when(jwtService.getClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
-        when(clientAssertionValidationService.validateClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(true);
+        when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
+        when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(clientAssertionValidationService.verifyClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(true);
 
-        JsonNode result = workflow.execute(CLIENT_ID, CLIENT_ASSERTION);
+        JsonNode result = workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION);
 
         assertThat(result).isEqualTo(credential);
-        verify(vpService).validateVerifiablePresentation(VP_TOKEN_RAW);
+        verify(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW);
     }
 
     @Test
-    @DisplayName("execute() throws when credential is not LEARCredentialMachine")
+    @DisplayName("execute() throws when credential is not a machine credential")
     void execute_throwsForWrongCredentialType() {
         SignedJWT signedJWT = mock(SignedJWT.class);
         Payload payload = mock(Payload.class);
         ObjectNode credential = buildEmployeeCredential();
 
         when(jwtService.parseJWT(CLIENT_ASSERTION)).thenReturn(signedJWT);
-        when(jwtService.getPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
-        when(jwtService.getClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
+        when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
 
-        assertThatThrownBy(() -> workflow.execute(CLIENT_ID, CLIENT_ASSERTION))
+        assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
                 .isInstanceOf(InvalidCredentialTypeException.class)
-                .hasMessageContaining("LEARCredentialMachine");
+                .hasMessageContaining("machine credential");
 
-        verify(vpService, never()).validateVerifiablePresentation(any());
+        verify(vpService, never()).verifyVerifiablePresentation(any());
     }
 
     @Test
@@ -104,16 +104,16 @@ class ClientCredentialsValidationWorkflowTest {
         ObjectNode credential = buildMachineCredential();
 
         when(jwtService.parseJWT(CLIENT_ASSERTION)).thenReturn(signedJWT);
-        when(jwtService.getPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
-        when(jwtService.getClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
-        when(clientAssertionValidationService.validateClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(false);
+        when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
+        when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(clientAssertionValidationService.verifyClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(false);
 
-        assertThatThrownBy(() -> workflow.execute(CLIENT_ID, CLIENT_ASSERTION))
+        assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Invalid JWT claims");
 
-        verify(vpService, never()).validateVerifiablePresentation(any());
+        verify(vpService, never()).verifyVerifiablePresentation(any());
     }
 
     @Test
@@ -124,13 +124,13 @@ class ClientCredentialsValidationWorkflowTest {
         ObjectNode credential = buildMachineCredential();
 
         when(jwtService.parseJWT(CLIENT_ASSERTION)).thenReturn(signedJWT);
-        when(jwtService.getPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
-        when(jwtService.getClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
-        when(vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
-        when(clientAssertionValidationService.validateClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(true);
-        doThrow(new RuntimeException("VP invalid")).when(vpService).validateVerifiablePresentation(VP_TOKEN_RAW);
+        when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
+        when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
+        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(clientAssertionValidationService.verifyClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(true);
+        doThrow(new RuntimeException("VP invalid")).when(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW);
 
-        assertThatThrownBy(() -> workflow.execute(CLIENT_ID, CLIENT_ASSERTION))
+        assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("VP invalid");
     }

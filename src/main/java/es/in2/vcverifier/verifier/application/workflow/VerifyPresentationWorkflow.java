@@ -23,10 +23,10 @@ public class VerifyPresentationWorkflow {
      * @param vpToken the raw VP JWT string
      * @return the credential extracted from the VP as a JsonNode
      */
-    public JsonNode execute(String vpToken) {
+    public JsonNode verifyPresentation(String vpToken) {
         log.info("VerifyPresentationWorkflow: validating VP");
-        vpService.validateVerifiablePresentation(vpToken);
-        JsonNode credential = vpService.getCredentialFromTheVerifiablePresentationAsJsonNode(vpToken);
+        vpService.verifyVerifiablePresentation(vpToken);
+        JsonNode credential = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(vpToken);
         log.info("VerifyPresentationWorkflow: VP validated and credential extracted");
         return credential;
     }

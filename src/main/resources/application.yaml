@@ -1,6 +1,8 @@
 spring:
   application:
-    name: VC Verifier
+    name: ${OTEL_SERVICE_NAME:vc-verifier}
+  config:
+    import: optional:file:${VERIFIER_BACKEND_LOCALFILES_DCQLPATH:}
 
 server:
   port: 8082
@@ -11,6 +13,16 @@ logging:
   level:
     es.in2.vcverifier: INFO
     org.springframework.security: INFO
+
+management.tracing:
+  sampling:
+    probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
+  propagation:
+    type: w3c
+
+management.otlp:
+  tracing:
+    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
 
 management:
   endpoints:
@@ -50,8 +62,60 @@ verifier:
       didKey:
       privateKey:
       certificate:  # Path to X.509 PEM certificate. When set, enables x509_hash client_id_scheme.
+    token-expiration:
+      access-token-seconds: ${VERIFIER_ACCESS_TOKEN_EXPIRATION:900}
+      id-token-seconds: ${VERIFIER_ID_TOKEN_EXPIRATION:60}
+      refresh-token-seconds: ${VERIFIER_REFRESH_TOKEN_EXPIRATION:43200}
     trustFrameworks:
       - name: DOME
         # Leave URLs unset to use local providers (classpath YAML files)
         # trustedIssuersListUrl: https://example.org/trusted-issuers
         # trustedServicesListUrl: https://example.org/trusted-services
+
+  # DCQL profiles: map OIDC scopes to DCQL credential queries for wallets.
+  # RPs request scopes (e.g. "openid learcredential.employee"), the Verifier
+  # resolves them into a DCQL query that the wallet understands.
+  dcql:
+    profiles:
+      learcredential.employee:
+        credentials:
+          - id: lear_employee_sd_jwt
+            format: dc+sd-jwt
+            meta:
+              vct-values:
+                - eu.europa.ec.eudi.lce.1
+          - id: lear_employee_jwt_vc
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - learcredential.employee.w3c.4
+      learcredential.machine:
+        credentials:
+          - id: lear_machine_sd_jwt
+            format: dc+sd-jwt
+            meta:
+              vct-values:
+                - eu.europa.ec.eudi.lcm.1
+          - id: lear_machine_jwt_vc
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - learcredential.machine.w3c.3
+      learcredential:
+        credentials:
+          - id: lear_employee_sd_jwt
+            format: dc+sd-jwt
+            meta:
+              vct-values:
+                - eu.europa.ec.eudi.lce.1
+          - id: lear_employee_jwt_vc
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - learcredential.employee.w3c.4

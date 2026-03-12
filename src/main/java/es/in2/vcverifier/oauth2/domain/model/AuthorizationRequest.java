@@ -8,7 +8,7 @@ public record AuthorizationRequest(
         @JsonProperty("response_type") String responseType,               // Must be "vp_token"
         @JsonProperty("response_mode") String responseMode,               // Must be "direct_post"
         @JsonProperty("response_uri") String responseUri,                 // The URI to send the Authorization Response
-        @JsonProperty("scope") String scope,                              // The scope parameter, e.g., "dome.credentials.presentation.LEARCredentialEmployee"
+        @JsonProperty("scope") String scope,                              // The scope parameter, e.g., "learcredential.employee"
         @JsonProperty("client_id") String clientId,                       // The DID of the Verifier (RP)
         @JsonProperty("client_id_scheme") String clientIdScheme,          // Must be "did"
         @JsonProperty("nonce") String nonce,                              // A unique nonce value

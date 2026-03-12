@@ -1,12 +1,14 @@
 package es.in2.vcverifier.verifier.application.workflow;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
-import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -22,8 +24,9 @@ import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_RESPO
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
 /**
- * Builds the OID4VP authorization request: validates scope, constructs the JWT payload,
- * generates the openid4vp:// URL, and caches the authorization request JWT.
+ * Builds the OID4VP authorization request: resolves scopes to a DCQL query,
+ * constructs the JWT payload, signs it, generates the openid4vp:// URL,
+ * and caches the authorization request JWT.
  */
 @Slf4j
 @Service
@@ -35,24 +38,27 @@ public class AuthorizationRequestBuildWorkflow {
     private final BackendConfig backendConfig;
     private final CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
     private final CacheStore<String> cacheForNonceByState;
+    private final DcqlProfileResolver dcqlProfileResolver;
+    private final ObjectMapper objectMapper;
 
     public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String homeUri) {}
 
     /**
-     * Validates the scope, builds the JWT payload for an OID4VP authorization request,
-     * signs it, generates the openid4vp:// redirect URL, and caches the JWT.
+     * Resolves the scope to a DCQL query, builds the JWT payload for an OID4VP
+     * authorization request, signs it, generates the openid4vp:// redirect URL,
+     * and caches the JWT.
      *
      * @param clientName   the registered client's name (used as homeUri)
-     * @param scope        the requested scope (must contain "learcredential")
+     * @param scope        the requested scope (e.g. "openid learcredential.employee")
      * @param state        the OAuth2 state parameter
      * @return a Result with the signed JWT, openid4vp URL, nonce and homeUri
      */
-    public Result execute(String clientName, String scope, String state) {
-        checkScope(scope);
+    public Result buildAuthorizationRequest(String clientName, String scope, String state) {
+        DcqlQuery dcqlQuery = dcqlProfileResolver.resolve(scope);
 
         String nonce = UUID.randomUUID().toString();
-        String jwtPayload = buildJwtPayload(scope, state, nonce);
-        String signedJwt = jwtService.generateJWTwithOI4VPType(jwtPayload);
+        String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery);
+        String signedJwt = jwtService.issueJWTwithOI4VPType(jwtPayload);
 
         // Cache the auth request JWT keyed by a new nonce for the QR
         String qrNonce = UUID.randomUUID().toString();
@@ -66,16 +72,9 @@ public class AuthorizationRequestBuildWorkflow {
         return new Result(signedJwt, openid4vpUrl, qrNonce, clientName);
     }
 
-    private void checkScope(String scope) {
-        if (!scope.contains("learcredential")) {
-            throw new InvalidScopeException(
-                    "The requested scope does not contain 'learcredential'. Only this scope and 'email', 'profile' are supported.");
-        }
-    }
-
-    private String buildJwtPayload(String scope, String state, String nonce) {
+    private String buildJwtPayload(String scope, String state, String nonce, DcqlQuery dcqlQuery) {
         Instant issueTime = Instant.now();
-        Instant expirationTime = issueTime.plus(10, ChronoUnit.DAYS);
+        Instant expirationTime = issueTime.plus(5, ChronoUnit.MINUTES);
 
         String clientId = cryptoComponent.getClientId();
 
@@ -88,38 +87,16 @@ public class AuthorizationRequestBuildWorkflow {
                 .claim("client_id_scheme", cryptoComponent.getClientIdScheme())
                 .claim(NONCE, nonce)
                 .claim("response_uri", backendConfig.getUrl() + AUTHORIZATION_RESPONSE_ENDPOINT)
-                .claim(OAuth2ParameterNames.SCOPE, "dome.credentials.presentation.LEARCredentialEmployee")
+                .claim(OAuth2ParameterNames.SCOPE, scope)
                 .claim(OAuth2ParameterNames.STATE, state)
                 .claim(OAuth2ParameterNames.RESPONSE_TYPE, "vp_token")
                 .claim("response_mode", "direct_post")
-                .claim("dcql_query", buildDcqlQuery())
+                .claim("dcql_query", objectMapper.convertValue(dcqlQuery, Map.class))
                 .jwtID(UUID.randomUUID().toString())
                 .build();
 
         cacheForNonceByState.add(state, nonce);
         return payload.toString();
-    }
-
-    private Map<String, Object> buildDcqlQuery() {
-        return Map.of("credentials", List.of(
-                Map.of(
-                        "id", "lear_employee_sd_jwt",
-                        "format", "dc+sd-jwt",
-                        "meta", Map.of("vct_values", List.of("eu.europa.ec.eudi.lce.1"))
-                ),
-                Map.of(
-                        "id", "lear_machine_sd_jwt",
-                        "format", "dc+sd-jwt",
-                        "meta", Map.of("vct_values", List.of("eu.europa.ec.eudi.lcm.1"))
-                ),
-                Map.of(
-                        "id", "lear_jwt_vc",
-                        "format", "jwt_vc_json",
-                        "meta", Map.of("credential_definition", Map.of(
-                                "type", List.of("VerifiableCredential", "LEARCredentialEmployee")
-                        ))
-                )
-        ));
     }
 
     private String generateOpenId4VpUrl(String nonce) {

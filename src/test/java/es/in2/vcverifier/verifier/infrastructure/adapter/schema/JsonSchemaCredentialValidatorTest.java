@@ -56,7 +56,7 @@ class JsonSchemaCredentialValidatorTest {
 
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("LEARCredentialEmployee");
+        type.add("LEARCredentialEmployee.jwt_vc_json.v1");
 
         vc.putObject("issuer").put("id", "did:elsi:VATES-12345678");
         // credentialSubject.mandate without mandatee

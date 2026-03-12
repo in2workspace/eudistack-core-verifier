@@ -97,7 +97,7 @@ class CustomTokenRequestConverterTest {
         when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
 
         JsonNode mockVC = buildMachineCredentialJsonNode();
-        when(clientCredentialsValidationWorkflow.execute(clientId, clientAssertion)).thenReturn(mockVC);
+        when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant(clientId, clientAssertion)).thenReturn(mockVC);
 
         Authentication result = customTokenRequestConverter.convert(mockRequest);
 
@@ -123,7 +123,7 @@ class CustomTokenRequestConverterTest {
         parameters.add(OAuth2ParameterNames.CLIENT_ASSERTION, "client-assertion");
 
         when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
-        when(clientCredentialsValidationWorkflow.execute("client-id", "client-assertion"))
+        when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant("client-id", "client-assertion"))
                 .thenThrow(new IllegalArgumentException("Invalid JWT claims from assertion"));
 
         assertThrows(IllegalArgumentException.class, () ->
@@ -142,7 +142,7 @@ class CustomTokenRequestConverterTest {
         parameters.add(OAuth2ParameterNames.CLIENT_ASSERTION, "client-assertion");
 
         when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
-        when(clientCredentialsValidationWorkflow.execute("client-id", "client-assertion"))
+        when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant("client-id", "client-assertion"))
                 .thenThrow(new RuntimeException("Something failed"));
 
         assertThrows(RuntimeException.class, () ->
@@ -161,7 +161,7 @@ class CustomTokenRequestConverterTest {
         parameters.add(OAuth2ParameterNames.CLIENT_ASSERTION, "client-assertion");
 
         when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
-        when(clientCredentialsValidationWorkflow.execute("client-id", "client-assertion"))
+        when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant("client-id", "client-assertion"))
                 .thenThrow(new InvalidCredentialTypeException("Invalid LEARCredentialType. Expected LEARCredentialMachine"));
 
         assertThrows(InvalidCredentialTypeException.class, () ->

@@ -77,9 +77,9 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             if (additionalParameters.containsKey(OAuth2ParameterNames.AUDIENCE)) {
                 audience = additionalParameters.get(OAuth2ParameterNames.AUDIENCE).toString();
             } else {
-                // Fallback: check credential type via workflow
+                // Fallback: check credential type via workflow — machine credentials use verifier as audience
                 String credType = tokenGenerationWorkflow.extractCredentialType(credentialJson);
-                if ("LEARCredentialMachine".equals(credType)) {
+                if (credType.startsWith("learcredential.machine.")) {
                     audience = backendConfig.getUrl();
                 } else {
                     throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
@@ -88,7 +88,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         }
 
         // Delegate token generation to the workflow
-        TokenGenerationWorkflow.Result tokenResult = tokenGenerationWorkflow.execute(
+        TokenGenerationWorkflow.Result tokenResult = tokenGenerationWorkflow.issueAccessToken(
                 credentialJson, audience, authentication.getAdditionalParameters(), !isM2M);
 
         OAuth2AccessToken oAuth2AccessToken = new OAuth2AccessToken(
@@ -186,7 +186,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private OAuth2RefreshToken getOAuth2RefreshToken(OAuth2AuthorizationGrantAuthenticationToken authentication,
                                                       Instant issueTime, String clientId,
                                                       JsonNode credentialJson, RegisteredClient registeredClient) {
-        OAuth2RefreshToken oAuth2RefreshToken = generateRefreshToken(issueTime);
+        OAuth2RefreshToken oAuth2RefreshToken = issueRefreshToken(issueTime);
 
         RefreshTokenDataCache refreshTokenDataCache = RefreshTokenDataCache.builder()
                 .refreshToken(oAuth2RefreshToken)
@@ -231,14 +231,14 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         return objectMapper.convertValue(additionalParameters.get("vc"), JsonNode.class);
     }
 
-    private OAuth2RefreshToken generateRefreshToken(Instant issueTime) {
+    private OAuth2RefreshToken issueRefreshToken(Instant issueTime) {
         SecureRandom secureRandom = new SecureRandom();
         byte[] refreshTokenBytes = new byte[32];
         secureRandom.nextBytes(refreshTokenBytes);
         String refreshTokenValue = Base64.getUrlEncoder().withoutPadding().encodeToString(refreshTokenBytes);
         Instant refreshTokenExpirationTime = issueTime.plus(
-                Long.parseLong(ACCESS_TOKEN_EXPIRATION_TIME),
-                ChronoUnit.valueOf(ACCESS_TOKEN_EXPIRATION_CHRONO_UNIT)
+                backendConfig.getRefreshTokenExpirationSeconds(),
+                ChronoUnit.SECONDS
         );
         return new OAuth2RefreshToken(refreshTokenValue, issueTime, refreshTokenExpirationTime);
     }
