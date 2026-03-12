@@ -96,6 +96,7 @@ class CustomAuthenticationProviderTest {
                 "signed-id-jwt", "openid learcredential", "did:key:zDnaeTest123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true)))
                 .thenReturn(tokenResult);
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
 
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
@@ -156,7 +157,7 @@ class CustomAuthenticationProviderTest {
     void authenticate_missingAudienceForEmployee_throwsException() {
         JsonNode vcJson = buildEmployeeCredentialV1();
 
-        when(tokenGenerationWorkflow.extractCredentialType(any(JsonNode.class))).thenReturn("LEARCredentialEmployee");
+        when(tokenGenerationWorkflow.extractCredentialType(any(JsonNode.class))).thenReturn("learcredential.employee.w3c.4");
 
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
@@ -204,7 +205,7 @@ class CustomAuthenticationProviderTest {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("LEARCredentialEmployee");
+        type.add("learcredential.employee.w3c.4");
         ObjectNode cs = vc.putObject("credentialSubject");
         cs.put("id", "did:key:zDnaeTest123");
         return vc;
@@ -214,7 +215,7 @@ class CustomAuthenticationProviderTest {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("LEARCredentialMachine");
+        type.add("learcredential.machine.w3c.3");
         ObjectNode cs = vc.putObject("credentialSubject");
         cs.put("id", "did:key:zDnaeMachine123");
         return vc;

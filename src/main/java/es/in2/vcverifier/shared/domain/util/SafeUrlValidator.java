@@ -2,6 +2,7 @@ package es.in2.vcverifier.shared.domain.util;
 
 import es.in2.vcverifier.shared.domain.exception.SsrfProtectionException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.net.InetAddress;
 import java.net.URI;
@@ -13,12 +14,10 @@ import java.util.Set;
  * Rejects private/internal IPs, non-HTTP schemes, and malformed URIs.
  */
 @Slf4j
-public final class SafeUrlValidator {
+@Component
+public class SafeUrlValidator {
 
     private static final Set<String> ALLOWED_SCHEMES = Set.of("https", "http");
-
-    private SafeUrlValidator() {
-    }
 
     /**
      * Validates that the given URL is safe for outbound HTTP requests.
@@ -26,7 +25,7 @@ public final class SafeUrlValidator {
      * @param url the URL to validate
      * @throws SsrfProtectionException if the URL is unsafe
      */
-    public static void validate(String url) {
+    public void validate(String url) {
         if (url == null || url.isBlank()) {
             throw new SsrfProtectionException("URL must not be null or blank");
         }
@@ -51,7 +50,7 @@ public final class SafeUrlValidator {
         validateHostNotPrivate(host);
     }
 
-    private static void validateHostNotPrivate(String host) {
+    private void validateHostNotPrivate(String host) {
         final InetAddress address;
         try {
             address = InetAddress.getByName(host);

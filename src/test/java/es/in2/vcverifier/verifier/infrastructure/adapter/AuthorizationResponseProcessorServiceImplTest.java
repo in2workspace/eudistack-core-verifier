@@ -101,6 +101,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 java.util.List.of()
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
+        lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
         lenient().when(cryptoComponent.getClientId()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
     }
 

@@ -11,6 +11,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
+
 import java.net.http.HttpClient;
 
 @Slf4j
@@ -19,9 +21,9 @@ public class TrustedIssuersConfig {
 
     @Bean
     @ConditionalOnProperty(name = "verifier.backend.trustFrameworks[0].trustedIssuersListUrl")
-    public TrustedIssuersProvider ebsiV4TrustedIssuersProvider(BackendConfig backendConfig, ObjectMapper objectMapper, HttpClient httpClient) {
+    public TrustedIssuersProvider ebsiV4TrustedIssuersProvider(BackendConfig backendConfig, ObjectMapper objectMapper, HttpClient httpClient, SafeUrlValidator safeUrlValidator) {
         log.info("Using EBSI v4 Trusted Issuers Provider (remote)");
-        return new EbsiV4TrustedIssuersProvider(backendConfig, objectMapper, httpClient);
+        return new EbsiV4TrustedIssuersProvider(backendConfig, objectMapper, httpClient, safeUrlValidator);
     }
 
     @Bean

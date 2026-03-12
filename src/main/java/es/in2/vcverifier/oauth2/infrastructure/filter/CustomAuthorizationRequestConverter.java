@@ -5,6 +5,7 @@ import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.FrontendConfig;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -38,7 +39,6 @@ import java.time.Instant;
 import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
-import static es.in2.vcverifier.shared.domain.util.SafeUrlValidator.validate;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
 @Slf4j
@@ -56,6 +56,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
     private final FrontendConfig frontendConfig;
+    private final SafeUrlValidator safeUrlValidator;
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -185,7 +186,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         if (requestUri != null) {
             try {
                 // SEC-14: SSRF protection — validate URL before outbound request
-                validate(requestUri);
+                safeUrlValidator.validate(requestUri);
                 log.info("Retrieving JWT from request_uri: {}", requestUri);
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                         .uri(URI.create(requestUri)).timeout(REQUEST_TIMEOUT).GET().build();

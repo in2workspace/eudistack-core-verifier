@@ -3,6 +3,7 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.statuslist;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.CredentialException;
 import es.in2.vcverifier.verifier.domain.model.StatusListCredentialData;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
@@ -20,8 +21,6 @@ import java.text.ParseException;
 import java.time.Duration;
 import java.util.Map;
 
-import static es.in2.vcverifier.shared.domain.util.SafeUrlValidator.validate;
-
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -33,6 +32,7 @@ public class BitstringStatusListVerifier implements CredentialStatusVerifier {
     private final CertificateValidationService certificateValidationService;
     private final StatusListCredentialService statusListCredentialService;
     private final HttpClient httpClient;
+    private final SafeUrlValidator safeUrlValidator;
 
     @Override
     public boolean supports(String credentialStatusType) {
@@ -91,7 +91,7 @@ public class BitstringStatusListVerifier implements CredentialStatusVerifier {
 
     private String fetchStatusListCredentialJwt(String statusListCredentialUrl) {
         // SEC-14: SSRF protection — validate URL before outbound request
-        validate(statusListCredentialUrl);
+        safeUrlValidator.validate(statusListCredentialUrl);
         final HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(statusListCredentialUrl))
                 .header("Accept", "application/vc+jwt")

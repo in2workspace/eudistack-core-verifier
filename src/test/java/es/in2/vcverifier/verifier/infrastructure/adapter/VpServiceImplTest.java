@@ -35,7 +35,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.DID_ELSI_PREFIX;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -213,11 +212,6 @@ class VpServiceImplTest {
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
-            // VC sub is read (but not strictly needed for this test)
-            JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
-            when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn("did:example:any");
-
             // Payload -> VC map
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -305,10 +299,6 @@ class VpServiceImplTest {
 
             mockedSignedJWT.when(() -> SignedJWT.parse(verifiablePresentation)).thenReturn(vpSignedJWT);
 
-            var vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn(learCredentialEmployeeV1.mandateeId()); // holderDid
-
             // Set up the VP claims
             JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
@@ -323,20 +313,18 @@ class VpServiceImplTest {
             SignedJWT jwtCredential = mock(SignedJWT.class);
             mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(jwtCredential);
 
-            // VC claims -> sub (binding source #2)
+            // VC claims -> iss (needed for extractIssFromJwt at step 5)
             JWTClaimsSet vcClaimsSet = mock(JWTClaimsSet.class);
             when(jwtCredential.getJWTClaimsSet()).thenReturn(vcClaimsSet);
-            when(vcClaimsSet.getSubject()).thenReturn(learCredentialEmployeeV1.mandateeId());
+            when(vcClaimsSet.getIssuer()).thenReturn("did:elsi:issuer");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(jwtCredential)).thenReturn(payload);
 
-            // Step 3: Validate the credential id is not in the revoked list
-            // Create a vcFromPayload Map
             // Step 2: Map payload to credential
             when(credentialMapperService.mapPayloadToVerifiableCredential(payload)).thenReturn(learCredentialEmployeeV1);
 
-            // Step 5: Retrieve the list of issuer capabilities
+            // Step 5: Retrieve the list of issuer capabilities (uses JWT iss claim)
             List<IssuerCredentialsCapabilities> issuerCapabilitiesList = List.of(
                     IssuerCredentialsCapabilities.builder()
                             .validFor(new TimeRange(Instant.now().toString(), Instant.now().plusSeconds(3600).toString()))
@@ -344,10 +332,10 @@ class VpServiceImplTest {
                             .claims(null)
                             .build()
             );
-            when(trustFrameworkService.getTrustedIssuerListData(learCredentialEmployeeV1.issuer().getId())).thenReturn(issuerCapabilitiesList);
+            when(trustFrameworkService.getTrustedIssuerListData("did:elsi:issuer")).thenReturn(issuerCapabilitiesList);
 
-            // Step 7: Validate the mandator with trusted issuer service
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + learCredentialEmployeeV1.mandatorOrganizationIdentifier())).thenReturn(issuerCapabilitiesList);
+            // Step 8: Validate the mandator with trusted issuer service
+            when(trustFrameworkService.getTrustedIssuerListData(learCredentialEmployeeV1.mandatorOrganizationIdentifier())).thenReturn(issuerCapabilitiesList);
 
             // Step 7: Verify the signature and the organizationId of the credential signature
             Map<String, Object> vcHeader = new HashMap<>();
@@ -389,22 +377,15 @@ class VpServiceImplTest {
             mockedSignedJWT.when(() -> SignedJWT.parse(verifiablePresentation)).thenReturn(vpSignedJWT);
             mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
 
-            // VP header -> kid (holder DID)
-            com.nimbusds.jose.JWSHeader vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn("did:example:holder#key-1");
-
-            // VP claims: iss/sub (optional) and vp claim with VC
+            // VP claims
             JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
-            when(vpClaimsSet.getIssuer()).thenReturn("did:example:holder");
-            when(vpClaimsSet.getSubject()).thenReturn("did:example:holder");
             when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
-            // VC claims: sub used for binding fallback/logging
+            // VC claims: iss used for issuer resolution at step 5
             JWTClaimsSet vcClaimsSet = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaimsSet);
-            when(vcClaimsSet.getSubject()).thenReturn("did:example:holder");
+            when(vcClaimsSet.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             // VC payload
             Payload payload = mock(Payload.class);
@@ -427,7 +408,6 @@ class VpServiceImplTest {
             // Issuer
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
-            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO"); // IMPORTANT: must start with did:elsi:
             when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
 
             // Issuer capabilities include this credential type
@@ -442,7 +422,7 @@ class VpServiceImplTest {
 
             // Mandator check
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(issuerCapabilitiesList);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(issuerCapabilitiesList);
 
             // Certificate validation (uses issuer DID substring after "did:elsi:")
             Map<String, Object> vcHeaderMap = new HashMap<>();
@@ -689,61 +669,6 @@ class VpServiceImplTest {
     }
 
     @Test
-    void safeGetCredentialSubjectId_throwsException_returnsNull() throws Exception {
-        // Arrange
-        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
-        Method method = CryptographicBindingValidator.class.getDeclaredMethod("safeGetCredentialSubjectId", LEARCredential.class);
-        method.setAccessible(true);
-
-        LEARCredential mockCredential = mock(LEARCredential.class);
-        doThrow(new RuntimeException("Error getting credential subject ID")).when(mockCredential).credentialSubjectId();
-
-        // Act
-        String result = (String) method.invoke(service, mockCredential);
-
-        // Assert
-        assertNull(result);
-    }
-
-    @Test
-    void safeGetCredentialSubjectId_validId_returnsId() throws Exception {
-        // Arrange
-        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
-        Method method = CryptographicBindingValidator.class.getDeclaredMethod("safeGetCredentialSubjectId", LEARCredential.class);
-        method.setAccessible(true);
-
-        LEARCredential mockCredential = mock(LEARCredential.class);
-        when(mockCredential.credentialSubjectId()).thenReturn("did:example:123");
-
-        // Act
-        String result = (String) method.invoke(service, mockCredential);
-
-        // Assert
-        assertEquals("did:example:123", result);
-    }
-    @Test
-    void extractBoundDidFromCredential_csIdValidAndMismatchWithVcSub_returnsCsIdWithWarning() throws Exception {
-        // Arrange
-        CryptographicBindingValidator service = new CryptographicBindingValidator(null, null);
-        Method method = CryptographicBindingValidator.class.getDeclaredMethod("extractBoundDidFromCredential", LEARCredential.class, String.class);
-        method.setAccessible(true);
-
-        // Mock LEARCredential to return a valid csId
-        LEARCredential mockCredential = mock(LEARCredential.class);
-        when(mockCredential.credentialSubjectId()).thenReturn("did:example:csid");
-
-        // vcSub is different from csId
-        String vcSub = "did:example:othersub";
-
-        // Act
-        String result = (String) method.invoke(service, mockCredential, vcSub);
-
-        // Assert
-        assertEquals("did:example:csid", result);
-
-    }
-
-    @Test
     void verifyVerifiablePresentation_cryptographicBindingMismatch_throwsInvalidScopeException() throws Exception {
         // Arrange
         String vpToken = "valid.vp.jwt";
@@ -761,10 +686,10 @@ class VpServiceImplTest {
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcToken)));
 
-            // --- VC claims -> sub
+            // --- VC claims -> iss (needed for extractIssFromJwt at step 5)
             JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn("did:example:somebody-else");
+            when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             // --- Payload extraction
             Payload payload = mock(Payload.class);
@@ -784,7 +709,6 @@ class VpServiceImplTest {
             // Issuer + capabilities OK
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
-            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
             when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
@@ -799,7 +723,7 @@ class VpServiceImplTest {
 
             // Mandator validation OK
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             // Certificate validation no-op
             JWSHeader vcHeader = mock(JWSHeader.class);
@@ -829,20 +753,15 @@ class VpServiceImplTest {
 
         try (MockedStatic<SignedJWT> mocked = mockStatic(SignedJWT.class)) {
             mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
-
-            var vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn(holderDid);
+            mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
 
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
-            mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
-
             JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn(holderDid);
+            when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -856,7 +775,6 @@ class VpServiceImplTest {
 
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
-            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
             when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
@@ -872,7 +790,7 @@ class VpServiceImplTest {
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
 
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             doThrow(new RuntimeException("Signature verification failed"))
                     .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
@@ -896,20 +814,13 @@ class VpServiceImplTest {
             mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
             mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
 
-            // VP header kid NO did:
-            var vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn("not-a-did");
-
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
-            when(vpClaims.getIssuer()).thenReturn("https://issuer.example");
-            when(vpClaims.getSubject()).thenReturn("1234567890");
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
             JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn("1234567890"); // no did
+            when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -923,7 +834,6 @@ class VpServiceImplTest {
 
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
-            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
             when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
@@ -940,7 +850,7 @@ class VpServiceImplTest {
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
 
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             doThrow(new InvalidScopeException("Cannot extract holder identity from VP"))
                     .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
@@ -964,23 +874,16 @@ class VpServiceImplTest {
 
         try (MockedStatic<SignedJWT> mocked = mockStatic(SignedJWT.class)) {
             mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
-
-            // VP header kid => holder DID
-            var vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn(holderDid);
+            mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
 
             // VP claims -> vp.verifiableCredential
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
-            // VC parse
-            mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
-
             JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn(holderDid);
+            when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -994,7 +897,6 @@ class VpServiceImplTest {
 
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
-            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
             when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
@@ -1010,7 +912,7 @@ class VpServiceImplTest {
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
 
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             doThrow(new RuntimeException("Public key not found"))
                     .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
@@ -1035,17 +937,13 @@ class VpServiceImplTest {
             mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
             mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
 
-            var vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn(holderDid);
-
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
             JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn(holderDid);
+            when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -1074,7 +972,6 @@ class VpServiceImplTest {
             // Issuer + capabilities
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
-            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
             when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
             when(cred.type()).thenReturn(List.of("LEARCredentialEmployee"));
 
@@ -1084,7 +981,7 @@ class VpServiceImplTest {
             when(trustFrameworkService.getTrustedIssuerListData("did:elsi:VATES-FOO")).thenReturn(caps);
 
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
@@ -1116,11 +1013,6 @@ class VpServiceImplTest {
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
-
-            // VC claims -> sub (read at step 1 for binding log)
-            JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
-            when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn("did:example:holder");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -1164,19 +1056,13 @@ class VpServiceImplTest {
             mocked.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
             mocked.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
 
-            com.nimbusds.jose.JWSHeader vpHeader = mock(com.nimbusds.jose.JWSHeader.class);
-            when(vpSignedJWT.getHeader()).thenReturn(vpHeader);
-            when(vpHeader.getKeyID()).thenReturn("invalid-kid"); // no did:
-
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
-            when(vpClaims.getIssuer()).thenReturn("https://issuer.example"); // no did:
-            when(vpClaims.getSubject()).thenReturn("not-a-did-subject");     // no did:
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
             JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
             when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getSubject()).thenReturn("did:example:any");
+            when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -1192,7 +1078,6 @@ class VpServiceImplTest {
 
             var issuer = mock(es.in2.vcverifier.verifier.domain.model.credentials.Issuer.class);
             when(cred.issuer()).thenReturn(issuer);
-            when(issuer.getId()).thenReturn("did:elsi:VATES-FOO");
             when(issuer.getOrganizationIdentifier()).thenReturn("VATES-FOO");
 
             List<IssuerCredentialsCapabilities> caps = List.of(
@@ -1205,7 +1090,7 @@ class VpServiceImplTest {
             when(trustFrameworkService.getTrustedIssuerListData("did:elsi:VATES-FOO")).thenReturn(caps);
 
             when(cred.mandatorOrganizationIdentifier()).thenReturn("VATES-FOO");
-            when(trustFrameworkService.getTrustedIssuerListData(DID_ELSI_PREFIX + "VATES-FOO")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             com.nimbusds.jose.JWSHeader vcHeader = mock(com.nimbusds.jose.JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);

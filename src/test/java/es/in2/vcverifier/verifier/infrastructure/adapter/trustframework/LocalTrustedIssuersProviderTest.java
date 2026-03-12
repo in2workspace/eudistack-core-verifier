@@ -4,7 +4,9 @@ import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import org.junit.jupiter.api.Test;
 
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Paths;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -34,11 +36,13 @@ class LocalTrustedIssuersProviderTest {
     }
 
     @Test
-    void missingFile_noIssuersTrusted() {
+    void missingFile_fallsBackToClasspath() {
         LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider("/nonexistent/file.yaml");
 
-        assertThrows(IssuerNotAuthorizedException.class,
-                () -> provider.getIssuerCapabilities("VATES-A15456585"));
+        // When external file is missing, falls back to classpath resource
+        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("VATES-A15456585");
+        assertNotNull(capabilities);
+        assertFalse(capabilities.isEmpty());
     }
 
     @Test
@@ -65,6 +69,10 @@ class LocalTrustedIssuersProviderTest {
     private static String resolveTestFixture(String classpathResource) {
         URL url = LocalTrustedIssuersProviderTest.class.getClassLoader().getResource(classpathResource);
         assertNotNull(url, "Test fixture not found on classpath: " + classpathResource);
-        return url.getPath();
+        try {
+            return Paths.get(url.toURI()).toString();
+        } catch (URISyntaxException e) {
+            throw new AssertionError("Invalid URI for classpath resource: " + classpathResource, e);
+        }
     }
 }

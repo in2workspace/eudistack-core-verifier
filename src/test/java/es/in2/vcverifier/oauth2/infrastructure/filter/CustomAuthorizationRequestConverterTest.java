@@ -8,6 +8,7 @@ import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.FrontendConfig;
 import es.in2.vcverifier.shared.crypto.DIDService;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import jakarta.servlet.http.HttpServletRequest;
@@ -69,6 +70,9 @@ class CustomAuthorizationRequestConverterTest {
     @Mock
     private FrontendConfig frontendConfig;
 
+    @Mock
+    private SafeUrlValidator safeUrlValidator;
+
     private boolean isNonceRequiredOnFapiProfile = true;
 
     private CustomAuthorizationRequestConverter converter;
@@ -85,7 +89,8 @@ class CustomAuthorizationRequestConverterTest {
                 isNonceRequiredOnFapiProfile,
                 httpClient,
                 authorizationRequestBuildWorkflow,
-                frontendConfig
+                frontendConfig,
+                safeUrlValidator
         );
     }
 

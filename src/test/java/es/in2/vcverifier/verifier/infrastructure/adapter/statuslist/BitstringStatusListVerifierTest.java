@@ -8,6 +8,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.CredentialException;
 import es.in2.vcverifier.verifier.domain.model.StatusListCredentialData;
 import es.in2.vcverifier.verifier.domain.service.StatusListCredentialService;
@@ -41,6 +42,9 @@ class BitstringStatusListVerifierTest {
 
     @Mock
     private HttpClient httpClient;
+
+    @Mock
+    private SafeUrlValidator safeUrlValidator;
 
     @Test
     void supports_bitstringStatusListEntry_returnsTrue() {

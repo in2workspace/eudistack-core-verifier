@@ -3,6 +3,7 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.trustframework;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,13 +31,14 @@ class EbsiV4TrustedIssuersProviderTest {
     @Mock private BackendConfig backendConfig;
     @Mock private HttpClient httpClient;
     @Mock private HttpResponse<String> httpResponse;
+    @Mock private SafeUrlValidator safeUrlValidator;
 
     private EbsiV4TrustedIssuersProvider provider;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        provider = new EbsiV4TrustedIssuersProvider(backendConfig, objectMapper, httpClient);
+        provider = new EbsiV4TrustedIssuersProvider(backendConfig, objectMapper, httpClient, safeUrlValidator);
     }
 
     @Test

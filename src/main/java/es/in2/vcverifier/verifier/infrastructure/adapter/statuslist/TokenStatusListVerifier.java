@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.CredentialException;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
 import es.in2.vcverifier.verifier.domain.model.TokenStatusListData;
@@ -24,8 +25,6 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.zip.GZIPInputStream;
 
-import static es.in2.vcverifier.shared.domain.util.SafeUrlValidator.validate;
-
 /**
  * Verifies credential revocation using Token Status List (draft-ietf-oauth-status-list).
  * Used for SD-JWT credentials with status.status_list references.
@@ -45,6 +44,7 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final SafeUrlValidator safeUrlValidator;
 
     @Override
     public boolean supports(String credentialStatusType) {
@@ -193,7 +193,7 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
 
     private String fetchTokenStatusListJwt(String statusListUrl) {
         // SEC-14: SSRF protection — validate URL before outbound request
-        validate(statusListUrl);
+        safeUrlValidator.validate(statusListUrl);
         final HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(statusListUrl))
                 .header("Accept", "application/statuslist+jwt")

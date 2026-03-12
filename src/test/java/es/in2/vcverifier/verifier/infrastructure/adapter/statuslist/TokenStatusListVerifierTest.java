@@ -2,6 +2,7 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.statuslist;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.CredentialException;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
 import es.in2.vcverifier.verifier.domain.model.TokenStatusListData;
@@ -32,6 +33,9 @@ class TokenStatusListVerifierTest {
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
+
+    @Mock
+    private SafeUrlValidator safeUrlValidator;
 
     @Test
     void supports_tokenStatusListEntry_returnsTrue() {

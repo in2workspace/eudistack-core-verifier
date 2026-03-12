@@ -46,7 +46,7 @@ class ClientCredentialsValidationWorkflowTest {
         ObjectNode credential = OBJECT_MAPPER.createObjectNode();
         ArrayNode typeArray = credential.putArray("type");
         typeArray.add("VerifiableCredential");
-        typeArray.add("LEARCredentialMachine");
+        typeArray.add("learcredential.machine.w3c.3");
         return credential;
     }
 
@@ -54,7 +54,7 @@ class ClientCredentialsValidationWorkflowTest {
         ObjectNode credential = OBJECT_MAPPER.createObjectNode();
         ArrayNode typeArray = credential.putArray("type");
         typeArray.add("VerifiableCredential");
-        typeArray.add("LEARCredentialEmployee");
+        typeArray.add("learcredential.employee.w3c.4");
         return credential;
     }
 
@@ -78,7 +78,7 @@ class ClientCredentialsValidationWorkflowTest {
     }
 
     @Test
-    @DisplayName("execute() throws when credential is not LEARCredentialMachine")
+    @DisplayName("execute() throws when credential is not a machine credential")
     void execute_throwsForWrongCredentialType() {
         SignedJWT signedJWT = mock(SignedJWT.class);
         Payload payload = mock(Payload.class);
@@ -91,7 +91,7 @@ class ClientCredentialsValidationWorkflowTest {
 
         assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
                 .isInstanceOf(InvalidCredentialTypeException.class)
-                .hasMessageContaining("LEARCredentialMachine");
+                .hasMessageContaining("machine credential");
 
         verify(vpService, never()).verifyVerifiablePresentation(any());
     }

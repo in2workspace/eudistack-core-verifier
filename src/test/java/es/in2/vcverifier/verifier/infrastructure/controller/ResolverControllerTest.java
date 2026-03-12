@@ -3,6 +3,8 @@ package es.in2.vcverifier.verifier.infrastructure.controller;
 import es.in2.vcverifier.shared.config.I18nConfig;
 import es.in2.vcverifier.verifier.infrastructure.controller.ResolverController;
 import es.in2.vcverifier.shared.crypto.DIDService;
+import es.in2.vcverifier.shared.domain.exception.handler.ErrorResponseFactory;
+import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +41,12 @@ class ResolverControllerTest {
 
     @MockBean
     private DIDService didService;
+
+    @MockBean
+    private SafeUrlValidator safeUrlValidator;
+
+    @MockBean
+    private ErrorResponseFactory errorResponseFactory;
 
     @Test
     void testResolveDid() throws Exception {
