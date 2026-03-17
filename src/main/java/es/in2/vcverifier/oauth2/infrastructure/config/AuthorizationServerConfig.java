@@ -104,8 +104,9 @@ public class AuthorizationServerConfig {
     @Bean
     public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
         NimbusJwtDecoder jwtDecoder = (NimbusJwtDecoder) OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
+        // Audience is dynamic (derived from request host), so validate at request time
         OAuth2TokenValidator<Jwt> audienceValidator = new JwtClaimValidator<>(
-                "aud", backendConfig.getUrl()::equals);
+                "aud", aud -> aud.equals(backendConfig.getUrl()));
         OAuth2TokenValidator<Jwt> withAudience = new DelegatingOAuth2TokenValidator<>(audienceValidator);
         jwtDecoder.setJwtValidator(withAudience);
         return jwtDecoder;
@@ -128,10 +129,11 @@ public class AuthorizationServerConfig {
 
 
     // Customiza los endpoint del Authorization Server
+    // Issuer is NOT set — Spring derives it dynamically from the incoming request
+    // (via ForwardedHeaderFilter), enabling multi-tenant subdomain support.
     @Bean
     public AuthorizationServerSettings authorizationServerSettings() {
         return AuthorizationServerSettings.builder()
-                .issuer(backendConfig.getUrl())
                 .authorizationEndpoint("/oidc/authorize")
                 .deviceAuthorizationEndpoint("/oidc/device_authorization")
                 .deviceVerificationEndpoint("/oidc/device_verification")
