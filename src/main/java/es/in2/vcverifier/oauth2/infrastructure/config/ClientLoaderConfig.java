@@ -24,6 +24,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
+
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
@@ -85,6 +87,9 @@ public class ClientLoaderConfig {
                 }
                 if (clientData.requireProofKey() != null) {
                     clientSettingsBuilder.requireProofKey(clientData.requireProofKey());
+                }
+                if (clientData.tenant() != null && !clientData.tenant().isBlank()) {
+                    clientSettingsBuilder.setting(CLIENT_SETTING_TENANT, clientData.tenant());
                 }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());

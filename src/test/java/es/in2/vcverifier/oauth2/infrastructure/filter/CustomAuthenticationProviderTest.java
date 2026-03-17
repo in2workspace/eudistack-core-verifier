@@ -94,7 +94,7 @@ class CustomAuthenticationProviderTest {
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
                 "signed-id-jwt", "openid learcredential", "did:key:zDnaeTest123");
-        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true)))
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true), any()))
                 .thenReturn(tokenResult);
         when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
 
@@ -113,7 +113,7 @@ class CustomAuthenticationProviderTest {
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
-        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true));
+        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true), any());
     }
 
     @Test
@@ -125,7 +125,7 @@ class CustomAuthenticationProviderTest {
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
                 null, "machine learcredential", "did:key:zDnaeMachine123");
-        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false)))
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), any()))
                 .thenReturn(tokenResult);
 
         Map<String, Object> additionalParams = new HashMap<>();
@@ -139,7 +139,7 @@ class CustomAuthenticationProviderTest {
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
-        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://verifier.example.com"), anyMap(), eq(false));
+        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://verifier.example.com"), anyMap(), eq(false), any());
     }
 
     @Test

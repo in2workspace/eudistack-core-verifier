@@ -25,6 +25,7 @@ public class Constants {
     public static final long MSBALL = 0xFFFFFF80L;
     public static final String EXPIRATION = "expiration";
     public static final String REVOCATION = "revocation";
+    public static final String CLIENT_SETTING_TENANT = "settings.tenant";
 
 
 }
