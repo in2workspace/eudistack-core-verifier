@@ -36,11 +36,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -183,6 +185,73 @@ class CustomAuthenticationProviderTest {
         assertTrue(provider.supports(OAuth2ClientCredentialsAuthenticationToken.class));
         assertTrue(provider.supports(OAuth2RefreshTokenAuthenticationToken.class));
         assertFalse(provider.supports(Authentication.class));
+    }
+
+    @Test
+    void authenticate_clientCredentialsGrant_passesTenantFromClientSettings() {
+        // Register a client WITH tenant setting
+        RegisteredClient clientWithTenant = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("tenant-client")
+                .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .redirectUri("https://example.com/callback")
+                .scope("openid")
+                .clientSettings(ClientSettings.builder()
+                        .requireProofKey(false)
+                        .setting(CLIENT_SETTING_TENANT, "dome")
+                        .build())
+                .build();
+
+        registeredClientRepository = new InMemoryRegisteredClientRepository(clientWithTenant);
+        provider = new CustomAuthenticationProvider(
+                registeredClientRepository, backendConfig, objectMapper,
+                cacheStoreForRefreshTokenData, oAuth2AuthorizationService, tokenGenerationWorkflow);
+
+        JsonNode vcJson = buildMachineCredentialV1();
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+
+        TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
+                "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
+                null, "machine learcredential", "did:key:zDnaeMachine123");
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
+                .thenReturn(tokenResult);
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "tenant-client");
+        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+
+        OAuth2ClientCredentialsAuthenticationToken authToken = new OAuth2ClientCredentialsAuthenticationToken(
+                mock(Authentication.class), null, additionalParams);
+
+        Authentication result = provider.authenticate(authToken);
+
+        assertNotNull(result);
+        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome"));
+    }
+
+    @Test
+    void authenticate_clientCredentialsGrant_passesNullTenantWhenNotConfigured() {
+        // The default setUp() client has no tenant setting
+        JsonNode vcJson = buildMachineCredentialV1();
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+
+        TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
+                "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
+                null, "machine learcredential", "did:key:zDnaeMachine123");
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), isNull()))
+                .thenReturn(tokenResult);
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+
+        OAuth2ClientCredentialsAuthenticationToken authToken = new OAuth2ClientCredentialsAuthenticationToken(
+                mock(Authentication.class), null, additionalParams);
+
+        Authentication result = provider.authenticate(authToken);
+
+        assertNotNull(result);
+        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), isNull());
     }
 
     // --- Helper methods ---
