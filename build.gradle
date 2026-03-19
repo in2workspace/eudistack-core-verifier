@@ -74,6 +74,7 @@ dependencies {
 checkstyle {
     toolVersion = '10.16.0'
     configFile = file("${rootDir}/config/checkstyle/checkstyle.xml")
+    maxWarnings = 0
 }
 
 checkstyleMain {

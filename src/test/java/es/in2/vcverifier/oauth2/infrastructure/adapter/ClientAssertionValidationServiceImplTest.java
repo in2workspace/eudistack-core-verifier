@@ -4,7 +4,6 @@ import es.in2.vcverifier.shared.crypto.JWTService;
 import com.nimbusds.jose.Payload;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.JtiTokenCache;
-import es.in2.vcverifier.oauth2.infrastructure.adapter.ClientAssertionValidationServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -13,7 +12,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ClientAssertionValidationServiceImplTest {
@@ -38,10 +38,10 @@ class ClientAssertionValidationServiceImplTest {
         Payload payloadMock = mock(Payload.class);
 
         when(backendConfig.getUrl()).thenReturn(authServer);
-        when(jwtService.extractClaimFromPayload(payloadMock,"iss")).thenReturn(clientId);
-        when(jwtService.extractClaimFromPayload(payloadMock,"sub")).thenReturn(clientId);
-        when(jwtService.extractClaimFromPayload(payloadMock,"aud")).thenReturn("authorization-server");
-        when(jwtService.extractClaimFromPayload(payloadMock,"jti")).thenReturn(jti);
+        when(jwtService.extractClaimFromPayload(payloadMock, "iss")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payloadMock, "sub")).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payloadMock, "aud")).thenReturn("authorization-server");
+        when(jwtService.extractClaimFromPayload(payloadMock, "jti")).thenReturn(jti);
         when(jtiTokenCache.isJtiPresent(jti)).thenReturn(false);
         when(jwtService.extractExpirationFromPayload(payloadMock)).thenReturn(System.currentTimeMillis() / 1000 + 3600);
 

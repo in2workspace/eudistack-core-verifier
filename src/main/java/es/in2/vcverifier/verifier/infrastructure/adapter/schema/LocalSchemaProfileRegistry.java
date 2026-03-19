@@ -13,7 +13,12 @@ import java.io.InputStream;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -40,9 +45,13 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
     }
 
     private void loadFromExternalDir(String externalSchemasDir) {
-        if (externalSchemasDir == null || externalSchemasDir.isBlank()) return;
+        if (externalSchemasDir == null || externalSchemasDir.isBlank()) {
+            return;
+        }
         Path dir = Path.of(externalSchemasDir);
-        if (!Files.isDirectory(dir)) return;
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
 
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.json")) {
             for (Path file : stream) {
@@ -125,11 +134,15 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
         Map<String, String> accessTokenEmbed = parseStringMap(node.get("access_token_embed"));
         String scope = node.has("scope") ? node.get("scope").asText() : null;
 
-        return new TokenClaimsMapping(subjectPaths, idTokenClaims, accessTokenClaims, idTokenEmbed, accessTokenEmbed, scope);
+        return new TokenClaimsMapping(
+                subjectPaths, idTokenClaims, accessTokenClaims,
+                idTokenEmbed, accessTokenEmbed, scope);
     }
 
     private Map<String, ClaimMapping> parseClaimMappings(JsonNode node) {
-        if (node == null || !node.isObject()) return Map.of();
+        if (node == null || !node.isObject()) {
+            return Map.of();
+        }
 
         Map<String, ClaimMapping> mappings = new LinkedHashMap<>();
         node.fields().forEachRemaining(entry -> {
@@ -175,14 +188,18 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
     }
 
     private Map<String, String> parseStringMap(JsonNode node) {
-        if (node == null || !node.isObject()) return Map.of();
+        if (node == null || !node.isObject()) {
+            return Map.of();
+        }
         Map<String, String> map = new LinkedHashMap<>();
         node.fields().forEachRemaining(entry -> map.put(entry.getKey(), entry.getValue().asText()));
         return Collections.unmodifiableMap(map);
     }
 
     private List<String> parseStringList(JsonNode node) {
-        if (node == null || !node.isArray()) return List.of();
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
         List<String> list = new ArrayList<>();
         for (JsonNode item : node) {
             list.add(item.asText());

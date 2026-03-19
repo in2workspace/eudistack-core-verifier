@@ -6,10 +6,14 @@ import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
-import es.in2.vcverifier.shared.crypto.CertificateValidationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.asn1.*;
+import org.bouncycastle.asn1.ASN1IA5String;
+import org.bouncycastle.asn1.ASN1InputStream;
+import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1PrintableString;
+import org.bouncycastle.asn1.ASN1UTF8String;
 import org.springframework.stereotype.Service;
 
 import javax.security.auth.x500.X500Principal;
@@ -22,7 +26,11 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
-import java.util.*;
+import java.util.Base64;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,7 +39,9 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class CertificateValidationServiceImpl implements CertificateValidationService {
     @Override
-    public void extractAndVerifyCertificate(String verifiableCredential, Map<String, Object> vcHeader, String expectedOrgId) {
+    public void extractAndVerifyCertificate(String verifiableCredential,
+                                              Map<String, Object> vcHeader,
+                                              String expectedOrgId) {
         // Retrieve the x5c claim (certificate chain)
         Object x5cObj = vcHeader.get("x5c");
 
@@ -67,11 +77,14 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
 
     }
 
-    private static PublicKey processCertificate(String certBase64Str, String expectedOrgId, CertificateFactory certificateFactory) {
+    private static PublicKey processCertificate(String certBase64Str,
+                                                   String expectedOrgId,
+                                                   CertificateFactory certificateFactory) {
         try {
             // Decode each certificate
             byte[] certBytes = Base64.getDecoder().decode(certBase64Str);
-            X509Certificate certificate = (X509Certificate) certificateFactory.generateCertificate(new ByteArrayInputStream(certBytes));
+            X509Certificate certificate = (X509Certificate) certificateFactory
+                    .generateCertificate(new ByteArrayInputStream(certBytes));
 
             // Extract the DN (Distinguished Name)
             X500Principal subject = certificate.getSubjectX500Principal();
@@ -180,7 +193,9 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
             } else if (publicKey instanceof ECPublicKey ecKey) {
                 verifier = new ECDSAVerifier(ecKey, defCriticalHeaders);
             } else {
-                throw new IllegalArgumentException("Unsupported key type for JWT verification: " + publicKey.getAlgorithm());
+                throw new IllegalArgumentException(
+                        "Unsupported key type for JWT verification: "
+                                + publicKey.getAlgorithm());
             }
 
             if (!signedJWT.verify(verifier)) {

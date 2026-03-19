@@ -1,13 +1,18 @@
 package es.in2.vcverifier.verifier.infrastructure.config;
 
 import es.in2.vcverifier.shared.config.BackendConfig;
-import es.in2.vcverifier.verifier.domain.service.*;
-import es.in2.vcverifier.shared.crypto.*;
-import es.in2.vcverifier.verifier.infrastructure.adapter.schema.JsonSchemaCredentialValidator;
+import es.in2.vcverifier.shared.crypto.DIDService;
+import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
+import es.in2.vcverifier.shared.crypto.SdJwtVerificationServiceImpl;
+import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
+import es.in2.vcverifier.verifier.domain.service.CredentialSchemaResolver;
+import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
+import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
+import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import es.in2.vcverifier.verifier.infrastructure.adapter.claims.SchemaProfileClaimsExtractor;
+import es.in2.vcverifier.verifier.infrastructure.adapter.schema.JsonSchemaCredentialValidator;
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaProfileRegistry;
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaResolver;
-import es.in2.vcverifier.shared.crypto.SdJwtVerificationServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

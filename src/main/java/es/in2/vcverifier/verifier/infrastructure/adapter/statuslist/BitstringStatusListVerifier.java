@@ -144,7 +144,9 @@ public class BitstringStatusListVerifier implements CredentialStatusVerifier {
         }
 
         if (!credentialIssuerDid.startsWith("did:elsi:")) {
-            throw new CredentialException("Unsupported issuer DID format. Expected 'did:elsi:...' but got: " + credentialIssuerDid);
+            throw new CredentialException(
+                    "Unsupported issuer DID format. Expected 'did:elsi:...' but got: "
+                            + credentialIssuerDid);
         }
 
         final String certificateId = credentialIssuerDid.substring("did:elsi:".length());

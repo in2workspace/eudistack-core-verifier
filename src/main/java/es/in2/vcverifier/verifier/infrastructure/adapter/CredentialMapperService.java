@@ -32,7 +32,9 @@ public class CredentialMapperService {
             List<String> types = extractAndValidateTypes(vcMap);
             return mapToSpecificCredential(vcMap, types);
         } catch (IllegalArgumentException e) {
-            throw new CredentialMappingException("Error mapping VC payload to specific Verifiable Credential class: " + e.getMessage());
+            throw new CredentialMappingException(
+                    "Error mapping VC payload to specific Verifiable Credential class: "
+                            + e.getMessage());
         }
     }
 
@@ -44,7 +46,9 @@ public class CredentialMapperService {
         Map<String, Object> validatedMap = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             if (!(entry.getKey() instanceof String)) {
-                throw new CredentialMappingException("Invalid key type found in Verifiable Credential map: " + entry.getKey());
+                throw new CredentialMappingException(
+                        "Invalid key type found in Verifiable Credential map: "
+                                + entry.getKey());
             }
             validatedMap.put((String) entry.getKey(), entry.getValue());
         }
@@ -84,7 +88,8 @@ public class CredentialMapperService {
         String configId = types.stream()
                 .filter(t -> !"VerifiableCredential".equals(t) && !"VerifiableAttestation".equals(t))
                 .findFirst()
-                .orElseThrow(() -> new InvalidCredentialTypeException("No credential config ID found in types: " + types));
+                .orElseThrow(() -> new InvalidCredentialTypeException(
+                        "No credential config ID found in types: " + types));
 
         // Employee credentials
         if (configId.startsWith("learcredential.employee.")) {

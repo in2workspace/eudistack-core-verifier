@@ -8,7 +8,11 @@ import es.in2.vcverifier.verifier.domain.service.CredentialSchemaResolver;
 import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Validates credentials against JSON Schemas resolved by the chain of CredentialSchemaResolvers.
@@ -43,7 +47,8 @@ public class JsonSchemaCredentialValidator implements CredentialValidator {
         }
 
         if (schema.isEmpty()) {
-            log.warn("No JSON Schema found for credential type={}, context={}. Skipping schema validation.", credentialType, context);
+            log.warn("No JSON Schema found for credential type={}, context={}. "
+                    + "Skipping schema validation.", credentialType, context);
             // No schema found — pass through without schema validation
             return ValidationResult.builder()
                     .valid(true)
@@ -68,7 +73,8 @@ public class JsonSchemaCredentialValidator implements CredentialValidator {
             List<String> errorMessages = errors.stream()
                     .map(ValidationMessage::getMessage)
                     .toList();
-            log.warn("Credential validation failed: type={}, version={}, errors={}", credentialType, version, errorMessages);
+            log.warn("Credential validation failed: type={}, version={}, errors={}",
+                    credentialType, version, errorMessages);
             return ValidationResult.builder()
                     .valid(false)
                     .credentialType(credentialType)

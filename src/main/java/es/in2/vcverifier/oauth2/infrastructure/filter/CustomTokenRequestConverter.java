@@ -138,7 +138,8 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         Authentication clientPrincipal = SecurityContextHolder.getContext().getAuthentication();
 
         log.info("Refresh token grant successfully handled");
-        return new OAuth2RefreshTokenAuthenticationToken(refreshTokenValue, clientPrincipal, null, additionalParameters);
+        return new OAuth2RefreshTokenAuthenticationToken(
+                refreshTokenValue, clientPrincipal, null, additionalParameters);
     }
 
     private static MultiValueMap<String, String> getParameters(HttpServletRequest request) {

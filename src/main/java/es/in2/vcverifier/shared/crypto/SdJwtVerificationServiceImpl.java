@@ -11,8 +11,6 @@ import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.model.sdjwt.Disclosure;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwt;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
-import es.in2.vcverifier.shared.crypto.DIDService;
-import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +19,10 @@ import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
-import java.util.*;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Full SD-JWT VC verification pipeline:

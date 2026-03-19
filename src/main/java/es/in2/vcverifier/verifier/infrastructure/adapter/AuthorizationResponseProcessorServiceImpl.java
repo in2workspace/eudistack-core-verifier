@@ -42,7 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 @Slf4j
@@ -64,7 +64,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
 
     @Override
-    public void handleAuthResponse(String state, String vpToken){
+    public void handleAuthResponse(String state, String vpToken) {
         log.info("Processing authorization response");
 
         // Validate if the state exists in the cache
@@ -77,7 +77,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         Object expirationLoginValue = oAuth2AuthorizationRequest.getAdditionalParameters().get(EXPIRATION);
 
-        if(expirationLoginValue==null){
+        if (expirationLoginValue == null) {
             throw new LoginTimeoutException("Start time is missing from login request");
         }
 
@@ -124,7 +124,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         String code = UUID.randomUUID().toString();
         log.info("Code generated: {}", code);
 
-        RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
+        RegisteredClient registeredClient = registeredClientRepository
+                .findByClientId(oAuth2AuthorizationRequest.getClientId());
 
         if (registeredClient == null) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
@@ -224,7 +225,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 }
                 throw new JWTParsingException("DCQL vp_token JSON object contains no entries");
             } catch (Exception e) {
-                if (e instanceof JWTParsingException) throw (JWTParsingException) e;
+                if (e instanceof JWTParsingException) {
+                    throw (JWTParsingException) e;
+                }
                 throw new JWTParsingException("Failed to parse DCQL vp_token: " + e.getMessage());
             }
         }
@@ -275,7 +278,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         try {
             boolean revoked = verifier.isRevoked(uri, idx, "revocation");
             if (revoked) {
-                throw new CredentialRevokedException("SD-JWT credential is revoked (Token Status List uri=" + uri + ", idx=" + idx + ")");
+                throw new CredentialRevokedException(
+                        "SD-JWT credential is revoked (Token Status List uri="
+                                + uri + ", idx=" + idx + ")");
             }
             log.info("SD-JWT credential is not revoked");
         } catch (CredentialRevokedException e) {
@@ -308,12 +313,16 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             if (audiences == null || audiences.isEmpty()) {
                 throw new JWTClaimMissingException("The 'aud' claim is missing in the VP token.");
             }
-            // OID4VP Final 1.0: aud MUST be client_id. Accept both x509_hash/DID client_id and backend URL for backwards compatibility.
+            // OID4VP Final 1.0: aud MUST be client_id.
+            // Accept both x509_hash/DID client_id and backend URL for backwards compat.
             String expectedClientId = cryptoComponent.getClientId();
             String expectedUrl = backendConfig.getUrl();
-            log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}", expectedClientId, expectedUrl, audiences);
-            if (!audiences.contains(expectedClientId) && !audiences.contains(expectedUrl)) {
-                throw new JWTClaimMissingException("The 'aud' claim in the VP token does not match the verifier client_id or URL.");
+            log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}",
+                    expectedClientId, expectedUrl, audiences);
+            if (!audiences.contains(expectedClientId)
+                    && !audiences.contains(expectedUrl)) {
+                throw new JWTClaimMissingException(
+                        "The 'aud' claim in the VP token does not match the verifier client_id or URL.");
             }
             log.debug("Validated VP nonce: received={}, cached={}, audience={}", vpNonce, cachedNonce, audiences);
         } catch (ParseException e) {

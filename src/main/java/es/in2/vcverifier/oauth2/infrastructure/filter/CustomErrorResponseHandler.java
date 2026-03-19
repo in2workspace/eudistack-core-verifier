@@ -19,8 +19,10 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
                                         AuthenticationException exception) throws IOException {
         if (exception instanceof OAuth2AuthorizationCodeRequestAuthenticationException oAuth2Exception) {
             OAuth2Error error = oAuth2Exception.getError();
-            // Redirect to the URI contained, if the error code is required_external_user_authentication or invalid_client_authentication
-            if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION) || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)) {
+            // Redirect if the error code is required_external_user_authentication
+            // or invalid_client_authentication
+            if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION)
+                    || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)) {
                 response.sendRedirect(error.getUri());
                 return;
             }

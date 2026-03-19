@@ -36,9 +36,16 @@ import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
+import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_TIMEOUT;
+import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
+import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
+import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
 @Slf4j
@@ -103,15 +110,22 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                                              HttpServletRequest request,
                                              RegisteredClient registeredClient) {
         String jwt = retrieveJwtFromRequestUriOrRequest(
-                authorizationContext.requestUri(), request, registeredClient, authorizationContext.originalRequestURL());
+                authorizationContext.requestUri(), request,
+                registeredClient, authorizationContext.originalRequestURL());
 
         SignedJWT signedJwt = jwtService.parseJWT(jwt);
 
-        validateOAuth2Parameters(registeredClient, authorizationContext.scope(), signedJwt, authorizationContext.originalRequestURL());
-        validateRedirectUri(registeredClient, authorizationContext.redirectUri(), signedJwt, authorizationContext.originalRequestURL());
+        validateOAuth2Parameters(registeredClient,
+                authorizationContext.scope(), signedJwt,
+                authorizationContext.originalRequestURL());
+        validateRedirectUri(registeredClient,
+                authorizationContext.redirectUri(), signedJwt,
+                authorizationContext.originalRequestURL());
 
         if (isNonceRequiredOnFapiProfile) {
-            validateNonceRequired(authorizationContext.clientNonce(), registeredClient, authorizationContext.originalRequestURL());
+            validateNonceRequired(authorizationContext.clientNonce(),
+                    registeredClient,
+                    authorizationContext.originalRequestURL());
         }
 
         return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient);
@@ -119,9 +133,13 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication handleOIDCStandardRequest(AuthorizationContext authorizationContext,
                                                      RegisteredClient registeredClient) {
-        validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null, authorizationContext.originalRequestURL());
+        validateRedirectUri(registeredClient,
+                authorizationContext.redirectUri(), null,
+                authorizationContext.originalRequestURL());
 
-        cacheAuthorizationRequest(authorizationContext, registeredClient.getClientId(), authorizationContext.redirectUri());
+        cacheAuthorizationRequest(authorizationContext,
+                registeredClient.getClientId(),
+                authorizationContext.redirectUri());
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
@@ -190,12 +208,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 log.info("Retrieving JWT from request_uri: {}", requestUri);
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                         .uri(URI.create(requestUri)).timeout(REQUEST_TIMEOUT).GET().build();
-                HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> httpResponse = httpClient.send(
+                        httpRequest, HttpResponse.BodyHandlers.ofString());
 
                 if (httpResponse.statusCode() != 200 || StringUtils.isBlank(httpResponse.body())) {
                     String errorCode = UUID.randomUUID().toString();
-                    throwInvalidClientAuthenticationException("Failed to retrieve JWT from request_uri: Invalid response.",
-                            registeredClient.getClientName(), errorCode, originalRequestURL);
+                    throwInvalidClientAuthenticationException(
+                            "Failed to retrieve JWT from request_uri: Invalid response.",
+                            registeredClient.getClientName(),
+                            errorCode, originalRequestURL);
                 }
                 return httpResponse.body();
             } catch (IOException | InterruptedException e) {
@@ -214,9 +235,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String jwtClientId = jwtService.extractClaimFromPayload(payload, CLIENT_ID);
         String jwtScope = jwtService.extractClaimFromPayload(payload, SCOPE);
 
-        if (!registeredClient.getClientId().equals(jwtClientId) || !scope.equals(jwtScope)) {
-            throwInvalidClientAuthenticationException("The OAuth 2.0 parameters do not match the JWT claims.",
-                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL);
+        if (!registeredClient.getClientId().equals(jwtClientId)
+                || !scope.equals(jwtScope)) {
+            throwInvalidClientAuthenticationException(
+                    "The OAuth 2.0 parameters do not match the JWT claims.",
+                    registeredClient.getClientName(),
+                    UUID.randomUUID().toString(), originalRequestURL);
         }
     }
 
@@ -227,19 +251,24 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 : redirectUri;
 
         if (!registeredClient.getRedirectUris().contains(jwtRedirectUri)) {
-            throwInvalidClientAuthenticationException("The redirect_uri does not match any of the registered client's redirect_uris.",
-                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL);
+            throwInvalidClientAuthenticationException(
+                    "The redirect_uri does not match any registered redirect_uris.",
+                    registeredClient.getClientName(),
+                    UUID.randomUUID().toString(), originalRequestURL);
         }
     }
 
-    private void validateNonceRequired(String clientNonce, RegisteredClient registeredClient, String originalRequestURL) {
+    private void validateNonceRequired(String clientNonce,
+                                        RegisteredClient registeredClient,
+                                        String originalRequestURL) {
         if (StringUtils.isBlank(clientNonce)) {
             throwInvalidClientAuthenticationException("The 'nonce' parameter is required but is missing.",
                     registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL);
         }
     }
 
-    private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, String clientId, String redirectUri) {
+    private void cacheAuthorizationRequest(AuthorizationContext authorizationContext,
+                                              String clientId, String redirectUri) {
         OAuth2AuthorizationRequest.Builder builder = OAuth2AuthorizationRequest
                 .authorizationCode()
                 .state(authorizationContext.state())

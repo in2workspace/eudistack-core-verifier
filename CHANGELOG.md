@@ -1,258 +1,367 @@
-****# Changelog
+# Changelog
+
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v3.0.0] - Unreleased
+---
+
+## [Unreleased]
 
 ### Added
-- **Tenant claim in access token**: The Verifier injects a `tenant` claim (top-level, signed) in the JWT access token, sourced from the OIDC client registration (`clients.yaml`). Each client has a `tenant` field (e.g., `"altia"`, `"dome"`, `"cgcom"`). This enables the Issuer to cryptographically validate the tenant origin of each request (EUDI-017 Phase A).
-- **DCQL query support**: SD-JWT VC credential queries using DCQL (Digital Credentials Query Language) for OID4VP 1.0 compliance.
-- **SD-JWT VC verification**: Full SD-JWT VC (RFC 9901) verification pipeline with selective disclosure validation.
+
+- **Multi-tenant access token claim** — The Verifier injects a signed `tenant` claim in the JWT access token, sourced from the `tenant` field in each OIDC client registration (`clients.yaml`). This enables downstream services (e.g., the Issuer) to cryptographically verify the tenant origin of each request without relying on HTTP headers (EUDI-017 Phase A).
+- **CI/CD pipelines** — GitHub Actions workflows: `build.yml` with JaCoCo coverage summary, `release.yml` with manual `workflow_dispatch` trigger, `snapshot.yml` for PR Docker images.
 
 ### Changed
-- **Credential type detection**: Switched from hardcoded type strings to `credential_configuration_id` pattern (e.g., `learcredential.employee.sd.1`).
-- **Token claim extraction**: Refactored `CredentialClaimsExtractor` to support both W3C and SD-JWT VC formats.
 
-## [v2.1.0] - 2026-02-27
+- **Dynamic issuer URL resolution** — `AuthorizationServerConfig` and `BackendConfig` now resolve the Verifier's issuer URL dynamically from the request, enabling multi-tenant subdomain routing without per-tenant configuration.
+- **Version bump** — `build.gradle` version set to `3.1.0`.
+
+### Fixed
+
+- **Tenant claim hardening** — Tenant value sanitized before injection into tokens; sensitive client data removed from log output.
+- **Test stability** — Adapted `BackendConfigTest`, `FrontendConfigTest` for dynamic URL resolution; mocked `RegisteredClientRepository` in `VerifierApplicationTests`.
+
+### Security
+
+- **Sensitive data logging** — Removed client secret and credential data from log output in `ClientLoaderConfig` and `JWTServiceImpl`.
+
+---
+
+## [3.0.0] — 2026-03-12
+
+First release of the EUDIStack Verifier Core as an independent repository. The codebase was imported from `in2-eudistack-verifier-core-api` (v2.1.0) and significantly restructured.
 
 ### Added
-- **Hexagonal architecture**: Reorganized entire codebase into 2 bounded contexts (`verifier/`, `oauth2/`) + `shared/` module with ports & adapters pattern.
-- **Application workflows**: Extracted business logic from OAuth2 filters into testable workflow classes (AuthorizationRequestBuildWorkflow, TokenGenerationWorkflow, ClientCredentialsValidationWorkflow, VerifyPresentationWorkflow).
-- **External file injection**: Clients YAML, trusted issuers YAML, and JSON Schemas can now be injected via Docker volumes or Kubernetes ConfigMaps without rebuilding the image (`VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH`, `VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH`, `VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR`).
-- **ArchUnit enforcement**: 17 architecture rules validating hexagonal layers, bounded context isolation, naming conventions, and dependency constraints.
-- **Deployment guide**: Comprehensive deployment documentation at `.claude/docs/deployment.md`.
-- **SSE login notification**: New `SseEmitterStore` + `LoginSseController` (`/api/login/events?state=...`) replaces WebSocket for cross-device QR login flow.
-- **External frontend support**: New `VERIFIER_FRONTEND_PORTALURL` config property. `CustomAuthorizationRequestConverter` redirects to external Angular SPA instead of embedded Thymeleaf pages.
-- **Portal CORS**: New `PortalCorsConfig` allows the external SPA (`portalUrl`) to access `/api/login/**` endpoints.
+
+#### Architecture
+
+- **Hexagonal architecture** — Complete reorganization into 3 bounded contexts (`verifier/`, `oauth2/`, `shared/`) with ports & adapters pattern. Domain layer has zero framework dependencies.
+- **Application workflows** — Extracted business logic from Spring Security filters into testable workflow classes: `AuthorizationRequestBuildWorkflow`, `VerifyPresentationWorkflow`, `TokenGenerationWorkflow`, `ClientCredentialsValidationWorkflow`.
+- **ArchUnit enforcement** — 17 architecture rules validating hexagonal layer boundaries, bounded context isolation, naming conventions, and dependency constraints.
+
+#### OID4VP Protocol
+
+- **DCQL query support** — Digital Credentials Query Language for credential presentation per OID4VP 1.0, with configurable scope-to-DCQL profile mapping (`verifier.dcql.profiles` in `application.yaml`).
+- **SD-JWT VC verification** — Full SD-JWT VC (RFC 9901) verification pipeline: compact parsing, issuer JWT signature verification (DID or x5c), disclosure digest validation (SHA-256), KB-JWT validation (`aud`, `nonce`, `sd_hash`, `iat`, `cnf.jwk`).
+- **DCQL vp_token extraction** — Automatic detection of DCQL (JSON object keyed by credential query IDs) vs legacy (direct JWT string) VP token formats.
+- **OID4VP 1.0 audience validation** — VP `aud` claim validated against Verifier's `client_id` per OID4VP 1.0 Final.
+- **Embedded JWK support** — VP verification supports JWK embedded in JWT header alongside legacy DID resolution.
+
+#### Credential Validation
+
+- **Schema-driven validation** — JSON Schema 2020-12 validation via `JsonSchemaCredentialValidator` (networknt/json-schema-validator). Schemas resolved by `LocalSchemaResolver` from classpath or external directory.
+- **Schema profile claims extraction** — `SchemaProfileClaimsExtractor` replaces hardcoded `LearCredentialClaimsExtractor`. Claims extracted dynamically via JSON path with coalesce for cross-version compatibility.
+- **Schema profile registry** — `LocalSchemaProfileRegistry` indexes credential profiles with `token_claims_mapping` for dynamic token claim generation.
+- **Schema naming convention** — Adopted `{type}.{format}.{version}` pattern (e.g., `LEARCredentialEmployee.jwt_vc_json.v3.json`) with SD-JWT VCT resolution.
+- **Credential type mapper** — `CredentialMapperService` maps VCs to typed credential objects for validation pipeline.
+- **Cryptographic binding validator** — `CryptographicBindingValidator` extracted as dedicated component for JWK Thumbprint (RFC 7638) and DID comparison.
+- **Credential status verification (Strategy pattern)** — `CredentialStatusVerifier` SPI with `BitstringStatusListVerifier` (W3C) and `TokenStatusListVerifier` (IETF) implementations. Non-blocking on infrastructure failures.
+- **Flat token claims** — Access and ID tokens emit flat `mandatee.*`, `mandator.*`, and `power.*` claims instead of nested VC JSON.
+
+#### Configuration & Injection
+
+- **External file injection** — Clients YAML, trusted issuers YAML, and JSON Schemas injectable via Docker volumes or Kubernetes ConfigMaps without image rebuild (`VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH`, `TRUSTEDISSUERSPATH`, `SCHEMASDIR`).
+- **SPI provider selection** — `@ConditionalOnProperty` pattern for client registry (local/remote) and trusted issuers (local/EBSI v4).
+- **Detailed issuer model** — Support for both simple (`string`) and detailed (`{id, name}`) issuer representations in VCs.
+
+#### Security
+
+- **SSRF protection** — `SafeUrlValidator` blocks requests to private/loopback/link-local addresses in all outbound HTTP calls (status lists, trust framework, EBSI).
+- **RFC 7807 error responses** — `ErrorResponseFactory` generates Problem Details (RFC 7807) for all API errors, replacing ad-hoc error formats.
+- **HTTP redirect following disabled** — `HttpClientConfig` sets `NEVER` redirect policy to prevent open redirect attacks.
+- **Specific exception handlers** — Dedicated exception handlers for verification errors with appropriate HTTP status codes and OID4VP error codes.
+- **Dynamic CORS origins** — CORS origins for OIDC endpoints loaded dynamically from registered client URLs instead of static configuration.
+
+#### Observability
+
+- **OpenTelemetry tracing** — Spans for critical verification paths via Micrometer + OTel bridge.
+- **Non-blocking revocation** — Status list fetch failures log `WARN` and continue validation instead of blocking the VP verification flow.
+- **Endpoint log suppression** — `SuppressEndpointLogFilter` filters noisy health/actuator endpoints from access logs.
+- **Structured logging** — `logback-spring.xml` with JSON structured logging for production.
+
+#### Testing
+
+- **434 tests** across 51 test files (~1.15:1 test-to-code ratio).
+- New test coverage: `SseEmitterStore`, `UVarInt`, `DcqlProfileResolver`, `RemoteClientRegistryProvider`, `EbsiV4TrustedIssuersProvider`, `SchemaProfileClaimsExtractor`, `BitstringStatusListVerifier`, `TokenStatusListVerifier`, `SafeUrlValidator`, `ClientLoaderConfig`.
 
 ### Changed
-- **Java 17 -> 25**: Updated to Java 25 with Eclipse Temurin runtime.
-- **Gradle 8.8 -> 9.1.0**: Updated build tool and wrapper.
-- **Spring Boot 3.3.2 -> 3.5.11**: Major framework upgrade.
-- **Dockerfile**: `gradle:9.1.0-jdk25` build stage + `eclipse-temurin:25-jre-alpine` runtime.
-- **OAuth2 filters slimmed down**: CustomAuthorizationRequestConverter (524->250 lines), CustomAuthenticationProvider (392->200 lines), CustomTokenRequestConverter (229->150 lines) — all delegate to application workflows.
-- **ArchUnit 1.3.0 -> 1.4.1**: Java 25 bytecode support.
-- **OWASP dependency-check 9.1.0 -> 12.2.0**, SonarQube plugin 5.1.0 -> 6.0.1, Swagger 2.2.22 -> 2.2.28.
-- **AuthorizationResponseProcessorServiceImpl**: `SimpMessagingTemplate` replaced by `SseEmitterStore.send(state, redirectUrl)`.
-- **FrontendProperties**: Simplified to a single `portalUrl` field. Colors, assets, URLs, and defaultLang moved to Angular SPA `theme.json`.
+
+- **Java 17 → 25** — Eclipse Temurin 25 runtime.
+- **Gradle 8.8 → 9.3.1** — Updated build tool and wrapper.
+- **Spring Boot 3.3.2 → 3.5.11** — Major framework upgrade.
+- **ArchUnit 1.3.0 → 1.4.1** — Java 25 bytecode support.
+- **OWASP dependency-check 9.1.0 → 12.2.0** — Updated vulnerability scanner.
+- **SonarQube plugin 5.1.0 → 6.0.1**, Swagger 2.2.22 → 2.2.28.
+- **OAuth2 filters slimmed down** — `CustomAuthorizationRequestConverter` (524 → ~280 lines), `CustomAuthenticationProvider` (392 → ~258 lines), `CustomTokenRequestConverter` (229 → ~154 lines). All delegate to application workflows.
+- **Ubiquitous language naming** — Methods and services renamed to match protocol verbs (`verifyPresentation`, `resolveClientId`, `extractCredentialClaims`, etc.).
+- **Checkstyle config path** — Moved from `checkstyle/` to `config/checkstyle/` (Gradle convention).
+- **Dockerfile** — `gradle:9.1.0-jdk25` build stage + `eclipse-temurin:25-jre-alpine` runtime.
 
 ### Removed
-- **Thymeleaf**: Removed `spring-boot-starter-thymeleaf`, 6 HTML templates (login-en/es/ca, client-authentication-error-en/es/ca), all static CSS/JS/images.
-- **WebSocket**: Removed `spring-boot-starter-websocket`, `WebSocketConfig`, SockJS/STOMP infrastructure.
-- **QR server-side**: Removed `com.github.kenglxn.QRGen`, `LoginQrController`, `QRCodeGenerationException`. QR is now generated client-side by the Angular SPA.
-- **ClientErrorController**: Error page now served by Angular SPA at `{portalUrl}/error`.
 
-## [v2.0.12](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.12)
+- **Hardcoded claims extractor** — `LearCredentialClaimsExtractor` replaced by schema-driven `SchemaProfileClaimsExtractor`.
+- **`presentation_submission` parameter** — Removed from auth response endpoint (DCQL replaces it).
+- **Shared Claude context submodule** — `.claude/` config and `.gitmodules` removed.
+
+### Security Fixes (from internal audit)
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| P0-1 | HttpClient instantiated per request | `HttpClientConfig` singleton (connect 10s, read 30s) |
+| P0-2 | `assert` in grantType validation | Explicit validation with proper exception |
+| P0-3 | No HTTP timeouts | Global timeouts via `HttpClientConfig` |
+| P0-4 | VP `aud` validation commented out | Re-enabled in `AuthorizationResponseProcessorServiceImpl` |
+| P0-5 | FAPI nonce disabled | `IS_NONCE_REQUIRED = true` |
+| P0-6 | `@Scheduled` + `@Bean` combined | Separated in `ClientLoaderConfig` |
+
+---
+
+## Legacy Releases (from in2-eudistack-verifier-core-api)
+
+> The following releases were made in the original repository [`in2workspace/in2-verifier-api`](https://github.com/in2workspace/in2-verifier-api). They are preserved here for historical reference.
+
+## [2.1.0] — 2026-02-27
+
+Internal refactoring release. Hexagonal architecture, workflow extraction, external file injection, SSE login, and external frontend support. See v3.0.0 above — this version was the basis for the new repository.
+
+## [2.0.12]
+
+### Fixed
+
+- Bitstring-encoded status lists read using MSB-first ordering.
+
+## [2.0.11]
+
+### Added
+
+- Support for `BitstringStatusListEntry` credential status type.
+
+## [2.0.10]
+
+### Added
+
+- Cryptographic binding verification for VP/VC holder key matching.
+
+## [2.0.9] – [2.0.3]
 
 ### Changed
 
-- Read bitstring-encoded lists using MSB-first ordering.
+- UI/branding changes to the embedded Thymeleaf login page (removed in v3.0.0): logo responsiveness, color variables, dynamic logo/favicon URLs, favicon updates, text fixes, hardcoded "DOME" references removed, Accept-Language header support, configurable default language.
 
-## [v2.0.11](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.11)
+## [2.0.2]
 
 ### Added
 
-- Add support for BitstringStatusListEntry credential status type.
+- Configurable default language for HTML template translation.
 
-## [v2.0.10](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.10)
+## [2.0.1]
+
 ### Added
-- Added support for cryptographic binding
 
-## [v2.0.9](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.9)
+- Authorization Code Flow with PKCE for Relying Party authentication.
+
+## [2.0.0]
+
+Major version bump to align with the EUDIStack platform version.
+
+## [1.3.11]
+
+### Added
+
+- Revocation check for credentials with `credentialStatus` field.
+
+## [1.3.10] – [1.3.9]
+
+### Added
+
+- Prometheus metrics endpoint access through Spring Security.
+
+## [1.3.8]
+
+### Added
+
+- Audience and nonce validation for OID4VP authorization responses.
+- Specific OID4VP exceptions for validation failures.
+- `type` claim handling in Authorization Request.
+
+## [1.3.7]
+
+### Fixed
+
+- Token response scoped correctly per grant type (`client_credentials` excludes `id_token`/`refresh_token`).
+- Scopes `profile` and `email` always included in `id_token`.
+- `client_id_scheme` set to `did:key` in authorization request.
+- `client_id` in access token returns URL.
+
+### Added
+
+- `LEARCredentialMachine` support.
+- DID Key extracted as environment variable.
+
+## [1.3.6]
+
+### Fixed
+
+- Backward compatibility for `LEARCredentialEmployee` v2.0 with v1.0 claims.
+
+## [1.3.5]
+
+### Fixed
+
+- M2M `vp_token` validation issue.
+
+## [1.3.4]
+
+### Fixed
+
+- Login flow error when QR login timeout expires.
+
+## [1.3.3]
+
+### Fixed
+
+- Issuer field serialization issue.
+
+## [1.3.2]
+
+### Fixed
+
+- Access token timeout configuration.
+
+## [1.3.1]
+
+### Fixed
+
+- `@JsonProperty` annotation on `LEARCredential` record.
+
+## [1.3.0]
+
+### Added
+
+- `LEARCredentialEmployee` v2.0 support.
+
+## [1.2.1]
+
 ### Changed
-- In login template, enhance logo responsiveness.
 
-## [v2.0.8](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.8)
-### Changed
-- In login template, change 'dark-primary' variable name to 'secondary', and remove QR padding.
+- Updated DOME logo.
 
-## [v2.0.7](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.7)
-### Changed
-- - Resolve logo and favicon URLs dynamically using a configurable images base URL and paths.
-
-## [v2.0.6](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.6)
-### Added
-- Altia and ISBE favicons.
+## [1.2.0]
 
 ### Changed
-- Rename DOME favicon.
 
-## [v2.0.5](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.5)
-### Fixed
-- Small text fixes in login template. 
+- Redesigned login page UI.
+- Refactored configuration: removed unused parameters, grouped into `frontend`/`backend` categories.
 
-## [v2.0.4](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.4)
-### Removed
-- Remove hardcoded visible "DOME" references in UI.
+## [1.1.0]
 
-## [v2.0.3](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.3)
-### Changed
-- For frontend pages, set language from Accept-Language header before using default language.
-
-## [v2.0.2](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.2)
 ### Added
-- Get default language from configuration, use it to translate HTML templates.
 
-## [v2.0.1](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.1)
-- ### Added
-- Implement Authorization Code Flow with PKCE
+- Refresh token support for OIDC flow.
+- Nonce support for authorization code flow.
 
-## [v2.0.0](https://github.com/in2workspace/in2-verifier-api/releases/tag/v2.0.0)
-- New major version to align with the new major version of EUDIStack project.
+## [1.0.17]
 
-## [v1.3.11](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.10)
 ### Added
-- Added revocation function for new credentials with credentialStatus.
-- Test for verify that is working the revocation
 
-## [v1.3.10](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.10)
+- Documentation for OIDC client registration and verifier interaction.
+
+## [1.0.16]
+
+### Fixed
+
+- Time window validation (`validFrom`/`validUntil`) for credentials in Verifiable Presentations.
+
+## [1.0.15]
+
+### Fixed
+
+- Token serialization issue.
+- CORS configuration for registered clients.
+
+## [1.0.14]
+
+### Fixed
+
+- Renamed `verifiableCredential` claim to `vc` in access token.
+
+## [1.0.13]
+
+### Fixed
+
+- "Contact us" link not working on login page.
+
+## [1.0.12]
+
+### Fixed
+
+- Return 401 Unauthorized (not 500) for VP token validation failures.
+
+## [1.0.11]
+
+### Fixed
+
+- CORS configuration to allow requests from external wallets on OID4VP endpoints.
+
+## [1.0.10]
+
 ### Added
-- Added access for prometheus at spring security at matcher.
 
-## [v1.3.9](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.9)
+- Error page for client authentication request failures.
+
+## [1.0.9]
+
+### Fixed
+
+- Image URL resolution.
+- Tablet layout spacing between navbar and content.
+
+## [1.0.8]
+
+### Fixed
+
+- Color contrast accessibility.
+- Brand colors, font, and favicon.
+- Layout responsiveness.
+
+## [1.0.7]
+
+### Fixed
+
+- JWKS endpoint response: added `use: "sig"` claim.
+
+## [1.0.6]
+
+### Fixed
+
+- Authentication request compliance with OpenID Connect Core standard.
+
+## [1.0.5]
+
+### Fixed
+
+- Token response compliance with OpenID Connect Core standard.
+
+## [1.0.4]
+
+### Fixed
+
+- Security issue with signature verification.
+
+## [1.0.3]
+
 ### Added
-- Added access for prometheus at spring security.
 
-## [v1.3.8](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.8)
-### Added
-- Validated audience and nonce for OpenID4VP.
-- Added specific OpenID4VP exceptions.
-- Handled type claim in Authorization Request.
-
-## [v1.3.7](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.7)
-### Fixed
-- Modify the response token according to the grant type (client_credentials should not include id_token or 
-refresh_token).
-- Set the scopes profile and email in the response id_token, regardless of whether they are sent in the request.
-- Change the client_id_schema to did:key in the authorization request.
-- Modify the client_id in the response access_token so that it returns the URL.
-- Add LEARCredentialMachine.
-- Extract DID Key as environment variable.
-
-## [v1.3.6](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.6)
-### Fixed
-- Add compatibility on LEARCredentialEmployee v2.0 for LEARCredential v1.0 claims
-
-## [v1.3.5](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.5)
-### Fixed
-- Problem related to the M2M vp_token validation
-
-## [v1.3.4](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.4)
-### Fixed
-- Problem logging in with token when the login time has run out.
-
-## [v1.3.3](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.3)
-### Fixed
-- Problem with issuer serialization
-
-## [v1.3.2](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.2)
-### Fixed
-- Access token timeout
-
-## [v1.3.1](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.1)
-### Fixed
-- Error on JsonProperty annotation in the LEARCredential
-
-## [v1.3.0](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.3.0)
-### Added
-- Compatibility for LEARCredentialEmployee v2.0
-
-## [v1.2.1](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.2.1)
-### Modified
-- Updated DOME Logo
-
-## [v1.2.0](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.2.0)
-### Modified
-- Updated Login page UI
-- Refactor configuration parameters: removed unnecessary ones and grouped internal ones into frontend/backend categories.
-
-## [v1.1.0](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.1.0)
-### Added
-- Add refresh token support for the OpenID Connect flow
-- Add nonce support for the OpenID Connect authorization code flow
-
-## [v1.0.17](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.17)
-### Added
-- Add documentation for OIDC client registration and interaction with the verifier.
-
-## [v1.0.16](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.16)
-### Fixed
-- Add time window validation for the credential in the Verifiable Presentation
-
-## [v1.0.15](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.15)
-### Fixed
-- Fix token serialization issue
-- Add cors config for registered clients
-
-## [v1.0.14](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.14)
-### Fixed
-- Rename the verifiableCredential claim of the access token to vc
-
-## [v1.0.13](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.13)
-### Fixed
-- Fix contact us link not working
-
-## [v1.0.12](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.12)
-### Fixed
-- Unauthorized Http response code for failed validation of VP token
-
-## [v1.0.11](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.11)
-### Fixed
-- Add cors configuration to allow requests from external wallets, on the endpoints the wallet use.
-
-## [v1.0.10](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.10)
-### Fixed
-- Add an error page for errors during the client authentication request.
-
-## [v1.0.9](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.9)
-### Fixed
-- Fix images url
-- Fix spacing between navbar and content for tablets width range
-
-## [v1.0.8](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.8)
-### Fixed
-- Fix color contrast 
-- Use brand colors, font and favicon
-- Fix layout responsiveness
-
-## [v1.0.7](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.7)
-### Fixed
-- Fix the JWKS endpoint response to use the claim `use` with `sig` value.
-
-## [v1.0.6](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.6)
-### Fixed
-- Authentication request fix to comply with the OpenID Connect Core standard.
-
-## [v1.0.5](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.5)
-### Fixed
-- Token response fix to comply with the OpenID Connect Core standard.
-
-## [v1.0.4](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.4)
-### Fixed
-- Fix security issue with the signature verification.
-
-## [v1.0.3](https://github.com/in2workspace/in2-verifier-api/releases/tag/v1.0.3)
-### Added
-- Support for OpenID Connect.
-  - Only uses Authentication using the Authorization Code Flow (without PKCE).
-  - Only uses Claims with Requesting Claims using Scope Values (openid learcredential)
-  - Only uses Passing Request Parameters as JWTs (Passing a Request Object by Reference).
-  - Only use Client Authentication method with Private Key JWT.
-  - Only uses for P-256 ECDSA keys for Signing Access Token.
-- Support for OpenID for Verifiable Presentations (OID4VP).
-  - Implement VP Proof of Possession verification.
-  - Implement Issuers, Participants and Services verification against the DOME Trust Framework.
-  - Implement VC verification against the DOME Revoked Credentials List.
-- Support FAPI
-  - Only use request_uri as a REQUIRED claim in the Authentication Request Object.
-- Implement DOME Human-To-Machine (H2M) authentication.
-  - Implement Login page with QR code.
-- Implement DOME Machine-To-Machine (M2M) authentication.
-- Integrate with the DOME Trust Framework.
+- **OpenID Connect support** — Authorization Code Flow (without PKCE), scope-based claims (`openid learcredential`), Request Object by Reference (JAR), Private Key JWT client authentication, ES256 access token signing.
+- **OpenID for Verifiable Presentations (OID4VP)** — VP Proof of Possession verification, issuer/participant/service verification against DOME Trust Framework, VC revocation check against DOME Revoked Credentials List.
+- **FAPI profile** — `request_uri` as required claim in Authentication Request Object.
+- **DOME H2M authentication** — Login page with QR code for wallet interaction.
+- **DOME M2M authentication** — `client_credentials` grant with client assertion JWT.
+- **DOME Trust Framework integration**.
 
 ### Fixed
-- Fix the issue with Login page not showing Wallet URL.
-- Fix the issue with Login page not valid Registration URL.
-- Fix the issue with Login page not redirecting to the Relying Party after expiration of the QR code.
+
+- Login page: wallet URL display, registration URL validation, QR code expiration redirect.

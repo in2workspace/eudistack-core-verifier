@@ -3,10 +3,22 @@ package es.in2.vcverifier.shared.domain.exception.handler;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidVPtokenException;
-import es.in2.vcverifier.shared.domain.exception.*;
+import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
+import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
+import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
+import es.in2.vcverifier.shared.domain.exception.ResourceNotFoundException;
+import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
+import es.in2.vcverifier.shared.domain.exception.SsrfProtectionException;
 import es.in2.vcverifier.shared.domain.model.GlobalErrorMessage;
 import es.in2.vcverifier.shared.domain.util.VerifierErrorTypes;
-import es.in2.vcverifier.verifier.domain.exception.*;
+import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialMappingException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
+import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +38,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
-    public GlobalErrorMessage handleResourceNotFoundException(ResourceNotFoundException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleResourceNotFoundException(
+            ResourceNotFoundException ex, HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.RESOURCE_NOT_FOUND.getCode(),
                 "Resource not found",
@@ -46,7 +59,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CredentialRevokedException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
-    public GlobalErrorMessage handleCredentialRevokedException(CredentialRevokedException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleCredentialRevokedException(
+            CredentialRevokedException ex, HttpServletRequest request) {
         return errors.handleSafe(ex, request,
                 VerifierErrorTypes.CREDENTIAL_REVOKED.getCode(),
                 "Verifiable presentation failed",
@@ -56,7 +70,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MismatchOrganizationIdentifierException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public GlobalErrorMessage handleMismatchOrgException(MismatchOrganizationIdentifierException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleMismatchOrgException(
+            MismatchOrganizationIdentifierException ex,
+            HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.ORGANIZATION_MISMATCH.getCode(),
                 "Organization identifier mismatch",
@@ -66,7 +82,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CredentialExpiredException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public GlobalErrorMessage handleCredentialExpiredException(CredentialExpiredException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleCredentialExpiredException(
+            CredentialExpiredException ex, HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.CREDENTIAL_EXPIRED.getCode(),
                 "Credential expired",
@@ -76,7 +93,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CredentialNotActiveException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public GlobalErrorMessage handleCredentialNotActiveException(CredentialNotActiveException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleCredentialNotActiveException(
+            CredentialNotActiveException ex, HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.CREDENTIAL_NOT_ACTIVE.getCode(),
                 "Credential not active",
@@ -86,7 +104,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IssuerNotAuthorizedException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public GlobalErrorMessage handleIssuerNotAuthorizedException(IssuerNotAuthorizedException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleIssuerNotAuthorizedException(
+            IssuerNotAuthorizedException ex, HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.ISSUER_NOT_AUTHORIZED.getCode(),
                 "Issuer not authorized",
@@ -96,7 +115,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidCredentialTypeException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public GlobalErrorMessage handleInvalidCredentialTypeException(InvalidCredentialTypeException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleInvalidCredentialTypeException(
+            InvalidCredentialTypeException ex,
+            HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.INVALID_CREDENTIAL_TYPE.getCode(),
                 "Invalid credential type",
@@ -146,7 +167,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CredentialMappingException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public GlobalErrorMessage handleCredentialMappingException(CredentialMappingException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleCredentialMappingException(
+            CredentialMappingException ex, HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.CREDENTIAL_MAPPING_ERROR.getCode(),
                 "Credential mapping error",
@@ -186,7 +208,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(StatusListCredentialException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public GlobalErrorMessage handleStatusListCredentialException(StatusListCredentialException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleStatusListCredentialException(
+            StatusListCredentialException ex,
+            HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.STATUS_LIST_ERROR.getCode(),
                 "Status list credential error",
@@ -196,7 +220,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(FailedCommunicationException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
-    public GlobalErrorMessage handleFailedCommunicationException(FailedCommunicationException ex, HttpServletRequest request) {
+    public GlobalErrorMessage handleFailedCommunicationException(
+            FailedCommunicationException ex, HttpServletRequest request) {
         return errors.handleWith(ex, request,
                 VerifierErrorTypes.FAILED_COMMUNICATION.getCode(),
                 "Communication error",

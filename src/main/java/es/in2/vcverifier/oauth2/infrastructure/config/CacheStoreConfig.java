@@ -16,7 +16,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_TIMEOUT;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_TIMEOUT_CHRONO_UNIT;
 
 @Configuration
 @RequiredArgsConstructor

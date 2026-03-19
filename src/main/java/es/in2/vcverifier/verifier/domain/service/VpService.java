@@ -8,5 +8,5 @@ public interface VpService {
     void verifyVerifiablePresentation(String verifiablePresentation);
     Object extractCredentialFromVerifiablePresentation(String verifiablePresentation);
     JsonNode extractCredentialFromVerifiablePresentationAsJsonNode(String verifiablePresentation);
-    public List<String> extractContextFromJson(JsonNode verifiableCredential);
+    List<String> extractContextFromJson(JsonNode verifiableCredential);
 }

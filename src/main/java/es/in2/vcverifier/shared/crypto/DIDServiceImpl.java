@@ -2,7 +2,6 @@ package es.in2.vcverifier.shared.crypto;
 
 import es.in2.vcverifier.shared.domain.exception.PublicKeyDecodingException;
 import es.in2.vcverifier.shared.domain.exception.UnsupportedDIDTypeException;
-import es.in2.vcverifier.shared.crypto.DIDService;
 import io.github.novacrypto.base58.Base58;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +34,8 @@ public class DIDServiceImpl implements DIDService {
 
         // Remove the "did:key:" prefix to get the actual encoded public key
         String encodedPublicKey = did.substring("did:key:".length());
-        log.debug("DIDServiceImpl -- resolvePublicKeyFromDid -- Encoded public key extracted from DID: {}", encodedPublicKey);
+        log.debug("DIDServiceImpl -- resolvePublicKeyFromDid -- "
+                + "Encoded public key extracted from DID: {}", encodedPublicKey);
 
         // Decode the public key from its encoded representation
         return decodePublicKeyIntoPubKey(encodedPublicKey);
@@ -47,14 +47,16 @@ public class DIDServiceImpl implements DIDService {
         try {
             // Remove the prefix "z" to get the multibase encoded string
             if (!encodePublicKey.startsWith("z")) {
-                log.error("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Invalid public key format detected: {}", encodePublicKey);
+                log.error("DIDServiceImpl -- decodePublicKeyIntoPubKey -- "
+                        + "Invalid public key format detected: {}", encodePublicKey);
                 throw new PublicKeyDecodingException("Invalid Public Key.");
             }
             String multibaseEncoded = encodePublicKey.substring(1);
 
             // Multibase decode (Base58) the encoded part to get the bytes
             byte[] decodedBytes = Base58.base58Decode(multibaseEncoded);
-            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Decoded bytes from Base58: {}", Arrays.toString(decodedBytes));
+            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- "
+                    + "Decoded bytes from Base58: {}", Arrays.toString(decodedBytes));
 
             // Multicodec prefix is fixed for "0x1200" for the secp256r1 curve
             int prefixLength = 2;
@@ -70,12 +72,14 @@ public class DIDServiceImpl implements DIDService {
             // Recover the Y coordinate from the X coordinate and the curve
             BigInteger y = curve.decodePoint(publicKeyBytes).getYCoord().toBigInteger();
 
-            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Calculated ECPoint coordinates - X: {}, Y: {}", x, y);
+            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- "
+                    + "Calculated ECPoint coordinates - X: {}, Y: {}", x, y);
             ECPoint point = new ECPoint(x, y);
 
             // Fetch the ECParameterSpec for secp256r1
             ECNamedCurveParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256r1");
-            ECNamedCurveSpec params = new ECNamedCurveSpec("secp256r1", ecSpec.getCurve(), ecSpec.getG(), ecSpec.getN());
+            ECNamedCurveSpec params = new ECNamedCurveSpec(
+                    "secp256r1", ecSpec.getCurve(), ecSpec.getG(), ecSpec.getN());
 
             // Create a KeyFactory and generate the public key
             KeyFactory kf = KeyFactory.getInstance("EC");
@@ -83,9 +87,9 @@ public class DIDServiceImpl implements DIDService {
 
             log.info("Public key successfully decoded and generated: {}", kf.generatePublic(pubKeySpec));
             return kf.generatePublic(pubKeySpec);
-        }
-        catch (Exception e) {
-            log.error("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Failed to decode and generate public key: {}", e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("DIDServiceImpl -- decodePublicKeyIntoPubKey -- "
+                    + "Failed to decode and generate public key: {}", e.getMessage(), e);
             throw new PublicKeyDecodingException("JWT signature verification failed.", e);
         }
     }

@@ -1,5 +1,4 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter.schema;
-import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaResolver;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -10,7 +9,10 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LocalSchemaResolverTest {
 

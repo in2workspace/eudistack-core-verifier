@@ -1,6 +1,5 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
-import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
 
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
@@ -39,8 +38,19 @@ import java.util.Map;
 import java.util.Set;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 @ExtendWith(MockitoExtension.class)

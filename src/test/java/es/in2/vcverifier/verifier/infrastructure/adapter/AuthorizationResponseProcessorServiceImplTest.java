@@ -18,7 +18,6 @@ import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
-import es.in2.vcverifier.verifier.infrastructure.adapter.AuthorizationResponseProcessorServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,8 +43,23 @@ import java.util.NoSuchElementException;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_TIMEOUT;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 @ExtendWith(MockitoExtension.class)
@@ -328,13 +342,13 @@ class AuthorizationResponseProcessorServiceImplTest {
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
                 authorizationResponseProcessorService.handleAuthResponse(stateKey, vpToken)
         );
-        String errorMsg ="The 'aud' claim is missing in the VP token.";
+        String errorMsg = "The 'aud' claim is missing in the VP token.";
         assertEquals(errorMsg, exception.getMessage());
     }
     @Test
     void validateVpAudience_shouldThrowException_whenNonceClaimIsBlank() throws Exception {
             // Arrange
-            String jwtWithoutAud =  createJwtWithoutAudience("") ;
+            String jwtWithoutAud = createJwtWithoutAudience("");
             String vpToken = Base64.getEncoder().encodeToString(jwtWithoutAud.getBytes(StandardCharsets.UTF_8));
 
             // Mock mínimo del flujo necesario para que se ejecute validateVpAudience

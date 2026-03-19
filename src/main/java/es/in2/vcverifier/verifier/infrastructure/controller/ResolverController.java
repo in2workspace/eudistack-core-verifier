@@ -6,7 +6,11 @@ import es.in2.vcverifier.shared.crypto.DIDService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigInteger;
 import java.security.PublicKey;
@@ -58,15 +62,13 @@ public class ResolverController {
         // If it's exactly 32 bytes, return it as is
         if (temp.length == 32) {
             return temp;
-        }
-        // If it's 33 bytes and the first byte is 0, remove that extra byte
-        else if (temp.length == 33 && temp[0] == 0) {
+        } else if (temp.length == 33 && temp[0] == 0) {
+            // If it's 33 bytes and the first byte is 0, remove that extra byte
             byte[] result = new byte[32];
             System.arraycopy(temp, 1, result, 0, 32);
             return result;
-        }
-        // If it's less than 32 bytes, pad with leading zeros
-        else if (temp.length < 32) {
+        } else if (temp.length < 32) {
+            // If it's less than 32 bytes, pad with leading zeros
             byte[] result = new byte[32];
             System.arraycopy(temp, 0, result, 32 - temp.length, temp.length);
             return result;

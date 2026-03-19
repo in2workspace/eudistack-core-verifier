@@ -17,12 +17,10 @@ import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jose.util.JSONObjectUtils;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTCreationException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
-import es.in2.vcverifier.shared.crypto.JWTServiceImpl;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -34,17 +32,36 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigInteger;
-import java.security.*;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
-import java.security.spec.*;
+import java.security.spec.ECGenParameterSpec;
+import java.security.spec.ECParameterSpec;
+import java.security.spec.ECPoint;
+import java.security.spec.ECPrivateKeySpec;
+import java.security.spec.ECPublicKeySpec;
 import java.text.ParseException;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class JWTServiceImplTest {

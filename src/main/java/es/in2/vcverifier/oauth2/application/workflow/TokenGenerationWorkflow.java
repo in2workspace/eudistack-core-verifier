@@ -18,7 +18,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
@@ -56,7 +59,9 @@ public class TokenGenerationWorkflow {
      * @param tenant               the tenant identifier from the OIDC client registration
      * @return a Result with the JWT strings and metadata
      */
-    public Result issueAccessToken(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken, String tenant) {
+    public Result issueAccessToken(JsonNode credentialJson, String audience,
+                                   Map<String, Object> additionalParameters,
+                                   boolean generateIdToken, String tenant) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 backendConfig.getAccessTokenExpirationSeconds(),
@@ -67,7 +72,9 @@ public class TokenGenerationWorkflow {
         ExtractedClaims extractedClaims = extractClaims(credentialType, credentialJson);
         String subject = extractedClaims.subject();
 
-        String accessTokenJwt = buildAccessToken(credentialJson, extractedClaims, issueTime, expirationTime, subject, audience, tenant);
+        String accessTokenJwt = buildAccessToken(
+                credentialJson, extractedClaims, issueTime,
+                expirationTime, subject, audience, tenant);
 
         String idTokenJwt = null;
         if (generateIdToken) {
@@ -116,7 +123,8 @@ public class TokenGenerationWorkflow {
     private String buildAccessToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                      Instant issueTime, Instant expirationTime,
                                      String subject, String audience, String tenant) {
-        log.info("Generating access token for credential_type: {}, tenant: {}", extractCredentialType(credentialJson), tenant);
+        log.info("Generating access token for credential_type: {}, tenant: {}",
+                extractCredentialType(credentialJson), tenant);
 
         JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
                 .issuer(backendConfig.getUrl())

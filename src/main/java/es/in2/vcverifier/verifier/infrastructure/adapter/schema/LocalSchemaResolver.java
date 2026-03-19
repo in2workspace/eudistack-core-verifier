@@ -74,11 +74,15 @@ public class LocalSchemaResolver implements CredentialSchemaResolver {
         if (externalSchemasDir != null && !externalSchemasDir.isBlank()) {
             // 1. Current schemas (root)
             JsonSchema schema = tryLoadFromFile(Path.of(externalSchemasDir, schemaFileName));
-            if (schema != null) return schema;
+            if (schema != null) {
+                return schema;
+            }
 
             // 2. Legacy schemas (verifier-only, old credential versions)
             schema = tryLoadFromFile(Path.of(externalSchemasDir, "legacy", schemaFileName));
-            if (schema != null) return schema;
+            if (schema != null) {
+                return schema;
+            }
         }
 
         // 3. Classpath fallback (production without volume mount)
@@ -86,7 +90,9 @@ public class LocalSchemaResolver implements CredentialSchemaResolver {
     }
 
     private JsonSchema tryLoadFromFile(Path file) {
-        if (!Files.exists(file)) return null;
+        if (!Files.exists(file)) {
+            return null;
+        }
         try (InputStream is = new FileInputStream(file.toFile())) {
             JsonSchema schema = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
                     .getSchema(is, new com.networknt.schema.SchemaValidatorsConfig.Builder().build());

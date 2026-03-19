@@ -15,9 +15,8 @@ public class IssuerDeserializer extends JsonDeserializer<Issuer> {
         // If the node is a string, we convert it to SimpleIssuer.
         if (node.isTextual()) {
             return new SimpleIssuer(node.asText());
-        }
-        // If the node is an object, we convert it to DetailedIssuer.
-        else if (node.isObject()) {
+        } else if (node.isObject()) {
+            // If the node is an object, we convert it to DetailedIssuer.
             return p.getCodec().treeToValue(node, DetailedIssuer.class);
         }
         throw new JsonMappingException(p, "Unexpected data type for Issuer");

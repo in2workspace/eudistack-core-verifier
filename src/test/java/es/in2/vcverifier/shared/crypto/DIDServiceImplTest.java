@@ -2,7 +2,6 @@ package es.in2.vcverifier.shared.crypto;
 
 import es.in2.vcverifier.shared.domain.exception.PublicKeyDecodingException;
 import es.in2.vcverifier.shared.domain.exception.UnsupportedDIDTypeException;
-import es.in2.vcverifier.shared.crypto.DIDServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -10,7 +9,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.security.PublicKey;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @ExtendWith(MockitoExtension.class)
 class DIDServiceImplTest {

@@ -1,5 +1,4 @@
 package es.in2.vcverifier.shared.config;
-import es.in2.vcverifier.shared.config.BackendConfig;
 
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
 import org.junit.jupiter.api.Test;

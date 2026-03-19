@@ -1,10 +1,23 @@
 package es.in2.vcverifier.shared.domain.exception.handler;
 
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
-import es.in2.vcverifier.shared.domain.exception.*;
+import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
+import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
+import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
+import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
+import es.in2.vcverifier.shared.domain.exception.ResourceNotFoundException;
+import es.in2.vcverifier.shared.domain.exception.SsrfProtectionException;
 import es.in2.vcverifier.shared.domain.model.GlobalErrorMessage;
 import es.in2.vcverifier.shared.domain.util.VerifierErrorTypes;
-import es.in2.vcverifier.verifier.domain.exception.*;
+import es.in2.vcverifier.verifier.domain.exception.CredentialMappingException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidVPtokenException;
+import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
+import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

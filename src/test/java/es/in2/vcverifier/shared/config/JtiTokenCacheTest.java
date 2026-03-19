@@ -1,12 +1,12 @@
 package es.in2.vcverifier.shared.config;
-import es.in2.vcverifier.shared.config.JtiTokenCache;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JtiTokenCacheTest {
 

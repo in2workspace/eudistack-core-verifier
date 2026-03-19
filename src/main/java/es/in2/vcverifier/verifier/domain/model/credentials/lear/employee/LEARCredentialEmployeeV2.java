@@ -48,7 +48,9 @@ public record LEARCredentialEmployeeV2(
     }
 
     @Override
-    public boolean learCredentialStatusExist() { return credentialStatus != null; }
+    public boolean learCredentialStatusExist() {
+        return credentialStatus != null;
+    }
 
     @Override
     public String mandateeFirstName() {
@@ -66,19 +68,29 @@ public record LEARCredentialEmployeeV2(
     }
 
     @Override
-    public String credentialStatusId() { return credentialStatus.id(); }
+    public String credentialStatusId() {
+        return credentialStatus.id();
+    }
 
     @Override
-    public String credentialStatusType() { return credentialStatus.type(); }
+    public String credentialStatusType() {
+        return credentialStatus.type();
+    }
 
     @Override
-    public String credentialStatusPurpose() { return credentialStatus.purpose(); }
+    public String credentialStatusPurpose() {
+        return credentialStatus.purpose();
+    }
 
     @Override
-    public String credentialStatusListIndex() { return credentialStatus.index(); }
+    public String credentialStatusListIndex() {
+        return credentialStatus.index();
+    }
 
     @Override
-    public String statusListCredential() { return credentialStatus.credentials(); }
+    public String statusListCredential() {
+        return credentialStatus.credentials();
+    }
 
     @Override
     public String credentialSubjectId() {

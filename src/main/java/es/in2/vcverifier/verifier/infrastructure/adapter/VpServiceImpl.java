@@ -4,12 +4,23 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.verifier.domain.exception.*;
-import es.in2.vcverifier.shared.domain.exception.*;
+import es.in2.vcverifier.shared.crypto.CertificateValidationService;
+import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
+import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
+import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialMappingException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidVPtokenException;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.LEARCredential;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
-import es.in2.vcverifier.verifier.domain.service.*;
-import es.in2.vcverifier.shared.crypto.*;
+import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
+import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
+import es.in2.vcverifier.verifier.domain.service.VpService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
@@ -25,7 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.Constants.REVOCATION;
 
 @Slf4j
 @Service
@@ -73,7 +84,8 @@ public class VpServiceImpl implements VpService {
                         learCredential.id(), e.getMessage());
             }
         } else {
-            log.debug("No CredentialStatus block found; skipping revocation check for credential {}", learCredential.id());
+            log.debug("No CredentialStatus block found; skipping revocation check for credential {}",
+                    learCredential.id());
         }
 
         // Step 5: Extract issuer identifier from JWT iss claim
@@ -81,7 +93,8 @@ public class VpServiceImpl implements VpService {
 
         // Step 6: Validate credential types against issuer capabilities
         List<String> credentialTypes = learCredential.type();
-        List<IssuerCredentialsCapabilities> issuerCapabilitiesList = trustFrameworkService.getTrustedIssuerListData(credentialIssuer);
+        List<IssuerCredentialsCapabilities> issuerCapabilitiesList =
+                trustFrameworkService.getTrustedIssuerListData(credentialIssuer);
         validateCredentialTypeWithIssuerCapabilities(issuerCapabilitiesList, credentialTypes);
         log.info("Issuer {} is a trusted participant", credentialIssuer);
 
@@ -211,14 +224,20 @@ public class VpServiceImpl implements VpService {
         );
     }
 
-    private void validateCredentialTypeWithIssuerCapabilities(List<IssuerCredentialsCapabilities> issuerCapabilitiesList, List<String> credentialTypes) {
+    private void validateCredentialTypeWithIssuerCapabilities(
+            List<IssuerCredentialsCapabilities> issuerCapabilitiesList,
+            List<String> credentialTypes) {
         for (String credentialType : credentialTypes) {
-            boolean isSupported = issuerCapabilitiesList.stream().anyMatch(capability -> capability.credentialsType().equals(credentialType));
+            boolean isSupported = issuerCapabilitiesList.stream()
+                    .anyMatch(capability ->
+                            capability.credentialsType().equals(credentialType));
             if (isSupported) {
                 return;
             }
         }
-        throw new InvalidCredentialTypeException("Credential types " + credentialTypes + " are not supported by the issuer.");
+        throw new InvalidCredentialTypeException(
+                "Credential types " + credentialTypes
+                        + " are not supported by the issuer.");
     }
 
     private SignedJWT extractFirstVerifiableCredential(String verifiablePresentation) {

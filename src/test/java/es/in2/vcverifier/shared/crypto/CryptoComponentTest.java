@@ -1,5 +1,4 @@
 package es.in2.vcverifier.shared.crypto;
-import es.in2.vcverifier.shared.crypto.CryptoComponent;
 
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
@@ -11,7 +10,10 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 

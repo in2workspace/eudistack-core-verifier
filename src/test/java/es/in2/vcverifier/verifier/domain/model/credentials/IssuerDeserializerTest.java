@@ -3,13 +3,13 @@ package es.in2.vcverifier.verifier.domain.model.credentials;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
-import es.in2.vcverifier.verifier.domain.model.credentials.DetailedIssuer;
-import es.in2.vcverifier.verifier.domain.model.credentials.Issuer;
-import es.in2.vcverifier.verifier.domain.model.credentials.IssuerDeserializer;
-import es.in2.vcverifier.verifier.domain.model.credentials.SimpleIssuer;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IssuerDeserializerTest {
 

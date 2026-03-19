@@ -1,8 +1,8 @@
 package es.in2.vcverifier.shared.crypto;
-import es.in2.vcverifier.shared.crypto.SdJwtVerificationServiceImpl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nimbusds.jose.*;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
@@ -10,10 +10,7 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
-import es.in2.vcverifier.shared.domain.model.sdjwt.Disclosure;
-import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwt;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
-import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,11 +23,16 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.Base64;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class SdJwtVerificationServiceImplTest {

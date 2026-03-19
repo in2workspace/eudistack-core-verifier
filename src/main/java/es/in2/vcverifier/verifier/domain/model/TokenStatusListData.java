@@ -23,8 +23,12 @@ public record TokenStatusListData(
 
     @Override
     public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (!(obj instanceof TokenStatusListData other)) return false;
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof TokenStatusListData other)) {
+            return false;
+        }
         return bitsPerEntry == other.bitsPerEntry
                 && Objects.equals(issuer, other.issuer)
                 && Arrays.equals(rawBytes, other.rawBytes);

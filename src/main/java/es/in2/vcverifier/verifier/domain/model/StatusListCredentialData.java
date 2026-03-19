@@ -21,8 +21,12 @@ public record StatusListCredentialData(
 
     @Override
     public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (!(obj instanceof StatusListCredentialData other)) return false;
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof StatusListCredentialData other)) {
+            return false;
+        }
         return Objects.equals(issuer, other.issuer)
                 && Objects.equals(statusPurpose, other.statusPurpose)
                 && Arrays.equals(rawBitstringBytes, other.rawBitstringBytes);

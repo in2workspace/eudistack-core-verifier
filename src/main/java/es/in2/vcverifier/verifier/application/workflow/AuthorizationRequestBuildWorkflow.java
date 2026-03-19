@@ -18,7 +18,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.Date;
+import java.util.Map;
+import java.util.UUID;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_RESPONSE_ENDPOINT;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;

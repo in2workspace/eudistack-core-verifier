@@ -1,7 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.controller;
 
 import es.in2.vcverifier.shared.config.I18nConfig;
-import es.in2.vcverifier.verifier.infrastructure.controller.ResolverController;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.exception.handler.ErrorResponseFactory;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
@@ -21,7 +20,10 @@ import java.security.spec.ECPoint;
 import java.util.Arrays;
 import java.util.Base64;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;

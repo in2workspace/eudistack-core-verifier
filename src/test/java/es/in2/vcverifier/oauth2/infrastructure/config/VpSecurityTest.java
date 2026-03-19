@@ -2,18 +2,15 @@ package es.in2.vcverifier.oauth2.infrastructure.config;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
-import es.in2.vcverifier.shared.config.JtiTokenCache;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.Payload;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.verifier.domain.exception.*;
-import es.in2.vcverifier.oauth2.domain.exception.*;
-import es.in2.vcverifier.shared.domain.exception.*;
+import es.in2.vcverifier.verifier.domain.exception.CredentialException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialMappingException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
+import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
-import es.in2.vcverifier.verifier.domain.service.*;
-import es.in2.vcverifier.shared.crypto.*;
 import es.in2.vcverifier.verifier.infrastructure.adapter.VpServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,12 +20,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.*;
+import java.util.Base64;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Security-focused tests for VP/VC validation pipeline.

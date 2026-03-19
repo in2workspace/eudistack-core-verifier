@@ -31,9 +31,15 @@ public record BackendProperties(
             long refreshTokenSeconds
     ) {
         public TokenExpiration {
-            if (accessTokenSeconds <= 0) accessTokenSeconds = 900;
-            if (idTokenSeconds <= 0) idTokenSeconds = 60;
-            if (refreshTokenSeconds <= 0) refreshTokenSeconds = 43200;
+            if (accessTokenSeconds <= 0) {
+                accessTokenSeconds = 900;
+            }
+            if (idTokenSeconds <= 0) {
+                idTokenSeconds = 60;
+            }
+            if (refreshTokenSeconds <= 0) {
+                refreshTokenSeconds = 43200;
+            }
         }
     }
 

@@ -2,31 +2,177 @@
 <!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
         "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
+<!--
+    EUDIStack Checkstyle Configuration
+    Based on Google Java Style Guide with project-specific adaptations.
+    See: docs/_shared/conventions/conv-code-style.md
+-->
 <module name="Checker">
 
     <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
 
-    <property name="severity" value="warning"/>
-
-    <property name="fileExtensions" value="java, properties, xml"/>
-
-    <!-- Excludes all 'module-info.java' files -->
-    <!-- See https://checkstyle.org/config_filefilters.html -->
+    <!-- Excludes module-info.java -->
     <module name="BeforeExecutionExclusionFileFilter">
         <property name="fileNamePattern" value="module\-info\.java$"/>
     </module>
 
-    <!-- https://checkstyle.org/config_filters.html#SuppressionFilter -->
+    <!-- Scoped suppressions (tests, config classes) -->
     <module name="SuppressionFilter">
-        <property name="file" value="${org.checkstyle.google.suppressionfilter.config}"
-                  default="checkstyle-suppressions.xml"/>
-        <property name="optional" value="true"/>
+        <property name="file" value="${config_loc}/suppressions.xml"/>
+        <property name="optional" value="false"/>
     </module>
 
-    <!-- Checks for whitespace -->
-    <!-- See http://checkstyle.org/config_whitespace.html -->
+    <!-- No tab characters -->
     <module name="FileTabCharacter">
         <property name="eachLine" value="true"/>
+    </module>
+
+    <!-- Line length: 120 (Google default is 100) -->
+    <module name="LineLength">
+        <property name="fileExtensions" value="java"/>
+        <property name="max" value="120"/>
+        <property name="ignorePattern" value="^package.*|^import.*|a]* href|href|http://|https://|ftp://"/>
+    </module>
+
+    <module name="TreeWalker">
+
+        <!-- ==================== Naming ==================== -->
+
+        <!-- Package: all lowercase -->
+        <module name="PackageName">
+            <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+        </module>
+
+        <!-- Type: PascalCase -->
+        <module name="TypeName">
+            <property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
+        </module>
+
+        <!-- Member: camelCase (allow short names like vc, vp) -->
+        <module name="MemberName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+        </module>
+
+        <!-- Parameter: camelCase -->
+        <module name="ParameterName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+        </module>
+
+        <!-- Local variable: camelCase -->
+        <module name="LocalVariableName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+        </module>
+
+        <!-- Method: camelCase -->
+        <module name="MethodName">
+            <property name="format" value="^[a-z][a-zA-Z0-9_]*$"/>
+        </module>
+
+        <!-- Constants: UPPER_SNAKE_CASE -->
+        <module name="ConstantName"/>
+
+        <!-- Allow abbreviations in names: OID4VCI, DCQL, DPoP, etc. -->
+        <module name="AbbreviationAsWordInName">
+            <property name="allowedAbbreviationLength" value="4"/>
+            <property name="ignoreFinal" value="false"/>
+            <property name="ignoreStatic" value="false"/>
+            <property name="ignoreStaticFinal" value="true"/>
+        </module>
+
+        <!-- ==================== Imports ==================== -->
+
+        <!-- No wildcard imports -->
+        <module name="AvoidStarImport"/>
+
+        <!-- No unused imports -->
+        <module name="UnusedImports"/>
+
+        <!-- No redundant imports -->
+        <module name="RedundantImport"/>
+
+        <!-- ==================== Whitespace ==================== -->
+
+        <!-- Whitespace around operators -->
+        <module name="WhitespaceAround">
+            <property name="allowEmptyConstructors" value="true"/>
+            <property name="allowEmptyMethods" value="true"/>
+            <property name="allowEmptyTypes" value="true"/>
+            <property name="allowEmptyLoops" value="true"/>
+        </module>
+
+        <!-- No whitespace after unary operators -->
+        <module name="NoWhitespaceAfter"/>
+
+        <!-- No whitespace before comma, semicolon, etc. -->
+        <module name="NoWhitespaceBefore"/>
+
+        <!-- Single space after keywords (if, for, while, etc.) -->
+        <module name="WhitespaceAfter"/>
+
+        <!-- Generic whitespace (<T>, not < T >) -->
+        <module name="GenericWhitespace"/>
+
+        <!-- ==================== Blocks ==================== -->
+
+        <!-- Left brace on same line -->
+        <module name="LeftCurly"/>
+
+        <!-- Right brace handling -->
+        <module name="RightCurly">
+            <property name="option" value="same"/>
+            <property name="tokens" value="LITERAL_TRY,LITERAL_CATCH,LITERAL_FINALLY,LITERAL_IF,LITERAL_ELSE,LITERAL_DO"/>
+        </module>
+
+        <!-- Need braces for all control structures -->
+        <module name="NeedBraces"/>
+
+        <!-- No empty blocks (except catch with comment) -->
+        <module name="EmptyBlock">
+            <property name="option" value="TEXT"/>
+        </module>
+
+        <!-- ==================== Coding ==================== -->
+
+        <!-- No empty statements (stray semicolons) -->
+        <module name="EmptyStatement"/>
+
+        <!-- equals() must check type -->
+        <module name="EqualsHashCode"/>
+
+        <!-- No fall-through in switch (without comment) -->
+        <module name="FallThrough"/>
+
+        <!-- One statement per line -->
+        <module name="OneStatementPerLine"/>
+
+        <!-- No multiple variable declarations on one line -->
+        <module name="MultipleVariableDeclarations"/>
+
+        <!-- Overloaded methods must be adjacent -->
+        <module name="OverloadMethodsDeclarationOrder"/>
+
+        <!-- One top-level class per file -->
+        <module name="OneTopLevelClass"/>
+
+        <!-- ==================== Modifiers ==================== -->
+
+        <!-- Modifier order: public protected private abstract static final transient volatile synchronized native strictfp -->
+        <module name="ModifierOrder"/>
+
+        <!-- No redundant modifiers (e.g., public on interface methods) -->
+        <module name="RedundantModifier"/>
+
+        <!-- ==================== Annotations ==================== -->
+
+        <!-- Each annotation on its own line (for type declarations) -->
+        <module name="AnnotationLocation">
+            <property name="allowSamelineMultipleAnnotations" value="false"/>
+            <property name="allowSamelineSingleParameterlessAnnotation" value="true"/>
+            <property name="allowSamelineParameterizedAnnotation" value="false"/>
+        </module>
+
     </module>
 
 </module>

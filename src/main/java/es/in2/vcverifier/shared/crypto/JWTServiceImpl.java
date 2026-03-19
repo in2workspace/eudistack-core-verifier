@@ -4,18 +4,22 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nimbusds.jose.*;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.JWSSigner;
+import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTCreationException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
-import es.in2.vcverifier.shared.crypto.JWTService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,7 +42,7 @@ public class JWTServiceImpl implements JWTService {
     @Override
     public String issueJWT(String payload) {
         log.info("Starting standard JWT generation");
-        return generateJWTInternal(payload,JOSEObjectType.JWT);
+        return generateJWTInternal(payload, JOSEObjectType.JWT);
     }
 
     private JWTClaimsSet convertPayloadToJWTClaimsSet(String payload) {
@@ -102,8 +106,11 @@ public class JWTServiceImpl implements JWTService {
     public String extractClaimFromPayload(Payload payload, String claimName) {
         String claimValue = (String) payload.toJSONObject().get(claimName);
         if (claimValue == null || claimValue.trim().isEmpty()) {
-            log.error("JWTServiceImpl -- extractClaimFromPayload -- Claim '{}' is missing or empty in the JWT payload", claimName);
-            throw new JWTClaimMissingException(String.format("The '%s' claim is missing or empty in the JWT payload.", claimName));
+            log.error("JWTServiceImpl -- extractClaimFromPayload -- "
+                    + "Claim '{}' is missing or empty in the JWT payload", claimName);
+            throw new JWTClaimMissingException(String.format(
+                    "The '%s' claim is missing or empty in the JWT payload.",
+                    claimName));
         }
         return claimValue;
     }
@@ -113,10 +120,13 @@ public class JWTServiceImpl implements JWTService {
         log.info("Retrieving expiration ('exp') from JWT payload");
         Long exp = (Long) payload.toJSONObject().get("exp");
         if (exp == null || exp <= 0) {
-            log.error("JWTServiceImpl -- extractExpirationFromPayload -- Expiration claim ('exp') is missing or invalid in the JWT payload");
-            throw new JWTClaimMissingException("The 'exp' (expiration) claim is missing or invalid in the JWT payload.");
+            log.error("JWTServiceImpl -- extractExpirationFromPayload -- "
+                    + "Expiration claim ('exp') is missing or invalid in the JWT payload");
+            throw new JWTClaimMissingException(
+                    "The 'exp' (expiration) claim is missing or invalid in the JWT payload.");
         }
-        log.debug("JWTServiceImpl -- extractExpirationFromPayload -- Expiration claim ('exp') retrieved successfully: {}", exp);
+        log.debug("JWTServiceImpl -- extractExpirationFromPayload -- "
+                + "Expiration claim ('exp') retrieved successfully: {}", exp);
         return exp;
     }
 
@@ -129,7 +139,7 @@ public class JWTServiceImpl implements JWTService {
     @Override
     public String issueJWTwithOI4VPType(String payload) {
         log.info("Starting OID4VP JWT generation with typ={}", OID4VP_TYPE);
-        return generateJWTInternal(payload,new JOSEObjectType(OID4VP_TYPE));
+        return generateJWTInternal(payload, new JOSEObjectType(OID4VP_TYPE));
     }
 
     private String generateJWTInternal(String payload, JOSEObjectType type) {

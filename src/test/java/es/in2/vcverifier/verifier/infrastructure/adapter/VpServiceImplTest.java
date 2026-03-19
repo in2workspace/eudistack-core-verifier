@@ -10,11 +10,17 @@ import com.nimbusds.jose.Payload;
 
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.verifier.domain.exception.*;
-import es.in2.vcverifier.shared.domain.exception.*;
+import es.in2.vcverifier.verifier.domain.exception.CredentialException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialMappingException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
+import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.verifier.domain.model.credentials.SimpleIssuer;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.CredentialStatus;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.LEARCredential;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.Mandator;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.LEARCredentialEmployeeV1;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.employee.subject.CredentialSubjectV1;
@@ -35,9 +41,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class VpServiceImplTest {
@@ -347,7 +364,7 @@ class VpServiceImplTest {
 
             when(jwtCredential.serialize()).thenReturn(vcJwt);
 
-            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), eq(vcHeader),eq("issuer"));
+            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), eq(vcHeader), eq("issuer"));
 
             // Step 9: Validate VP signature + cryptographic binding
             doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(
@@ -529,7 +546,7 @@ class VpServiceImplTest {
         }
     }
 
-    private LEARCredentialEmployeeV1 getLEARCredentialEmployee(){
+    private LEARCredentialEmployeeV1 getLEARCredentialEmployee() {
         MandateeV1 mandateeV1 = MandateeV1.builder()
                 .id("did:key:1234")
                 .firstName("John")
@@ -560,7 +577,7 @@ class VpServiceImplTest {
                 .build();
     }
 
-    private LEARCredentialEmployeeV1 getNewLEARCredentialEmployee(){
+    private LEARCredentialEmployeeV1 getNewLEARCredentialEmployee() {
         MandateeV1 mandateeV1 = MandateeV1.builder()
                 .id("did:key:1234")
                 .firstName("John")

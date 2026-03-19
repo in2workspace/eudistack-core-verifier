@@ -1,6 +1,5 @@
 package es.in2.vcverifier.verifier.domain.model.credentials;
 
-import es.in2.vcverifier.verifier.domain.model.credentials.SimpleIssuer;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.LEARCredentialMachineV2;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.subject.CredentialSubjectV2;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.machine.subject.mandate.MandateV2;
@@ -9,7 +8,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class LEARCredentialMachineV2Test {
 

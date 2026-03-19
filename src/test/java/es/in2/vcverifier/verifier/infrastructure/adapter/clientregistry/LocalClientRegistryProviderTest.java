@@ -3,7 +3,10 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LocalClientRegistryProviderTest {
 

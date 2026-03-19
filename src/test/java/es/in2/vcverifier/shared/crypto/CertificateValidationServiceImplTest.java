@@ -1,13 +1,17 @@
 package es.in2.vcverifier.shared.crypto;
-import es.in2.vcverifier.shared.crypto.CertificateValidationServiceImpl;
 
 import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class CertificateValidationServiceImplTest {
 

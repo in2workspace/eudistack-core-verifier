@@ -1,59 +1,67 @@
-# Contributing to Desmos
+# Contributing to EUDIStack Verifier Core
 
-We love your input! We want to make contributing to this project as easy and transparent as possible, whether it's:
+Thank you for your interest in contributing to the EUDIStack Verifier Core Service.
 
-- Reporting a bug
-- Discussing the current state of the code
-- Submitting a fix
-- Proposing new features
-- Becoming a maintainer
+## Development Setup
 
-## We Develop with GitHub
+### Prerequisites
 
-We use GitHub to host code, to track issues and feature requests, as well as accept pull requests.
+- Docker 20.10+
+- Docker Compose v2+
+- Java 25 (only for running tests locally)
 
-## We Use [GitHub Flow](https://guides.github.com/introduction/flow/index.html), So All Code Changes Happen Through Pull Requests
+### Running the stack
 
-Pull requests are the best way to propose changes to the codebase. We actively welcome your pull requests:
+The Verifier is orchestrated from [eudistack-platform-dev](https://github.com/nicerloop/eudistack-platform-dev). Do not run the service locally with `./gradlew bootRun` — always use Docker Compose.
 
-1. Fork the repo and create your branch from `main`.
-2. If you've added code that should be tested, add tests.
-3. If you've changed APIs, update the documentation.
-4. Ensure the test suite passes.
-5. Make sure your code lints.
-6. Issue that pull request!
+```bash
+# From the platform-dev repo:
+make up
+```
 
-## Any Contributions You Make Will Be Under the Same [License](LICENSE) That Covers the Project
+### Running tests
 
-As we want your work to be as open and accessible as others in the project.
+```bash
+./gradlew test
+```
 
-## Report bugs using GitHub's [Issues](https://github.com/in2workspace/in2-verifier-api/issues)
+## Contributing Workflow
 
-We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/in2workspace/in2-verifier-api/issues/new); it's that easy!
+1. All work follows the **spec-driven development** workflow defined in the platform-dev repo (`/specify` -> `/plan` -> `/tasks` -> review).
+2. Fork the repo and create your branch from `main`.
+3. If you've added code that should be tested, add tests. Aim to maintain the ~1.15:1 test-to-code ratio.
+4. Ensure the test suite passes (`./gradlew test`).
+5. Follow the existing hexagonal architecture: domain has zero framework dependencies, adapters in infrastructure.
+6. Submit a pull request. All PRs are **squash merged** into `main`.
 
-## Write Bug Reports With Detail, Background, and Sample Code
+## Architecture
 
-**Great Bug Reports** tend to have:
+The codebase follows hexagonal architecture with 3 bounded contexts:
 
-- A quick summary and/or background
+```
+es.in2.vcverifier/
+├── verifier/       # OID4VP verification (domain, application, infrastructure)
+├── oauth2/         # OAuth2 Authorization Server (domain, application, infrastructure)
+└── shared/         # Cross-cutting: crypto, config, models
+```
+
+17 ArchUnit rules enforce layer boundaries, naming conventions, and bounded context isolation.
+
+## Code Style
+
+- Java 25, Spring Boot 3 + WebFlux (reactive)
+- 4 spaces indentation
+- Checkstyle enforced via `config/checkstyle/checkstyle.xml`
+- Follow existing naming conventions (see EUDI-004 FR-NAME in platform-dev docs)
+
+## Bug Reports
+
+Report bugs via [GitHub Issues](https://github.com/nicerloop/eudistack-core-verifier/issues). Include:
+
 - Steps to reproduce
-    - Be specific!
-    - Give sample code if you can.
-- What you expected would happen
-- What actually happens
-- Notes (possibly including why you think this might be happening, or stuff you tried that didn't work)
-
-People *love* thorough bug reports.
-
-## Use a Consistent Coding Style
-
-* 4 spaces for indentation rather than tabs
-* You can try running `npm run lint` for style unification
+- Expected vs actual behavior
+- Verifier version and Docker image tag
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under its [License](LICENSE).
-
-## References
-
-This document was adapted from the open-source contribution guidelines for [Facebook's Draft](https://github.com/facebook/draft-js/blob/master/CONTRIBUTING.md)
+By contributing, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE.md).

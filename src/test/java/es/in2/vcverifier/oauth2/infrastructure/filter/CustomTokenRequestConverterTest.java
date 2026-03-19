@@ -1,6 +1,5 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
-import es.in2.vcverifier.oauth2.infrastructure.filter.CustomTokenRequestConverter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -28,8 +27,12 @@ import org.springframework.util.MultiValueMap;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CustomTokenRequestConverterTest {

@@ -52,7 +52,8 @@ public class StatusListCredentialServiceImpl implements StatusListCredentialServ
 
     @Override
     public StatusListCredentialData parse(String jwtString) {
-        log.debug("Parsing Status List Credential from JWT string. jwtLength={}", jwtString == null ? null : jwtString.length());
+        log.debug("Parsing Status List Credential from JWT string. jwtLength={}",
+                jwtString == null ? null : jwtString.length());
 
         try {
             SignedJWT signedJwt = SignedJWT.parse(jwtString);
@@ -127,7 +128,8 @@ public class StatusListCredentialServiceImpl implements StatusListCredentialServ
         int mask = 1 << bitInByte;
 
         boolean result = (rawBytes[byteIndex] & mask) != 0;
-        log.debug("Bit check computed. byteIndex={}, bitInByte={}, mask={}, result={}", byteIndex, bitInByte, mask, result);
+        log.debug("Bit check computed. byteIndex={}, bitInByte={}, mask={}, result={}",
+                byteIndex, bitInByte, mask, result);
 
         return result;
     }

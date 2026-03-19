@@ -42,7 +42,9 @@ public class RemoteClientRegistryProvider implements ClientRegistryProvider {
             if (response.statusCode() == 200) {
                 return yamlMapper.readValue(response.body(), ExternalTrustedListYamlData.class);
             } else {
-                throw new RemoteFileFetchException("Failed to fetch clients YAML. Status code: " + response.statusCode());
+                throw new RemoteFileFetchException(
+                        "Failed to fetch clients YAML. Status code: "
+                                + response.statusCode());
             }
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();

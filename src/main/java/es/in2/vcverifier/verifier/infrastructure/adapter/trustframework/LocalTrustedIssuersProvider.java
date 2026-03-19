@@ -64,7 +64,9 @@ public class LocalTrustedIssuersProvider implements TrustedIssuersProvider {
     public List<IssuerCredentialsCapabilities> getIssuerCapabilities(String issuerId) {
         List<IssuerCredentialsCapabilities> capabilities = issuersMap.get(issuerId);
         if (capabilities == null || capabilities.isEmpty()) {
-            throw new IssuerNotAuthorizedException("Issuer with id: " + issuerId + " not found in local trusted issuers.");
+            throw new IssuerNotAuthorizedException(
+                    "Issuer with id: " + issuerId
+                            + " not found in local trusted issuers.");
         }
         return capabilities;
     }

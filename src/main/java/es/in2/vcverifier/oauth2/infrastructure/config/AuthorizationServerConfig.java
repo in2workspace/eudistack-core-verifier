@@ -84,13 +84,29 @@ public class AuthorizationServerConfig {
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
-                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, IS_NONCE_REQUIRED_ON_FAPI_PROFILE,httpClient,authorizationRequestBuildWorkflow,frontendConfig,safeUrlValidator))
+                                .authorizationRequestConverter(
+                                        new CustomAuthorizationRequestConverter(
+                                                didService, jwtService,
+                                                cacheStoreForOAuth2AuthorizationRequest,
+                                                backendConfig, registeredClientRepository,
+                                                IS_NONCE_REQUIRED_ON_FAPI_PROFILE, httpClient,
+                                                authorizationRequestBuildWorkflow,
+                                                frontendConfig, safeUrlValidator))
                                 .errorResponseHandler(new CustomErrorResponseHandler())
                 )
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
-                                .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore))
-                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow))
+                                .accessTokenRequestConverter(
+                                        new CustomTokenRequestConverter(
+                                                clientCredentialsValidationWorkflow,
+                                                cacheStoreForAuthorizationCodeData,
+                                                refreshTokenDataCacheCacheStore))
+                                .authenticationProvider(
+                                        new CustomAuthenticationProvider(
+                                                registeredClientRepository, backendConfig,
+                                                objectMapper, refreshTokenDataCacheCacheStore,
+                                                oAuth2AuthorizationService(),
+                                                tokenGenerationWorkflow))
                 )
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
         return http.build();
@@ -98,7 +114,7 @@ public class AuthorizationServerConfig {
     @Bean
     public JWKSource<SecurityContext> jwkSource() {
         JWKSet jwkSet = new JWKSet(cryptoComponent.getECKey());
-        return ( jwkSelector, context ) -> jwkSelector.select(jwkSet);
+        return (jwkSelector, context) -> jwkSelector.select(jwkSet);
     }
 
     @Bean

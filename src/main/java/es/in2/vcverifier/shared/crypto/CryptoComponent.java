@@ -49,7 +49,8 @@ public class CryptoComponent {
             return buildEcKeyFromPrivateKey();
         }
         log.warn("No private key configured — generating ephemeral P-256 key pair. "
-                + "This is suitable for development only. Configure verifier.backend.identity.privateKey for production.");
+                + "This is suitable for development only. "
+                + "Configure verifier.backend.identity.privateKey for production.");
         return generateEphemeralEcKey();
     }
 
@@ -154,7 +155,9 @@ public class CryptoComponent {
                 return (X509Certificate) cf.generateCertificate(is);
             }
         } catch (IOException | java.security.cert.CertificateException e) {
-            throw new ECKeyCreationException("Failed to load X.509 certificate from " + pemPath + ": " + e.getMessage());
+            throw new ECKeyCreationException(
+                    "Failed to load X.509 certificate from " + pemPath
+                            + ": " + e.getMessage());
         }
     }
 
@@ -211,7 +214,9 @@ public class CryptoComponent {
     }
 
     private static byte[] normalizeTo32Bytes(byte[] input) {
-        if (input.length == 32) return input;
+        if (input.length == 32) {
+            return input;
+        }
         byte[] result = new byte[32];
         if (input.length > 32) {
             // Strip leading zero(s)

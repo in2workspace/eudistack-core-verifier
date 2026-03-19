@@ -72,7 +72,9 @@ public class CryptographicBindingValidator {
             holderDid = normalizeDid(holderDid);
 
             if (holderDid == null || holderDid.isBlank()) {
-                throw new InvalidScopeException("Cannot extract holder identity from VP (no jwk header and no DID in kid/iss/sub)");
+                throw new InvalidScopeException(
+                    "Cannot extract holder identity from VP "
+                            + "(no jwk header and no DID in kid/iss/sub)");
             }
 
             log.info("[BIND] VP holder DID resolved as {}", holderDid);
@@ -96,8 +98,12 @@ public class CryptographicBindingValidator {
     }
 
     String normalizeDid(String did) {
-        if (did == null) return null;
-        if (!did.startsWith("did:")) return did;
+        if (did == null) {
+            return null;
+        }
+        if (!did.startsWith("did:")) {
+            return did;
+        }
         return did.contains("#") ? did.substring(0, did.indexOf('#')) : did;
     }
 
@@ -113,8 +119,12 @@ public class CryptographicBindingValidator {
         if (kid != null && kid.startsWith("did:")) {
             return kid.contains("#") ? kid.substring(0, kid.indexOf('#')) : kid;
         }
-        if (iss != null && iss.startsWith("did:")) return iss;
-        if (sub != null && sub.startsWith("did:")) return sub;
+        if (iss != null && iss.startsWith("did:")) {
+            return iss;
+        }
+        if (sub != null && sub.startsWith("did:")) {
+            return sub;
+        }
         return null;
     }
 
@@ -122,10 +132,14 @@ public class CryptographicBindingValidator {
     private ECKey extractCnfJwkFromVc(SignedJWT vcJwt) {
         try {
             Map<String, Object> cnf = (Map<String, Object>) vcJwt.getJWTClaimsSet().getClaim("cnf");
-            if (cnf == null) return null;
+            if (cnf == null) {
+                return null;
+            }
 
             Map<String, Object> jwk = (Map<String, Object>) cnf.get("jwk");
-            if (jwk == null) return null;
+            if (jwk == null) {
+                return null;
+            }
 
             return ECKey.parse(jwk);
         } catch (Exception e) {
@@ -153,7 +167,9 @@ public class CryptographicBindingValidator {
         } catch (InvalidScopeException e) {
             throw e;
         } catch (JOSEException e) {
-            throw new InvalidScopeException("Failed to compute JWK Thumbprint for binding validation: " + e.getMessage());
+            throw new InvalidScopeException(
+                    "Failed to compute JWK Thumbprint for binding validation: "
+                            + e.getMessage());
         }
     }
 

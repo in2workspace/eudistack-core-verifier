@@ -1,19 +1,18 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter.schema;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
-import es.in2.vcverifier.verifier.infrastructure.adapter.schema.JsonSchemaCredentialValidator;
-import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JsonSchemaCredentialValidatorTest {
 

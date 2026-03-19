@@ -7,7 +7,6 @@ import com.nimbusds.jwt.SignedJWT;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
 import es.in2.vcverifier.verifier.domain.model.StatusListCredentialData;
-import es.in2.vcverifier.verifier.infrastructure.adapter.statuslist.StatusListCredentialServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +19,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StatusListCredentialServiceImplTest {
 
@@ -29,7 +34,7 @@ class StatusListCredentialServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new StatusListCredentialServiceImpl(new ObjectMapper());
-    }
+   }
 
     // ------------------------------------------------------------------------
     // validateStatusPurposeMatches
@@ -42,7 +47,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.validateStatusPurposeMatches("revocation", "  ")
         );
         assertEquals("Expected statusPurpose cannot be blank", ex.getMessage());
-    }
+   }
 
     @Test
     void validateStatusPurposeMatches_whenActualBlank_throws() {
@@ -51,7 +56,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.validateStatusPurposeMatches(" ", "revocation")
         );
         assertEquals("Status List Credential statusPurpose cannot be blank", ex.getMessage());
-    }
+   }
 
     @Test
     void validateStatusPurposeMatches_whenMismatch_throws() {
@@ -60,12 +65,12 @@ class StatusListCredentialServiceImplTest {
                 () -> service.validateStatusPurposeMatches("suspension", "revocation")
         );
         assertEquals("StatusPurpose mismatch. expected=revocation, actual=suspension", ex.getMessage());
-    }
+   }
 
     @Test
     void validateStatusPurposeMatches_whenMatch_doesNotThrow() {
         assertDoesNotThrow(() -> service.validateStatusPurposeMatches("revocation", "revocation"));
-    }
+   }
 
     // ------------------------------------------------------------------------
     // parse(String)
@@ -79,11 +84,11 @@ class StatusListCredentialServiceImplTest {
         );
         assertEquals("Error parsing Status List Credential JWT", ex.getMessage());
         assertNotNull(ex.getCause());
-    }
+   }
 
     @Test
     void parseString_whenJwtIsValid_parsesSuccessfully() throws Exception {
-        byte[] raw = new byte[] { (byte) 0b1000_0000, (byte) 0b0000_0001 };
+        byte[] raw = new byte[]{(byte) 0b1000_0000, (byte) 0b0000_0001};
         String encodedList = multibaseBase64UrlGzip(raw);
 
         SignedJWT jwt = buildSignedJwtWithCredentialSubject(
@@ -97,7 +102,7 @@ class StatusListCredentialServiceImplTest {
         assertEquals("https://issuer.example", data.issuer());
         assertEquals("revocation", data.statusPurpose());
         assertArrayEquals(raw, data.rawBitstringBytes());
-    }
+   }
 
     // ------------------------------------------------------------------------
     // parse(SignedJWT)
@@ -105,7 +110,7 @@ class StatusListCredentialServiceImplTest {
 
     @Test
     void parseSignedJwt_whenHappyPath_extractsIssuerPurposeAndRawBytes() throws Exception {
-        byte[] raw = new byte[] { (byte) 0b1000_0000, (byte) 0b0100_0000, (byte) 0b0000_0001 };
+        byte[] raw = new byte[]{(byte) 0b1000_0000, (byte) 0b0100_0000, (byte) 0b0000_0001};
         String encodedList = multibaseBase64UrlGzip(raw);
 
         SignedJWT jwt = buildSignedJwtWithCredentialSubject(
@@ -119,7 +124,7 @@ class StatusListCredentialServiceImplTest {
         assertEquals("did:example:issuer", data.issuer());
         assertEquals("suspension", data.statusPurpose());
         assertArrayEquals(raw, data.rawBitstringBytes());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenCredentialSubjectMissing_throws() throws Exception {
@@ -130,7 +135,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("Missing or invalid 'credentialSubject'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenCredentialSubjectIsNotObject_throws() throws Exception {
@@ -144,12 +149,12 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("Missing or invalid 'credentialSubject'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenStatusPurposeMissing_throws() throws Exception {
         Map<String, Object> credentialSubject = new HashMap<>();
-        credentialSubject.put("encodedList", multibaseBase64UrlGzip(new byte[] { 1, 2, 3 }));
+        credentialSubject.put("encodedList", multibaseBase64UrlGzip(new byte[]{1, 2, 3}));
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("credentialSubject", credentialSubject);
@@ -161,7 +166,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("Missing or invalid 'statusPurpose'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenEncodedListMissing_throws() throws Exception {
@@ -178,7 +183,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("Missing or invalid 'encodedList'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenEncodedListDoesNotStartWithU_throws() throws Exception {
@@ -196,7 +201,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("encodedList must start with multibase base64url prefix 'u'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenEncodedListIsNotBase64Url_throws() throws Exception {
@@ -215,7 +220,7 @@ class StatusListCredentialServiceImplTest {
         );
         assertEquals("encodedList is not valid base64url", ex.getMessage());
         assertNotNull(ex.getCause());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenEncodedListIsNotGzip_throws() throws Exception {
@@ -234,7 +239,7 @@ class StatusListCredentialServiceImplTest {
         );
         assertEquals("Failed to gunzip content", ex.getMessage());
         assertNotNull(ex.getCause());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenClaimsPayloadIsNotJson_throwsWrappingParseException() throws Exception {
@@ -248,7 +253,7 @@ class StatusListCredentialServiceImplTest {
         );
         assertEquals("Error reading Status List Credential JWT claims", ex.getMessage());
         assertNotNull(ex.getCause());
-    }
+   }
 
     // ------------------------------------------------------------------------
     // isBitSet / maxBits
@@ -261,36 +266,36 @@ class StatusListCredentialServiceImplTest {
                 () -> service.isBitSet(null, 0)
         );
         assertEquals("rawBytes cannot be null", ex.getMessage());
-    }
+   }
 
     @Test
     void isBitSet_whenBitIndexNegative_throws() {
         StatusListCredentialException ex = assertThrows(
                 StatusListCredentialException.class,
-                () -> service.isBitSet(new byte[] { 0 }, -1)
+                () -> service.isBitSet(new byte[]{0}, -1)
         );
         assertEquals("bitIndex must be >= 0", ex.getMessage());
-    }
+   }
 
     @Test
     void isBitSet_whenBitIndexOutOfRange_throws() {
-        byte[] raw = new byte[] { 0x00 }; // 8 bits
+        byte[] raw = new byte[]{0x00}; // 8 bits
         StatusListCredentialException ex = assertThrows(
                 StatusListCredentialException.class,
                 () -> service.isBitSet(raw, 8)
         );
         assertEquals("bitIndex out of range. maxBits=8, bitIndex=8", ex.getMessage());
-    }
+   }
 
     @Test
     void isBitSet_whenBitsPresent_returnsCorrectValue() {
-        byte[] raw = new byte[] { (byte) 0b1000_0001 }; // bitIndex 0 and 7 are true by current implementation
+        byte[] raw = new byte[]{(byte) 0b1000_0001}; // bitIndex 0 and 7 are true by current implementation
 
         assertTrue(service.isBitSet(raw, 0));
         assertFalse(service.isBitSet(raw, 1));
         assertFalse(service.isBitSet(raw, 6));
         assertTrue(service.isBitSet(raw, 7));
-    }
+   }
 
     @Test
     void maxBits_whenRawBytesNull_throws() {
@@ -299,14 +304,14 @@ class StatusListCredentialServiceImplTest {
                 () -> service.maxBits(null)
         );
         assertEquals("rawBytes cannot be null", ex.getMessage());
-    }
+   }
 
     @Test
     void maxBits_whenRawBytesPresent_returnsLengthTimes8() {
-        assertEquals(0, service.maxBits(new byte[] {}));
-        assertEquals(8, service.maxBits(new byte[] { 0x00 }));
-        assertEquals(16, service.maxBits(new byte[] { 0x00, 0x00 }));
-    }
+        assertEquals(0, service.maxBits(new byte[]{}));
+        assertEquals(8, service.maxBits(new byte[]{0x00}));
+        assertEquals(16, service.maxBits(new byte[]{0x00, 0x00}));
+   }
 
     // ------------------------------------------------------------------------
     // Test helpers
@@ -325,7 +330,7 @@ class StatusListCredentialServiceImplTest {
         claims.put("credentialSubject", credentialSubject);
 
         return buildSignedJwtWithClaims(issuer, claims);
-    }
+   }
 
     private static SignedJWT buildSignedJwtWithClaims(String issuer, Map<String, Object> extraClaims) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
@@ -334,7 +339,7 @@ class StatusListCredentialServiceImplTest {
 
         for (Map.Entry<String, Object> entry : extraClaims.entrySet()) {
             builder.claim(entry.getKey(), entry.getValue());
-        }
+       }
 
         JWTClaimsSet claimsSet = builder.build();
 
@@ -347,13 +352,13 @@ class StatusListCredentialServiceImplTest {
         jwt.sign(new com.nimbusds.jose.crypto.MACSigner(secret));
 
         return jwt;
-    }
+   }
 
     private static String multibaseBase64UrlGzip(byte[] rawBytes) {
         byte[] gzipped = gzip(rawBytes);
         String b64u = Base64.getUrlEncoder().withoutPadding().encodeToString(gzipped);
         return "u" + b64u;
-    }
+   }
 
     private static byte[] gzip(byte[] rawBytes) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -363,10 +368,10 @@ class StatusListCredentialServiceImplTest {
             gzip.finish();
             return baos.toByteArray();
 
-        } catch (IOException e) {
+       } catch (IOException e) {
             throw new IllegalStateException("Unexpected gzip failure in test", e);
-        }
-    }
+       }
+   }
 
     private static String jwtWithNonJsonPayload() {
         String headerJson = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
@@ -379,7 +384,7 @@ class StatusListCredentialServiceImplTest {
 
         // Signature can be anything for parsing; claims parsing will fail due to non-JSON payload.
         return header + "." + payload + ".signature";
-    }
+   }
 
     @Test
     void validateStatusPurposeMatches_whenExpectedNull_throws() {
@@ -388,7 +393,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.validateStatusPurposeMatches("revocation", null)
         );
         assertEquals("Expected statusPurpose cannot be blank", ex.getMessage());
-    }
+   }
 
     @Test
     void validateStatusPurposeMatches_whenActualNull_throws() {
@@ -397,7 +402,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.validateStatusPurposeMatches(null, "revocation")
         );
         assertEquals("Status List Credential statusPurpose cannot be blank", ex.getMessage());
-    }
+   }
 
     // ------------------------------------------------------------------------
     // parse(String) - cover RuntimeException branch (null input)
@@ -407,7 +412,7 @@ class StatusListCredentialServiceImplTest {
     void parseString_whenJwtIsNull_throwsRuntimeException() {
         // This covers the RuntimeException catch branch in parse(String)
         assertThrows(NullPointerException.class, () -> service.parse((String) null));
-    }
+   }
 
     // ------------------------------------------------------------------------
     // parse(SignedJWT) - extra branches around JSON node validation
@@ -426,13 +431,13 @@ class StatusListCredentialServiceImplTest {
         );
 
         assertEquals("Missing or invalid 'credentialSubject'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenStatusPurposeIsNotTextual_throws() throws Exception {
         Map<String, Object> credentialSubject = new HashMap<>();
         credentialSubject.put("statusPurpose", 123); // not textual
-        credentialSubject.put("encodedList", multibaseBase64UrlGzip(new byte[] { 1, 2, 3 }));
+        credentialSubject.put("encodedList", multibaseBase64UrlGzip(new byte[]{1, 2, 3}));
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("credentialSubject", credentialSubject);
@@ -444,7 +449,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("Missing or invalid 'statusPurpose'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenEncodedListIsNotTextual_throws() throws Exception {
@@ -462,7 +467,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("Missing or invalid 'encodedList'", ex.getMessage());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenEncodedListIsBlankText_throws() throws Exception {
@@ -480,7 +485,7 @@ class StatusListCredentialServiceImplTest {
                 () -> service.parse(jwt)
         );
         assertEquals("Missing or invalid 'encodedList'", ex.getMessage());
-    }
+   }
 
     // ------------------------------------------------------------------------
     // decode/gunzip paths - reachable via parse(SignedJWT)
@@ -503,7 +508,7 @@ class StatusListCredentialServiceImplTest {
         );
         assertEquals("Failed to gunzip content", ex.getMessage());
         assertNotNull(ex.getCause());
-    }
+   }
 
     @Test
     void parseSignedJwt_whenLargeRawBytes_parsesSuccessfullyAndExercisesGunzipLoop() throws Exception {
@@ -511,7 +516,7 @@ class StatusListCredentialServiceImplTest {
         byte[] raw = new byte[20_000];
         for (int i = 0; i < raw.length; i++) {
             raw[i] = (byte) (i & 0xFF);
-        }
+       }
 
         String encodedList = multibaseBase64UrlGzip(raw);
 
@@ -526,5 +531,5 @@ class StatusListCredentialServiceImplTest {
         assertEquals("https://issuer.example", data.issuer());
         assertEquals("revocation", data.statusPurpose());
         assertArrayEquals(raw, data.rawBitstringBytes());
-    }
+   }
 }

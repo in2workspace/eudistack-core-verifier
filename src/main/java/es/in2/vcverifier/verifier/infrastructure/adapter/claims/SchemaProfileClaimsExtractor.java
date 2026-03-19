@@ -12,7 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -83,7 +86,9 @@ public class SchemaProfileClaimsExtractor implements ClaimsExtractor {
     }
 
     private Map<String, Object> resolveClaims(JsonNode credential, Map<String, ClaimMapping> mappings) {
-        if (mappings == null || mappings.isEmpty()) return Map.of();
+        if (mappings == null || mappings.isEmpty()) {
+            return Map.of();
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         for (Map.Entry<String, ClaimMapping> entry : mappings.entrySet()) {
@@ -110,7 +115,9 @@ public class SchemaProfileClaimsExtractor implements ClaimsExtractor {
     }
 
     private Map<String, Object> resolveEmbeds(JsonNode credential, Map<String, String> embedMappings) {
-        if (embedMappings == null || embedMappings.isEmpty()) return Map.of();
+        if (embedMappings == null || embedMappings.isEmpty()) {
+            return Map.of();
+        }
 
         Map<String, Object> embeds = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : embedMappings.entrySet()) {
@@ -130,8 +137,12 @@ public class SchemaProfileClaimsExtractor implements ClaimsExtractor {
 
     private String resolveTextPath(JsonNode credential, String dotPath) {
         JsonNode node = resolveNode(credential, dotPath);
-        if (node == null) return null;
-        if (node.isTextual()) return node.asText();
+        if (node == null) {
+            return null;
+        }
+        if (node.isTextual()) {
+            return node.asText();
+        }
         return null;
     }
 }

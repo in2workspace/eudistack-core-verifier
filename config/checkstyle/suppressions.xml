@@ -2,8 +2,17 @@
 <!DOCTYPE suppressions PUBLIC
         "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
         "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<!--
+    EUDIStack Checkstyle Suppressions
+    Only scoped suppressions allowed. Never suppress for all files.
+    See: docs/_shared/conventions/conv-code-style.md
+-->
 <suppressions>
-    <!-- Suppresses the 'FileTabCharacter' check for all files -->
-    <!-- See https://checkstyle.org/config_filters.html#SuppressionFilter -->
-    <suppress files=".*" checks="FileTabCharacter"/>
+    <!-- Test sources: relaxed naming (test methods use underscores) and line length -->
+    <suppress files="src[\\/]test[\\/]" checks="MethodName"/>
+    <suppress files="src[\\/]test[\\/]" checks="LineLength"/>
+
+    <!-- Spring config classes: often have long builder chains -->
+    <suppress files=".*Config\.java$" checks="LineLength"/>
 </suppressions>

@@ -1,5 +1,4 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
-import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -15,7 +14,11 @@ import org.springframework.security.oauth2.server.authorization.authentication.O
 import java.io.IOException;
 
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class CustomErrorResponseHandlerTest {
