@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v3.1.0] - 2026-03-17
+## [v3.0.0] - Unreleased
 
 ### Added
 - **Tenant claim in access token**: The Verifier injects a `tenant` claim (top-level, signed) in the JWT access token, sourced from the OIDC client registration (`clients.yaml`). Each client has a `tenant` field (e.g., `"altia"`, `"dome"`, `"cgcom"`). This enables the Issuer to cryptographically validate the tenant origin of each request (EUDI-017 Phase A).
