@@ -37,7 +37,7 @@ public class JWTServiceImpl implements JWTService {
 
     @Override
     public String issueJWT(String payload) {
-        log.info("Starting standard JWT generation. Payload: {}", payload);
+        log.info("Starting standard JWT generation");
         return generateJWTInternal(payload,JOSEObjectType.JWT);
     }
 
@@ -128,7 +128,7 @@ public class JWTServiceImpl implements JWTService {
 
     @Override
     public String issueJWTwithOI4VPType(String payload) {
-        log.info("Starting OID4VP JWT generation with typ={}. Payload: {}", OID4VP_TYPE, payload);
+        log.info("Starting OID4VP JWT generation with typ={}", OID4VP_TYPE);
         return generateJWTInternal(payload,new JOSEObjectType(OID4VP_TYPE));
     }
 
@@ -152,7 +152,7 @@ public class JWTServiceImpl implements JWTService {
 
             // Set Payload
             JWTClaimsSet claimsSet = convertPayloadToJWTClaimsSet(payload);
-            log.debug("JWTServiceImpl -- generateJWT -- JWT claims set created from payload: {}", claimsSet);
+            log.debug("JWTServiceImpl -- generateJWT -- JWT claims set created successfully");
 
             // Create JWT for ES256R algorithm
             SignedJWT jwt = new SignedJWT(jwsHeader, claimsSet);

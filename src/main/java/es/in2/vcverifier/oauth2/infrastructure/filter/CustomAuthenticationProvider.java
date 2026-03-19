@@ -88,7 +88,10 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         }
 
         // Extract tenant from OIDC client registration settings
-        String tenant = registeredClient.getClientSettings().getSetting(CLIENT_SETTING_TENANT);
+        Map<String, Object> clientSettings = registeredClient.getClientSettings().getSettings();
+        String tenant = clientSettings.containsKey(CLIENT_SETTING_TENANT)
+                ? (String) clientSettings.get(CLIENT_SETTING_TENANT)
+                : null;
 
         // Delegate token generation to the workflow
         TokenGenerationWorkflow.Result tokenResult = tokenGenerationWorkflow.issueAccessToken(

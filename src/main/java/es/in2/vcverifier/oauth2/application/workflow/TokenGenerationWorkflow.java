@@ -136,9 +136,15 @@ public class TokenGenerationWorkflow {
             extractedClaims.accessTokenEmbeds().forEach(payloadBuilder::claim);
         }
 
-        // Tenant from client registration takes precedence over any credential-extracted tenant
+        // Tenant from client registration is the authoritative source.
+        // If no tenant is configured for this client, explicitly remove any credential-extracted tenant
+        // to prevent attacker-controlled values from reaching the token (fail secure).
         if (tenant != null && !tenant.isBlank()) {
             payloadBuilder.claim("tenant", tenant);
+        } else {
+            // Remove any credential-extracted tenant claim — never fall through to attacker-controlled value
+            payloadBuilder.claim("tenant", null);
+            log.warn("Client has no tenant configured. Excluding tenant claim from access token.");
         }
 
         JWTClaimsSet payload = payloadBuilder.build();
