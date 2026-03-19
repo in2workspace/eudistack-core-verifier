@@ -87,9 +87,15 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             }
         }
 
+        // Extract tenant from OIDC client registration settings
+        Map<String, Object> clientSettings = registeredClient.getClientSettings().getSettings();
+        String tenant = clientSettings.containsKey(CLIENT_SETTING_TENANT)
+                ? (String) clientSettings.get(CLIENT_SETTING_TENANT)
+                : null;
+
         // Delegate token generation to the workflow
         TokenGenerationWorkflow.Result tokenResult = tokenGenerationWorkflow.issueAccessToken(
-                credentialJson, audience, authentication.getAdditionalParameters(), !isM2M);
+                credentialJson, audience, authentication.getAdditionalParameters(), !isM2M, tenant);
 
         OAuth2AccessToken oAuth2AccessToken = new OAuth2AccessToken(
                 OAuth2AccessToken.TokenType.BEARER,

@@ -23,11 +23,16 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
+
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class ClientLoaderConfig {
+
+    private static final Pattern TENANT_PATTERN = Pattern.compile("^[a-z0-9-]{1,64}$");
 
     private final ClientRegistryProvider clientRegistryProvider;
     private final Set<String> allowedClientsOrigins;
@@ -62,6 +67,7 @@ public class ClientLoaderConfig {
         try {
             ExternalTrustedListYamlData clientsYamlData = clientRegistryProvider.retrieveClients();
             List<RegisteredClient> registeredClients = new ArrayList<>();
+            Set<String> freshOrigins = new java.util.HashSet<>();
             for (ClientData clientData : clientsYamlData.clients()) {
                 RegisteredClient.Builder registeredClientBuilder = RegisteredClient
                         .withId(UUID.randomUUID().toString())
@@ -74,6 +80,7 @@ public class ClientLoaderConfig {
                         .clientName(clientData.url());
 
                 if (clientData.clientSecret() != null && !clientData.clientSecret().isBlank()) {
+                    log.warn("Client '{}' has a plaintext secret in config. Use a secrets manager for production.", clientData.clientId());
                     registeredClientBuilder.clientSecret(clientData.clientSecret());
                 }
                 ClientSettings.Builder clientSettingsBuilder = ClientSettings.builder().requireAuthorizationConsent(clientData.requireAuthorizationConsent());
@@ -86,13 +93,23 @@ public class ClientLoaderConfig {
                 if (clientData.requireProofKey() != null) {
                     clientSettingsBuilder.requireProofKey(clientData.requireProofKey());
                 }
+                if (clientData.tenant() != null && !clientData.tenant().isBlank()) {
+                    if (!TENANT_PATTERN.matcher(clientData.tenant()).matches()) {
+                        throw new ClientLoadingException("Invalid tenant identifier '" + clientData.tenant()
+                                + "' for client '" + clientData.clientId() + "'. Must match: " + TENANT_PATTERN.pattern());
+                    }
+                    clientSettingsBuilder.setting(CLIENT_SETTING_TENANT, clientData.tenant());
+                }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());
 
                 if (clientData.url() != null && !clientData.url().isBlank()) {
-                    allowedClientsOrigins.add(clientData.url());
+                    freshOrigins.add(clientData.url());
                 }
             }
+            // Atomically replace origins: remove stale, add fresh
+            allowedClientsOrigins.retainAll(freshOrigins);
+            allowedClientsOrigins.addAll(freshOrigins);
             return registeredClients;
         } catch (Exception e) {
             throw new ClientLoadingException("Error loading clients from Yaml", e);

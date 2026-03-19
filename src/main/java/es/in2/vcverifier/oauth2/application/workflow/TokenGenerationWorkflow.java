@@ -53,9 +53,10 @@ public class TokenGenerationWorkflow {
      * @param audience             the audience for the tokens
      * @param additionalParameters map containing optional SCOPE, NONCE, etc.
      * @param generateIdToken      true to generate an ID token (for authorization_code and refresh_token grants)
+     * @param tenant               the tenant identifier from the OIDC client registration
      * @return a Result with the JWT strings and metadata
      */
-    public Result issueAccessToken(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken) {
+    public Result issueAccessToken(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken, String tenant) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 backendConfig.getAccessTokenExpirationSeconds(),
@@ -66,7 +67,7 @@ public class TokenGenerationWorkflow {
         ExtractedClaims extractedClaims = extractClaims(credentialType, credentialJson);
         String subject = extractedClaims.subject();
 
-        String accessTokenJwt = buildAccessToken(credentialJson, extractedClaims, issueTime, expirationTime, subject, audience);
+        String accessTokenJwt = buildAccessToken(credentialJson, extractedClaims, issueTime, expirationTime, subject, audience, tenant);
 
         String idTokenJwt = null;
         if (generateIdToken) {
@@ -114,8 +115,8 @@ public class TokenGenerationWorkflow {
 
     private String buildAccessToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                      Instant issueTime, Instant expirationTime,
-                                     String subject, String audience) {
-        log.info("Generating access token for credential_type: {}", extractCredentialType(credentialJson));
+                                     String subject, String audience, String tenant) {
+        log.info("Generating access token for credential_type: {}, tenant: {}", extractCredentialType(credentialJson), tenant);
 
         JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
                 .issuer(backendConfig.getUrl())
@@ -133,6 +134,17 @@ public class TokenGenerationWorkflow {
 
         if (extractedClaims.accessTokenEmbeds() != null) {
             extractedClaims.accessTokenEmbeds().forEach(payloadBuilder::claim);
+        }
+
+        // Tenant from client registration is the authoritative source.
+        // If no tenant is configured for this client, explicitly remove any credential-extracted tenant
+        // to prevent attacker-controlled values from reaching the token (fail secure).
+        if (tenant != null && !tenant.isBlank()) {
+            payloadBuilder.claim("tenant", tenant);
+        } else {
+            // Remove any credential-extracted tenant claim — never fall through to attacker-controlled value
+            payloadBuilder.claim("tenant", null);
+            log.warn("Client has no tenant configured. Excluding tenant claim from access token.");
         }
 
         JWTClaimsSet payload = payloadBuilder.build();

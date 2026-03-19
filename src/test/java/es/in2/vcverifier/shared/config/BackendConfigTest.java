@@ -23,7 +23,7 @@ class BackendConfigTest {
 
     @Test
     void testBackendConfig() {
-        assertThat(backendConfig.getUrl())
+        assertThat(backendConfig.getStaticUrl())
                 .as("Backend URL should match")
                 .isEqualTo("https://raw.githubusercontent.com");
 

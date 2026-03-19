@@ -18,5 +18,6 @@ public record ClientData(
         List<String> postLogoutRedirectUris,
         Boolean requireProofKey,
         String jwkSetUrl,
-        String tokenEndpointAuthenticationSigningAlgorithm
+        String tokenEndpointAuthenticationSigningAlgorithm,
+        String tenant
 ) {}

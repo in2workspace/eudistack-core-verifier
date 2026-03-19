@@ -6,6 +6,7 @@
 clients:
   - clientId: "vc-auth-client"
     url: "http://localhost:4200"
+    tenant: "local"
     clientAuthenticationMethods:
       - "none"
     authorizationGrantTypes:
