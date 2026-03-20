@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Embedded config files** — Removed `local/clients.yaml`, `local/trusted-issuers.yaml`, and `schemas/*.json` from classpath. All config is now injected via Docker volumes.
 - **EBSI/DOME remote providers** — Removed `EbsiV4TrustedIssuersProvider`, `RemoteClientRegistryProvider`, and related models (`IssuerResponse`, `IssuerAttribute`, `RemoteFileFetchException`). The `trustFrameworks` config section is also removed. Only local YAML providers are used; future EBSI integration will be built from scratch.
+- **Dead code cleanup** — Removed 4 unused exceptions (`RequestMismatchException`, `RequestObjectRetrievalException`, `InvalidSpringProfile`, `OrganizationIdentifierNotFoundException`), 2 unused constants (`DID_ELSI_PREFIX`, `LOG_ERROR_FORMAT`), unused enum `LEARCredentialType`, and unused test utility `VerifierUiLoginUrisPropertiesMother`. Fixed duplicate import and renamed `TrustFrameworkServiceImpTest` → `TrustFrameworkServiceImplTest`.
 
 ### Fixed
 
