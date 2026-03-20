@@ -7,8 +7,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.test.context.ActiveProfiles;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(classes = BackendPropertiesTest.TestConfig.class)
@@ -26,12 +24,6 @@ class BackendPropertiesTest {
                 ""
         );
 
-        BackendProperties.TrustFramework expectedTrustFramework = new BackendProperties.TrustFramework(
-                "DOME",
-                "https://raw.githubusercontent.com",
-                "https://raw.githubusercontent.com/in2workspace/in2-dome-gitops/refs/heads/main/trust-framework/trusted_services_list.yaml"
-        );
-
         assertThat(backendProperties.url())
                 .as("Backend URL should match")
                 .isEqualTo("https://raw.githubusercontent.com");
@@ -39,14 +31,6 @@ class BackendPropertiesTest {
         assertThat(backendProperties.identity())
                 .as("Identity should match the provided private key")
                 .isEqualTo(expectedIdentity);
-
-        assertThat(backendProperties.trustFrameworks())
-                .as("Trust frameworks should contain the expected data")
-                .isEqualTo(List.of(expectedTrustFramework));
-
-        assertThat(backendProperties.getDOMETrustFrameworkByName())
-                .as("getDOMETrustFrameworkByName should return the expected DOME framework")
-                .isEqualTo(expectedTrustFramework);
     }
 
     @Test
@@ -55,8 +39,7 @@ class BackendPropertiesTest {
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
                         // Omit url:
-                        "verifier.backend.identity.privateKey=test-private-key",
-                        "verifier.backend.trustFrameworks[0].name=DOME"
+                        "verifier.backend.identity.privateKey=test-private-key"
                 )
                 .run(context -> {
                     assertThat(context).hasFailed();
@@ -68,22 +51,7 @@ class BackendPropertiesTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
-                        "verifier.backend.url=https://raw.githubusercontent.com",
-                        "verifier.backend.trustFrameworks[0].name=DOME"
-                )
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                });
-    }
-
-    @Test
-    void testTrustFrameworkUrlsAreOptional() {
-        new ApplicationContextRunner()
-                .withUserConfiguration(TestConfig.class)
-                .withPropertyValues(
-                        "verifier.backend.url=https://raw.githubusercontent.com",
-                        "verifier.backend.trustFrameworks[0].name=DOME"
-                        // trustedIssuersListUrl and trustedServicesListUrl omitted
+                        "verifier.backend.url=https://raw.githubusercontent.com"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();
@@ -97,10 +65,7 @@ class BackendPropertiesTest {
                 .withPropertyValues(
                         "verifier.backend.url=https://raw.githubusercontent.com",
                         "verifier.backend.identity.didKey=did:key:zTest",
-                        "verifier.backend.identity.privateKey=test-private-key",
-                        "verifier.backend.trustFrameworks[0].name=DOME",
-                        "verifier.backend.trustFrameworks[0].trustedIssuersListUrl=https://raw.githubusercontent.com",
-                        "verifier.backend.trustFrameworks[0].trustedServicesListUrl=https://raw.githubusercontent.com/trust.yaml"
+                        "verifier.backend.identity.privateKey=test-private-key"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();

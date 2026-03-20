@@ -7,8 +7,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.util.List;
-
 @Configuration
 @RequiredArgsConstructor
 public class BackendConfig {
@@ -67,23 +65,6 @@ public class BackendConfig {
         return properties.identity() != null
                 && properties.identity().privateKey() != null
                 && !properties.identity().privateKey().isBlank();
-    }
-
-    private BackendProperties.TrustFramework getSelectedTrustFramework() {
-        return properties.getDOMETrustFrameworkByName();
-    }
-
-    public String getTrustedIssuerListUri() {
-        return getSelectedTrustFramework().trustedIssuersListUrl();
-    }
-
-    public String getClientsRepositoryUri() {
-        return getSelectedTrustFramework().trustedServicesListUrl();
-    }
-
-    // todo currently unused, will be used when Verifier can manage multiple trustframeworks
-    public List<BackendProperties.TrustFramework> getAllTrustFrameworks() {
-        return properties.trustFrameworks();
     }
 
     public String getLocalClientsPath() {

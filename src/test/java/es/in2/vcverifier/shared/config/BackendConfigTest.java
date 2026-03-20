@@ -29,14 +29,6 @@ class BackendConfigTest {
      assertThat(backendConfig.getPrivateKey())
         .as("Private key should remove 0x prefix")
         .isEqualTo("73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5");
-
-        assertThat(backendConfig.getTrustedIssuerListUri())
-                .as("Trusted Issuer List URL should match")
-                .isEqualTo("https://raw.githubusercontent.com");
-
-        assertThat(backendConfig.getClientsRepositoryUri())
-                .as("Clients Repository URI should match")
-                .isEqualTo("https://raw.githubusercontent.com/in2workspace/in2-dome-gitops/refs/heads/main/trust-framework/trusted_services_list.yaml");
     }
 
     @Configuration

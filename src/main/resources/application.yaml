@@ -80,11 +80,5 @@ verifier:
       trusted-issuers-path: ${VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH:}
       schemas-dir: ${VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR:}
 
-    trustFrameworks:
-      - name: DOME
-        # Set URLs to use remote providers; leave unset for local file providers.
-        # trustedIssuersListUrl: https://example.org/trusted-issuers
-        # trustedServicesListUrl: https://example.org/trusted-services
-
   # DCQL profiles are injected via spring.config.import from the external
   # file at VERIFIER_BACKEND_LOCALFILES_DCQLPATH (see dev-tools/verifier/dcql-profiles.yaml).

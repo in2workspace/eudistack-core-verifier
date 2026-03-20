@@ -6,7 +6,3 @@ verifier:
     identity:
       didKey: did:key:zDnaeTest
       privateKey: "0x73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5"
-    trustFrameworks:
-      - name: DOME
-        trustedIssuersListUrl: https://raw.githubusercontent.com
-        trustedServicesListUrl: https://raw.githubusercontent.com/in2workspace/in2-dome-gitops/refs/heads/main/trust-framework/trusted_services_list.yaml
