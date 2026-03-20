@@ -1,24 +1,46 @@
-# Stage 1
-FROM docker.io/gradle:9.3.1-jdk25 AS temp_build
-ARG SKIP_TESTS=false
-WORKDIR /home/gradle/src
-# Copy the project files
-COPY build.gradle settings.gradle /home/gradle/src/
-COPY src /home/gradle/src/src
-COPY gradle /home/gradle/src/gradle
-COPY config /home/gradle/src/config
-# Build the project
-RUN if [ "$SKIP_TESTS" = "true" ]; then \
-    gradle build --no-daemon -x test; \
-  else \
-    gradle build --no-daemon; \
-  fi
+# ---- Build stage ----
+FROM eclipse-temurin:25-jdk-alpine AS build
 
-# Stage 2
+ARG SKIP_TESTS=false
+
+WORKDIR /workspace
+
+# Copy Gradle wrapper first (cacheable layer — rarely changes)
+COPY gradlew ./
+COPY gradle/wrapper/ gradle/wrapper/
+RUN chmod +x gradlew && ./gradlew --version --no-daemon
+
+# Copy build config (cacheable layer — changes less often than source)
+COPY build.gradle settings.gradle ./
+COPY config/ config/
+RUN ./gradlew dependencies --no-daemon || true
+
+# Copy source and build
+COPY src/ src/
+RUN if [ "$SKIP_TESTS" = "true" ]; then \
+      ./gradlew build --no-daemon -x test -x checkstyleMain -x checkstyleTest; \
+    else \
+      ./gradlew build --no-daemon; \
+    fi
+
+# ---- Runtime stage ----
 FROM eclipse-temurin:25-jre-alpine
-RUN addgroup -S nonroot \
-    && adduser -S nonroot -G nonroot
-USER nonroot
+
+LABEL org.opencontainers.image.title="eudistack-core-verifier" \
+      org.opencontainers.image.description="OAuth 2.0 Authorization Server with OID4VP for verifiable credential-based authentication" \
+      org.opencontainers.image.vendor="IN2" \
+      org.opencontainers.image.source="https://github.com/in2workspace/eudistack-core-verifier" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
 WORKDIR /app
-COPY --from=temp_build /home/gradle/src/build/libs/*.jar /app/vc-verifier.jar
-ENTRYPOINT ["java", "-jar", "/app/vc-verifier.jar"]
+COPY --from=build /workspace/build/libs/*.jar app.jar
+
+EXPOSE 8082
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:8082/health || exit 1
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
