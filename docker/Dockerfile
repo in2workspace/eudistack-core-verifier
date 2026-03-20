@@ -28,7 +28,7 @@ FROM eclipse-temurin:25-jre-alpine
 
 LABEL org.opencontainers.image.title="eudistack-core-verifier" \
       org.opencontainers.image.description="OAuth 2.0 Authorization Server with OID4VP for verifiable credential-based authentication" \
-      org.opencontainers.image.vendor="IN2" \
+      org.opencontainers.image.vendor="Altia" \
       org.opencontainers.image.source="https://github.com/in2workspace/eudistack-core-verifier" \
       org.opencontainers.image.licenses="Apache-2.0"
 
