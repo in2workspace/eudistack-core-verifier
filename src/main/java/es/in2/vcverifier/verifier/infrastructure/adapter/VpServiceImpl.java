@@ -6,8 +6,10 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.*;
 import es.in2.vcverifier.shared.domain.exception.*;
-import es.in2.vcverifier.verifier.domain.model.credentials.lear.LEARCredential;
+import es.in2.vcverifier.verifier.domain.model.GenericCredential;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
+import es.in2.vcverifier.verifier.domain.model.validation.RevocationPaths;
+import es.in2.vcverifier.verifier.domain.model.validation.ValidationPaths;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
 import es.in2.vcverifier.verifier.domain.service.*;
 import es.in2.vcverifier.shared.crypto.*;
@@ -20,8 +22,7 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
 
 import java.text.ParseException;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeParseException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +38,7 @@ public class VpServiceImpl implements VpService {
     private final ObjectMapper objectMapper;
     private final TrustFrameworkService trustFrameworkService;
     private final CertificateValidationService certificateValidationService;
-    private final CredentialMapperService credentialMapperService;
+    private final GenericCredentialFactory genericCredentialFactory;
     private final CredentialValidator credentialValidator;
     private final CryptographicBindingValidator cryptographicBindingValidator;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
@@ -51,57 +52,68 @@ public class VpServiceImpl implements VpService {
 
         Payload payload = jwtService.extractPayloadFromSignedJWT(jwtCredential);
 
-        // Step 2: Map to typed credential
-        LEARCredential learCredential = credentialMapperService.mapPayloadToVerifiableCredential(payload);
+        // Step 2: Map to generic credential using profile-based factory
+        GenericCredential credential = genericCredentialFactory.create(payload);
 
-        // Step 2b: Validate credential against JSON Schema (best-effort, non-blocking if no schema found)
-        validateCredentialSchemaIfPossible(payload);
+        // Step 2b: Validate credential against JSON Schema
+        ValidationResult schemaResult = credentialValidator.validate(credential.root());
+        if (!schemaResult.valid()) {
+            throw new CredentialSchemaValidationException(
+                    "Credential schema validation failed for type '" + schemaResult.credentialType()
+                            + "': " + String.join("; ", schemaResult.errors()));
+        }
+        log.info("Credential schema validation passed: type={}", schemaResult.credentialType());
 
         // Step 3: Validate time window
-        validateCredentialTimeWindow(learCredential);
+        validateCredentialTimeWindow(credential);
 
         // Step 4: Validate revocation (only if credentialStatus is present)
         // Non-blocking: if the status list endpoint is unreachable or returns an error,
         // log a warning and let the presentation pass. Only block if revocation is confirmed.
-        if (hasCredentialStatus(learCredential)) {
-            log.debug("CredentialStatus detected: {}", learCredential.credentialStatusId());
+        if (hasRevocationConfig(credential)) {
+            log.debug("CredentialStatus detected in credential");
             try {
-                if (!validateCredentialNotRevoked(learCredential)) {
-                    throw new CredentialRevokedException("Credential ID " + learCredential.id() + " is revoked.");
+                if (!validateCredentialNotRevoked(credential)) {
+                    throw new CredentialRevokedException("Credential is revoked.");
                 }
                 log.info("Credential is not revoked");
             } catch (CredentialRevokedException e) {
                 throw e;
             } catch (Exception e) {
-                log.warn("Could not verify credential revocation status for credential {}. " +
+                log.warn("Could not verify credential revocation status. " +
                         "Status list may be unreachable. Proceeding with presentation. Error: {}",
-                        learCredential.id(), e.getMessage());
+                        e.getMessage());
             }
         } else {
-            log.debug("No CredentialStatus block found; skipping revocation check for credential {}", learCredential.id());
+            log.debug("No CredentialStatus block found; skipping revocation check");
         }
 
         // Step 5: Extract issuer identifier from JWT iss claim
         String credentialIssuer = extractIssFromJwt(jwtCredential);
 
         // Step 6: Validate credential types against issuer capabilities
-        List<String> credentialTypes = learCredential.type();
+        List<String> credentialTypes = credential.types();
         List<IssuerCredentialsCapabilities> issuerCapabilitiesList = trustFrameworkService.getTrustedIssuerListData(credentialIssuer);
         validateCredentialTypeWithIssuerCapabilities(issuerCapabilitiesList, credentialTypes);
         log.info("Issuer {} is a trusted participant", credentialIssuer);
 
         // Step 7: Verify VC signature and certificate
-        String issuerOrgId = learCredential.issuer().getOrganizationIdentifier();
+        String issuerOrgId = credential.field(credential.profile().issuerIdPath()).orElse(null);
         if (issuerOrgId == null || issuerOrgId.isBlank()) {
             issuerOrgId = credentialIssuer;
         }
         Map<String, Object> vcHeader = jwtCredential.getHeader().toJSONObject();
         certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, issuerOrgId);
 
-        // Step 8: Validate mandator organization
-        String mandatorOrganizationIdentifier = learCredential.mandatorOrganizationIdentifier();
-        trustFrameworkService.getTrustedIssuerListData(mandatorOrganizationIdentifier);
-        log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrganizationIdentifier);
+        // Step 8: Validate mandator organization (skip if no mandator path in profile)
+        String mandatorOrgIdPath = credential.profile().mandatorOrgIdPath();
+        if (mandatorOrgIdPath != null) {
+            String mandatorOrgId = credential.field(mandatorOrgIdPath)
+                    .orElseThrow(() -> new CredentialMappingException(
+                            "Missing mandator org ID at path: " + mandatorOrgIdPath));
+            trustFrameworkService.getTrustedIssuerListData(mandatorOrgId);
+            log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrgId);
+        }
 
         // Step 9: Validate VP signature + cryptographic binding
         SignedJWT vpJwt = parseVpJwt(verifiablePresentation);
@@ -149,24 +161,6 @@ public class VpServiceImpl implements VpService {
 
     // --- Private helpers ---
 
-    private void validateCredentialSchemaIfPossible(Payload payload) {
-        try {
-            Object vcObject = jwtService.extractVCFromPayload(payload);
-            JsonNode credentialJson = convertObjectToJSONNode(vcObject);
-            ValidationResult result = credentialValidator.validate(credentialJson);
-            if (!result.valid()) {
-                throw new CredentialSchemaValidationException(
-                        "Credential schema validation failed for type '" + result.credentialType()
-                                + "': " + String.join("; ", result.errors()));
-            }
-            log.info("Credential schema validation passed: type={}", result.credentialType());
-        } catch (CredentialSchemaValidationException e) {
-            throw e; // re-throw validation failures
-        } catch (Exception e) {
-            log.warn("Schema validation skipped — could not extract credential as JsonNode: {}", e.getMessage());
-        }
-    }
-
     private String extractIssFromJwt(SignedJWT jwtCredential) {
         try {
             String iss = jwtCredential.getJWTClaimsSet().getIssuer();
@@ -187,39 +181,65 @@ public class VpServiceImpl implements VpService {
         }
     }
 
-    private void validateCredentialTimeWindow(LEARCredential credential) {
-        try {
-            ZonedDateTime validFrom = ZonedDateTime.parse(credential.validFrom());
-            ZonedDateTime validUntil = ZonedDateTime.parse(credential.validUntil());
-            ZonedDateTime now = ZonedDateTime.now();
+    private void validateCredentialTimeWindow(GenericCredential credential) {
+        ValidationPaths vp = credential.profile().validationPaths();
+        if (vp == null) {
+            log.debug("No validation paths in profile; skipping time window check");
+            return;
+        }
 
-            if (now.isBefore(validFrom)) {
-                throw new CredentialNotActiveException("Credential is not yet valid. Valid from: " + validFrom);
-            }
-            if (now.isAfter(validUntil)) {
-                throw new CredentialExpiredException("Credential has expired. Valid until: " + validUntil);
-            }
-        } catch (DateTimeParseException e) {
-            throw new CredentialMappingException("Invalid date format in credential: " + e.getMessage());
+        Instant validFrom = credential.timeField(vp.validFromPath())
+                .orElseThrow(() -> new CredentialMappingException(
+                        "Missing validFrom at path: " + vp.validFromPath()));
+        Instant validUntil = credential.timeField(vp.validUntilPath())
+                .orElseThrow(() -> new CredentialMappingException(
+                        "Missing validUntil at path: " + vp.validUntilPath()));
+
+        Instant now = Instant.now();
+        if (now.isBefore(validFrom)) {
+            throw new CredentialNotActiveException("Credential is not yet valid. Valid from: " + validFrom);
+        }
+        if (now.isAfter(validUntil)) {
+            throw new CredentialExpiredException("Credential has expired. Valid until: " + validUntil);
         }
     }
 
-    private boolean hasCredentialStatus(LEARCredential credential) {
-        if (!credential.learCredentialStatusExist()) {
+    private boolean hasRevocationConfig(GenericCredential credential) {
+        ValidationPaths vp = credential.profile().validationPaths();
+        if (vp == null || vp.revocation() == null) {
             return false;
         }
-        return credential.credentialStatusId() != null && !credential.credentialStatusId().isBlank() &&
-                credential.credentialStatusType() != null && !credential.credentialStatusType().isBlank() &&
-                credential.credentialStatusPurpose() != null && !credential.credentialStatusPurpose().isBlank();
+        RevocationPaths rp = vp.revocation();
+        return credential.field(rp.statusIdPath()).isPresent();
     }
 
-    private boolean validateCredentialNotRevoked(LEARCredential learCredential) {
-        if (!REVOCATION.equals(learCredential.credentialStatusPurpose())) {
-            log.error("credentialStatus is not revocation: {}", learCredential.credentialStatusPurpose());
+    private boolean validateCredentialNotRevoked(GenericCredential credential) {
+        RevocationPaths rp = credential.profile().validationPaths().revocation();
+
+        String purpose = credential.field(rp.statusPurposePath()).orElse(null);
+        if (purpose != null && !REVOCATION.equals(purpose)) {
+            log.error("credentialStatus purpose is not 'revocation': {}", purpose);
             return false;
         }
 
-        String type = learCredential.credentialStatusType();
+        String type = credential.field(rp.statusTypePath()).orElse(null);
+        String statusListCredential = credential.field(rp.statusListCredentialPath())
+                .orElseThrow(() -> new CredentialException("Missing statusListCredential"));
+        String statusListIndex = credential.field(rp.statusListIndexPath())
+                .orElseThrow(() -> new CredentialException("Missing statusListIndex"));
+
+        if (type == null) {
+            for (CredentialStatusVerifier verifier : credentialStatusVerifiers) {
+                try {
+                    return !verifier.isRevoked(statusListCredential, statusListIndex, purpose);
+                } catch (Exception e) {
+                    log.debug("Verifier {} couldn't handle credential status: {}",
+                            verifier.getClass().getSimpleName(), e.getMessage());
+                }
+            }
+            throw new CredentialException(
+                    "No credential status verifier could handle status at: " + statusListCredential);
+        }
 
         CredentialStatusVerifier verifier = credentialStatusVerifiers.stream()
                 .filter(v -> v.supports(type))
@@ -227,11 +247,7 @@ public class VpServiceImpl implements VpService {
                 .orElseThrow(() -> new CredentialException("Unsupported credentialStatus.type: " + type));
 
         log.info("Validating credential revocation with {} verifier", type);
-        return !verifier.isRevoked(
-                learCredential.statusListCredential(),
-                learCredential.credentialStatusListIndex(),
-                learCredential.credentialStatusPurpose()
-        );
+        return !verifier.isRevoked(statusListCredential, statusListIndex, purpose);
     }
 
     private void validateCredentialTypeWithIssuerCapabilities(List<IssuerCredentialsCapabilities> issuerCapabilitiesList, List<String> credentialTypes) {

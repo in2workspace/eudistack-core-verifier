@@ -44,7 +44,7 @@ class VpSecurityTest {
     @Mock
     private CertificateValidationService certificateValidationService;
     @Mock
-    private es.in2.vcverifier.verifier.infrastructure.adapter.CredentialMapperService credentialMapperService;
+    private es.in2.vcverifier.verifier.infrastructure.adapter.GenericCredentialFactory genericCredentialFactory;
     @Mock
     private es.in2.vcverifier.verifier.domain.service.CredentialValidator credentialValidator;
     @Mock
@@ -54,7 +54,7 @@ class VpSecurityTest {
 
     @BeforeEach
     void setUp() {
-        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, credentialValidator, cryptographicBindingValidator, java.util.List.of());
+        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, genericCredentialFactory, credentialValidator, cryptographicBindingValidator, java.util.List.of());
         org.mockito.Mockito.lenient().when(credentialValidator.validate(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(es.in2.vcverifier.verifier.domain.model.validation.ValidationResult.builder().valid(true).errors(java.util.List.of()).build());
     }
@@ -174,7 +174,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("Invalid payload format for Verifiable Credential."));
 
             assertThrows(CredentialMappingException.class,
@@ -190,7 +190,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("'type' key is not a list."));
 
             assertThrows(CredentialMappingException.class,
@@ -206,7 +206,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new InvalidCredentialTypeException("Unsupported credential type"));
 
             assertThrows(InvalidCredentialTypeException.class,
@@ -285,7 +285,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("'type' list contains non-string elements."));
 
             assertThrows(CredentialMappingException.class,
@@ -301,7 +301,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("'type' key is not a list."));
 
             assertThrows(CredentialMappingException.class,
