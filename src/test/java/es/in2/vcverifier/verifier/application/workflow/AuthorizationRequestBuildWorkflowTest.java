@@ -56,7 +56,6 @@ class AuthorizationRequestBuildWorkflowTest {
         ));
         when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
-        when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
@@ -84,7 +83,6 @@ class AuthorizationRequestBuildWorkflowTest {
         ));
         when(dcqlProfileResolver.resolve("openid learcredential.employee")).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
-        when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
@@ -102,7 +100,6 @@ class AuthorizationRequestBuildWorkflowTest {
         ));
         when(dcqlProfileResolver.resolve(anyString())).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
-        when(cryptoComponent.getClientIdScheme()).thenReturn("did");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
@@ -117,5 +114,9 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(payload).contains("dcql_query");
         assertThat(payload).contains("vp_token");
         assertThat(payload).contains("my-state");
+        // OID4VP §5.8: aud MUST be "https://self-issued.me/v2"
+        assertThat(payload).contains("https://self-issued.me/v2");
+        // OID4VP §5.9: client_id_scheme removed (prefix embedded in client_id)
+        assertThat(payload).doesNotContain("client_id_scheme");
     }
 }

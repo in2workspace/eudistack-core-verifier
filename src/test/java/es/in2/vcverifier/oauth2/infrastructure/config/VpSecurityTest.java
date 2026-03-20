@@ -314,7 +314,7 @@ class VpSecurityTest {
         @Test
         @DisplayName("JtiTokenCache rejects duplicate JTI values")
         void jtiTokenCache_rejectsDuplicate() {
-            var cache = new es.in2.vcverifier.shared.config.JtiTokenCache(new HashSet<>());
+            var cache = new es.in2.vcverifier.shared.config.JtiTokenCache(new es.in2.vcverifier.shared.config.CacheStore<>(1800, java.util.concurrent.TimeUnit.SECONDS));
             cache.addJti("unique-jti-1");
             assertTrue(cache.isJtiPresent("unique-jti-1"));
             assertFalse(cache.isJtiPresent("unique-jti-2"));

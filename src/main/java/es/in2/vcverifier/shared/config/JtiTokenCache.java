@@ -1,24 +1,27 @@
 package es.in2.vcverifier.shared.config;
 
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.HashSet;
+import java.util.NoSuchElementException;
 
-@Getter
 @Component
 @RequiredArgsConstructor
 public class JtiTokenCache {
 
-    private final HashSet<String> jtiTokenHashSet;
+    private final CacheStore<String> jtiCacheStore;
 
     public void addJti(String jti) {
-        jtiTokenHashSet.add(jti);
+        jtiCacheStore.add(jti, "present");
     }
 
     public boolean isJtiPresent(String jti) {
-        return jtiTokenHashSet.contains(jti);
+        try {
+            jtiCacheStore.get(jti);
+            return true;
+        } catch (NoSuchElementException e) {
+            return false;
+        }
     }
 
 }

@@ -33,6 +33,11 @@ import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParamet
 @RequiredArgsConstructor
 public class AuthorizationRequestBuildWorkflow {
 
+    /**
+     * OID4VP §5.8: static Self-Issued OP v2 discovery audience.
+     */
+    private static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
+
     private final JWTService jwtService;
     private final CryptoComponent cryptoComponent;
     private final BackendConfig backendConfig;
@@ -80,11 +85,10 @@ public class AuthorizationRequestBuildWorkflow {
 
         JWTClaimsSet payload = new JWTClaimsSet.Builder()
                 .issuer(clientId)
-                .audience(clientId)
+                .audience(SELF_ISSUED_V2)
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
                 .claim(OAuth2ParameterNames.CLIENT_ID, clientId)
-                .claim("client_id_scheme", cryptoComponent.getClientIdScheme())
                 .claim(NONCE, nonce)
                 .claim("response_uri", backendConfig.getUrl() + AUTHORIZATION_RESPONSE_ENDPOINT)
                 .claim(OAuth2ParameterNames.SCOPE, scope)

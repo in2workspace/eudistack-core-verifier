@@ -3,6 +3,10 @@ spring:
     name: ${OTEL_SERVICE_NAME:vc-verifier}
   config:
     import: optional:file:${VERIFIER_BACKEND_LOCALFILES_DCQLPATH:}
+  # Virtual Threads: enables lightweight threads for I/O-bound operations (SSE, HTTP calls)
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: 8082

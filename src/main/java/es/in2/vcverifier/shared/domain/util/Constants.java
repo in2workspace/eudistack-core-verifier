@@ -26,6 +26,7 @@ public class Constants {
     public static final String EXPIRATION = "expiration";
     public static final String REVOCATION = "revocation";
     public static final String CLIENT_SETTING_TENANT = "settings.tenant";
-
+    // JTI cache TTL: 2x access token lifetime (900s) to ensure replay window coverage
+    public static final long JTI_CACHE_TTL_SECONDS = 1800L;
 
 }

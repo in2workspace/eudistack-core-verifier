@@ -53,9 +53,10 @@ public class CacheStoreConfig {
         return new CacheStore<>(10, TimeUnit.MINUTES);
     }
 
+    // JTI cache TTL: 2x access token lifetime (900s) to cover clock skew and retries
     @Bean
-    public Set<String> jtiCache() {
-        return new HashSet<>();
+    public CacheStore<String> jtiCacheStore() {
+        return new CacheStore<>(JTI_CACHE_TTL_SECONDS, TimeUnit.SECONDS);
     }
     
     @Bean
