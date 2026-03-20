@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Dynamic issuer URL resolution** — `AuthorizationServerConfig` and `BackendConfig` now resolve the Verifier's issuer URL dynamically from the request, enabling multi-tenant subdomain routing without per-tenant configuration.
 - **Version freeze** — `build.gradle` version set to `3.0.0` per architect decision (no version upgrades until stable release).
+- **Google Java Style enforcement** — Checkstyle configured with 25+ rules (Google base + project adaptations). All violations fixed.
+- **Dockerfile rewrite** — Multi-stage build with `gradlew`, 3-layer cache, OCI labels, HEALTHCHECK, standard port 8080.
+
+### Removed
+
+- **Embedded config files** — Removed `local/clients.yaml`, `local/trusted-issuers.yaml`, and `schemas/*.json` from classpath. All config is now injected via Docker volumes.
 
 ### Fixed
 
