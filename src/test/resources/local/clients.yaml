@@ -24,3 +24,19 @@ clients:
       - "role"
     requireAuthorizationConsent: false
     requireProofKey: true
+
+  - clientId: "m2m-test-client"
+    url: "http://localhost:9090"
+    tenant: "local"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "client_credentials"
+    redirectUris:
+      - "http://localhost:9090"
+    postLogoutRedirectUris:
+      - "http://localhost:9090"
+    scopes:
+      - "openid"
+      - "learcredential"
+    requireAuthorizationConsent: false
