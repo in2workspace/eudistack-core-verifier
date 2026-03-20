@@ -74,6 +74,7 @@ class CustomAuthorizationRequestConverterTest {
     private SafeUrlValidator safeUrlValidator;
 
     private boolean isNonceRequiredOnFapiProfile = true;
+    private long loginTimeoutSeconds = 120L;
 
     private CustomAuthorizationRequestConverter converter;
 
@@ -87,6 +88,7 @@ class CustomAuthorizationRequestConverterTest {
                 backendConfig,
                 registeredClientRepository,
                 isNonceRequiredOnFapiProfile,
+                loginTimeoutSeconds,
                 httpClient,
                 authorizationRequestBuildWorkflow,
                 frontendConfig,

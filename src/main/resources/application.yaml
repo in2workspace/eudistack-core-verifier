@@ -67,6 +67,8 @@ verifier:
       didKey:
       privateKey:
       certificate:  # Path to X.509 PEM certificate. When set, enables x509_hash client_id_scheme.
+    login-timeout-seconds: ${VERIFIER_OAUTH2_LOGIN_TIMEOUT_SECONDS:120}
+    fapi-nonce-required: ${VERIFIER_OAUTH2_FAPI_NONCE_REQUIRED:true}
     token-expiration:
       access-token-seconds: ${VERIFIER_ACCESS_TOKEN_EXPIRATION:900}
       id-token-seconds: ${VERIFIER_ID_TOKEN_EXPIRATION:60}
