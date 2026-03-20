@@ -8,7 +8,7 @@
 # ── Spring ───────────────────────────────────────────────────
 spring:
   application:
-    name: vc-verifier
+    name: eudistack-core-verifier
   config:
     import: optional:file:${VERIFIER_BACKEND_LOCALFILES_DCQLPATH:}
 
@@ -18,12 +18,18 @@ server:
   forward-headers-strategy: framework
 
 # ── Logging ──────────────────────────────────────────────────
+# Structured JSON logging is activated via LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs
+# (Elastic Common Schema). Leave unset for human-readable text in dev.
+# Trace context (traceId, spanId) is injected automatically by Micrometer Tracing.
 logging:
-  pattern:
-    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+  structured:
+    format:
+      console: ${LOGGING_STRUCTURED_FORMAT_CONSOLE:}
   level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
     es.in2.vcverifier: ${LOGGING_LEVEL_ES_IN2_VCVERIFIER:INFO}
-    org.springframework.security: ${LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY:INFO}
+    org.springframework.security: ${LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY:WARN}
+    org.springframework.web.HttpLogging: ${LOGGING_LEVEL_HTTP:WARN}
 
 # ── Management & Observability ───────────────────────────────
 management:
