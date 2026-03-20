@@ -12,6 +12,8 @@ import es.in2.vcverifier.shared.domain.model.sdjwt.Disclosure;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwt;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,10 +42,12 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
 
     private final DIDService didService;
     private final TrustFrameworkService trustFrameworkService;
+    private final MeterRegistry meterRegistry;
 
     @Override
     public SdJwtVerificationResult verifyPresentation(String sdJwtCompact, String expectedAud, String expectedNonce) {
         log.info("Verifying SD-JWT VC presentation");
+        Timer.Sample sample = Timer.start(meterRegistry);
 
         // 1. Parse
         SdJwt sdJwt = SdJwt.parse(sdJwtCompact);
@@ -82,6 +86,9 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
             }
 
             String vct = (String) claims.getClaim("vct");
+            sample.stop(Timer.builder("verifier.vp.sdjwt.validation")
+                    .description("SD-JWT VC validation latency")
+                    .register(meterRegistry));
             log.info("SD-JWT VC verified successfully. vct={}, issuer={}", vct, issuer);
 
             return new SdJwtVerificationResult(resolved, vct, holderKey);

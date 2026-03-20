@@ -83,6 +83,9 @@ class VpServiceImplTest {
     @Mock
     private CredentialStatusVerifier bitstringStatusListVerifier;
 
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     private VpServiceImpl vpServiceImpl;
 
     @org.junit.jupiter.api.BeforeEach
@@ -91,7 +94,8 @@ class VpServiceImplTest {
                 jwtService, objectMapper, trustFrameworkService,
                 certificateValidationService, credentialMapperService,
                 cryptographicBindingValidator,
-                java.util.List.of(bitstringStatusListVerifier)
+                java.util.List.of(bitstringStatusListVerifier),
+                meterRegistry
         );
     }
 

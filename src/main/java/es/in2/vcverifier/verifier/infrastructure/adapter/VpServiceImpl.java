@@ -21,6 +21,8 @@ import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilit
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
@@ -50,10 +52,12 @@ public class VpServiceImpl implements VpService {
     private final CredentialMapperService credentialMapperService;
     private final CryptographicBindingValidator cryptographicBindingValidator;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
+    private final MeterRegistry meterRegistry;
 
     @Override
     public void verifyVerifiablePresentation(String verifiablePresentation) {
         log.info("Starting validation of Verifiable Presentation");
+        Timer.Sample sample = Timer.start(meterRegistry);
 
         // Step 1: Extract the first VC from the VP
         SignedJWT jwtCredential = extractFirstVerifiableCredential(verifiablePresentation);
@@ -117,6 +121,9 @@ public class VpServiceImpl implements VpService {
                 verifiablePresentation, vpJwt, jwtCredential
         );
 
+        sample.stop(Timer.builder("verifier.vp.jwt.validation")
+                .description("JWT VP validation latency")
+                .register(meterRegistry));
         log.info("Verifiable Presentation validation completed successfully");
     }
 
@@ -217,11 +224,18 @@ public class VpServiceImpl implements VpService {
                 .orElseThrow(() -> new CredentialException("Unsupported credentialStatus.type: " + type));
 
         log.info("Validating credential revocation with {} verifier", type);
-        return !verifier.isRevoked(
+        Timer.Sample revocationSample = Timer.start(meterRegistry);
+        boolean revoked = verifier.isRevoked(
                 learCredential.statusListCredential(),
                 learCredential.credentialStatusListIndex(),
                 learCredential.credentialStatusPurpose()
         );
+        revocationSample.stop(Timer.builder("verifier.revocation.check")
+                .tag("type", type)
+                .tag("result", revoked ? "revoked" : "valid")
+                .description("Credential revocation check latency")
+                .register(meterRegistry));
+        return !revoked;
     }
 
     private void validateCredentialTypeWithIssuerCapabilities(

@@ -42,6 +42,9 @@ class SdJwtVerificationServiceImplTest {
     @Mock
     private TrustFrameworkService trustFrameworkService;
 
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     private SdJwtVerificationServiceImpl service;
 
     private ECKey issuerKey;
@@ -49,7 +52,7 @@ class SdJwtVerificationServiceImplTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new SdJwtVerificationServiceImpl(didService, trustFrameworkService);
+        service = new SdJwtVerificationServiceImpl(didService, trustFrameworkService, meterRegistry);
         issuerKey = new ECKeyGenerator(Curve.P_256).generate();
         holderKey = new ECKeyGenerator(Curve.P_256).generate();
     }

@@ -3,6 +3,8 @@ package es.in2.vcverifier.shared.crypto;
 import es.in2.vcverifier.shared.domain.exception.PublicKeyDecodingException;
 import es.in2.vcverifier.shared.domain.exception.UnsupportedDIDTypeException;
 import io.github.novacrypto.base58.Base58;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.ECNamedCurveTable;
@@ -24,21 +26,38 @@ import java.util.Arrays;
 @RequiredArgsConstructor
 public class DIDServiceImpl implements DIDService {
 
+    private final MeterRegistry meterRegistry;
+
     @Override
     public PublicKey resolvePublicKeyFromDid(String did) {
         log.info("Attempting to retrieve public key from DID: {}", did);
-        if (!did.startsWith("did:key:")) {
-            log.error("DIDServiceImpl -- resolvePublicKeyFromDid -- Unsupported DID format detected: {}", did);
-            throw new UnsupportedDIDTypeException("Unsupported DID type. Only did:key is supported for the moment.");
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            if (!did.startsWith("did:key:")) {
+                log.error("DIDServiceImpl -- resolvePublicKeyFromDid -- Unsupported DID format detected: {}", did);
+                throw new UnsupportedDIDTypeException(
+                        "Unsupported DID type. Only did:key is supported for the moment.");
+            }
+
+            // Remove the "did:key:" prefix to get the actual encoded public key
+            String encodedPublicKey = did.substring("did:key:".length());
+            log.debug("DIDServiceImpl -- resolvePublicKeyFromDid -- "
+                    + "Encoded public key extracted from DID: {}", encodedPublicKey);
+
+            // Decode the public key from its encoded representation
+            PublicKey result = decodePublicKeyIntoPubKey(encodedPublicKey);
+            sample.stop(Timer.builder("verifier.did.resolution")
+                    .tag("result", "success")
+                    .description("DID public key resolution latency")
+                    .register(meterRegistry));
+            return result;
+        } catch (Exception e) {
+            sample.stop(Timer.builder("verifier.did.resolution")
+                    .tag("result", "error")
+                    .description("DID public key resolution latency")
+                    .register(meterRegistry));
+            throw e;
         }
-
-        // Remove the "did:key:" prefix to get the actual encoded public key
-        String encodedPublicKey = did.substring("did:key:".length());
-        log.debug("DIDServiceImpl -- resolvePublicKeyFromDid -- "
-                + "Encoded public key extracted from DID: {}", encodedPublicKey);
-
-        // Decode the public key from its encoded representation
-        return decodePublicKeyIntoPubKey(encodedPublicKey);
     }
 
     private PublicKey decodePublicKeyIntoPubKey(String encodePublicKey) {

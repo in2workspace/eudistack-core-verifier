@@ -3,7 +3,7 @@ package es.in2.vcverifier.verifier.infrastructure.adapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
@@ -17,6 +17,8 @@ import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -58,14 +60,16 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final RegisteredClientRepository registeredClientRepository;
     private final OAuth2AuthorizationService oAuth2AuthorizationService;
     private final SseEmitterStore sseEmitterStore;
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
     private final CacheStore<String> cacheForNonceByState;
     private final CryptoComponent cryptoComponent;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
+    private final MeterRegistry meterRegistry;
 
     @Override
     public void handleAuthResponse(String state, String vpToken) {
         log.info("Processing authorization response");
+        Timer.Sample sample = Timer.start(meterRegistry);
 
         // Validate if the state exists in the cache
         OAuth2AuthorizationRequest oAuth2AuthorizationRequest = cacheStoreForOAuth2AuthorizationRequest.get(state);
@@ -91,33 +95,48 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         // Detect DCQL format (JSON object) vs legacy format (direct JWT/SD-JWT string)
         String resolvedVpToken = extractVpTokenFromPossibleDcql(decodedVpToken);
 
-        log.info("Decoded VP Token (format={})", isSdJwt(resolvedVpToken) ? "sd-jwt" : "jwt");
+        String format = isSdJwt(resolvedVpToken) ? "sd-jwt" : "jwt";
+        log.info("Decoded VP Token (format={})", format);
 
         // Validate and extract credential based on format
         JsonNode credentialJson;
-        if (isSdJwt(resolvedVpToken)) {
-            // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
-            // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
-            String cachedNonce = cacheForNonceByState.get(state);
-            String expectedAud = cryptoComponent.getClientId();
-            SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
-                    resolvedVpToken, expectedAud, cachedNonce);
-            credentialJson = objectMapper.valueToTree(result.resolvedClaims());
-            log.info("SD-JWT VC validated successfully. vct={}", result.vct());
+        try {
+            if (isSdJwt(resolvedVpToken)) {
+                // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
+                // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
+                String cachedNonce = cacheForNonceByState.get(state);
+                String expectedAud = cryptoComponent.getClientId();
+                SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
+                        resolvedVpToken, expectedAud, cachedNonce);
+                credentialJson = objectMapper.valueToTree(result.resolvedClaims());
+                log.info("SD-JWT VC validated successfully. vct={}", result.vct());
 
-            // Check revocation via Token Status List (status.status_list)
-            validateSdJwtRevocationStatus(result.resolvedClaims());
-        } else {
-            // JWT VP path (existing logic, unchanged)
-            validateVpTokenNonceAndAudience(resolvedVpToken, state);
-            try {
-                vpService.verifyVerifiablePresentation(resolvedVpToken);
-            } catch (Exception e) {
-                log.error("VP Token is invalid - VP Token used in H2M flow is invalid: {}", e.getMessage(), e);
-                throw e;
+                // Check revocation via Token Status List (status.status_list)
+                validateSdJwtRevocationStatus(result.resolvedClaims());
+            } else {
+                // JWT VP path (existing logic, unchanged)
+                validateVpTokenNonceAndAudience(resolvedVpToken, state);
+                try {
+                    vpService.verifyVerifiablePresentation(resolvedVpToken);
+                } catch (Exception e) {
+                    log.error("VP Token is invalid - VP Token used in H2M flow is invalid: {}", e.getMessage(), e);
+                    throw e;
+                }
+                credentialJson = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(resolvedVpToken);
+                log.info("JWT VP Token validated successfully");
             }
-            credentialJson = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(resolvedVpToken);
-            log.info("JWT VP Token validated successfully");
+            sample.stop(Timer.builder("verifier.vp.verifications")
+                    .tag("format", format)
+                    .tag("result", "success")
+                    .description("VP token verification latency")
+                    .register(meterRegistry));
+        } catch (Exception e) {
+            sample.stop(Timer.builder("verifier.vp.verifications")
+                    .tag("format", format)
+                    .tag("result", "error")
+                    .description("VP token verification latency")
+                    .register(meterRegistry));
+            throw e;
         }
 
         // Generate a code (code)
@@ -137,7 +156,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         String codeChallengeMethod = (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD);
 
 
-        Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
+        Instant expirationTime = issueTime.plus(verifierConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
         // Register the Oauth2Authorization because is needed for verifications
         OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
                 .id(registeredClient.getId())
@@ -316,7 +335,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             // OID4VP Final 1.0: aud MUST be client_id.
             // Accept both x509_hash/DID client_id and backend URL for backwards compat.
             String expectedClientId = cryptoComponent.getClientId();
-            String expectedUrl = backendConfig.getUrl();
+            String expectedUrl = verifierConfig.getUrl();
             log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}",
                     expectedClientId, expectedUrl, audiences);
             if (!audiences.contains(expectedClientId)

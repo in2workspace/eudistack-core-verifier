@@ -1,6 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.config;
 
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationServiceImpl;
@@ -13,6 +13,7 @@ import es.in2.vcverifier.verifier.infrastructure.adapter.claims.SchemaProfileCla
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.JsonSchemaCredentialValidator;
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaProfileRegistry;
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.LocalSchemaResolver;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,9 +25,9 @@ import java.util.List;
 public class CredentialValidationConfig {
 
     @Bean
-    public CredentialSchemaResolver localSchemaResolver(BackendConfig backendConfig) {
+    public CredentialSchemaResolver localSchemaResolver(VerifierConfig verifierConfig) {
         log.info("Registering Local Schema Resolver");
-        return new LocalSchemaResolver(backendConfig.getLocalSchemasDir());
+        return new LocalSchemaResolver(verifierConfig.getLocalSchemasDir());
     }
 
     @Bean
@@ -36,9 +37,9 @@ public class CredentialValidationConfig {
     }
 
     @Bean
-    public SchemaProfileRegistry schemaProfileRegistry(BackendConfig backendConfig) {
+    public SchemaProfileRegistry schemaProfileRegistry(VerifierConfig verifierConfig) {
         log.info("Registering Schema Profile Registry");
-        return new LocalSchemaProfileRegistry(backendConfig.getLocalSchemasDir());
+        return new LocalSchemaProfileRegistry(verifierConfig.getLocalSchemasDir());
     }
 
     @Bean
@@ -48,8 +49,8 @@ public class CredentialValidationConfig {
     }
 
     @Bean
-    public SdJwtVerificationService sdJwtVerificationService(DIDService didService, TrustFrameworkService trustFrameworkService) {
+    public SdJwtVerificationService sdJwtVerificationService(DIDService didService, TrustFrameworkService trustFrameworkService, MeterRegistry meterRegistry) {
         log.info("Registering SD-JWT Verification Service");
-        return new SdJwtVerificationServiceImpl(didService, trustFrameworkService);
+        return new SdJwtVerificationServiceImpl(didService, trustFrameworkService, meterRegistry);
     }
 }
