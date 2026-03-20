@@ -70,6 +70,7 @@ public class AuthorizationServerConfig {
     private final ClientCredentialsValidationWorkflow clientCredentialsValidationWorkflow;
     private final TokenGenerationWorkflow tokenGenerationWorkflow;
     private final SafeUrlValidator safeUrlValidator;
+    private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -90,7 +91,7 @@ public class AuthorizationServerConfig {
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
                                 .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore))
-                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow))
+                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry))
                 )
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
         return http.build();

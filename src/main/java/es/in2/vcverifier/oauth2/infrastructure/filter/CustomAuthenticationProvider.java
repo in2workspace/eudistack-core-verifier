@@ -6,6 +6,8 @@ import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
+import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -40,6 +42,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private final CacheStore<RefreshTokenDataCache> cacheStoreForRefreshTokenData;
     private final OAuth2AuthorizationService oAuth2AuthorizationService;
     private final TokenGenerationWorkflow tokenGenerationWorkflow;
+    private final SchemaProfileRegistry schemaProfileRegistry;
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
@@ -77,9 +80,12 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             if (additionalParameters.containsKey(OAuth2ParameterNames.AUDIENCE)) {
                 audience = additionalParameters.get(OAuth2ParameterNames.AUDIENCE).toString();
             } else {
-                // Fallback: check credential type via workflow — machine credentials use verifier as audience
+                // Fallback: check credential type via profile — M2M-eligible credentials use verifier as audience
                 String credType = tokenGenerationWorkflow.extractCredentialType(credentialJson);
-                if (credType.startsWith("learcredential.machine.")) {
+                boolean isM2MEligible = schemaProfileRegistry.findByConfigId(credType)
+                        .map(profile -> profile.grantEligibility().contains("client_credentials"))
+                        .orElse(false);
+                if (isM2MEligible) {
                     audience = backendConfig.getUrl();
                 } else {
                     throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
