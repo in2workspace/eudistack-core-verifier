@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Credential type detection**: Switched from hardcoded type strings to `credential_configuration_id` pattern (e.g., `learcredential.employee.sd.1`).
 - **Token claim extraction**: Refactored `CredentialClaimsExtractor` to support both W3C and SD-JWT VC formats.
+- **JTI replay cache**: `JtiTokenCache` now uses `CacheStore<String>` with TTL-based expiry (1800s) instead of an unbounded `HashSet`.
+- **OID4VP authorization request**: `aud` claim set to `https://self-issued.me/v2` per OID4VP §5.8; `client_id_scheme` removed per §5.9.
+- **Virtual threads**: Enabled Spring virtual threads for I/O-bound operations.
 
 ## [v2.1.0] - 2026-02-27
 
