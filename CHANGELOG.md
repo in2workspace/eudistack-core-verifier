@@ -13,9 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Multi-tenant access token claim** — The Verifier injects a signed `tenant` claim in the JWT access token, sourced from the `tenant` field in each OIDC client registration (`clients.yaml`). This enables downstream services (e.g., the Issuer) to cryptographically verify the tenant origin of each request without relying on HTTP headers (EUDI-017 Phase A).
 - **CI/CD pipelines** — GitHub Actions workflows: `build.yml` with JaCoCo coverage summary, `release.yml` with manual `workflow_dispatch` trigger, `snapshot.yml` for PR Docker images.
+- **OpenAPI/Swagger UI** — API documentation via `springdoc-openapi-starter-webmvc-ui`. Swagger UI at `/swagger-ui.html`, OpenAPI spec at `/v3/api-docs`.
+- **Custom business metrics (Micrometer)** — Timers and counters for VP verifications (`verifier.vp.verifications`), JWT VP validation (`verifier.vp.jwt.validation`), SD-JWT validation (`verifier.vp.sdjwt.validation`), DID resolution (`verifier.did.resolution`), revocation checks (`verifier.revocation.check`), and error counting (`verifier.errors`) with tags for format, result, error_code, and status.
 
 ### Changed
 
+- **Config consolidation** — Merged `BackendConfig`/`FrontendConfig` and their property classes into a single `VerifierConfig` with flattened, kebab-case property names. Simplified `application.yaml` structure.
 - **Dynamic issuer URL resolution** — `AuthorizationServerConfig` and `BackendConfig` now resolve the Verifier's issuer URL dynamically from the request, enabling multi-tenant subdomain routing without per-tenant configuration.
 - **Version freeze** — `build.gradle` version set to `3.0.0` per architect decision (no version upgrades until stable release).
 - **Google Java Style enforcement** — Checkstyle configured with 25+ rules (Google base + project adaptations). All violations fixed.
