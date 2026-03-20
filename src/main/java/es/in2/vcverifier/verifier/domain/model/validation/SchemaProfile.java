@@ -2,11 +2,17 @@ package es.in2.vcverifier.verifier.domain.model.validation;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public record SchemaProfile(
         String credentialConfigurationId,
         String scope,
-        TokenClaimsMapping tokenClaimsMapping
+        TokenClaimsMapping tokenClaimsMapping,
+        ValidationPaths validationPaths,
+        Set<String> grantEligibility,
+        boolean schemaRequired,
+        String issuerIdPath,
+        String mandatorOrgIdPath
 ) {
     public record TokenClaimsMapping(
             List<String> subjectPaths,

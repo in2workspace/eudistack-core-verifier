@@ -2,9 +2,11 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.schema;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import es.in2.vcverifier.verifier.domain.model.validation.RevocationPaths;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile.ClaimMapping;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile.TokenClaimsMapping;
+import es.in2.vcverifier.verifier.domain.model.validation.ValidationPaths;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import lombok.extern.slf4j.Slf4j;
 
@@ -105,10 +107,21 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             String topLevelScope = root.has("scope") ? root.get("scope").asText() : null;
             TokenClaimsMapping mapping = parseTokenClaimsMapping(mappingNode);
 
+            ValidationPaths validationPaths = parseValidationPaths(root.get("validation"));
+            Set<String> grantEligibility = parseStringSet(root.get("grant_eligibility"));
+            boolean schemaRequired = parseSchemaRequired(root.get("validation"));
+            String issuerIdPath = parseNullableText(root, "validation", "issuer_id_path");
+            String mandatorOrgIdPath = parseNullableText(root, "validation", "mandator_org_id_path");
+
             SchemaProfile profile = new SchemaProfile(
                     configId,
                     topLevelScope,
-                    mapping
+                    mapping,
+                    validationPaths,
+                    grantEligibility,
+                    schemaRequired,
+                    issuerIdPath,
+                    mandatorOrgIdPath
             );
             profiles.put(configId, profile);
             log.info("Registered schema profile: {} from {}", configId, source);
@@ -188,5 +201,51 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             list.add(item.asText());
         }
         return Collections.unmodifiableList(list);
+    }
+
+    private Set<String> parseStringSet(JsonNode node) {
+        if (node == null || !node.isArray()) return Set.of();
+        Set<String> set = new LinkedHashSet<>();
+        for (JsonNode item : node) {
+            set.add(item.asText());
+        }
+        return Collections.unmodifiableSet(set);
+    }
+
+    private ValidationPaths parseValidationPaths(JsonNode node) {
+        if (node == null || !node.isObject()) return null;
+        String validFromPath = textOrNull(node, "valid_from_path");
+        String validUntilPath = textOrNull(node, "valid_until_path");
+        RevocationPaths revocation = parseRevocationPaths(node.get("revocation"));
+        return new ValidationPaths(validFromPath, validUntilPath, revocation);
+    }
+
+    private RevocationPaths parseRevocationPaths(JsonNode node) {
+        if (node == null || node.isNull() || !node.isObject()) return null;
+        return new RevocationPaths(
+                textOrNull(node, "status_id_path"),
+                textOrNull(node, "status_type_path"),
+                textOrNull(node, "status_purpose_path"),
+                textOrNull(node, "status_list_credential_path"),
+                textOrNull(node, "status_list_index_path")
+        );
+    }
+
+    private boolean parseSchemaRequired(JsonNode validationNode) {
+        if (validationNode == null || !validationNode.isObject()) return false;
+        JsonNode schemaReq = validationNode.get("schema_required");
+        return schemaReq != null && schemaReq.asBoolean(false);
+    }
+
+    private String parseNullableText(JsonNode root, String parentField, String childField) {
+        JsonNode parent = root.get(parentField);
+        if (parent == null || !parent.isObject()) return null;
+        return textOrNull(parent, childField);
+    }
+
+    private String textOrNull(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) return null;
+        return value.asText();
     }
 }
