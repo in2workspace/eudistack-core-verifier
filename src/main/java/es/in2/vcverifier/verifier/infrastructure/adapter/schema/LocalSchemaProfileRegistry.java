@@ -10,6 +10,10 @@ import es.in2.vcverifier.verifier.domain.model.validation.ValidationPaths;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.io.support.ResourcePatternResolver;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.DirectoryStream;
@@ -21,11 +25,17 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
 
-    private static final String CLASSPATH_SCHEMA_BASE = "schemas/";
+    private static final String CLASSPATH_SCHEMA_PATTERN = "classpath:schemas/*.json";
     private final Map<String, SchemaProfile> profiles = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ResourcePatternResolver resourceResolver;
 
     public LocalSchemaProfileRegistry(String externalSchemasDir) {
+        this(externalSchemasDir, new PathMatchingResourcePatternResolver());
+    }
+
+    public LocalSchemaProfileRegistry(String externalSchemasDir, ResourcePatternResolver resourceResolver) {
+        this.resourceResolver = resourceResolver;
         loadFromExternalDir(externalSchemasDir);
         loadFromClasspath();
         log.info("Schema Profile Registry loaded {} profiles: {}", profiles.size(), profiles.keySet());
@@ -58,29 +68,19 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
     }
 
     private void loadFromClasspath() {
-        // Classpath schemas are embedded in the JAR; try known patterns
-        // This is a fallback — external dir is the primary source in production
-        String[] knownSchemas = {
-                "learcredential.employee.w3c.1.json",
-                "learcredential.employee.w3c.1.profile.json",
-                "learcredential.employee.sd.1.json",
-                "learcredential.employee.sd.1.profile.json",
-                "learcredential.machine.w3c.1.json",
-                "learcredential.machine.w3c.1.profile.json",
-                "learcredential.machine.sd.1.json",
-                "learcredential.machine.sd.1.profile.json",
-                "gx.labelcredential.w3c.1.json",
-                "gx.labelcredential.w3c.1.profile.json"
-        };
-        for (String schemaFile : knownSchemas) {
-            String path = CLASSPATH_SCHEMA_BASE + schemaFile;
-            try (InputStream is = getClass().getClassLoader().getResourceAsStream(path)) {
-                if (is != null) {
-                    parseAndRegister(is, "classpath:" + path);
+        // Auto-discover all *.json files from classpath:schemas/ directory.
+        // No hardcoded filenames — new profiles are picked up automatically.
+        try {
+            Resource[] resources = resourceResolver.getResources(CLASSPATH_SCHEMA_PATTERN);
+            for (Resource resource : resources) {
+                try (InputStream is = resource.getInputStream()) {
+                    parseAndRegister(is, "classpath:" + resource.getFilename());
+                } catch (IOException e) {
+                    log.warn("Failed to load schema from classpath: {}", resource.getFilename(), e);
                 }
-            } catch (IOException e) {
-                log.warn("Failed to load schema from classpath: {}", path, e);
             }
+        } catch (IOException e) {
+            log.warn("Failed to scan classpath schemas directory: {}", e.getMessage());
         }
     }
 
