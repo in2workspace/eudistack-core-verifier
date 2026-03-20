@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI/CD pipelines** — GitHub Actions workflows: `build.yml` with JaCoCo coverage summary, `release.yml` with manual `workflow_dispatch` trigger, `snapshot.yml` for PR Docker images.
 - **OpenAPI/Swagger UI** — API documentation via `springdoc-openapi-starter-webmvc-ui`. Swagger UI at `/swagger-ui.html`, OpenAPI spec at `/v3/api-docs`.
 - **Custom business metrics (Micrometer)** — Timers and counters for VP verifications (`verifier.vp.verifications`), JWT VP validation (`verifier.vp.jwt.validation`), SD-JWT validation (`verifier.vp.sdjwt.validation`), DID resolution (`verifier.did.resolution`), revocation checks (`verifier.revocation.check`), and error counting (`verifier.errors`) with tags for format, result, error_code, and status.
+- **H2M/M2M integration tests** — 12 `@SpringBootTest` integration tests covering OID4VP verification flows with real Spring context and cryptographic operations. H2M: Employee/Machine in W3C and SD-JWT formats, plus error paths (expired, untrusted issuer, unknown state). M2M: Machine W3C happy path, type enforcement (employee rejected), expired, untrusted issuer, binding mismatch. Includes `TestCredentialBuilder` utility for generating signed VPs/VCs/SD-JWTs with ephemeral P-256 keys and self-signed X.509 certificates.
 
 ### Changed
 
