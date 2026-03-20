@@ -46,13 +46,17 @@ class VpSecurityTest {
     @Mock
     private es.in2.vcverifier.verifier.infrastructure.adapter.CredentialMapperService credentialMapperService;
     @Mock
+    private es.in2.vcverifier.verifier.domain.service.CredentialValidator credentialValidator;
+    @Mock
     private es.in2.vcverifier.verifier.infrastructure.adapter.CryptographicBindingValidator cryptographicBindingValidator;
 
     private VpServiceImpl vpService;
 
     @BeforeEach
     void setUp() {
-        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, cryptographicBindingValidator, java.util.List.of());
+        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, credentialValidator, cryptographicBindingValidator, java.util.List.of());
+        org.mockito.Mockito.lenient().when(credentialValidator.validate(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(es.in2.vcverifier.verifier.domain.model.validation.ValidationResult.builder().valid(true).errors(java.util.List.of()).build());
     }
 
     // --- Malformed VP Token ---

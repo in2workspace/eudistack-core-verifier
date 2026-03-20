@@ -7,6 +7,7 @@ import es.in2.vcverifier.shared.crypto.JWTService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.Payload;
+import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
 
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -58,6 +59,8 @@ class VpServiceImplTest {
     @Mock
     private CredentialMapperService credentialMapperService;
     @Mock
+    private es.in2.vcverifier.verifier.domain.service.CredentialValidator credentialValidator;
+    @Mock
     private CryptographicBindingValidator cryptographicBindingValidator;
 
     @Mock
@@ -73,9 +76,12 @@ class VpServiceImplTest {
         vpServiceImpl = new VpServiceImpl(
                 jwtService, objectMapper, trustFrameworkService,
                 certificateValidationService, credentialMapperService,
-                cryptographicBindingValidator,
+                credentialValidator, cryptographicBindingValidator,
                 java.util.List.of(bitstringStatusListVerifier)
         );
+        // Default: schema validation passes for all tests
+        org.mockito.Mockito.lenient().when(credentialValidator.validate(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(ValidationResult.builder().valid(true).errors(java.util.List.of()).build());
     }
 
 

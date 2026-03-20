@@ -8,6 +8,7 @@ import es.in2.vcverifier.verifier.domain.exception.*;
 import es.in2.vcverifier.shared.domain.exception.*;
 import es.in2.vcverifier.verifier.domain.model.credentials.lear.LEARCredential;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
+import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
 import es.in2.vcverifier.verifier.domain.service.*;
 import es.in2.vcverifier.shared.crypto.*;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,7 @@ public class VpServiceImpl implements VpService {
     private final TrustFrameworkService trustFrameworkService;
     private final CertificateValidationService certificateValidationService;
     private final CredentialMapperService credentialMapperService;
+    private final CredentialValidator credentialValidator;
     private final CryptographicBindingValidator cryptographicBindingValidator;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
 
@@ -51,6 +53,9 @@ public class VpServiceImpl implements VpService {
 
         // Step 2: Map to typed credential
         LEARCredential learCredential = credentialMapperService.mapPayloadToVerifiableCredential(payload);
+
+        // Step 2b: Validate credential against JSON Schema (best-effort, non-blocking if no schema found)
+        validateCredentialSchemaIfPossible(payload);
 
         // Step 3: Validate time window
         validateCredentialTimeWindow(learCredential);
@@ -143,6 +148,24 @@ public class VpServiceImpl implements VpService {
     }
 
     // --- Private helpers ---
+
+    private void validateCredentialSchemaIfPossible(Payload payload) {
+        try {
+            Object vcObject = jwtService.extractVCFromPayload(payload);
+            JsonNode credentialJson = convertObjectToJSONNode(vcObject);
+            ValidationResult result = credentialValidator.validate(credentialJson);
+            if (!result.valid()) {
+                throw new CredentialSchemaValidationException(
+                        "Credential schema validation failed for type '" + result.credentialType()
+                                + "': " + String.join("; ", result.errors()));
+            }
+            log.info("Credential schema validation passed: type={}", result.credentialType());
+        } catch (CredentialSchemaValidationException e) {
+            throw e; // re-throw validation failures
+        } catch (Exception e) {
+            log.warn("Schema validation skipped — could not extract credential as JsonNode: {}", e.getMessage());
+        }
+    }
 
     private String extractIssFromJwt(SignedJWT jwtCredential) {
         try {
