@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Dynamic issuer URL resolution** — `AuthorizationServerConfig` and `BackendConfig` now resolve the Verifier's issuer URL dynamically from the request, enabling multi-tenant subdomain routing without per-tenant configuration.
-- **Version bump** — `build.gradle` version set to `3.1.0`.
+- **Version freeze** — `build.gradle` version set to `3.0.0` per architect decision (no version upgrades until stable release).
 
 ### Fixed
 
