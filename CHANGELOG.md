@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Version freeze** — `build.gradle` version set to `3.0.0` per architect decision (no version upgrades until stable release).
 - **Google Java Style enforcement** — Checkstyle configured with 25+ rules (Google base + project adaptations). All violations fixed.
 - **Dockerfile rewrite** — Multi-stage build with `gradlew`, 3-layer cache, OCI labels, HEALTHCHECK, standard port 8080.
+- **application.yaml cleanup** — Standardized port to 8080, unified management config, explicit env var placeholders for all properties, fixed DCQL `learcredential` profile (added missing machine credentials).
 
 ### Removed
 
