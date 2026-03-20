@@ -1,0 +1,11 @@
+# Local Trusted Issuers configuration.
+# Each key is the issuer identifier (must match the "iss" claim in the VC).
+# Each issuer lists the credential types it is authorized to emit.
+
+trustedIssuers:
+  "VATES-A15456585":
+    - credentialsType: "learcredential.employee.w3c.4"
+    - credentialsType: "learcredential.employee.sd.1"
+    - credentialsType: "learcredential.machine.w3c.3"
+    - credentialsType: "learcredential.machine.sd.1"
+    - credentialsType: "gx.labelcredential.w3c.1"

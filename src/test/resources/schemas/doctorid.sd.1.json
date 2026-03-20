@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Doctor ID V1 (dc+sd-jwt)",
+
+  "credential_configuration_id": "doctorid.sd.1",
+  "credential_format": "dc+sd-jwt",
+  "scope": "doctor_id_sd_jwt",
+  "credential_definition": {
+    "context": [
+      "https://www.w3.org/ns/credentials/v2",
+      "https://credentials.eudistack.eu/.well-known/credentials/doctor_id/sd/v1"
+    ],
+    "type": ["VerifiableCredential", "doctorid.sd.1"]
+  },
+  "cryptographic_binding_methods_supported": ["jwk"],
+  "credential_signing_alg_values_supported": ["ES256"],
+  "proof_types_supported": {
+    "jwt": { "proof_signing_alg_values_supported": ["ES256"] }
+  },
+  "validity_days": 365,
+  "issuer_type": "DETAILED",
+  "cnf_required": true,
+  "credential_subject_strategy": "direct",
+  "sd_jwt": {
+    "vct": "doctorid.sd.1",
+    "sd_alg": "sha-256",
+    "sd_claims": ["firstName", "lastName", "nationalId", "email"]
+  },
+
+  "type": "object",
+  "required": ["firstName", "lastName", "registrationNumber", "nationalId", "provincialBoard", "specialty", "email", "country"],
+  "additionalProperties": true,
+  "properties": {
+    "firstName":          { "type": "string" },
+    "lastName":           { "type": "string" },
+    "registrationNumber": { "type": "string" },
+    "nationalId":         { "type": "string" },
+    "provincialBoard":    { "type": "string" },
+    "specialty":          { "type": "string" },
+    "email":              { "type": "string", "format": "email" },
+    "country":            { "type": "string" }
+  }
+}
