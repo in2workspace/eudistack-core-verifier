@@ -31,6 +31,8 @@ public class SecurityConfig {
                         .requestMatchers("/oid4vp/auth-response").permitAll()
                         .requestMatchers("/oidc/did/*").permitAll()
                         .requestMatchers("/api/login/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()
                 )
                 .csrf(csrf -> csrf
