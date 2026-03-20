@@ -1,5 +1,6 @@
 package es.in2.vcverifier.verifier.application.workflow;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
@@ -118,5 +119,89 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(payload).contains("https://self-issued.me/v2");
         // OID4VP §5.9: client_id_scheme removed (prefix embedded in client_id)
         assertThat(payload).doesNotContain("client_id_scheme");
+    }
+
+    @Test
+    @DisplayName("buildJwtPayload includes client_metadata for did: prefix client_id")
+    void execute_includesClientMetadataForDidPrefix() throws Exception {
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(dcqlQuery);
+        when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        workflow.buildAuthorizationRequest("Client", "openid learcredential", "state-1");
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+
+        String payload = payloadCaptor.getValue();
+        assertThat(payload).contains("client_metadata");
+        assertThat(payload).contains("vp_formats_supported");
+    }
+
+    @Test
+    @DisplayName("buildJwtPayload includes client_metadata for x509_hash: prefix client_id")
+    void execute_includesClientMetadataForX509HashPrefix() throws Exception {
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(dcqlQuery);
+        when(cryptoComponent.getClientId()).thenReturn("x509_hash:abc123def456");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        workflow.buildAuthorizationRequest("Client", "openid learcredential", "state-2");
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+
+        String payload = payloadCaptor.getValue();
+        assertThat(payload).contains("client_metadata");
+        assertThat(payload).contains("vp_formats_supported");
+    }
+
+    @Test
+    @DisplayName("client_metadata contains correct vp_formats_supported structure with ES256")
+    void execute_clientMetadataHasCorrectStructure() throws Exception {
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(dcqlQuery);
+        when(cryptoComponent.getClientId()).thenReturn("did:key:z6MkTest");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        workflow.buildAuthorizationRequest("Client", "openid learcredential", "state-3");
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+
+        // Parse the JWT claims JSON to inspect client_metadata structure
+        JsonNode claims = objectMapper.readTree(payloadCaptor.getValue());
+        JsonNode clientMetadata = claims.get("client_metadata");
+        assertThat(clientMetadata).isNotNull();
+
+        JsonNode formats = clientMetadata.get("vp_formats_supported");
+        assertThat(formats).isNotNull();
+
+        // dc+sd-jwt format
+        JsonNode sdJwt = formats.get("dc+sd-jwt");
+        assertThat(sdJwt).isNotNull();
+        assertThat(sdJwt.get("sd-jwt_alg_values").get(0).asText()).isEqualTo("ES256");
+        assertThat(sdJwt.get("kb-jwt_alg_values").get(0).asText()).isEqualTo("ES256");
+        assertThat(sdJwt.has("alg_values_supported")).isFalse();
+
+        // jwt_vc_json format
+        JsonNode jwtVc = formats.get("jwt_vc_json");
+        assertThat(jwtVc).isNotNull();
+        assertThat(jwtVc.get("alg_values_supported").get(0).asText()).isEqualTo("ES256");
+        assertThat(jwtVc.has("sd-jwt_alg_values")).isFalse();
+        assertThat(jwtVc.has("kb-jwt_alg_values")).isFalse();
     }
 }
