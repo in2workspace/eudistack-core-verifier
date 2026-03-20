@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DCQL query support**: SD-JWT VC credential queries using DCQL (Digital Credentials Query Language) for OID4VP 1.0 compliance.
 - **SD-JWT VC verification**: Full SD-JWT VC (RFC 9901) verification pipeline with selective disclosure validation.
 
+### Removed
+- **LEARCredential typed models**: Deleted entire `lear/` model hierarchy (39 Java files), `LEARCredentialType` enum, `CredentialMapperService`, `IssuerDeserializer`, and related `Issuer`/`SimpleIssuer`/`DetailedIssuer` classes — all replaced by schema-profile-driven `GenericCredential` (EUDI-020 FR-10).
+
 ### Changed
 - **Credential type detection**: Switched from hardcoded type strings to `credential_configuration_id` pattern (e.g., `learcredential.employee.sd.1`).
 - **Token claim extraction**: Refactored `CredentialClaimsExtractor` to support both W3C and SD-JWT VC formats.
