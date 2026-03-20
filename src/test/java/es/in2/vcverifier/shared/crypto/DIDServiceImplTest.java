@@ -16,6 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @ExtendWith(MockitoExtension.class)
 class DIDServiceImplTest {
 
+    @org.mockito.Spy
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     @InjectMocks
     private DIDServiceImpl didService;
 

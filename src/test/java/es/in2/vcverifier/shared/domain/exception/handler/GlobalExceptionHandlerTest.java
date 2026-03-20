@@ -35,7 +35,8 @@ import static org.mockito.Mockito.when;
 class GlobalExceptionHandlerTest {
 
     @Spy
-    private ErrorResponseFactory errors;
+    private ErrorResponseFactory errors =
+            new ErrorResponseFactory(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
 
     @InjectMocks
     private GlobalExceptionHandler globalExceptionHandler;
