@@ -1,6 +1,6 @@
 package es.in2.vcverifier.shared.config;
 
-import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.config.properties.VerifierProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -12,27 +12,34 @@ import org.springframework.test.context.ContextConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(classes = {BackendConfig.class, BackendConfigTest.TestConfig.class})
+@SpringBootTest(classes = {VerifierConfig.class, VerifierConfigTest.TestConfig.class})
 @ActiveProfiles("test")
 @ContextConfiguration(initializers = ConfigDataApplicationContextInitializer.class)
-class BackendConfigTest {
+class VerifierConfigTest {
 
     @Autowired
-    private BackendConfig backendConfig;
+    private VerifierConfig verifierConfig;
 
     @Test
-    void testBackendConfig() {
-        assertThat(backendConfig.getStaticUrl())
-                .as("Backend URL should match")
+    void testVerifierConfig() {
+        assertThat(verifierConfig.getStaticUrl())
+                .as("Verifier URL should match")
                 .isEqualTo("https://raw.githubusercontent.com");
 
-     assertThat(backendConfig.getPrivateKey())
-        .as("Private key should remove 0x prefix")
-        .isEqualTo("73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5");
+        assertThat(verifierConfig.getPrivateKey())
+                .as("Private key should remove 0x prefix")
+                .isEqualTo("73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5");
+    }
+
+    @Test
+    void testGetPortalUrl_isNotNull() {
+        assertThat(verifierConfig.getPortalUrl())
+                .as("Portal URL should not be null")
+                .isNotNull();
     }
 
     @Configuration
-    @EnableConfigurationProperties(BackendProperties.class)
+    @EnableConfigurationProperties(VerifierProperties.class)
     static class TestConfig {
     }
 }

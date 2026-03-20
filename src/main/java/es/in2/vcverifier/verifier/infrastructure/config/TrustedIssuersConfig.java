@@ -1,6 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.config;
 
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.verifier.domain.service.TrustedIssuersProvider;
 import es.in2.vcverifier.verifier.infrastructure.adapter.trustframework.LocalTrustedIssuersProvider;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +12,8 @@ import org.springframework.context.annotation.Configuration;
 public class TrustedIssuersConfig {
 
     @Bean
-    public TrustedIssuersProvider localTrustedIssuersProvider(BackendConfig backendConfig) {
+    public TrustedIssuersProvider localTrustedIssuersProvider(VerifierConfig verifierConfig) {
         log.info("Using Local Trusted Issuers Provider (YAML)");
-        return new LocalTrustedIssuersProvider(backendConfig.getLocalTrustedIssuersPath());
+        return new LocalTrustedIssuersProvider(verifierConfig.getLocalTrustedIssuersPath());
     }
 }

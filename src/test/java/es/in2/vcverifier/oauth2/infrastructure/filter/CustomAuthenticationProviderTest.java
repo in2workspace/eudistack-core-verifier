@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
@@ -63,7 +63,7 @@ class CustomAuthenticationProviderTest {
     private CustomAuthenticationProvider provider;
 
     @Mock
-    private BackendConfig backendConfig;
+    private VerifierConfig verifierConfig;
 
     @Mock
     private CacheStore<RefreshTokenDataCache> cacheStoreForRefreshTokenData;
@@ -93,7 +93,7 @@ class CustomAuthenticationProviderTest {
 
         provider = new CustomAuthenticationProvider(
                 registeredClientRepository,
-                backendConfig,
+                verifierConfig,
                 objectMapper,
                 cacheStoreForRefreshTokenData,
                 oAuth2AuthorizationService,
@@ -110,7 +110,7 @@ class CustomAuthenticationProviderTest {
                 "signed-id-jwt", "openid learcredential", "did:key:zDnaeTest123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true), any()))
                 .thenReturn(tokenResult);
-        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+        when(verifierConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
 
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
@@ -134,7 +134,7 @@ class CustomAuthenticationProviderTest {
     void authenticate_validClientCredentialsGrant_withMachineCredential_success() {
         JsonNode vcJson = buildMachineCredentialV1();
 
-        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
@@ -216,11 +216,11 @@ class CustomAuthenticationProviderTest {
 
         registeredClientRepository = new InMemoryRegisteredClientRepository(clientWithTenant);
         provider = new CustomAuthenticationProvider(
-                registeredClientRepository, backendConfig, objectMapper,
+                registeredClientRepository, verifierConfig, objectMapper,
                 cacheStoreForRefreshTokenData, oAuth2AuthorizationService, tokenGenerationWorkflow);
 
         JsonNode vcJson = buildMachineCredentialV1();
-        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
@@ -245,7 +245,7 @@ class CustomAuthenticationProviderTest {
     void authenticate_clientCredentialsGrant_passesNullTenantWhenNotConfigured() {
         // The default setUp() client has no tenant setting
         JsonNode vcJson = buildMachineCredentialV1();
-        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),

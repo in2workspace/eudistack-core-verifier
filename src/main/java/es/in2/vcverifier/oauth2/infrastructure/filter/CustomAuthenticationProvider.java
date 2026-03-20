@@ -2,7 +2,7 @@ package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
@@ -48,7 +48,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENA
 @RequiredArgsConstructor
 public class CustomAuthenticationProvider implements AuthenticationProvider {
     private final RegisteredClientRepository registeredClientRepository;
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
     private final ObjectMapper objectMapper;
     private final CacheStore<RefreshTokenDataCache> cacheStoreForRefreshTokenData;
     private final OAuth2AuthorizationService oAuth2AuthorizationService;
@@ -84,7 +84,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         // Resolve audience
         String audience;
         if (isM2M) {
-            audience = backendConfig.getUrl();
+            audience = verifierConfig.getUrl();
         } else {
             Map<String, Object> additionalParameters = authentication.getAdditionalParameters();
             if (additionalParameters.containsKey(OAuth2ParameterNames.AUDIENCE)) {
@@ -93,7 +93,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                 // Fallback: check credential type via workflow — machine credentials use verifier as audience
                 String credType = tokenGenerationWorkflow.extractCredentialType(credentialJson);
                 if (credType.startsWith("learcredential.machine.")) {
-                    audience = backendConfig.getUrl();
+                    audience = verifierConfig.getUrl();
                 } else {
                     throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
                 }
@@ -277,7 +277,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         secureRandom.nextBytes(refreshTokenBytes);
         String refreshTokenValue = Base64.getUrlEncoder().withoutPadding().encodeToString(refreshTokenBytes);
         Instant refreshTokenExpirationTime = issueTime.plus(
-                backendConfig.getRefreshTokenExpirationSeconds(),
+                verifierConfig.getRefreshTokenExpirationSeconds(),
                 ChronoUnit.SECONDS
         );
         return new OAuth2RefreshToken(refreshTokenValue, issueTime, refreshTokenExpirationTime);

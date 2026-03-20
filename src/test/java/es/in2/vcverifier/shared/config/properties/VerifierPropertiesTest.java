@@ -9,27 +9,31 @@ import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(classes = BackendPropertiesTest.TestConfig.class)
+@SpringBootTest(classes = VerifierPropertiesTest.TestConfig.class)
 @ActiveProfiles("test")
-class BackendPropertiesTest {
+class VerifierPropertiesTest {
 
     @Autowired
-    private BackendProperties backendProperties;
+    private VerifierProperties verifierProperties;
 
     @Test
-    void testBackendProperties() {
-        BackendProperties.Identity expectedIdentity = new BackendProperties.Identity(
+    void testVerifierProperties() {
+        VerifierProperties.Identity expectedIdentity = new VerifierProperties.Identity(
                 "did:key:zDnaeTest",
                 "0x73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5",
                 ""
         );
 
-        assertThat(backendProperties.url())
-                .as("Backend URL should match")
+        assertThat(verifierProperties.url())
+                .as("Verifier URL should match")
                 .isEqualTo("https://raw.githubusercontent.com");
 
-        assertThat(backendProperties.identity())
-                .as("Identity should match the provided private key")
+        assertThat(verifierProperties.portalUrl())
+                .as("Portal URL should match")
+                .isEqualTo("http://localhost:4200");
+
+        assertThat(verifierProperties.identity())
+                .as("Identity should match the provided values")
                 .isEqualTo(expectedIdentity);
     }
 
@@ -38,8 +42,7 @@ class BackendPropertiesTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
-                        // Omit url:
-                        "verifier.backend.identity.privateKey=test-private-key"
+                        "verifier.identity.private-key=test-private-key"
                 )
                 .run(context -> {
                     assertThat(context).hasFailed();
@@ -51,7 +54,7 @@ class BackendPropertiesTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
-                        "verifier.backend.url=https://raw.githubusercontent.com"
+                        "verifier.url=https://raw.githubusercontent.com"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();
@@ -63,16 +66,16 @@ class BackendPropertiesTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
-                        "verifier.backend.url=https://raw.githubusercontent.com",
-                        "verifier.backend.identity.didKey=did:key:zTest",
-                        "verifier.backend.identity.privateKey=test-private-key"
+                        "verifier.url=https://raw.githubusercontent.com",
+                        "verifier.identity.did-key=did:key:zTest",
+                        "verifier.identity.private-key=test-private-key"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                 });
     }
 
-    @EnableConfigurationProperties(BackendProperties.class)
+    @EnableConfigurationProperties(VerifierProperties.class)
     static class TestConfig {
     }
 }

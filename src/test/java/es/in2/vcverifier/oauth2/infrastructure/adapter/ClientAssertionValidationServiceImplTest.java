@@ -2,7 +2,7 @@ package es.in2.vcverifier.oauth2.infrastructure.adapter;
 import es.in2.vcverifier.shared.crypto.JWTService;
 
 import com.nimbusds.jose.Payload;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.JtiTokenCache;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,7 +19,7 @@ import static org.mockito.Mockito.when;
 class ClientAssertionValidationServiceImplTest {
 
     @Mock
-    private BackendConfig backendConfig;
+    private VerifierConfig verifierConfig;
 
     @Mock
     private JtiTokenCache jtiTokenCache;
@@ -37,7 +37,7 @@ class ClientAssertionValidationServiceImplTest {
         String jti = "jti";
         Payload payloadMock = mock(Payload.class);
 
-        when(backendConfig.getUrl()).thenReturn(authServer);
+        when(verifierConfig.getUrl()).thenReturn(authServer);
         when(jwtService.extractClaimFromPayload(payloadMock, "iss")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(payloadMock, "sub")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(payloadMock, "aud")).thenReturn("authorization-server");
@@ -84,7 +84,7 @@ class ClientAssertionValidationServiceImplTest {
         when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(mockPayload, "aud")).thenReturn("wrongAudience");
-        when(backendConfig.getUrl()).thenReturn("expectedAudience");
+        when(verifierConfig.getUrl()).thenReturn("expectedAudience");
 
         boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, mockPayload);
 
@@ -99,7 +99,7 @@ class ClientAssertionValidationServiceImplTest {
         when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(mockPayload, "aud")).thenReturn("expectedAudience");
-        when(backendConfig.getUrl()).thenReturn("expectedAudience");
+        when(verifierConfig.getUrl()).thenReturn("expectedAudience");
         when(jwtService.extractClaimFromPayload(mockPayload, "jti")).thenReturn("duplicate-jti");
         when(jtiTokenCache.isJtiPresent("duplicate-jti")).thenReturn(true);
 
@@ -116,7 +116,7 @@ class ClientAssertionValidationServiceImplTest {
         when(jwtService.extractClaimFromPayload(mockPayload, "iss")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(mockPayload, "sub")).thenReturn(clientId);
         when(jwtService.extractClaimFromPayload(mockPayload, "aud")).thenReturn("expectedAudience");
-        when(backendConfig.getUrl()).thenReturn("expectedAudience");
+        when(verifierConfig.getUrl()).thenReturn("expectedAudience");
         when(jwtService.extractExpirationFromPayload(mockPayload)).thenReturn(System.currentTimeMillis() / 1000 - 3600);
 
         boolean result = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, mockPayload);

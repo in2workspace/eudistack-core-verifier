@@ -1,7 +1,7 @@
 package es.in2.vcverifier.verifier.application.workflow;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
@@ -34,7 +34,7 @@ class AuthorizationRequestBuildWorkflowTest {
 
     @Mock private JWTService jwtService;
     @Mock private CryptoComponent cryptoComponent;
-    @Mock private BackendConfig backendConfig;
+    @Mock private VerifierConfig verifierConfig;
     @Mock private CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
     @Mock private CacheStore<String> cacheForNonceByState;
     @Mock private DcqlProfileResolver dcqlProfileResolver;
@@ -45,7 +45,7 @@ class AuthorizationRequestBuildWorkflowTest {
     @BeforeEach
     void setUp() {
         workflow = new AuthorizationRequestBuildWorkflow(
-                jwtService, cryptoComponent, backendConfig,
+                jwtService, cryptoComponent, verifierConfig,
                 cacheStoreForAuthorizationRequestJWT, cacheForNonceByState,
                 dcqlProfileResolver, objectMapper
         );
@@ -61,7 +61,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
-        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
         AuthorizationRequestBuildWorkflow.Result result = workflow.buildAuthorizationRequest("My Client", "openid learcredential", "state-123");
@@ -89,7 +89,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(dcqlProfileResolver.resolve("openid learcredential.employee")).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
-        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
         workflow.buildAuthorizationRequest("Client", "openid learcredential.employee", "my-state");
@@ -107,7 +107,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(dcqlProfileResolver.resolve(anyString())).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
         when(cryptoComponent.getClientIdScheme()).thenReturn("did");
-        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
         workflow.buildAuthorizationRequest("Client", "openid learcredential", "my-state");

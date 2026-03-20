@@ -3,7 +3,7 @@ package es.in2.vcverifier.oauth2.application.workflow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
 import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -33,7 +33,7 @@ import static org.mockito.Mockito.when;
 class TokenGenerationWorkflowTest {
 
     @Mock private JWTService jwtService;
-    @Mock private BackendConfig backendConfig;
+    @Mock private VerifierConfig verifierConfig;
     @Mock private ClaimsExtractor claimsExtractor;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -41,7 +41,7 @@ class TokenGenerationWorkflowTest {
 
     @BeforeEach
     void setUp() {
-        workflow = new TokenGenerationWorkflow(jwtService, backendConfig, objectMapper, List.of(claimsExtractor));
+        workflow = new TokenGenerationWorkflow(jwtService, verifierConfig, objectMapper, List.of(claimsExtractor));
     }
 
     private ObjectNode buildW3cCredential(String credentialType) {
@@ -104,7 +104,7 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
 
             Map<String, Object> additionalParams = Map.of(
@@ -135,7 +135,7 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.machine.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt-only");
 
             TokenGenerationWorkflow.Result result = workflow.issueAccessToken(credential, "https://verifier.example.com", Map.of(), false, "dome");
@@ -160,7 +160,7 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("jwt");
 
             workflow.issueAccessToken(credential, "did:key:client", Map.of(), false, "altia");
@@ -193,7 +193,7 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
 
             Map<String, Object> additionalParams = Map.of(
@@ -225,7 +225,7 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("jwt");
 
             workflow.issueAccessToken(credential, "did:key:client", Map.of(), false, "dome");
@@ -250,7 +250,7 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(verifierConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("jwt");
 
             workflow.issueAccessToken(credential, "did:key:client", Map.of(), false, null);

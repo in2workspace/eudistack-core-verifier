@@ -8,7 +8,7 @@ import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.ThumbprintURI;
 import com.nimbusds.jose.util.Base64;
 import com.nimbusds.jose.util.Base64URL;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.domain.exception.ECKeyCreationException;
 import io.github.novacrypto.base58.Base58;
 import lombok.RequiredArgsConstructor;
@@ -40,11 +40,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CryptoComponent {
 
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
 
     @Bean
     public ECKey getECKey() {
-        if (backendConfig.hasIdentityConfigured()) {
+        if (verifierConfig.hasIdentityConfigured()) {
             log.info("Building EC key from configured private key");
             return buildEcKeyFromPrivateKey();
         }
@@ -82,7 +82,7 @@ public class CryptoComponent {
 
     private ECKey buildEcKeyFromPrivateKey() {
         try {
-            BigInteger privateKeyInt = new BigInteger(backendConfig.getPrivateKey(), 16);
+            BigInteger privateKeyInt = new BigInteger(verifierConfig.getPrivateKey(), 16);
             ECParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256r1");
             KeyFactory keyFactory = KeyFactory.getInstance("EC", BouncyCastleProviderSingleton.getInstance());
 
@@ -97,7 +97,7 @@ public class CryptoComponent {
                     .keyUse(KeyUse.SIGNATURE);
 
             // If certificate is configured, use x509_hash mode
-            String certPath = backendConfig.getCertificate();
+            String certPath = verifierConfig.getCertificate();
             if (certPath != null && !certPath.isBlank()) {
                 X509Certificate cert = loadCertificate(certPath);
                 List<Base64> x5c = List.of(Base64.encode(cert.getEncoded()));
@@ -111,7 +111,7 @@ public class CryptoComponent {
                 log.info("Configured x509_hash mode. client_id=x509_hash:{}, kid={}", certThumbprint, kid);
             } else {
                 // Legacy: did:key
-                String didKey = backendConfig.getDidKey();
+                String didKey = verifierConfig.getDidKey();
                 if (didKey == null || didKey.isBlank()) {
                     didKey = deriveDidKey(publicKey);
                     log.info("Derived did:key from configured private key: {}", didKey);

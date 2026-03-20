@@ -7,9 +7,8 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
-import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
-import es.in2.vcverifier.shared.config.FrontendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.application.workflow.ClientCredentialsValidationWorkflow;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
@@ -58,7 +57,7 @@ public class AuthorizationServerConfig {
     private final DIDService didService;
     private final JWTService jwtService;
     private final CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
     private final RegisteredClientRepository registeredClientRepository;
     private final CacheStore<AuthorizationCodeData> cacheStoreForAuthorizationCodeData;
     private final ObjectMapper objectMapper;
@@ -66,7 +65,6 @@ public class AuthorizationServerConfig {
     private final CacheStore<RefreshTokenDataCache> refreshTokenDataCacheCacheStore;
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
-    private final FrontendConfig frontendConfig;
     private final ClientCredentialsValidationWorkflow clientCredentialsValidationWorkflow;
     private final TokenGenerationWorkflow tokenGenerationWorkflow;
     private final SafeUrlValidator safeUrlValidator;
@@ -88,10 +86,10 @@ public class AuthorizationServerConfig {
                                         new CustomAuthorizationRequestConverter(
                                                 didService, jwtService,
                                                 cacheStoreForOAuth2AuthorizationRequest,
-                                                backendConfig, registeredClientRepository,
+                                                verifierConfig, registeredClientRepository,
                                                 IS_NONCE_REQUIRED_ON_FAPI_PROFILE, httpClient,
                                                 authorizationRequestBuildWorkflow,
-                                                frontendConfig, safeUrlValidator))
+                                                safeUrlValidator))
                                 .errorResponseHandler(new CustomErrorResponseHandler())
                 )
                 .tokenEndpoint(tokenEndpoint ->
@@ -103,7 +101,7 @@ public class AuthorizationServerConfig {
                                                 refreshTokenDataCacheCacheStore))
                                 .authenticationProvider(
                                         new CustomAuthenticationProvider(
-                                                registeredClientRepository, backendConfig,
+                                                registeredClientRepository, verifierConfig,
                                                 objectMapper, refreshTokenDataCacheCacheStore,
                                                 oAuth2AuthorizationService(),
                                                 tokenGenerationWorkflow))
@@ -122,7 +120,7 @@ public class AuthorizationServerConfig {
         NimbusJwtDecoder jwtDecoder = (NimbusJwtDecoder) OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
         // Audience is dynamic (derived from request host), so validate at request time
         OAuth2TokenValidator<Jwt> audienceValidator = new JwtClaimValidator<>(
-                "aud", aud -> aud.equals(backendConfig.getUrl()));
+                "aud", aud -> aud.equals(verifierConfig.getUrl()));
         OAuth2TokenValidator<Jwt> withAudience = new DelegatingOAuth2TokenValidator<>(audienceValidator);
         jwtDecoder.setJwtValidator(withAudience);
         return jwtDecoder;

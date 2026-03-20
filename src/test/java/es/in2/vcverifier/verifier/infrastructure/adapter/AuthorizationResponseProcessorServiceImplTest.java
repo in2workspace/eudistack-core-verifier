@@ -12,7 +12,7 @@ import com.nimbusds.jose.crypto.MACSigner;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
@@ -90,10 +90,13 @@ class AuthorizationResponseProcessorServiceImplTest {
     private CacheStore<AuthorizationCodeData> cacheStoreForAuthorizationCodeData;
 
     @Mock
-    private BackendConfig backendConfig;
+    private VerifierConfig verifierConfig;
 
     @Mock
     private CryptoComponent cryptoComponent;
+
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
     @Mock
     private AuthorizationResponseProcessorServiceImpl authorizationResponseProcessorService;
@@ -109,13 +112,14 @@ class AuthorizationResponseProcessorServiceImplTest {
                 registeredClientRepository,
                 oAuth2AuthorizationService,
                 sseEmitterStore,
-                backendConfig,
+                verifierConfig,
                 cacheForNonceByState,
                 cryptoComponent,
-                java.util.List.of()
+                java.util.List.of(),
+                meterRegistry
         );
-        lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
-        lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
+        lenient().when(verifierConfig.getUrl()).thenReturn("http://localhost:8080");
+        lenient().when(verifierConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
         lenient().when(cryptoComponent.getClientId()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
     }
 

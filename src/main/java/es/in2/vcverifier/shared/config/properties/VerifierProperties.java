@@ -6,12 +6,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 @Validated
-@ConfigurationProperties(prefix = "verifier.backend")
-public record BackendProperties(
+@ConfigurationProperties(prefix = "verifier")
+public record VerifierProperties(
         @NotBlank @URL String url,
+        String portalUrl,
         Identity identity,
-        LocalFiles localFiles,
-        TokenExpiration tokenExpiration
+        Token token,
+        Files files
 ) {
 
     public record Identity(
@@ -19,20 +20,20 @@ public record BackendProperties(
             String privateKey,
             String certificate) {}
 
-    public record TokenExpiration(
-            long accessTokenSeconds,
-            long idTokenSeconds,
-            long refreshTokenSeconds
+    public record Token(
+            long accessTokenTtl,
+            long idTokenTtl,
+            long refreshTokenTtl
     ) {
-        public TokenExpiration {
-            if (accessTokenSeconds <= 0) {
-                accessTokenSeconds = 900;
+        public Token {
+            if (accessTokenTtl <= 0) {
+                accessTokenTtl = 900;
             }
-            if (idTokenSeconds <= 0) {
-                idTokenSeconds = 60;
+            if (idTokenTtl <= 0) {
+                idTokenTtl = 60;
             }
-            if (refreshTokenSeconds <= 0) {
-                refreshTokenSeconds = 43200;
+            if (refreshTokenTtl <= 0) {
+                refreshTokenTtl = 43200;
             }
         }
     }
@@ -42,9 +43,10 @@ public record BackendProperties(
      * reads from the filesystem instead of the classpath, allowing injection via
      * Docker volumes, Kubernetes ConfigMaps, etc.
      */
-    public record LocalFiles(
-            String clientsPath,
-            String trustedIssuersPath,
-            String schemasDir
+    public record Files(
+            String clients,
+            String trustedIssuers,
+            String schemas,
+            String dcql
     ) {}
 }

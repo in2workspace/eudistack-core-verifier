@@ -52,11 +52,14 @@ class VpSecurityTest {
     @Mock
     private es.in2.vcverifier.verifier.infrastructure.adapter.CryptographicBindingValidator cryptographicBindingValidator;
 
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     private VpServiceImpl vpService;
 
     @BeforeEach
     void setUp() {
-        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, cryptographicBindingValidator, java.util.List.of());
+        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, cryptographicBindingValidator, java.util.List.of(), meterRegistry);
     }
 
     // --- Malformed VP Token ---

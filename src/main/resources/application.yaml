@@ -10,7 +10,17 @@ spring:
   application:
     name: eudistack-core-verifier
   config:
-    import: optional:file:${VERIFIER_BACKEND_LOCALFILES_DCQLPATH:}
+    import: optional:file:${VERIFIER_FILES_DCQL:}
+
+# ── API Documentation ─────────────────────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
 
 # ── Server ───────────────────────────────────────────────────
 server:
@@ -34,24 +44,23 @@ logging:
 # ── Management & Observability ───────────────────────────────
 management:
   endpoints:
-    enabled-by-default: false
+    access:
+      default: none
     web:
       exposure:
         include: health, prometheus
       base-path: /
-      path-mapping:
-        health: health
-        prometheus: prometheus
   endpoint:
     health:
-      enabled: true
-      show-details: always
+      access: unrestricted
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:never}
     prometheus:
-      enabled: true
+      access: unrestricted
   metrics:
     tags:
       application: ${spring.application.name}
   tracing:
+    enabled: ${MANAGEMENT_TRACING_ENABLED:false}
     sampling:
       probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
     propagation:
@@ -62,29 +71,26 @@ management:
 
 # ── Verifier ─────────────────────────────────────────────────
 verifier:
+  url: ${VERIFIER_URL:http://localhost:8080}
+  portal-url: ${VERIFIER_PORTAL_URL:http://localhost:4200}
 
-  frontend:
-    portalUrl: ${VERIFIER_FRONTEND_PORTALURL:http://localhost:4200}
+  identity:
+    # Leave empty to auto-generate ephemeral P-256 key + did:key at startup (dev only).
+    # For production, configure private-key + certificate for x509_hash client_id_scheme.
+    did-key: ${VERIFIER_IDENTITY_DID_KEY:}
+    private-key: ${VERIFIER_IDENTITY_PRIVATE_KEY:}
+    certificate: ${VERIFIER_IDENTITY_CERTIFICATE:}
 
-  backend:
-    url: ${VERIFIER_BACKEND_URL:http://localhost:8080}
+  token:
+    access-token-ttl: ${VERIFIER_TOKEN_ACCESS_TOKEN_TTL:900}
+    id-token-ttl: ${VERIFIER_TOKEN_ID_TOKEN_TTL:60}
+    refresh-token-ttl: ${VERIFIER_TOKEN_REFRESH_TOKEN_TTL:43200}
 
-    identity:
-      # Leave empty to auto-generate ephemeral P-256 key + did:key at startup (dev only).
-      # For production, configure privateKey + certificate for x509_hash client_id_scheme.
-      didKey: ${VERIFIER_BACKEND_IDENTITY_DIDKEY:}
-      privateKey: ${VERIFIER_BACKEND_IDENTITY_PRIVATEKEY:}
-      certificate: ${VERIFIER_BACKEND_IDENTITY_CERTIFICATE:}
-
-    token-expiration:
-      access-token-seconds: ${VERIFIER_BACKEND_TOKEN_EXPIRATION_ACCESS_TOKEN_SECONDS:900}
-      id-token-seconds: ${VERIFIER_BACKEND_TOKEN_EXPIRATION_ID_TOKEN_SECONDS:60}
-      refresh-token-seconds: ${VERIFIER_BACKEND_TOKEN_EXPIRATION_REFRESH_TOKEN_SECONDS:43200}
-
-    local-files:
-      clients-path: ${VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH:}
-      trusted-issuers-path: ${VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH:}
-      schemas-dir: ${VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR:}
+  files:
+    clients: ${VERIFIER_FILES_CLIENTS:}
+    trusted-issuers: ${VERIFIER_FILES_TRUSTED_ISSUERS:}
+    schemas: ${VERIFIER_FILES_SCHEMAS:}
+    dcql: ${VERIFIER_FILES_DCQL:}
 
   # DCQL profiles are injected via spring.config.import from the external
-  # file at VERIFIER_BACKEND_LOCALFILES_DCQLPATH (see dev-tools/verifier/dcql-profiles.yaml).
+  # file at VERIFIER_FILES_DCQL (see dev-tools/verifier/dcql-profiles.yaml).

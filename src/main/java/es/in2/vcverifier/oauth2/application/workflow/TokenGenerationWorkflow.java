@@ -3,7 +3,7 @@ package es.in2.vcverifier.oauth2.application.workflow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
 import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
@@ -36,7 +36,7 @@ import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NO
 public class TokenGenerationWorkflow {
 
     private final JWTService jwtService;
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
     private final ObjectMapper objectMapper;
     private final List<ClaimsExtractor> claimsExtractors;
 
@@ -64,7 +64,7 @@ public class TokenGenerationWorkflow {
                                    boolean generateIdToken, String tenant) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
-                backendConfig.getAccessTokenExpirationSeconds(),
+                verifierConfig.getAccessTokenExpirationSeconds(),
                 ChronoUnit.SECONDS
         );
 
@@ -127,7 +127,7 @@ public class TokenGenerationWorkflow {
                 extractCredentialType(credentialJson), tenant);
 
         JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
-                .issuer(backendConfig.getUrl())
+                .issuer(verifierConfig.getUrl())
                 .audience(audience)
                 .subject(subject)
                 .jwtID(UUID.randomUUID().toString())
@@ -163,7 +163,7 @@ public class TokenGenerationWorkflow {
                                  String subject, String audience, Map<String, Object> additionalParameters) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
-                backendConfig.getIdTokenExpirationSeconds(),
+                verifierConfig.getIdTokenExpirationSeconds(),
                 ChronoUnit.SECONDS
         );
 
@@ -176,7 +176,7 @@ public class TokenGenerationWorkflow {
 
         JWTClaimsSet.Builder idTokenClaimsBuilder = new JWTClaimsSet.Builder()
                 .subject(subject)
-                .issuer(backendConfig.getUrl())
+                .issuer(verifierConfig.getUrl())
                 .audience(audience)
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))

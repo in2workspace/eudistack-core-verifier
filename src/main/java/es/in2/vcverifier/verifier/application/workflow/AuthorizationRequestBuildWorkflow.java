@@ -2,7 +2,7 @@ package es.in2.vcverifier.verifier.application.workflow;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -37,7 +37,7 @@ public class AuthorizationRequestBuildWorkflow {
 
     private final JWTService jwtService;
     private final CryptoComponent cryptoComponent;
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
     private final CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
     private final CacheStore<String> cacheForNonceByState;
     private final DcqlProfileResolver dcqlProfileResolver;
@@ -88,7 +88,7 @@ public class AuthorizationRequestBuildWorkflow {
                 .claim(OAuth2ParameterNames.CLIENT_ID, clientId)
                 .claim("client_id_scheme", cryptoComponent.getClientIdScheme())
                 .claim(NONCE, nonce)
-                .claim("response_uri", backendConfig.getUrl() + AUTHORIZATION_RESPONSE_ENDPOINT)
+                .claim("response_uri", verifierConfig.getUrl() + AUTHORIZATION_RESPONSE_ENDPOINT)
                 .claim(OAuth2ParameterNames.SCOPE, scope)
                 .claim(OAuth2ParameterNames.STATE, state)
                 .claim(OAuth2ParameterNames.RESPONSE_TYPE, "vp_token")
@@ -103,7 +103,7 @@ public class AuthorizationRequestBuildWorkflow {
 
     private String generateOpenId4VpUrl(String nonce) {
         String requestUri = String.format("%s/oid4vp/auth-request/%s",
-                backendConfig.getUrl(), nonce);
+                verifierConfig.getUrl(), nonce);
         return String.format("openid4vp://?client_id=%s&request_uri=%s",
                 URLEncoder.encode(cryptoComponent.getClientId(), StandardCharsets.UTF_8),
                 URLEncoder.encode(requestUri, StandardCharsets.UTF_8));

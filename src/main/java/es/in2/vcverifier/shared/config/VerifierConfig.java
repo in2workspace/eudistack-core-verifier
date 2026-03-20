@@ -1,6 +1,6 @@
 package es.in2.vcverifier.shared.config;
 
-import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.config.properties.VerifierProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
@@ -9,9 +9,9 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 @Configuration
 @RequiredArgsConstructor
-public class BackendConfig {
+public class VerifierConfig {
 
-    private final BackendProperties properties;
+    private final VerifierProperties properties;
 
     /**
      * Returns the verifier's external URL. When called during HTTP request processing
@@ -45,6 +45,21 @@ public class BackendConfig {
         return properties.url();
     }
 
+    /**
+     * Returns the verifier frontend portal URL. In multi-tenant mode (behind nginx),
+     * the portal URL is the same as the backend's external URL (same host, same port).
+     * Falls back to the static configuration when no request context is available.
+     */
+    public String getPortalUrl() {
+        String dynamicUrl = getUrl();
+        // If dynamic resolution worked (returned a URL different from the static backend URL),
+        // use it — the frontend is served on the same host:port as the OIDC endpoints.
+        if (!dynamicUrl.equals(getStaticUrl())) {
+            return dynamicUrl;
+        }
+        return properties.portalUrl();
+    }
+
     public String getPrivateKey() {
         String privateKey = properties.identity() != null ? properties.identity().privateKey() : null;
         if (privateKey != null && privateKey.startsWith("0x")) {
@@ -68,26 +83,26 @@ public class BackendConfig {
     }
 
     public String getLocalClientsPath() {
-        return properties.localFiles() != null ? properties.localFiles().clientsPath() : null;
+        return properties.files() != null ? properties.files().clients() : null;
     }
 
     public String getLocalTrustedIssuersPath() {
-        return properties.localFiles() != null ? properties.localFiles().trustedIssuersPath() : null;
+        return properties.files() != null ? properties.files().trustedIssuers() : null;
     }
 
     public String getLocalSchemasDir() {
-        return properties.localFiles() != null ? properties.localFiles().schemasDir() : null;
+        return properties.files() != null ? properties.files().schemas() : null;
     }
 
     public long getAccessTokenExpirationSeconds() {
-        return properties.tokenExpiration() != null ? properties.tokenExpiration().accessTokenSeconds() : 900;
+        return properties.token() != null ? properties.token().accessTokenTtl() : 900;
     }
 
     public long getIdTokenExpirationSeconds() {
-        return properties.tokenExpiration() != null ? properties.tokenExpiration().idTokenSeconds() : 60;
+        return properties.token() != null ? properties.token().idTokenTtl() : 60;
     }
 
     public long getRefreshTokenExpirationSeconds() {
-        return properties.tokenExpiration() != null ? properties.tokenExpiration().refreshTokenSeconds() : 43200;
+        return properties.token() != null ? properties.token().refreshTokenTtl() : 43200;
     }
 }

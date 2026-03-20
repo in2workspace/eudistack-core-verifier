@@ -2,9 +2,8 @@ package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
-import es.in2.vcverifier.shared.config.FrontendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -57,12 +56,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final DIDService didService;
     private final JWTService jwtService;
     private final CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
     private final RegisteredClientRepository registeredClientRepository;
     private final boolean isNonceRequiredOnFapiProfile;
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
-    private final FrontendConfig frontendConfig;
     private final SafeUrlValidator safeUrlValidator;
 
     @Override
@@ -173,7 +171,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result) {
         String redirectUrl = String.format(
                 "%s/login?authRequest=%s&state=%s&homeUri=%s",
-                frontendConfig.getPortalUrl(),
+                verifierConfig.getPortalUrl(),
                 URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
                 URLEncoder.encode(state, StandardCharsets.UTF_8),
                 URLEncoder.encode(result.homeUri(), StandardCharsets.UTF_8)
@@ -189,7 +187,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                                                            String errorCode, String originalRequestURL) {
         String redirectUrl = String.format(
                 "%s/error?errorCode=%s&errorMessage=%s&clientUrl=%s&originalRequestURL=%s",
-                frontendConfig.getPortalUrl(),
+                verifierConfig.getPortalUrl(),
                 URLEncoder.encode(errorCode, StandardCharsets.UTF_8),
                 URLEncoder.encode(errorMessage, StandardCharsets.UTF_8),
                 URLEncoder.encode(clientName, StandardCharsets.UTF_8),
@@ -275,7 +273,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .clientId(clientId)
                 .redirectUri(redirectUri)
                 .scope(authorizationContext.scope())
-                .authorizationUri(backendConfig.getUrl());
+                .authorizationUri(verifierConfig.getUrl());
 
         Map<String, Object> additionalParameters = new HashMap<>();
         long timeout = Long.parseLong(LOGIN_TIMEOUT);

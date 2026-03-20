@@ -1,7 +1,7 @@
 package es.in2.vcverifier.oauth2.infrastructure.adapter;
 
 import com.nimbusds.jose.Payload;
-import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.config.JtiTokenCache;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ClientAssertionValidationServiceImpl implements ClientAssertionValidationService {
 
-    private final BackendConfig backendConfig;
+    private final VerifierConfig verifierConfig;
     private final JtiTokenCache jtiTokenCache;
     private final JWTService jwtService;
 
@@ -62,7 +62,7 @@ public class ClientAssertionValidationServiceImpl implements ClientAssertionVali
         log.debug("ClientAssertionValidationServiceImpl -- validateAudience -- "
                 + "Validating 'aud' (audience) claim against expected audience");
         String aud = jwtService.extractClaimFromPayload(payload, "aud");
-        String expectedAudience = backendConfig.getUrl();
+        String expectedAudience = verifierConfig.getUrl();
 
         if (!aud.equals(expectedAudience)) {
             log.error("VpValidationServiceImpl -- validateAudience -- "

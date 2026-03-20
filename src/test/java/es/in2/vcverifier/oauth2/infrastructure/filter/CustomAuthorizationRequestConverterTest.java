@@ -3,9 +3,8 @@ package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
-import es.in2.vcverifier.shared.config.FrontendConfig;
+import es.in2.vcverifier.shared.config.VerifierConfig;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -66,7 +65,7 @@ class CustomAuthorizationRequestConverterTest {
     private CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
 
     @Mock
-    private BackendConfig backendConfig;
+    private VerifierConfig verifierConfig;
 
     @Mock
     private RegisteredClientRepository registeredClientRepository;
@@ -78,9 +77,6 @@ class CustomAuthorizationRequestConverterTest {
     private AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
 
     @Mock
-    private FrontendConfig frontendConfig;
-
-    @Mock
     private SafeUrlValidator safeUrlValidator;
 
     private boolean isNonceRequiredOnFapiProfile = true;
@@ -89,17 +85,16 @@ class CustomAuthorizationRequestConverterTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(frontendConfig.getPortalUrl()).thenReturn("http://localhost:4200");
+        lenient().when(verifierConfig.getPortalUrl()).thenReturn("http://localhost:4200");
         converter = new CustomAuthorizationRequestConverter(
                 didService,
                 jwtService,
                 cacheStoreForOAuth2AuthorizationRequest,
-                backendConfig,
+                verifierConfig,
                 registeredClientRepository,
                 isNonceRequiredOnFapiProfile,
                 httpClient,
                 authorizationRequestBuildWorkflow,
-                frontendConfig,
                 safeUrlValidator
         );
     }
@@ -135,7 +130,7 @@ class CustomAuthorizationRequestConverterTest {
                 .build();
 
         when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+        when(verifierConfig.getUrl()).thenReturn("https://auth.server.com");
 
         // Mock the workflow to return a result
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
@@ -307,7 +302,7 @@ class CustomAuthorizationRequestConverterTest {
         when(signedJWT.serialize()).thenReturn("serialized-jwt");
         doNothing().when(jwtService).verifyJWTWithECKey(anyString(), eq(publicKey));
 
-        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+        when(verifierConfig.getUrl()).thenReturn("https://auth.server.com");
 
         // Mock the workflow
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
@@ -373,7 +368,7 @@ class CustomAuthorizationRequestConverterTest {
                 .build();
 
         when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+        when(verifierConfig.getUrl()).thenReturn("https://auth.server.com");
 
         // The workflow will throw InvalidScopeException for unsupported scope
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state))
@@ -499,7 +494,7 @@ class CustomAuthorizationRequestConverterTest {
                 .build();
 
         when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+        when(verifierConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
                 "signed-jwt", "openid4vp://...", "nonce-789", clientName);
@@ -551,7 +546,7 @@ class CustomAuthorizationRequestConverterTest {
                 .build();
 
         when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+        when(verifierConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
                 "signed-jwt", "openid4vp://...", "nonce-000", clientName);
