@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Google Java Style enforcement** — Checkstyle configured with 25+ rules (Google base + project adaptations). All violations fixed.
 - **Dockerfile rewrite** — Multi-stage build with `gradlew`, 3-layer cache, OCI labels, HEALTHCHECK, standard port 8080.
 - **application.yaml cleanup** — Standardized port to 8080, unified management config, explicit env var placeholders for all properties, fixed DCQL `learcredential` profile (added missing machine credentials).
+- **Logging simplification** — Removed custom `logback-spring.xml` and `SuppressEndpointLogFilter`. Spring Boot 3.5 defaults with Micrometer Tracing auto-inject traceId/spanId. Structured JSON logging (ECS) activatable via `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` in production.
 
 ### Removed
 
