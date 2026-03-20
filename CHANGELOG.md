@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v3.0.0] - Unreleased
 
 ### Added
+- **CORS policy tests**: Integration tests for public endpoint wildcard CORS (`/oid4vp/*`, `/api/login/*`, `/health`) and unit tests for both `PublicCorsConfig` and `RegisteredClientsCorsConfig` (EUDI-020 FR-08).
 - **Tenant claim in access token**: The Verifier injects a `tenant` claim (top-level, signed) in the JWT access token, sourced from the OIDC client registration (`clients.yaml`). Each client has a `tenant` field (e.g., `"altia"`, `"dome"`, `"cgcom"`). This enables the Issuer to cryptographically validate the tenant origin of each request (EUDI-017 Phase A).
 - **DCQL query support**: SD-JWT VC credential queries using DCQL (Digital Credentials Query Language) for OID4VP 1.0 compliance.
 - **SD-JWT VC verification**: Full SD-JWT VC (RFC 9901) verification pipeline with selective disclosure validation.
