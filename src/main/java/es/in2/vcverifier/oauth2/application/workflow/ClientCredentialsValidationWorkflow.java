@@ -6,6 +6,7 @@ import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
+import es.in2.vcverifier.verifier.domain.util.CredentialTypeResolver;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
@@ -14,10 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.List;
-import java.util.Set;
 
 /**
  * Application workflow that validates a client_credentials grant (M2M flow).
@@ -28,8 +26,6 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class ClientCredentialsValidationWorkflow {
-
-    private static final Set<String> GENERIC_TYPES = Set.of("VerifiableCredential", "VerifiableAttestation");
 
     private final JWTService jwtService;
     private final ClientAssertionValidationService clientAssertionValidationService;
@@ -58,7 +54,7 @@ public class ClientCredentialsValidationWorkflow {
 
         // Extract credential and validate grant eligibility via schema profile
         JsonNode vc = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(decodedVpToken);
-        String configId = resolveConfigId(vc);
+        String configId = CredentialTypeResolver.resolveConfigId(vc);
         SchemaProfile profile = schemaProfileRegistry.findByConfigId(configId)
                 .orElseThrow(() -> new InvalidCredentialTypeException("No profile found for: " + configId));
         if (!profile.grantEligibility().contains("client_credentials")) {
@@ -81,23 +77,4 @@ public class ClientCredentialsValidationWorkflow {
         return vc;
     }
 
-    private static String resolveConfigId(JsonNode vc) {
-        // W3C VCDM: type[] array — pick the first non-generic type
-        JsonNode typeNode = vc.get("type");
-        if (typeNode != null && typeNode.isArray()) {
-            for (JsonNode t : typeNode) {
-                String type = t.asText();
-                if (!GENERIC_TYPES.contains(type)) {
-                    return type;
-                }
-            }
-        }
-        // SD-JWT VC: vct claim
-        JsonNode vctNode = vc.get("vct");
-        if (vctNode != null && vctNode.isTextual()) {
-            return vctNode.asText();
-        }
-        throw new InvalidCredentialTypeException(
-                "Cannot resolve credential type: no 'type' array or 'vct' claim found");
-    }
 }

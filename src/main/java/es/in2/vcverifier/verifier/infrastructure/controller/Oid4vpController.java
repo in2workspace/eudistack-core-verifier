@@ -60,7 +60,7 @@ public class Oid4vpController {
             @Parameter(description = "Verifiable Presentation token", required = true)
             @RequestParam("vp_token") String vpToken) {
         log.info("Processing auth response");
-        log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken = {}", state, vpToken);
+        log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken=[{} chars]", state, vpToken != null ? vpToken.length() : 0);
         authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
     }
 
