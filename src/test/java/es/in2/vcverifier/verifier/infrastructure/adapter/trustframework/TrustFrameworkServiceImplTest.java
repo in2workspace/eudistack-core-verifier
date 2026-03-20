@@ -16,7 +16,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class TrustFrameworkServiceImpTest {
+class TrustFrameworkServiceImplTest {
 
     @InjectMocks
     private TrustFrameworkServiceImpl trustFrameworkService;
