@@ -10,13 +10,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 
-import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.Constants.JTI_CACHE_TTL_SECONDS;
 
 @Configuration
 @RequiredArgsConstructor
@@ -32,8 +31,8 @@ public class CacheStoreConfig {
     @Bean
     public CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT() {
         return new CacheStore<>(
-                Long.parseLong(LOGIN_TIMEOUT),
-                TimeUnit.of(ChronoUnit.valueOf(LOGIN_TIMEOUT_CHRONO_UNIT)));
+                backendConfig.getLoginTimeoutSeconds(),
+                TimeUnit.SECONDS);
     }
 
     @Bean
@@ -53,9 +52,10 @@ public class CacheStoreConfig {
         return new CacheStore<>(10, TimeUnit.MINUTES);
     }
 
+    // JTI cache TTL: 2x access token lifetime (900s) to cover clock skew and retries
     @Bean
-    public Set<String> jtiCache() {
-        return new HashSet<>();
+    public CacheStore<String> jtiCacheStore() {
+        return new CacheStore<>(JTI_CACHE_TTL_SECONDS, TimeUnit.SECONDS);
     }
     
     @Bean

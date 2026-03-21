@@ -40,7 +40,7 @@ class GlobalExceptionHandlerTest {
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.RESOURCE_NOT_FOUND.getCode());
         assertThat(response.title()).isEqualTo("Resource not found");
         assertThat(response.status()).isEqualTo(404);
-        assertThat(response.detail()).isEqualTo("Resource not found");
+        assertThat(response.detail()).isEqualTo("The requested resource was not found");
         assertThat(response.instance()).isNotBlank();
     }
 
@@ -78,7 +78,7 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.ORGANIZATION_MISMATCH.getCode());
         assertThat(response.status()).isEqualTo(401);
-        assertThat(response.detail()).isEqualTo("Mismatch org identifier");
+        assertThat(response.detail()).isEqualTo("The organization identifier does not match");
     }
 
     @Test
@@ -130,7 +130,7 @@ class GlobalExceptionHandlerTest {
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.INVALID_VP_TOKEN.getCode());
         assertThat(response.title()).isEqualTo("Invalid VP Token");
         assertThat(response.status()).isEqualTo(401);
-        assertThat(response.detail()).isEqualTo("Invalid VP token");
+        assertThat(response.detail()).isEqualTo("The VP token is not valid");
     }
 
     @Test
@@ -142,7 +142,7 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.STATUS_LIST_ERROR.getCode());
         assertThat(response.status()).isEqualTo(500);
-        assertThat(response.detail()).isEqualTo("Status list error");
+        assertThat(response.detail()).isEqualTo("An error occurred while processing the status list credential");
     }
 
     @Test
@@ -154,7 +154,7 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.ISSUER_NOT_AUTHORIZED.getCode());
         assertThat(response.title()).isEqualTo("Issuer not authorized");
-        assertThat(response.detail()).isEqualTo("unauthorized issuer");
+        assertThat(response.detail()).isEqualTo("The issuer is not authorized");
     }
 
     @Test
@@ -166,7 +166,7 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.INVALID_CREDENTIAL_TYPE.getCode());
         assertThat(response.title()).isEqualTo("Invalid credential type");
-        assertThat(response.detail()).isEqualTo("bad type");
+        assertThat(response.detail()).isEqualTo("The credential type is not valid");
     }
 
     @Test
@@ -177,7 +177,7 @@ class GlobalExceptionHandlerTest {
         GlobalErrorMessage response = globalExceptionHandler.handleJWTClaimMissingException(exception, mockRequest);
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.JWT_CLAIM_MISSING.getCode());
-        assertThat(response.detail()).isEqualTo("missing nonce");
+        assertThat(response.detail()).isEqualTo("A required JWT claim is missing or invalid");
     }
 
     @Test
@@ -188,7 +188,7 @@ class GlobalExceptionHandlerTest {
         GlobalErrorMessage response = globalExceptionHandler.handleJWTVerificationException(exception, mockRequest);
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.JWT_VERIFICATION_FAILED.getCode());
-        assertThat(response.detail()).isEqualTo("bad signature");
+        assertThat(response.detail()).isEqualTo("JWT signature verification failed");
     }
 
     @Test
@@ -199,7 +199,7 @@ class GlobalExceptionHandlerTest {
         GlobalErrorMessage response = globalExceptionHandler.handleJWTParsingException(exception, mockRequest);
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.JWT_PARSING_FAILED.getCode());
-        assertThat(response.detail()).isEqualTo("parse error");
+        assertThat(response.detail()).isEqualTo("The provided JWT could not be parsed");
     }
 
     @Test
@@ -210,7 +210,7 @@ class GlobalExceptionHandlerTest {
         GlobalErrorMessage response = globalExceptionHandler.handleInvalidScopeException(exception, mockRequest);
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.INVALID_SCOPE.getCode());
-        assertThat(response.detail()).isEqualTo("bad scope");
+        assertThat(response.detail()).isEqualTo("The requested scope is invalid");
     }
 
     @Test
@@ -221,7 +221,7 @@ class GlobalExceptionHandlerTest {
         GlobalErrorMessage response = globalExceptionHandler.handleCredentialMappingException(exception, mockRequest);
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.CREDENTIAL_MAPPING_ERROR.getCode());
-        assertThat(response.detail()).isEqualTo("mapping error");
+        assertThat(response.detail()).isEqualTo("The credential could not be mapped");
     }
 
     @Test
@@ -256,6 +256,6 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.type()).isEqualTo(VerifierErrorTypes.FAILED_COMMUNICATION.getCode());
         assertThat(response.status()).isEqualTo(502);
-        assertThat(response.detail()).isEqualTo("Connection refused");
+        assertThat(response.detail()).isEqualTo("An error occurred while communicating with an external service");
     }
 }

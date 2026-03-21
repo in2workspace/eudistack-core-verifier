@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -64,7 +65,8 @@ class SchemaProfileClaimsExtractorTest {
                         W3C_EMBED,
                         W3C_EMBED,
                         "openid learcredential"
-                )
+                ),
+                null, Set.of(), false, null, null
         );
     }
 
@@ -79,7 +81,8 @@ class SchemaProfileClaimsExtractorTest {
                         W3C_EMBED,
                         W3C_EMBED,
                         "machine learcredential"
-                )
+                ),
+                null, Set.of(), false, null, null
         );
     }
 

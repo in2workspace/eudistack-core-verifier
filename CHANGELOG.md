@@ -6,14 +6,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v3.0.0] - Unreleased
 
+### Security
+
+- **PKCE S256 enforced** — PLAIN method rejected per HAIP / RFC 7636 §4.2 (S1).
+- **Revocation fail-closed** — Credential rejected if revocation status cannot be determined, both JWT VP and SD-JWT paths (S2).
+- **Cache DoS protection** — All `CacheStore` instances bounded with `maximumSize(10000)` (S3/F5).
+- **Per-IP rate limiting** — `RateLimitFilter` with 120 req/min general, 30 req/min on auth endpoints, atomic counters (S4).
+- **Token Status List signature verification** — JWT signature verified via x5c or DID before trusting status data (S5).
+- **Health endpoint hardened** — `show-details: when-authorized` (S6).
+- **Open redirect prevention** — `CustomErrorResponseHandler` validates redirect URI against portal domain (S7).
+- **ES256 only** — RSA rejected in `SdJwtVerificationServiceImpl` and `CertificateValidationServiceImpl` per HAIP (S8).
+- **Log sanitization** — Authorization codes truncated, DN/keys/JWKS not logged at INFO, state truncated in SSE logs (S9/F4).
+- **Input validation** — `@Validated` + `@NotBlank` / `@Size` on `Oid4vpController` parameters (F1).
+- **Security headers** — `SecurityHeadersFilter` adds HSTS, X-Content-Type-Options, X-Frame-Options, CSP, Referrer-Policy, Permissions-Policy, conditional Cache-Control (F2).
+- **Error message leak prevention** — All `GlobalExceptionHandler` methods use `handleSafe`; `handleWith` removed from `ErrorResponseFactory` (F3/O1).
+- **SSE connection limit** — `SseEmitterStore` bounded at 5000 concurrent emitters (F6).
+- **Refresh token rotation** — Token invalidated on use in `CustomTokenRequestConverter` (F10).
+- **Swagger UI disabled by default** — Controlled via `SPRINGDOC_ENABLED` env var (F8).
+- **Validation exception handlers** — `ConstraintViolationException` and `HandlerMethodValidationException` return 400 (W6).
+- **Dependency updates** — `org.json` 20230227→20240303, `jackson-dataformat-yaml` 2.17.2→2.18.2 (F7).
+
 ### Added
-- **Tenant claim in access token**: The Verifier injects a `tenant` claim (top-level, signed) in the JWT access token, sourced from the OIDC client registration (`clients.yaml`). Each client has a `tenant` field (e.g., `"altia"`, `"dome"`, `"cgcom"`). This enables the Issuer to cryptographically validate the tenant origin of each request (EUDI-017 Phase A).
-- **DCQL query support**: SD-JWT VC credential queries using DCQL (Digital Credentials Query Language) for OID4VP 1.0 compliance.
-- **SD-JWT VC verification**: Full SD-JWT VC (RFC 9901) verification pipeline with selective disclosure validation.
+- **Schema-agnostic credential pipeline** — `GenericCredential(JsonNode, SchemaProfile)` replaces all typed LEARCredential POJOs. Validation, claims extraction, revocation, and M2M eligibility are driven by `.profile.json` files. Adding a new credential type requires zero Java code (EUDI-020 FR-10).
+- **Profile-driven validation metadata** — `SchemaProfile` extended with `ValidationPaths`, `RevocationPaths`, `grantEligibility`, `schemaRequired`, `issuerIdPath`, `mandatorOrgIdPath`. All `.profile.json` files updated.
+- **Classpath schema auto-discovery** — `LocalSchemaProfileRegistry` scans `classpath:schemas/*.json` automatically via `ResourcePatternResolver`. No hardcoded filename arrays.
+- **JSON Schema validation in VP pipeline** — `CredentialValidator` wired into `VpServiceImpl` as Step 2b. Schema failures throw `CredentialSchemaValidationException`.
+- **OID4VP `client_metadata`** — Authorization Request JWT includes `client_metadata` with `vp_formats_supported` (ES256 for `dc+sd-jwt` and `jwt_vc_json`) when client_id uses `x509_hash:` or `did:` prefix (OID4VP §5.1) (EUDI-020 FR-05).
+- **OpenAPI annotations** — `@Tag`, `@Operation`, `@ApiResponse`, `@Parameter` on all 4 custom endpoints. `@Schema` on response models. Swagger UI at `/swagger-ui.html` (EUDI-020 FR-07).
+- **CORS policy tests** — 28 tests: integration tests for public endpoint wildcard CORS, unit tests for `PublicCorsConfig` and `RegisteredClientsCorsConfig` (EUDI-020 FR-08).
+- **Tenant claim in access token** — Signed `tenant` claim in JWT access token from OIDC client registration (EUDI-017 Phase A).
+- **DCQL query support** — SD-JWT VC credential queries using DCQL for OID4VP 1.0 compliance.
+- **SD-JWT VC verification** — Full SD-JWT VC (RFC 9901) verification pipeline with selective disclosure validation.
+
+### Removed
+- **LEARCredential typed models** — Deleted entire `lear/` model hierarchy (39 Java files), `LEARCredentialType` enum, `CredentialMapperService`, `IssuerDeserializer`, `Issuer`/`SimpleIssuer`/`DetailedIssuer` — replaced by `GenericCredential` (EUDI-020 FR-10).
+- **Hardcoded M2M type checks** — `MACHINE_CONFIG_IDS` set and `startsWith("learcredential.machine.")` replaced by profile-driven `grant_eligibility` (EUDI-020 FR-10).
+- **Hardcoded constants** — `LOGIN_TIMEOUT`, `LOGIN_TIMEOUT_CHRONO_UNIT`, `IS_NONCE_REQUIRED_ON_FAPI_PROFILE` removed from `Constants.java` (EUDI-020 FR-06).
 
 ### Changed
-- **Credential type detection**: Switched from hardcoded type strings to `credential_configuration_id` pattern (e.g., `learcredential.employee.sd.1`).
-- **Token claim extraction**: Refactored `CredentialClaimsExtractor` to support both W3C and SD-JWT VC formats.
+- **VP validation pipeline** — `VpServiceImpl` uses `GenericCredentialFactory` + profile-driven paths for time window, revocation, issuer org ID, and mandator validation. Mandator check is conditional on profile configuration (EUDI-020 FR-10).
+- **Configurable login timeout and FAPI nonce** — `verifier.backend.login-timeout-seconds` and `fapi-nonce-required` in `application.yaml` with env var overrides (EUDI-020 FR-06).
+- **Credential type detection** — Switched from hardcoded type strings to `credential_configuration_id` pattern.
+- **Token claim extraction** — Refactored `CredentialClaimsExtractor` to support both W3C and SD-JWT VC formats.
+- **JTI replay cache** — `JtiTokenCache` now uses `CacheStore<String>` with TTL-based expiry (1800s) instead of unbounded `HashSet`.
+- **OID4VP authorization request** — `aud` set to `https://self-issued.me/v2` per OID4VP §5.8; `client_id_scheme` removed per §5.9.
+- **Virtual threads** — Enabled Spring virtual threads for I/O-bound operations.
 
 ## [v2.1.0] - 2026-02-27
 

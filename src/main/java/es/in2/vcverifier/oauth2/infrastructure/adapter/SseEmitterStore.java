@@ -11,9 +11,17 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class SseEmitterStore {
 
+    // SEC-F6: Bounded SSE emitter store to prevent connection/memory exhaustion.
+    private static final int MAX_CONCURRENT_EMITTERS = 5_000;
+
     private final ConcurrentHashMap<String, SseEmitter> emitters = new ConcurrentHashMap<>();
 
     public SseEmitter create(String state, long timeoutMs) {
+        if (emitters.size() >= MAX_CONCURRENT_EMITTERS) {
+            log.warn("SSE emitter limit reached ({}). Rejecting new connection for state={}...",
+                    MAX_CONCURRENT_EMITTERS, state.substring(0, Math.min(8, state.length())));
+            throw new IllegalStateException("Too many concurrent SSE connections");
+        }
         SseEmitter emitter = new SseEmitter(timeoutMs);
         emitters.put(state, emitter);
         emitter.onCompletion(() -> emitters.remove(state));
