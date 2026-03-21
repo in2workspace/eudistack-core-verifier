@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v3.0.0] - Unreleased
 
+### Security
+
+- **PKCE S256 enforced** — PLAIN method rejected per HAIP / RFC 7636 §4.2 (S1).
+- **Revocation fail-closed** — Credential rejected if revocation status cannot be determined, both JWT VP and SD-JWT paths (S2).
+- **Cache DoS protection** — All `CacheStore` instances bounded with `maximumSize(10000)` (S3/F5).
+- **Per-IP rate limiting** — `RateLimitFilter` with 120 req/min general, 30 req/min on auth endpoints, atomic counters (S4).
+- **Token Status List signature verification** — JWT signature verified via x5c or DID before trusting status data (S5).
+- **Health endpoint hardened** — `show-details: when-authorized` (S6).
+- **Open redirect prevention** — `CustomErrorResponseHandler` validates redirect URI against portal domain (S7).
+- **ES256 only** — RSA rejected in `SdJwtVerificationServiceImpl` and `CertificateValidationServiceImpl` per HAIP (S8).
+- **Log sanitization** — Authorization codes truncated, DN/keys/JWKS not logged at INFO, state truncated in SSE logs (S9/F4).
+- **Input validation** — `@Validated` + `@NotBlank` / `@Size` on `Oid4vpController` parameters (F1).
+- **Security headers** — `SecurityHeadersFilter` adds HSTS, X-Content-Type-Options, X-Frame-Options, CSP, Referrer-Policy, Permissions-Policy, conditional Cache-Control (F2).
+- **Error message leak prevention** — All `GlobalExceptionHandler` methods use `handleSafe`; `handleWith` removed from `ErrorResponseFactory` (F3/O1).
+- **SSE connection limit** — `SseEmitterStore` bounded at 5000 concurrent emitters (F6).
+- **Refresh token rotation** — Token invalidated on use in `CustomTokenRequestConverter` (F10).
+- **Swagger UI disabled by default** — Controlled via `SPRINGDOC_ENABLED` env var (F8).
+- **Validation exception handlers** — `ConstraintViolationException` and `HandlerMethodValidationException` return 400 (W6).
+- **Dependency updates** — `org.json` 20230227→20240303, `jackson-dataformat-yaml` 2.17.2→2.18.2 (F7).
+
 ### Added
 - **Schema-agnostic credential pipeline** — `GenericCredential(JsonNode, SchemaProfile)` replaces all typed LEARCredential POJOs. Validation, claims extraction, revocation, and M2M eligibility are driven by `.profile.json` files. Adding a new credential type requires zero Java code (EUDI-020 FR-10).
 - **Profile-driven validation metadata** — `SchemaProfile` extended with `ValidationPaths`, `RevocationPaths`, `grantEligibility`, `schemaRequired`, `issuerIdPath`, `mandatorOrgIdPath`. All `.profile.json` files updated.
