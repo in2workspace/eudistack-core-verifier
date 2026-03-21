@@ -9,15 +9,19 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @Slf4j
 @RestController
 @RequestMapping("/oid4vp")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "OID4VP", description = "OpenID for Verifiable Presentations endpoints")
 public class Oid4vpController {
 
@@ -32,9 +36,10 @@ public class Oid4vpController {
     @ApiResponse(responseCode = "404", description = "Authorization request not found or expired")
     @GetMapping("/auth-request/{id}")
     @ResponseStatus(HttpStatus.OK)
+    // SEC-F1: Input validation on path/request parameters.
     public String getAuthorizationRequest(
             @Parameter(description = "Authorization request nonce (from QR code)", required = true)
-            @PathVariable String id) {
+            @PathVariable @NotBlank @Size(max = 256) String id) {
         AuthorizationRequestJWT authorizationRequestJWT = cacheStoreForAuthorizationRequestJWT.get(id);
         cacheStoreForAuthorizationRequestJWT.delete(id);
         String jwt = authorizationRequestJWT.authRequest();
@@ -56,9 +61,9 @@ public class Oid4vpController {
     @ResponseStatus(HttpStatus.OK)
     public void handleAuthResponse(
             @Parameter(description = "OAuth2 state parameter", required = true)
-            @RequestParam("state") String state,
+            @RequestParam("state") @NotBlank @Size(max = 128) String state,
             @Parameter(description = "Verifiable Presentation token", required = true)
-            @RequestParam("vp_token") String vpToken) {
+            @RequestParam("vp_token") @NotBlank @Size(max = 65536) String vpToken) {
         log.info("Processing auth response");
         log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken=[{} chars]", state, vpToken != null ? vpToken.length() : 0);
         authorizationResponseProcessorService.handleAuthResponse(state, vpToken);

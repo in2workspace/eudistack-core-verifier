@@ -8,6 +8,13 @@ spring:
     virtual:
       enabled: true
 
+# SEC-F8: Swagger UI disabled by default. Enable via env var in dev only.
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
+
 server:
   port: 8082
   forward-headers-strategy: framework
@@ -42,7 +49,7 @@ management:
   endpoint:
     health:
       enabled: true
-      show-details: always
+      show-details: when-authorized
     prometheus:
       enabled: true
   metrics:

@@ -169,16 +169,13 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         String codeVerifier = (String) authCodeToken.getAdditionalParameters().get(PkceParameterNames.CODE_VERIFIER);
         if (!org.springframework.util.StringUtils.hasText(codeVerifier)) invalidGrant();
 
+        // SEC-S1: Only S256 is accepted. PLAIN method is rejected per HAIP / RFC 7636 §4.2.
         String method = (storedMethod == null ? "S256" : storedMethod).toUpperCase(Locale.ROOT);
-        switch (method) {
-            case "S256" -> {
-                if (!s256(codeVerifier).equals(storedChallenge)) invalidGrant();
-            }
-            case "PLAIN" -> {
-                if (!codeVerifier.equals(storedChallenge)) invalidGrant();
-            }
-            default -> invalidGrant();
+        if (!"S256".equals(method)) {
+            log.warn("Rejected PKCE method '{}' — only S256 is allowed", method);
+            invalidGrant();
         }
+        if (!s256(codeVerifier).equals(storedChallenge)) invalidGrant();
     }
 
     private static void invalidGrant() {

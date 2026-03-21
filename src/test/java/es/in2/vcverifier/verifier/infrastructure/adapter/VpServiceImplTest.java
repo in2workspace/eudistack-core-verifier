@@ -348,8 +348,9 @@ class VpServiceImplTest {
 
     // --- Revocation tests ---
 
+    // SEC-S2: Fail-closed — status list unreachable now throws instead of proceeding.
     @Test
-    void verifyVerifiablePresentation_statusListUnreachable_doesNotThrow() throws Exception {
+    void verifyVerifiablePresentation_statusListUnreachable_throwsFailedCommunicationException() throws Exception {
         String vpToken = "valid.vp.jwt";
         String vcJwt = "valid.vc.jwt";
 
@@ -363,10 +364,6 @@ class VpServiceImplTest {
             JWTClaimsSet vpClaims = mock(JWTClaimsSet.class);
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
             when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
-
-            JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
-            when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-            when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
 
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
@@ -382,21 +379,8 @@ class VpServiceImplTest {
                     "https://status-list.example.com/status/1", "42", "revocation"))
                     .thenThrow(new FailedCommunicationException("Connection refused"));
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("did:elsi:VATES-FOO")).thenReturn(caps);
-
-            JWSHeader vcHeader = mock(JWSHeader.class);
-            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
-            when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
-            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
-            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
-            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
-
-            assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
+            assertThrows(FailedCommunicationException.class,
+                    () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
         }
     }
 

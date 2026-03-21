@@ -61,7 +61,7 @@ public class ResolverController {
                 ))
                 .build();
 
-        log.info("Resolved DID {} to JWK {}", id, customJWKS);
+        log.info("Resolved DID {} to JWK successfully", id);
         return customJWKS;
     }
 

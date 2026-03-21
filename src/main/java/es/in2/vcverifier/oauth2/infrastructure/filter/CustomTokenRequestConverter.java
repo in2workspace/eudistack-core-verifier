@@ -130,6 +130,8 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
             log.error("Refresh token not found or expired");
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_TOKEN);
         }
+        // SEC-F10: Invalidate used refresh token immediately (one-time use / rotation).
+        refreshTokenDataCacheCacheStore.delete(refreshTokenValue);
 
         Map<String, Object> additionalParameters = new HashMap<>();
         additionalParameters.put(OAuth2ParameterNames.CLIENT_ID, clientId);

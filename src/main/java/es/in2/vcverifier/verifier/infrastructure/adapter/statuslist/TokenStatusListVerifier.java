@@ -2,7 +2,10 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.statuslist;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jwt.SignedJWT;
+import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.CredentialException;
@@ -20,6 +23,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.security.PublicKey;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPublicKey;
 import java.text.ParseException;
 import java.time.Duration;
 import java.util.Base64;
@@ -45,6 +52,7 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SafeUrlValidator safeUrlValidator;
+    private final DIDService didService;
 
     @Override
     public boolean supports(String credentialStatusType) {
@@ -81,6 +89,10 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
     TokenStatusListData parseTokenStatusList(String jwtString) {
         try {
             SignedJWT signedJwt = SignedJWT.parse(jwtString);
+
+            // SEC-S5: Verify Token Status List JWT signature before trusting its content.
+            verifyStatusListSignature(signedJwt);
+
             JsonNode claimsNode = objectMapper.valueToTree(
                     signedJwt.getJWTClaimsSet().toJSONObject()
             );
@@ -109,6 +121,58 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
 
         } catch (ParseException e) {
             throw new StatusListCredentialException("Error parsing Token Status List JWT", e);
+        }
+    }
+
+    /**
+     * SEC-S5: Verifies the Token Status List JWT signature using issuer DID or x5c certificate.
+     */
+    private void verifyStatusListSignature(SignedJWT signedJwt) {
+        try {
+            String issuer = signedJwt.getJWTClaimsSet().getIssuer();
+
+            // Try x5c header first (certificate chain)
+            var x5c = signedJwt.getHeader().getX509CertChain();
+            if (x5c != null && !x5c.isEmpty()) {
+                CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                byte[] certBytes = x5c.get(0).decode();
+                X509Certificate cert = (X509Certificate) cf.generateCertificate(
+                        new ByteArrayInputStream(certBytes));
+                PublicKey publicKey = cert.getPublicKey();
+                if (!(publicKey instanceof ECPublicKey ecKey)) {
+                    throw new StatusListCredentialException(
+                            "Token Status List JWT x5c certificate uses unsupported key type: " + publicKey.getAlgorithm());
+                }
+                JWSVerifier verifier = new ECDSAVerifier(ecKey);
+                if (!signedJwt.verify(verifier)) {
+                    throw new StatusListCredentialException("Token Status List JWT signature verification failed (x5c)");
+                }
+                log.debug("Token Status List JWT signature verified via x5c");
+                return;
+            }
+
+            // Try DID-based key resolution
+            if (issuer != null && issuer.startsWith("did:")) {
+                PublicKey publicKey = didService.resolvePublicKeyFromDid(issuer);
+                if (!(publicKey instanceof ECPublicKey ecKey)) {
+                    throw new StatusListCredentialException(
+                            "Token Status List JWT issuer DID uses unsupported key type: " + publicKey.getAlgorithm());
+                }
+                JWSVerifier verifier = new ECDSAVerifier(ecKey);
+                if (!signedJwt.verify(verifier)) {
+                    throw new StatusListCredentialException("Token Status List JWT signature verification failed (DID: " + issuer + ")");
+                }
+                log.debug("Token Status List JWT signature verified via DID: {}", issuer);
+                return;
+            }
+
+            throw new StatusListCredentialException(
+                    "Cannot verify Token Status List JWT signature: no x5c header and no DID issuer found");
+
+        } catch (StatusListCredentialException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new StatusListCredentialException("Token Status List JWT signature verification error: " + e.getMessage(), e);
         }
     }
 

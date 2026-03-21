@@ -84,7 +84,7 @@ public class AuthorizationServerConfig {
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
                                 .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,frontendConfig,safeUrlValidator))
-                                .errorResponseHandler(new CustomErrorResponseHandler())
+                                .errorResponseHandler(new CustomErrorResponseHandler(frontendConfig))
                 )
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
