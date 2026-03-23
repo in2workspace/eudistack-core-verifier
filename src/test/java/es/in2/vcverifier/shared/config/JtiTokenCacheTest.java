@@ -1,10 +1,8 @@
 package es.in2.vcverifier.shared.config;
-import es.in2.vcverifier.shared.config.JtiTokenCache;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashSet;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -14,7 +12,7 @@ class JtiTokenCacheTest {
 
     @BeforeEach
     void setUp() {
-        jtiTokenCache = new JtiTokenCache(new HashSet<>());
+        jtiTokenCache = new JtiTokenCache(new CacheStore<>(1800, TimeUnit.SECONDS));
     }
 
     @Test
@@ -39,5 +37,16 @@ class JtiTokenCacheTest {
     void isJtiPresent_differentJti_returnsFalse() {
         jtiTokenCache.addJti("jti-1");
         assertFalse(jtiTokenCache.isJtiPresent("jti-2"));
+    }
+
+    @Test
+    void isJtiPresent_afterTtlExpires_returnsFalse() throws InterruptedException {
+        JtiTokenCache shortLivedCache = new JtiTokenCache(new CacheStore<>(1, TimeUnit.SECONDS));
+        shortLivedCache.addJti("jti-expiring");
+        assertTrue(shortLivedCache.isJtiPresent("jti-expiring"));
+
+        Thread.sleep(1500);
+
+        assertFalse(shortLivedCache.isJtiPresent("jti-expiring"));
     }
 }

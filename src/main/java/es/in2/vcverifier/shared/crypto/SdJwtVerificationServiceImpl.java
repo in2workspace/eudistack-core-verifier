@@ -3,7 +3,6 @@ package es.in2.vcverifier.shared.crypto;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
-import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -19,7 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
-import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.util.*;
 
@@ -129,15 +127,14 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
                 "Cannot verify SD-JWT issuer signature: no DID issuer and no x5c header found");
     }
 
+    // SEC-S8: Only ES256 (P-256 EC) keys are accepted per HAIP convention.
     private JWSVerifier buildVerifier(PublicKey publicKey) throws Exception {
         if (publicKey instanceof ECPublicKey ecKey) {
             return new ECDSAVerifier(ecKey);
         }
-        if (publicKey instanceof RSAPublicKey rsaKey) {
-            return new RSASSAVerifier(rsaKey);
-        }
         throw new JWTVerificationException(
-                "Unsupported public key type: " + publicKey.getClass().getName());
+                "Unsupported public key type for SD-JWT verification: " + publicKey.getAlgorithm()
+                        + ". Only EC (ES256) keys are accepted per HAIP.");
     }
 
     @SuppressWarnings("unchecked")

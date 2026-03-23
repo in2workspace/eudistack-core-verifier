@@ -2,7 +2,6 @@ package es.in2.vcverifier.shared.crypto;
 
 import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
-import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
@@ -21,7 +20,6 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
-import java.security.interfaces.RSAPublicKey;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -76,12 +74,12 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
             // Extract the DN (Distinguished Name)
             X500Principal subject = certificate.getSubjectX500Principal();
             String distinguishedName = subject.getName();
-            log.info("Extracted DN: {}", distinguishedName);
+            log.debug("Extracted DN for certificate validation");
 
             // Try to extract the organizationIdentifier from the DN
             String orgIdentifierFromDN = extractOrganizationIdentifierFromDN(distinguishedName);
             if (orgIdentifierFromDN != null && orgIdentifierFromDN.equals(expectedOrgId)) {
-                log.info("Found matching organization identifier in DN: {}", orgIdentifierFromDN);
+                log.debug("Found matching organization identifier in DN");
                 return certificate.getPublicKey(); // Return the public key of the matching certificate
             }
         } catch (CertificateException e) {
@@ -94,7 +92,7 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
 
     // Helper method to extract and decode the organizationIdentifier from the DN
     private static String extractOrganizationIdentifierFromDN(String distinguishedName) {
-        log.info("Extracting organizationIdentifier from DN: {}", distinguishedName);
+        log.debug("Extracting organizationIdentifier from DN");
 
         // Use a regular expression to find the 2.5.4.97 OID in the DN
         Pattern pattern = Pattern.compile("2\\.5\\.4\\.97=#([0-9A-F]+)", Pattern.CASE_INSENSITIVE);
@@ -102,7 +100,7 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
 
         if (matcher.find()) {
             String hexValue = matcher.group(1);
-            log.info("Extracted hex value for organizationIdentifier: {}", hexValue);
+            log.debug("Extracted organizationIdentifier hex value from DN");
 
             // Decode the hex string properly as ASN.1 encoded value
             return decodeHexToReadableString(hexValue);
@@ -174,14 +172,13 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
             Set<String> defCriticalHeaders = new HashSet<>();
             defCriticalHeaders.add("sigT");
 
-            JWSVerifier verifier;
-            if (publicKey instanceof RSAPublicKey rsaKey) {
-                verifier = new RSASSAVerifier(rsaKey, defCriticalHeaders);
-            } else if (publicKey instanceof ECPublicKey ecKey) {
-                verifier = new ECDSAVerifier(ecKey, defCriticalHeaders);
-            } else {
-                throw new IllegalArgumentException("Unsupported key type for JWT verification: " + publicKey.getAlgorithm());
+            // SEC-S8: Only EC (ES256) keys accepted per HAIP convention.
+            if (!(publicKey instanceof ECPublicKey ecKey)) {
+                throw new JWTVerificationException(
+                        "Unsupported key type for JWT verification: " + publicKey.getAlgorithm()
+                                + ". Only EC (ES256) keys are accepted per HAIP.");
             }
+            JWSVerifier verifier = new ECDSAVerifier(ecKey, defCriticalHeaders);
 
             if (!signedJWT.verify(verifier)) {
                 throw new JWTVerificationException("Invalid JWT signature");

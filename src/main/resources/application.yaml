@@ -3,6 +3,17 @@ spring:
     name: ${OTEL_SERVICE_NAME:vc-verifier}
   config:
     import: optional:file:${VERIFIER_BACKEND_LOCALFILES_DCQLPATH:}
+  # Virtual Threads: enables lightweight threads for I/O-bound operations (SSE, HTTP calls)
+  threads:
+    virtual:
+      enabled: true
+
+# SEC-F8: Swagger UI disabled by default. Enable via env var in dev only.
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
 
 server:
   port: 8082
@@ -38,7 +49,7 @@ management:
   endpoint:
     health:
       enabled: true
-      show-details: always
+      show-details: when-authorized
     prometheus:
       enabled: true
   metrics:
@@ -63,6 +74,8 @@ verifier:
       didKey:
       privateKey:
       certificate:  # Path to X.509 PEM certificate. When set, enables x509_hash client_id_scheme.
+    login-timeout-seconds: ${VERIFIER_OAUTH2_LOGIN_TIMEOUT_SECONDS:120}
+    fapi-nonce-required: ${VERIFIER_OAUTH2_FAPI_NONCE_REQUIRED:true}
     token-expiration:
       access-token-seconds: ${VERIFIER_ACCESS_TOKEN_EXPIRATION:900}
       id-token-seconds: ${VERIFIER_ID_TOKEN_EXPIRATION:60}

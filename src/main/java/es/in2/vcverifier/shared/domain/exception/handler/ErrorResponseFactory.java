@@ -12,14 +12,6 @@ import java.util.UUID;
 @Component
 public class ErrorResponseFactory {
 
-    public GlobalErrorMessage handleWith(
-            Exception ex, HttpServletRequest request,
-            String type, String title, HttpStatus status, String fallbackDetail
-    ) {
-        String detail = resolveDetail(ex, fallbackDetail);
-        return buildError(type, title, status, detail, ex, request);
-    }
-
     /**
      * SEC-13: Handles an exception without ever leaking the exception message to the client.
      */
@@ -28,11 +20,6 @@ public class ErrorResponseFactory {
             String type, String title, HttpStatus status, String detail
     ) {
         return buildError(type, title, status, detail, ex, request);
-    }
-
-    private String resolveDetail(Exception ex, String fallback) {
-        String msg = ex.getMessage();
-        return (msg == null || msg.isBlank()) ? fallback : msg;
     }
 
     private GlobalErrorMessage buildError(

@@ -1,7 +1,5 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.IS_NONCE_REQUIRED_ON_FAPI_PROFILE;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -70,6 +68,7 @@ public class AuthorizationServerConfig {
     private final ClientCredentialsValidationWorkflow clientCredentialsValidationWorkflow;
     private final TokenGenerationWorkflow tokenGenerationWorkflow;
     private final SafeUrlValidator safeUrlValidator;
+    private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -84,13 +83,13 @@ public class AuthorizationServerConfig {
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
-                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, IS_NONCE_REQUIRED_ON_FAPI_PROFILE,httpClient,authorizationRequestBuildWorkflow,frontendConfig,safeUrlValidator))
-                                .errorResponseHandler(new CustomErrorResponseHandler())
+                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,frontendConfig,safeUrlValidator))
+                                .errorResponseHandler(new CustomErrorResponseHandler(frontendConfig))
                 )
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
                                 .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore))
-                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow))
+                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry))
                 )
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
         return http.build();

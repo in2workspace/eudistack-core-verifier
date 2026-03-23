@@ -43,7 +43,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
-import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_TIMEOUT;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
@@ -113,7 +112,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         String nonce = "test-nonce";
 
         String vpToken = createVpToken(nonce);
-        long timeout = Long.parseLong(LOGIN_TIMEOUT);
+        long timeout = 120L;
 
         Map<String, Object> additionalParams = Map.of(
                 NONCE, nonce,
@@ -191,7 +190,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         // Arrange
         String state = "test-state";
         String vpToken = createVpToken(state);
-        long timeout = Long.parseLong(LOGIN_TIMEOUT);
+        long timeout = 120L;
 
         OAuth2AuthorizationRequest oAuth2AuthorizationRequest = OAuth2AuthorizationRequest.authorizationCode()
                 .authorizationUri("https://auth.example.com")
@@ -220,7 +219,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     void handleAuthResponse_noRegisteredClient_shouldThrowException() throws JOSEException {
         // Arrange
         String state = "test-state";
-        long timeout = Long.parseLong(LOGIN_TIMEOUT);
+        long timeout = 120L;
         String vpToken = createVpToken(state);
 
         OAuth2AuthorizationRequest oAuth2AuthorizationRequest = OAuth2AuthorizationRequest.authorizationCode()
@@ -274,7 +273,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     void handleAuthResponse_validInput_shouldThrowLoginTimeoutException() {
         String state = "test-state";
         String vpToken = Base64.getEncoder().encodeToString("valid-vp-token".getBytes(StandardCharsets.UTF_8));
-        long timeout = Long.parseLong(LOGIN_TIMEOUT);
+        long timeout = 120L;
 
         Map<String, Object> additionalParams = Map.of(
                 NONCE, "test-nonce",
@@ -484,7 +483,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         String method = "S256";
         String vpToken = createVpToken(nonce);
 
-        long timeout = Long.parseLong(LOGIN_TIMEOUT);
+        long timeout = 120L;
         Map<String, Object> addl = Map.of(
                 NONCE, nonce,
                 EXPIRATION, Instant.now().plusSeconds(timeout).getEpochSecond(),
@@ -538,7 +537,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         String nonce = "nonce-no-pkce";
         String vpToken = createVpToken(nonce);
 
-        long timeout = Long.parseLong(LOGIN_TIMEOUT);
+        long timeout = 120L;
         Map<String, Object> addl = Map.of(
                 NONCE, nonce,
                 EXPIRATION, Instant.now().plusSeconds(timeout).getEpochSecond(),

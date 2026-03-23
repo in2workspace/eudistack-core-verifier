@@ -38,7 +38,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
+import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
+import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
+import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
+import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
 @Slf4j
@@ -53,6 +57,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final BackendConfig backendConfig;
     private final RegisteredClientRepository registeredClientRepository;
     private final boolean isNonceRequiredOnFapiProfile;
+    private final long loginTimeoutSeconds;
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
     private final FrontendConfig frontendConfig;
@@ -249,8 +254,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .authorizationUri(backendConfig.getUrl());
 
         Map<String, Object> additionalParameters = new HashMap<>();
-        long timeout = Long.parseLong(LOGIN_TIMEOUT);
-        additionalParameters.put(EXPIRATION, Instant.now().plusSeconds(timeout).getEpochSecond());
+        additionalParameters.put(EXPIRATION, Instant.now().plusSeconds(loginTimeoutSeconds).getEpochSecond());
 
         String nonce = authorizationContext.clientNonce();
         if (nonce != null && !nonce.isBlank()) {

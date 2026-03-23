@@ -10,10 +10,21 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class CacheStore<T> {
 
+    private static final long DEFAULT_MAX_SIZE = 10_000L;
+
     private final Cache<String, T> cache;
 
     public CacheStore(long expiryDuration, TimeUnit timeUnit) {
-        this.cache = CacheBuilder.newBuilder().expireAfterWrite(expiryDuration, timeUnit).concurrencyLevel(Runtime.getRuntime().availableProcessors()).build();
+        this(expiryDuration, timeUnit, DEFAULT_MAX_SIZE);
+    }
+
+    // SEC-S3: All caches MUST have maximumSize to prevent memory exhaustion (DoS).
+    public CacheStore(long expiryDuration, TimeUnit timeUnit, long maximumSize) {
+        this.cache = CacheBuilder.newBuilder()
+                .expireAfterWrite(expiryDuration, timeUnit)
+                .maximumSize(maximumSize)
+                .concurrencyLevel(Runtime.getRuntime().availableProcessors())
+                .build();
     }
 
     public T get(String key) {

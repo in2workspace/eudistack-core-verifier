@@ -8,6 +8,7 @@ import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
+import es.in2.vcverifier.verifier.domain.model.oid4vp.ClientMetadata;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,11 @@ import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParamet
 @Service
 @RequiredArgsConstructor
 public class AuthorizationRequestBuildWorkflow {
+
+    /**
+     * OID4VP §5.8: static Self-Issued OP v2 discovery audience.
+     */
+    private static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
 
     private final JWTService jwtService;
     private final CryptoComponent cryptoComponent;
@@ -78,13 +84,12 @@ public class AuthorizationRequestBuildWorkflow {
 
         String clientId = cryptoComponent.getClientId();
 
-        JWTClaimsSet payload = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .issuer(clientId)
-                .audience(clientId)
+                .audience(SELF_ISSUED_V2)
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
                 .claim(OAuth2ParameterNames.CLIENT_ID, clientId)
-                .claim("client_id_scheme", cryptoComponent.getClientIdScheme())
                 .claim(NONCE, nonce)
                 .claim("response_uri", backendConfig.getUrl() + AUTHORIZATION_RESPONSE_ENDPOINT)
                 .claim(OAuth2ParameterNames.SCOPE, scope)
@@ -92,8 +97,15 @@ public class AuthorizationRequestBuildWorkflow {
                 .claim(OAuth2ParameterNames.RESPONSE_TYPE, "vp_token")
                 .claim("response_mode", "direct_post")
                 .claim("dcql_query", objectMapper.convertValue(dcqlQuery, Map.class))
-                .jwtID(UUID.randomUUID().toString())
-                .build();
+                .jwtID(UUID.randomUUID().toString());
+
+        // OID4VP §5.1: include client_metadata when using x509_hash or did: prefix
+        if (clientId.startsWith("x509_hash:") || clientId.startsWith("did:")) {
+            ClientMetadata clientMetadata = ClientMetadata.defaultMetadata();
+            builder.claim("client_metadata", objectMapper.convertValue(clientMetadata, Map.class));
+        }
+
+        JWTClaimsSet payload = builder.build();
 
         cacheForNonceByState.add(state, nonce);
         return payload.toString();

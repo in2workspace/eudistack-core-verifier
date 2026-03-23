@@ -40,8 +40,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     // --- Serialization ---
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.17.2'
-    implementation 'org.json:json:20230227'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.18.2'
+    implementation 'org.json:json:20240303'
 
     // --- Cryptography ---
     implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
@@ -58,6 +58,9 @@ dependencies {
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
     implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+
+    // --- Documentation ---
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
 
     // --- DevTools ---
     compileOnly 'org.projectlombok:lombok'

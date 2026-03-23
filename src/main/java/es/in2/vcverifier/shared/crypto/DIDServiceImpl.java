@@ -42,7 +42,7 @@ public class DIDServiceImpl implements DIDService {
     }
 
     private PublicKey decodePublicKeyIntoPubKey(String encodePublicKey) {
-        log.info("Decoding public key from encoded string: {}", encodePublicKey);
+        log.debug("Decoding public key from DID encoded string");
 
         try {
             // Remove the prefix "z" to get the multibase encoded string
@@ -81,8 +81,10 @@ public class DIDServiceImpl implements DIDService {
             KeyFactory kf = KeyFactory.getInstance("EC");
             ECPublicKeySpec pubKeySpec = new ECPublicKeySpec(point, params);
 
-            log.info("Public key successfully decoded and generated: {}", kf.generatePublic(pubKeySpec));
-            return kf.generatePublic(pubKeySpec);
+            // SEC-S9: Do not log full public key material.
+            java.security.PublicKey generatedKey = kf.generatePublic(pubKeySpec);
+            log.debug("Public key successfully decoded from DID");
+            return generatedKey;
         }
         catch (Exception e) {
             log.error("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Failed to decode and generate public key: {}", e.getMessage(), e);

@@ -98,6 +98,14 @@ public class BackendConfig {
         return properties.localFiles() != null ? properties.localFiles().schemasDir() : null;
     }
 
+    public long getLoginTimeoutSeconds() {
+        return properties.loginTimeoutSeconds() != null ? properties.loginTimeoutSeconds() : 120L;
+    }
+
+    public boolean isFapiNonceRequired() {
+        return properties.fapiNonceRequired() != null ? properties.fapiNonceRequired() : true;
+    }
+
     public long getAccessTokenExpirationSeconds() {
         return properties.tokenExpiration() != null ? properties.tokenExpiration().accessTokenSeconds() : 900;
     }

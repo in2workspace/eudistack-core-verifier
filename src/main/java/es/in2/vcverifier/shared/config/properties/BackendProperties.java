@@ -17,7 +17,9 @@ public record BackendProperties(
         Identity identity,
         @NotNull @Valid List<TrustFramework> trustFrameworks,
         LocalFiles localFiles,
-        TokenExpiration tokenExpiration
+        TokenExpiration tokenExpiration,
+        Long loginTimeoutSeconds,
+        Boolean fapiNonceRequired
 ) {
 
     public record Identity(

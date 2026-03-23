@@ -44,7 +44,9 @@ class VpSecurityTest {
     @Mock
     private CertificateValidationService certificateValidationService;
     @Mock
-    private es.in2.vcverifier.verifier.infrastructure.adapter.CredentialMapperService credentialMapperService;
+    private es.in2.vcverifier.verifier.infrastructure.adapter.GenericCredentialFactory genericCredentialFactory;
+    @Mock
+    private es.in2.vcverifier.verifier.domain.service.CredentialValidator credentialValidator;
     @Mock
     private es.in2.vcverifier.verifier.infrastructure.adapter.CryptographicBindingValidator cryptographicBindingValidator;
 
@@ -52,7 +54,9 @@ class VpSecurityTest {
 
     @BeforeEach
     void setUp() {
-        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, credentialMapperService, cryptographicBindingValidator, java.util.List.of());
+        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, genericCredentialFactory, credentialValidator, cryptographicBindingValidator, java.util.List.of());
+        org.mockito.Mockito.lenient().when(credentialValidator.validate(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(es.in2.vcverifier.verifier.domain.model.validation.ValidationResult.builder().valid(true).errors(java.util.List.of()).build());
     }
 
     // --- Malformed VP Token ---
@@ -170,7 +174,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("Invalid payload format for Verifiable Credential."));
 
             assertThrows(CredentialMappingException.class,
@@ -186,7 +190,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("'type' key is not a list."));
 
             assertThrows(CredentialMappingException.class,
@@ -202,7 +206,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new InvalidCredentialTypeException("Unsupported credential type"));
 
             assertThrows(InvalidCredentialTypeException.class,
@@ -281,7 +285,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("'type' list contains non-string elements."));
 
             assertThrows(CredentialMappingException.class,
@@ -297,7 +301,7 @@ class VpSecurityTest {
 
             Payload mockPayload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(any())).thenReturn(mockPayload);
-            when(credentialMapperService.mapPayloadToVerifiableCredential(any()))
+            when(genericCredentialFactory.create(any()))
                     .thenThrow(new CredentialMappingException("'type' key is not a list."));
 
             assertThrows(CredentialMappingException.class,
@@ -314,7 +318,7 @@ class VpSecurityTest {
         @Test
         @DisplayName("JtiTokenCache rejects duplicate JTI values")
         void jtiTokenCache_rejectsDuplicate() {
-            var cache = new es.in2.vcverifier.shared.config.JtiTokenCache(new HashSet<>());
+            var cache = new es.in2.vcverifier.shared.config.JtiTokenCache(new es.in2.vcverifier.shared.config.CacheStore<>(1800, java.util.concurrent.TimeUnit.SECONDS));
             cache.addJti("unique-jti-1");
             assertTrue(cache.isJtiPresent("unique-jti-1"));
             assertFalse(cache.isJtiPresent("unique-jti-2"));

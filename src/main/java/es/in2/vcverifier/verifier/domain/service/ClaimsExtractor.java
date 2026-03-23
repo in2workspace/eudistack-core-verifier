@@ -5,7 +5,7 @@ import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
 
 /**
  * SPI for extracting claims from a validated credential for token generation.
- * Implementations handle different credential types (LEARCredential, PID, etc.).
+ * Implementations handle different credential types based on schema profiles.
  */
 public interface ClaimsExtractor {
     boolean supports(String credentialType);

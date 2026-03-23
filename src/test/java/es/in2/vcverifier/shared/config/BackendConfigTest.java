@@ -38,6 +38,14 @@ class BackendConfigTest {
         assertThat(backendConfig.getClientsRepositoryUri())
                 .as("Clients Repository URI should match")
                 .isEqualTo("https://raw.githubusercontent.com/in2workspace/in2-dome-gitops/refs/heads/main/trust-framework/trusted_services_list.yaml");
+
+        assertThat(backendConfig.getLoginTimeoutSeconds())
+                .as("Login timeout should match configured value")
+                .isEqualTo(120L);
+
+        assertThat(backendConfig.isFapiNonceRequired())
+                .as("FAPI nonce required should match configured value")
+                .isTrue();
     }
 
     @Configuration

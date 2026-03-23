@@ -59,6 +59,9 @@ class CustomAuthenticationProviderTest {
     @Mock
     private TokenGenerationWorkflow tokenGenerationWorkflow;
 
+    @Mock
+    private es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private RegisteredClientRepository registeredClientRepository;
     private OAuth2AuthorizationService oAuth2AuthorizationService;
@@ -85,7 +88,8 @@ class CustomAuthenticationProviderTest {
                 objectMapper,
                 cacheStoreForRefreshTokenData,
                 oAuth2AuthorizationService,
-                tokenGenerationWorkflow
+                tokenGenerationWorkflow,
+                schemaProfileRegistry
         );
     }
 
@@ -160,6 +164,10 @@ class CustomAuthenticationProviderTest {
         JsonNode vcJson = buildEmployeeCredentialV1();
 
         when(tokenGenerationWorkflow.extractCredentialType(any(JsonNode.class))).thenReturn("learcredential.employee.w3c.4");
+        // Employee profile has no client_credentials grant
+        es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile employeeProfile = new es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile(
+                "learcredential.employee.w3c.4", null, null, null, java.util.Set.of("authorization_code"), false, null, null);
+        when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(java.util.Optional.of(employeeProfile));
 
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
@@ -205,10 +213,11 @@ class CustomAuthenticationProviderTest {
         registeredClientRepository = new InMemoryRegisteredClientRepository(clientWithTenant);
         provider = new CustomAuthenticationProvider(
                 registeredClientRepository, backendConfig, objectMapper,
-                cacheStoreForRefreshTokenData, oAuth2AuthorizationService, tokenGenerationWorkflow);
+                cacheStoreForRefreshTokenData, oAuth2AuthorizationService, tokenGenerationWorkflow, schemaProfileRegistry);
 
         JsonNode vcJson = buildMachineCredentialV1();
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        // M2M path resolves audience directly from backendConfig; profile fallback not reached
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
@@ -234,6 +243,7 @@ class CustomAuthenticationProviderTest {
         // The default setUp() client has no tenant setting
         JsonNode vcJson = buildMachineCredentialV1();
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        // M2M path resolves audience directly from backendConfig; profile fallback not reached
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),

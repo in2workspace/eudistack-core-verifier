@@ -121,8 +121,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
 
         // Generate a code (code)
+        // SEC-S9: Authorization codes must not be logged in full.
         String code = UUID.randomUUID().toString();
-        log.info("Code generated: {}", code);
+        log.info("Authorization code generated: {}...", code.substring(0, 8));
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
 
@@ -184,8 +185,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 .build()
                 .toUriString();
 
-        //Perform the redirection using HttpServletResponse
-        log.info("Redirecting to URL: {}", redirectUrl);
+        // SEC-O2: Log redirect target without full authorization code.
+        log.info("Redirecting to: {}", redirectUri);
 
         // Send the redirect URL to the browser via SSE
         sseEmitterStore.send(state, redirectUrl);
@@ -267,24 +268,18 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 .findFirst()
                 .orElse(null);
 
+        // SEC-O3: Fail-closed — reject if no verifier is available for revocation check.
         if (verifier == null) {
-            log.warn("No CredentialStatusVerifier registered for TokenStatusListEntry; skipping revocation check");
-            return;
+            throw new CredentialRevokedException(
+                    "Cannot verify SD-JWT revocation: no CredentialStatusVerifier registered for TokenStatusListEntry");
         }
 
-        try {
-            boolean revoked = verifier.isRevoked(uri, idx, "revocation");
-            if (revoked) {
-                throw new CredentialRevokedException("SD-JWT credential is revoked (Token Status List uri=" + uri + ", idx=" + idx + ")");
-            }
-            log.info("SD-JWT credential is not revoked");
-        } catch (CredentialRevokedException e) {
-            throw e;
-        } catch (Exception e) {
-            log.warn("Could not verify SD-JWT credential revocation status. " +
-                    "Token Status List may be unreachable. Proceeding with presentation. Error: {}",
-                    e.getMessage());
+        // SEC-S2: Fail-closed — if revocation status cannot be determined, reject the credential.
+        boolean revoked = verifier.isRevoked(uri, idx, "revocation");
+        if (revoked) {
+            throw new CredentialRevokedException("SD-JWT credential is revoked (Token Status List uri=" + uri + ", idx=" + idx + ")");
         }
+        log.info("SD-JWT credential is not revoked");
     }
 
     private void validateVpTokenNonceAndAudience(String decodedVpToken, String state) {
