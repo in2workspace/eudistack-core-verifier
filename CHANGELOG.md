@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Token Status List signature verification** — JWT signature verified via x5c or DID before trusting status data (S5).
 - **Health endpoint hardened** — `show-details: when-authorized` (S6).
 - **Open redirect prevention** — `CustomErrorResponseHandler` validates redirect URI against portal domain (S7).
-- **ES256 only** — RSA rejected in `SdJwtVerificationServiceImpl` and `CertificateValidationServiceImpl` per HAIP (S8).
+- **ES256 preferred, RSA accepted** — `SdJwtVerificationServiceImpl` and `TokenStatusListVerifier` accept both EC (ES256) and RSA (RS256/PS256) signatures for QTSP compatibility (S8). See _RSA deprecation plan_ below.
+- **SSRF bypass for local dev** — `verifier.ssrf.allow-private` property (default `false`) disables private/loopback IP checks in `SafeUrlValidator`. Required for local dev because `*.127.0.0.1.nip.io` resolves to loopback. **Must remain `false` in production** (S14).
 - **Log sanitization** — Authorization codes truncated, DN/keys/JWKS not logged at INFO, state truncated in SSE logs (S9/F4).
 - **Input validation** — `@Validated` + `@NotBlank` / `@Size` on `Oid4vpController` parameters (F1).
 - **Security headers** — `SecurityHeadersFilter` adds HSTS, X-Content-Type-Options, X-Frame-Options, CSP, Referrer-Policy, Permissions-Policy, conditional Cache-Control (F2).
