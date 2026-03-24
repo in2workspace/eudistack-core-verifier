@@ -49,8 +49,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -71,7 +71,7 @@ jobs:
           DH_IMAGE="docker.io/${DOCKERHUB_ORG}/${PROJECT_NAME}:${TAG}"
           ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
 
-          docker build -f docker/Dockerfile --build-arg SKIP_TESTS=true -t "${DH_IMAGE}" .
+          docker build --build-arg SKIP_TESTS=true -t "${DH_IMAGE}" .
           docker tag "${DH_IMAGE}" "${ECR_IMAGE}"
 
           docker push "${DH_IMAGE}"
