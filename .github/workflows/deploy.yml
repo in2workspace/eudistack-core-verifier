@@ -1,0 +1,64 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - stg
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      APP_NAME: verifier-core
+      ECS_CLUSTER: eudistack-${{ inputs.environment }}-ecs-ew1
+      ECS_SERVICE: eudistack-${{ inputs.environment }}-ecs-ew1-verifier-core-service
+      HEALTH_URL: https://verifier-${{ inputs.environment }}.altia.eudistack.net/actuator/health
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Force new ECS deployment
+        run: |
+          echo "Deploying **${APP_NAME}** to **${{ inputs.environment }}**..." >> $GITHUB_STEP_SUMMARY
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --force-new-deployment \
+            --no-cli-pager
+
+      - name: Wait for service stability
+        run: |
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER}" \
+            --services "${ECS_SERVICE}"
+          echo "ECS service is stable." >> $GITHUB_STEP_SUMMARY
+
+      - name: Health check
+        run: |
+          echo "Running health check against ${HEALTH_URL}..."
+          for i in $(seq 1 5); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${HEALTH_URL}" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (HTTP 200)." >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS — retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::Health check failed after 5 attempts."
+          exit 1
