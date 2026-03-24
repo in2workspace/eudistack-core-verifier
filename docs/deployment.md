@@ -73,6 +73,12 @@ No se usan perfiles de Spring (`application-prod.yaml`, etc.).
 
 > **Nota**: Branding (colores, logos, links, idioma) se configura en el Angular SPA via `theme.json` montado como volumen Docker, no en el backend.
 
+#### Security
+
+| Env var | Default | Descripcion |
+| --- | --- | --- |
+| `VERIFIER_SSRF_ALLOW_PRIVATE` | `false` | Desactiva la validacion SSRF para IPs privadas/loopback. **Solo para desarrollo local** (nip.io resuelve a 127.0.0.1). **Debe ser `false` en produccion.** |
+
 #### Server
 
 | Env var | Default | Descripcion |
@@ -478,3 +484,33 @@ VERIFIER_FRONTEND_PORTALURL=https://portal.midominio.com
 | Solo un trust framework (`DOME`) | - | Soporte multi-trust-framework |
 | Client registry refresh solo cada 30 min | Reiniciar contenedor | Endpoint de refresh manual |
 | Anadir un context URL nuevo para schemas requiere codigo | Rebuild con nueva entrada en `CONTEXT_MAP` | Registry de context-to-schema configurable via YAML |
+
+---
+
+## 11. Decisiones de seguridad y plan de deprecacion
+
+### RSA en verificacion de credenciales
+
+**Estado actual:** El verifier acepta firmas EC (ES256) y RSA (RS256/PS256) en SD-JWT VC y Token Status List.
+
+**Motivo:** Muchos QTSPs europeos aun emiten certificados de e-seal con claves RSA. Rechazar RSA impediria verificar credenciales firmadas por estos QTSPs.
+
+**Plan de deprecacion:**
+1. Cuando la mayoria de QTSPs relevantes hayan migrado a certificados EC (ES256), revertir `buildVerifier()` en `SdJwtVerificationServiceImpl` y `buildStatusListVerifier()` en `TokenStatusListVerifier` para aceptar solo EC.
+2. Buscar `RSASSAVerifier` en el codigo para localizar todos los puntos afectados.
+3. HAIP 1.0 requiere ES256 — la compatibilidad RSA es una concesion temporal al ecosistema real.
+
+**Ficheros afectados:**
+- `shared/crypto/SdJwtVerificationServiceImpl.java` — `buildVerifier()`
+- `verifier/infrastructure/adapter/statuslist/TokenStatusListVerifier.java` — `buildStatusListVerifier()`
+
+### SSRF allow-private (desarrollo local)
+
+**Propiedad:** `verifier.ssrf.allow-private` (default `false`)
+
+**Motivo:** En desarrollo local se usa `*.127.0.0.1.nip.io` para subdominios HTTPS. Estos dominios resuelven a `127.0.0.1` (loopback), que el `SafeUrlValidator` bloquea por proteccion SSRF. El flag desactiva esta validacion.
+
+**En produccion:** Debe ser **siempre `false`**. Los dominios de produccion resuelven a IPs publicas y no necesitan este bypass. Activarlo en produccion abriria una vulnerabilidad SSRF.
+
+**Fichero afectado:**
+- `shared/domain/util/SafeUrlValidator.java`

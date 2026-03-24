@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
@@ -27,6 +28,7 @@ import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
 import java.time.Duration;
 import java.util.Base64;
@@ -139,11 +141,7 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
                 X509Certificate cert = (X509Certificate) cf.generateCertificate(
                         new ByteArrayInputStream(certBytes));
                 PublicKey publicKey = cert.getPublicKey();
-                if (!(publicKey instanceof ECPublicKey ecKey)) {
-                    throw new StatusListCredentialException(
-                            "Token Status List JWT x5c certificate uses unsupported key type: " + publicKey.getAlgorithm());
-                }
-                JWSVerifier verifier = new ECDSAVerifier(ecKey);
+                JWSVerifier verifier = buildStatusListVerifier(publicKey);
                 if (!signedJwt.verify(verifier)) {
                     throw new StatusListCredentialException("Token Status List JWT signature verification failed (x5c)");
                 }
@@ -154,11 +152,7 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
             // Try DID-based key resolution
             if (issuer != null && issuer.startsWith("did:")) {
                 PublicKey publicKey = didService.resolvePublicKeyFromDid(issuer);
-                if (!(publicKey instanceof ECPublicKey ecKey)) {
-                    throw new StatusListCredentialException(
-                            "Token Status List JWT issuer DID uses unsupported key type: " + publicKey.getAlgorithm());
-                }
-                JWSVerifier verifier = new ECDSAVerifier(ecKey);
+                JWSVerifier verifier = buildStatusListVerifier(publicKey);
                 if (!signedJwt.verify(verifier)) {
                     throw new StatusListCredentialException("Token Status List JWT signature verification failed (DID: " + issuer + ")");
                 }
@@ -174,6 +168,17 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
         } catch (Exception e) {
             throw new StatusListCredentialException("Token Status List JWT signature verification error: " + e.getMessage(), e);
         }
+    }
+
+    private JWSVerifier buildStatusListVerifier(PublicKey publicKey) throws Exception {
+        if (publicKey instanceof ECPublicKey ecKey) {
+            return new ECDSAVerifier(ecKey);
+        }
+        if (publicKey instanceof RSAPublicKey rsaKey) {
+            return new RSASSAVerifier(rsaKey);
+        }
+        throw new StatusListCredentialException(
+                "Token Status List JWT uses unsupported key type: " + publicKey.getAlgorithm());
     }
 
     /**

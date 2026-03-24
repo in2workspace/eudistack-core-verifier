@@ -19,6 +19,9 @@ public class SafeUrlValidator {
 
     private static final Set<String> ALLOWED_SCHEMES = Set.of("https", "http");
 
+    @org.springframework.beans.factory.annotation.Value("${verifier.ssrf.allow-private:false}")
+    private boolean allowPrivate;
+
     /**
      * Validates that the given URL is safe for outbound HTTP requests.
      *
@@ -47,7 +50,11 @@ public class SafeUrlValidator {
             throw new SsrfProtectionException("URL must have a valid host");
         }
 
-        validateHostNotPrivate(host);
+        if (!allowPrivate) {
+            validateHostNotPrivate(host);
+        } else {
+            log.debug("SSRF private-network check bypassed (verifier.ssrf.allow-private=true)");
+        }
     }
 
     private void validateHostNotPrivate(String host) {
