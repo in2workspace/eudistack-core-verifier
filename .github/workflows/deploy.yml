@@ -33,12 +33,11 @@ jobs:
 
       - name: Force new ECS deployment
         run: |
-          TASK_FAMILY="${ECS_CLUSTER}-${APP_NAME}-task"
-          echo "Deploying **${APP_NAME}** to **${{ inputs.environment }}** (task: ${TASK_FAMILY})..." >> $GITHUB_STEP_SUMMARY
+          # TODO: add --task-definition when apps_ci_cd IAM user has iam:PassRole permission
+          echo "Deploying **${APP_NAME}** to **${{ inputs.environment }}**..." >> $GITHUB_STEP_SUMMARY
           aws ecs update-service \
             --cluster "${ECS_CLUSTER}" \
             --service "${ECS_SERVICE}" \
-            --task-definition "${TASK_FAMILY}" \
             --force-new-deployment \
             --no-cli-pager
 
