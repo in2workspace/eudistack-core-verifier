@@ -19,23 +19,10 @@ class FrontendConfigImplTest {
     @Mock
     private FrontendProperties frontendProperties;
 
-    @Mock
-    private BackendConfig backendConfig;
-
     @Test
-    void testGetPortalUrl_StaticFallback() {
-        when(backendConfig.getUrl()).thenReturn("https://static.example.com");
-        when(backendConfig.getStaticUrl()).thenReturn("https://static.example.com");
-        when(frontendProperties.portalUrl()).thenReturn("http://localhost:4200");
+    void testGetPortalUrl_ReturnsConfiguredPortalUrl() {
+        when(frontendProperties.portalUrl()).thenReturn("https://login-stg.altia.eudistack.net");
 
-        assertThat(frontendConfig.getPortalUrl()).isEqualTo("http://localhost:4200");
-    }
-
-    @Test
-    void testGetPortalUrl_DynamicResolution() {
-        when(backendConfig.getUrl()).thenReturn("https://tenant.example.com");
-        when(backendConfig.getStaticUrl()).thenReturn("https://static.example.com");
-
-        assertThat(frontendConfig.getPortalUrl()).isEqualTo("https://tenant.example.com");
+        assertThat(frontendConfig.getPortalUrl()).isEqualTo("https://login-stg.altia.eudistack.net");
     }
 }
