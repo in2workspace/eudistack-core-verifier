@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Actuator config migrated to Spring Boot 3.5 `access` API** — Replace deprecated `enabled-by-default: false` / `enabled: true` with `access: none` / `access: unrestricted`.
+- **Health probes enabled** — Added `liveness` and `readiness` state indicators. Parameterized `show-details` via `MANAGEMENT_HEALTH_SHOW_DETAILS` env var (default: `when-authorized`).
+
 ## [3.0.0] - 2026-03-24
 
 ### Security
