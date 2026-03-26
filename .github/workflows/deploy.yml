@@ -22,7 +22,7 @@ jobs:
       APP_NAME: verifier-core
       ECS_CLUSTER: eudistack-${{ inputs.environment }}-ecs-ew1
       ECS_SERVICE: eudistack-${{ inputs.environment }}-ecs-ew1-verifier-core-service
-      HEALTH_URL: https://verifier-${{ inputs.environment }}.altia.eudistack.net/actuator/health
+      HEALTH_URL: https://verifier-${{ inputs.environment }}.altia.eudistack.net/health
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
