@@ -20,7 +20,7 @@ public class PublicCorsConfig {
         CorsConfiguration publicConfig = new CorsConfiguration();
         publicConfig.setAllowedOriginPatterns(List.of("*")); //NOSONAR: CORS Config is intentional to allow access to all Wallets
         publicConfig.setAllowedMethods(List.of("GET", "POST"));
-        publicConfig.setAllowedHeaders(List.of("Content-Type"));
+        publicConfig.setAllowedHeaders(List.of("Content-Type", "Authorization"));
         publicConfig.setAllowCredentials(false);
         source.registerCorsConfiguration("/health", publicConfig);
         source.registerCorsConfiguration("/.well-known/**", publicConfig);
