@@ -23,6 +23,8 @@ public class PublicCorsConfig {
         publicConfig.setAllowedHeaders(List.of("Content-Type"));
         publicConfig.setAllowCredentials(false);
         source.registerCorsConfiguration("/health", publicConfig);
+        source.registerCorsConfiguration("/.well-known/**", publicConfig);
+        source.registerCorsConfiguration("/oidc/**", publicConfig);
         source.registerCorsConfiguration("/oid4vp/auth-request/**", publicConfig);
         source.registerCorsConfiguration("/oid4vp/auth-response", publicConfig);
         source.registerCorsConfiguration("/api/login/**", publicConfig);
