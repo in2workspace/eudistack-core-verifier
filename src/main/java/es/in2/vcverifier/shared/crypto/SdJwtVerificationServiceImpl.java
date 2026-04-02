@@ -144,27 +144,61 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
                         + ". Only EC and RSA keys are accepted.");
     }
 
+    /**
+     * Validates that every disclosure digest appears in an _sd array somewhere
+     * in the claims tree (top-level or nested, per RFC 9901).
+     */
     @SuppressWarnings("unchecked")
     private void validateDisclosureDigests(List<Disclosure> disclosures, JWTClaimsSet claims) throws Exception {
-        List<String> sdDigests = (List<String>) claims.getClaim("_sd");
-        if (sdDigests == null) {
-            sdDigests = List.of();
-        }
+        // Collect all _sd digests from the entire claims tree
+        Map<String, Object> claimsMap = claims.toJSONObject();
+        Set<String> allDigests = new HashSet<>();
+        collectSdDigests(claimsMap, allDigests);
 
         String algorithm = "SHA-256";
-        String sdAlg = (String) claims.getClaim("_sd_alg");
+        String sdAlg = findSdAlg(claimsMap);
         if (sdAlg != null && !sdAlg.isBlank()) {
             algorithm = sdAlg;
         }
 
         for (Disclosure disclosure : disclosures) {
             String digest = disclosure.digest(algorithm);
-            if (!sdDigests.contains(digest)) {
+            if (!allDigests.contains(digest)) {
                 throw new JWTVerificationException(
                         "Disclosure digest not found in _sd array: " + disclosure.claimName());
             }
         }
         log.debug("All {} disclosure digests validated against _sd array", disclosures.size());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectSdDigests(Map<String, Object> obj, Set<String> digests) {
+        Object sd = obj.get("_sd");
+        if (sd instanceof List<?> sdList) {
+            for (Object item : sdList) {
+                if (item instanceof String s) {
+                    digests.add(s);
+                }
+            }
+        }
+        for (Object value : obj.values()) {
+            if (value instanceof Map<?, ?> nested) {
+                collectSdDigests((Map<String, Object>) nested, digests);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String findSdAlg(Map<String, Object> obj) {
+        Object alg = obj.get("_sd_alg");
+        if (alg instanceof String s) return s;
+        for (Object value : obj.values()) {
+            if (value instanceof Map<?, ?> nested) {
+                String found = findSdAlg((Map<String, Object>) nested);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private void validateTimeWindow(JWTClaimsSet claims) {
@@ -247,19 +281,50 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
         log.debug("KB-JWT fully validated: aud, nonce, sd_hash, iat all OK");
     }
 
+    /**
+     * Resolves disclosed claims into the correct nesting level per RFC 9901.
+     * Disclosures are placed into the object whose _sd array contains their digest.
+     */
+    @SuppressWarnings("unchecked")
     private Map<String, Object> resolveClaims(JWTClaimsSet claims, List<Disclosure> disclosures) {
-        Map<String, Object> resolved = new LinkedHashMap<>(claims.getClaims());
+        Map<String, Object> resolved = new LinkedHashMap<>(claims.toJSONObject());
 
-        // Remove SD-JWT internal claims
-        resolved.remove("_sd");
-        resolved.remove("_sd_alg");
-        resolved.remove("cnf");
+        String algorithm = findSdAlg(resolved);
+        if (algorithm == null) algorithm = "SHA-256";
 
-        // Add disclosed claims
+        // Build digest → disclosure map
+        Map<String, Disclosure> digestMap = new LinkedHashMap<>();
         for (Disclosure disclosure : disclosures) {
-            resolved.put(disclosure.claimName(), disclosure.claimValue());
+            digestMap.put(disclosure.digest(algorithm), disclosure);
         }
 
+        // Recursively resolve _sd arrays
+        resolveObjectClaims(resolved, digestMap);
+
+        // Remove cnf from resolved output
+        resolved.remove("cnf");
+
         return resolved;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void resolveObjectClaims(Map<String, Object> obj, Map<String, Disclosure> digestMap) {
+        Object sd = obj.get("_sd");
+        if (sd instanceof List<?> sdList) {
+            for (Object item : sdList) {
+                if (item instanceof String digest && digestMap.containsKey(digest)) {
+                    Disclosure d = digestMap.get(digest);
+                    obj.put(d.claimName(), d.claimValue());
+                }
+            }
+            obj.remove("_sd");
+            obj.remove("_sd_alg");
+        }
+
+        for (Object value : obj.values()) {
+            if (value instanceof Map<?, ?> nested) {
+                resolveObjectClaims((Map<String, Object>) nested, digestMap);
+            }
+        }
     }
 }
