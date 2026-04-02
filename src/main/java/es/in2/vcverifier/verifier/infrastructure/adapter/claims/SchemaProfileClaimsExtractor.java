@@ -123,6 +123,9 @@ public class SchemaProfileClaimsExtractor implements ClaimsExtractor {
     }
 
     private JsonNode resolveNode(JsonNode credential, String dotPath) {
+        if (dotPath == null || dotPath.isBlank()) {
+            return credential;
+        }
         String jsonPointer = "/" + dotPath.replace(".", "/");
         JsonNode node = credential.at(jsonPointer);
         return (node.isMissingNode() || node.isNull()) ? null : node;
