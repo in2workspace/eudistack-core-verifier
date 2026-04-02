@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Nested SD-JWT verification (RFC 9901)** — `SdJwtVerificationServiceImpl` recursively resolves `_sd` arrays at any nesting depth. Supports mandate wrapper structure. (EUDI-012)
+- **Empty path embed resolution** — `SchemaProfileClaimsExtractor` supports empty path to embed the full credential as `vc` claim in access tokens for DOME compatibility. (EUDI-033)
+
 ### Changed
 
 - **Actuator config migrated to Spring Boot 3.5 `access` API** — Replace deprecated `enabled-by-default: false` / `enabled: true` with `access: none` / `access: unrestricted`.
