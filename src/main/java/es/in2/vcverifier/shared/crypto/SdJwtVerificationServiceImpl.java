@@ -136,6 +136,16 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
             return new ECDSAVerifier(ecKey);
         }
         if (publicKey instanceof RSAPublicKey rsaKey) {
+            int keyBits = rsaKey.getModulus().bitLength();
+            if (keyBits < 2048) {
+                throw new JWTVerificationException(
+                        "RSA key size " + keyBits + " bits is below minimum (2048). " +
+                        "HAIP requires ES256; RSA accepted only for QTSP compatibility with adequate key sizes.");
+            }
+            if (keyBits < 3072) {
+                log.warn("RSA key size {} bits is below recommended minimum (3072). " +
+                        "Consider upgrading to >= 3072-bit RSA or migrating to EC (ES256).", keyBits);
+            }
             log.debug("Using RSA verifier for issuer signature (QTSP compatibility)");
             return new RSASSAVerifier(rsaKey);
         }

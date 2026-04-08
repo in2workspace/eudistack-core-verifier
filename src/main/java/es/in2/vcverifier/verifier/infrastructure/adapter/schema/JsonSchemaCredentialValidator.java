@@ -43,8 +43,11 @@ public class JsonSchemaCredentialValidator implements CredentialValidator {
         }
 
         if (schema.isEmpty()) {
-            log.warn("No JSON Schema found for credential type={}, context={}. Skipping schema validation.", credentialType, context);
-            // No schema found — pass through without schema validation
+            // SEC-S4: Schema validation skipped — credential accepted without structural verification.
+            // When schema_required is wired into the validation pipeline, this should reject
+            // credentials whose profile requires schema validation.
+            log.warn("SECURITY: No JSON Schema found for credential type={}, context={}. " +
+                    "Credential accepted without schema validation — structural integrity not verified.", credentialType, context);
             return ValidationResult.builder()
                     .valid(true)
                     .credentialType(credentialType)
