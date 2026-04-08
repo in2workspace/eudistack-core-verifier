@@ -125,10 +125,10 @@ public class JWTServiceImpl implements JWTService {
         Map<String, Object> claims = payload.toJSONObject();
         Object vcClaim = claims.get("vc");
         if (vcClaim != null) {
-            log.info("Detected VCDM v1.1 credential (vc wrapper present)");
+            log.debug("Detected VCDM v1.1 credential (vc wrapper present)");
             return vcClaim;
         }
-        log.info("Detected VCDM v2.0 credential (no vc wrapper, credential IS the payload)");
+        log.debug("Detected VCDM v2.0 credential (no vc wrapper, credential IS the payload)");
         return claims;
     }
 
