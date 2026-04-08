@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **EUDI-013:** Dual VCDM v1.1/v2.0 credential extraction in `extractVCFromPayload()` — detects format by presence of `vc` claim
+- **EUDI-013:** Legacy schema profiles for `LEARCredentialEmployee` and `LEARCredentialMachine` (DOME v2-v3 backward compatibility)
+- **EUDI-013:** DCQL queries for legacy credential types alongside new `.w3c.4`/`.w3c.3` types
+- RSA key support in `CertificateValidationServiceImpl` for W3C VP path (QTSP compatibility)
+- RSA minimum key size enforcement (reject < 2048 bits, warn 2048-3072)
 - **Nested SD-JWT verification (RFC 9901)** — `SdJwtVerificationServiceImpl` recursively resolves `_sd` arrays at any nesting depth. Supports mandate wrapper structure. (EUDI-012)
 - **Empty path embed resolution** — `SchemaProfileClaimsExtractor` supports empty path to embed the full credential as `vc` claim in access tokens for DOME compatibility. (EUDI-033)
 
@@ -23,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **DCQL profiles simplified** — Reduced to two scopes (`learcredential`, `doctorid`) instead of redundant `learcredential.employee`/`learcredential.machine` sub-profiles.
+- **EUDI-013:** Rename credential type IDs: `learcredential.employee.w3c.1` → `.w3c.4`, `learcredential.machine.w3c.1` → `.w3c.3`
+- **EUDI-013:** `extractIssFromJwt()` now supports v2.0 issuer property (string or object) in addition to JWT `iss` claim
 - **Actuator config migrated to Spring Boot 3.5 `access` API** — Replace deprecated `enabled-by-default: false` / `enabled: true` with `access: none` / `access: unrestricted`.
 - **Health probes enabled** — Added `liveness` and `readiness` state indicators. Parameterized `show-details` via `MANAGEMENT_HEALTH_SHOW_DETAILS` env var (default: `when-authorized`).
 
