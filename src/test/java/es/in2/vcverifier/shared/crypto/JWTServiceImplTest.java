@@ -230,13 +230,34 @@ class JWTServiceImplTest {
     }
 
     @Test
-    void extractVCFromPayload_validVC_shouldReturnVC() throws ParseException {
+    void extractVCFromPayload_v11WithVcWrapper_shouldReturnVcClaim() throws ParseException {
         Payload payload = mock(Payload.class);
         when(payload.toJSONObject()).thenReturn(JSONObjectUtils.parse("{\"vc\": \"verifiableCredential\"}"));
 
         Object vc = jwtService.extractVCFromPayload(payload);
 
         assertEquals("verifiableCredential", vc);
+    }
+
+    @Test
+    void extractVCFromPayload_v20WithoutVcWrapper_shouldReturnFullPayload() throws ParseException {
+        Payload payload = mock(Payload.class);
+        Map<String, Object> claims = JSONObjectUtils.parse(
+                "{\"type\":[\"VerifiableCredential\",\"learcredential.employee.w3c.4\"],"
+                + "\"issuer\":\"did:example:issuer\","
+                + "\"credentialSubject\":{\"id\":\"did:example:subject\"}}"
+        );
+        when(payload.toJSONObject()).thenReturn(claims);
+
+        Object result = jwtService.extractVCFromPayload(payload);
+
+        assertInstanceOf(Map.class, result);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> resultMap = (Map<String, Object>) result;
+        assertNotNull(resultMap.get("type"));
+        assertNotNull(resultMap.get("issuer"));
+        assertNotNull(resultMap.get("credentialSubject"));
+        assertNull(resultMap.get("vc"));
     }
 
     @Test
