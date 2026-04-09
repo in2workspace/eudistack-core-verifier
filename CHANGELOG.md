@@ -11,8 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nested SD-JWT verification (RFC 9901)** — `SdJwtVerificationServiceImpl` recursively resolves `_sd` arrays at any nesting depth. Supports mandate wrapper structure. (EUDI-012)
 - **Empty path embed resolution** — `SchemaProfileClaimsExtractor` supports empty path to embed the full credential as `vc` claim in access tokens for DOME compatibility. (EUDI-033)
 
+### Fixed
+
+- **RSA key rejection in BitstringStatusListVerifier** — `CertificateValidationServiceImpl.verifyJWTSignature` now accepts both EC and RSA public keys. Previously only EC was accepted, causing Status List Credential validation to fail when the issuer signs with an RSA certificate.
+
+### Removed
+
+- **Dead embedded schemas** — Removed `src/main/resources/schemas/LEARCredential*.jwt_vc_json.v*.json` files (old naming convention, never resolved by `LocalSchemaResolver`).
+- **Embedded local/ fallback** — Removed `src/main/resources/local/` directory (`clients.yaml`, `trusted-issuers.yaml`). All configuration is mounted externally via Docker volumes.
+
 ### Changed
 
+- **DCQL profiles simplified** — Reduced to two scopes (`learcredential`, `doctorid`) instead of redundant `learcredential.employee`/`learcredential.machine` sub-profiles.
 - **Actuator config migrated to Spring Boot 3.5 `access` API** — Replace deprecated `enabled-by-default: false` / `enabled: true` with `access: none` / `access: unrestricted`.
 - **Health probes enabled** — Added `liveness` and `readiness` state indicators. Parameterized `show-details` via `MANAGEMENT_HEALTH_SHOW_DETAILS` env var (default: `when-authorized`).
 
