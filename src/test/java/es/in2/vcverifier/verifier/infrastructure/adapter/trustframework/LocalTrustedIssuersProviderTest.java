@@ -15,8 +15,8 @@ class LocalTrustedIssuersProviderTest {
 
     @Test
     void knownIssuer_returnsCapabilities() {
-        // The default local/trusted-issuers.yaml has VATES-A15456585
-        LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider();
+        String path = resolveTestFixture("test-fixtures/trusted-issuers.yaml");
+        LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider(path);
 
         List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("VATES-A15456585");
 
@@ -29,7 +29,8 @@ class LocalTrustedIssuersProviderTest {
 
     @Test
     void unknownIssuer_throwsException() {
-        LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider();
+        String path = resolveTestFixture("test-fixtures/trusted-issuers.yaml");
+        LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider(path);
 
         assertThrows(IssuerNotAuthorizedException.class,
                 () -> provider.getIssuerCapabilities("UNKNOWN-ISSUER"));
@@ -37,12 +38,12 @@ class LocalTrustedIssuersProviderTest {
 
     @Test
     void missingFile_fallsBackToClasspath() {
+        // When external file is missing and classpath fallback also missing,
+        // the provider should throw on issuer lookup (no data loaded)
         LocalTrustedIssuersProvider provider = new LocalTrustedIssuersProvider("/nonexistent/file.yaml");
 
-        // When external file is missing, falls back to classpath resource
-        List<IssuerCredentialsCapabilities> capabilities = provider.getIssuerCapabilities("VATES-A15456585");
-        assertNotNull(capabilities);
-        assertFalse(capabilities.isEmpty());
+        assertThrows(IssuerNotAuthorizedException.class,
+                () -> provider.getIssuerCapabilities("VATES-A15456585"));
     }
 
     @Test
