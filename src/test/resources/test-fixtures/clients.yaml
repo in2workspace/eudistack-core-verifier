@@ -1,12 +1,7 @@
-# Local OIDC Client Registry for development.
-# This file is used when no remote trustedServicesListUrl is configured.
-#
-# Each entry maps to a Spring Security RegisteredClient.
-
 clients:
-  - clientId: "vc-auth-client"
+  - clientId: "vc-auth-client-test"
     url: "http://localhost:4200"
-    tenant: "local"
+    tenant: "test"
     clientAuthenticationMethods:
       - "none"
     authorizationGrantTypes:

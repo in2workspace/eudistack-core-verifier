@@ -172,13 +172,16 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
             Set<String> defCriticalHeaders = new HashSet<>();
             defCriticalHeaders.add("sigT");
 
-            // SEC-S8: Only EC (ES256) keys accepted per HAIP convention.
-            if (!(publicKey instanceof ECPublicKey ecKey)) {
+            JWSVerifier verifier;
+            if (publicKey instanceof ECPublicKey ecKey) {
+                verifier = new ECDSAVerifier(ecKey, defCriticalHeaders);
+            } else if (publicKey instanceof java.security.interfaces.RSAPublicKey rsaKey) {
+                verifier = new com.nimbusds.jose.crypto.RSASSAVerifier(rsaKey, defCriticalHeaders);
+            } else {
                 throw new JWTVerificationException(
                         "Unsupported key type for JWT verification: " + publicKey.getAlgorithm()
-                                + ". Only EC (ES256) keys are accepted per HAIP.");
+                                + ". Only EC and RSA keys are accepted.");
             }
-            JWSVerifier verifier = new ECDSAVerifier(ecKey, defCriticalHeaders);
 
             if (!signedJWT.verify(verifier)) {
                 throw new JWTVerificationException("Invalid JWT signature");

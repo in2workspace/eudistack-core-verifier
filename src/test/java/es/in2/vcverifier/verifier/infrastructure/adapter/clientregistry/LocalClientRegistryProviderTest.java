@@ -3,42 +3,53 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import org.junit.jupiter.api.Test;
 
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Paths;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class LocalClientRegistryProviderTest {
 
     @Test
-    void retrieveClients_fromDefaultLocalYaml_success() {
-        LocalClientRegistryProvider provider = new LocalClientRegistryProvider();
+    void retrieveClients_fromExternalYaml_success() {
+        String path = resolveTestFixture("test-fixtures/clients.yaml");
+        LocalClientRegistryProvider provider = new LocalClientRegistryProvider(path);
 
         ExternalTrustedListYamlData data = provider.retrieveClients();
 
         assertNotNull(data);
         assertNotNull(data.clients());
         assertFalse(data.clients().isEmpty());
-        assertEquals("vc-auth-client", data.clients().get(0).clientId());
+        assertEquals("vc-auth-client-test", data.clients().get(0).clientId());
     }
 
     @Test
-    void retrieveClients_containsExpectedDevClient() {
-        LocalClientRegistryProvider provider = new LocalClientRegistryProvider();
+    void retrieveClients_containsExpectedScopes() {
+        String path = resolveTestFixture("test-fixtures/clients.yaml");
+        LocalClientRegistryProvider provider = new LocalClientRegistryProvider(path);
 
         ExternalTrustedListYamlData data = provider.retrieveClients();
 
         var client = data.clients().get(0);
-        assertEquals("vc-auth-client", client.clientId());
-        assertTrue(client.redirectUris().contains("http://localhost:4200"));
         assertTrue(client.scopes().contains("openid"));
         assertTrue(client.scopes().contains("learcredential"));
     }
 
     @Test
-    void retrieveClients_externalPathNotFound_fallsBackToClasspath() {
+    void retrieveClients_externalPathNotFound_throwsException() {
         LocalClientRegistryProvider provider = new LocalClientRegistryProvider("/nonexistent/path.yaml");
 
-        ExternalTrustedListYamlData data = provider.retrieveClients();
+        assertThrows(IllegalStateException.class, provider::retrieveClients);
+    }
 
-        assertNotNull(data);
-        assertFalse(data.clients().isEmpty());
+    private static String resolveTestFixture(String classpathResource) {
+        URL url = LocalClientRegistryProviderTest.class.getClassLoader().getResource(classpathResource);
+        assertNotNull(url, "Test fixture not found on classpath: " + classpathResource);
+        try {
+            return Paths.get(url.toURI()).toString();
+        } catch (URISyntaxException e) {
+            throw new AssertionError("Invalid URI for classpath resource: " + classpathResource, e);
+        }
     }
 }
