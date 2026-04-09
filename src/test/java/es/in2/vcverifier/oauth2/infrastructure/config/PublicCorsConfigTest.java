@@ -77,7 +77,7 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Unconfigured path returns null (no CORS config)")
     void getCorsConfiguration_unconfiguredPath_returnsNull() {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/oidc/token");
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/some/random/path");
 
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
 
@@ -103,7 +103,7 @@ class PublicCorsConfigTest {
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
 
         assertNotNull(corsConfig);
-        assertEquals(List.of("Content-Type"), corsConfig.getAllowedHeaders());
+        assertEquals(List.of("Content-Type", "Authorization"), corsConfig.getAllowedHeaders());
     }
 
     @Test
