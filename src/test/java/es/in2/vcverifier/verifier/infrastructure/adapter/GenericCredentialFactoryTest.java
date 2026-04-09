@@ -145,6 +145,37 @@ class GenericCredentialFactoryTest {
     }
 
     @Test
+    void create_withV20PayloadNoVcWrapper_resolvesConfigIdCorrectly() {
+        // Given — v2.0 payload: type array at root, no vc wrapper
+        Payload payload = mock(Payload.class);
+        SchemaProfile profile = mock(SchemaProfile.class);
+
+        Map<String, Object> v20Payload = new LinkedHashMap<>();
+        v20Payload.put("@context", List.of(
+                "https://www.w3.org/ns/credentials/v2",
+                "https://credentials.eudistack.eu/2025/credentials/learcredentialemployee/v4"));
+        v20Payload.put("type", List.of("VerifiableCredential", "learcredential.employee.w3c.4"));
+        v20Payload.put("issuer", "did:example:issuer");
+        v20Payload.put("validFrom", "2026-01-01T00:00:00Z");
+        v20Payload.put("credentialSubject", Map.of("id", "did:example:subject"));
+
+        when(jwtService.extractVCFromPayload(payload)).thenReturn(v20Payload);
+        when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(Optional.of(profile));
+
+        // When
+        GenericCredential result = factory.create(payload);
+
+        // Then
+        assertEquals("learcredential.employee.w3c.4", result.credentialConfigurationId());
+        assertEquals(List.of("VerifiableCredential", "learcredential.employee.w3c.4"), result.types());
+        assertEquals(List.of(
+                "https://www.w3.org/ns/credentials/v2",
+                "https://credentials.eudistack.eu/2025/credentials/learcredentialemployee/v4"), result.context());
+        assertSame(profile, result.profile());
+        assertNotNull(result.root());
+    }
+
+    @Test
     void create_withUnsupportedVcObjectType_throwsJsonConversionException() {
         // Given
         Payload payload = mock(Payload.class);

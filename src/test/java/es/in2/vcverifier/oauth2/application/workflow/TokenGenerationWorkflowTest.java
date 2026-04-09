@@ -65,8 +65,8 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("extracts type from W3C type array")
         void extractsFromW3cTypeArray() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
-            assertThat(workflow.extractCredentialType(credential)).isEqualTo("learcredential.employee.w3c.1");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
+            assertThat(workflow.extractCredentialType(credential)).isEqualTo("learcredential.employee.w3c.4");
         }
 
         @Test
@@ -91,7 +91,7 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("generates access token and ID token for authorization_code grant")
         void generatesAccessAndIdToken() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
@@ -99,7 +99,7 @@ class TokenGenerationWorkflowTest {
                     .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
-            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
@@ -122,7 +122,7 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("generates only access token for client_credentials grant")
         void generatesOnlyAccessToken() {
-            ObjectNode credential = buildW3cCredential("learcredential.machine.w3c.1");
+            ObjectNode credential = buildW3cCredential("learcredential.machine.w3c.3");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkMachine")
                     .scope("machine")
@@ -130,7 +130,7 @@ class TokenGenerationWorkflowTest {
                     .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
-            when(claimsExtractor.supports("learcredential.machine.w3c.1")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.machine.w3c.3")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt-only");
@@ -146,7 +146,7 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("includes credential_type, tenant and embeds in the JWT payload")
         void includesCredentialTypeAndEmbedsInAccessToken() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
@@ -155,7 +155,7 @@ class TokenGenerationWorkflowTest {
                     .accessTokenEmbeds(Map.of("mandatee", Map.of("firstName", "John")))
                     .build();
 
-            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("jwt");
@@ -165,7 +165,7 @@ class TokenGenerationWorkflowTest {
             ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
             verify(jwtService).issueJWT(captor.capture());
             String payload = captor.getValue();
-            assertThat(payload).contains("\"credential_type\":\"learcredential.employee.w3c.1\"");
+            assertThat(payload).contains("\"credential_type\":\"learcredential.employee.w3c.4\"");
             assertThat(payload).contains("\"tenant\":\"altia\"");
             assertThat(payload).contains("\"mandatee\":");
             assertThat(payload).doesNotContain("\"vc\":");
@@ -174,7 +174,7 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("includes credential_type and embeds in the ID token payload")
         void includesCredentialTypeAndEmbedsInIdToken() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
@@ -188,7 +188,7 @@ class TokenGenerationWorkflowTest {
                     .accessTokenEmbeds(Map.of("mandatee", Map.of("firstName", "John")))
                     .build();
 
-            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
@@ -202,7 +202,7 @@ class TokenGenerationWorkflowTest {
             verify(jwtService, times(2)).issueJWT(captor.capture());
             // Second call is the ID token
             String idTokenPayload = captor.getAllValues().get(1);
-            assertThat(idTokenPayload).contains("\"credential_type\":\"learcredential.employee.w3c.1\"");
+            assertThat(idTokenPayload).contains("\"credential_type\":\"learcredential.employee.w3c.4\"");
             assertThat(idTokenPayload).contains("\"mandatee\":");
             assertThat(idTokenPayload).contains("\"mandator\":");
             assertThat(idTokenPayload).contains("\"power\":");
@@ -212,7 +212,7 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("injects tenant claim from parameter, overriding any extractedClaims tenant")
         void injectsTenantFromParameter() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
@@ -220,7 +220,7 @@ class TokenGenerationWorkflowTest {
                     .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
                     .build();
 
-            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("jwt");
@@ -237,7 +237,7 @@ class TokenGenerationWorkflowTest {
         @Test
         @DisplayName("omits tenant claim when tenant parameter is null")
         void omitsTenantWhenNull() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.1");
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkSubject")
                     .scope("openid learcredential")
@@ -245,7 +245,7 @@ class TokenGenerationWorkflowTest {
                     .accessTokenClaims(Map.of())
                     .build();
 
-            when(claimsExtractor.supports("learcredential.employee.w3c.1")).thenReturn(true);
+            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(jwtService.issueJWT(anyString())).thenReturn("jwt");

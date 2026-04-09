@@ -122,8 +122,14 @@ public class JWTServiceImpl implements JWTService {
 
     @Override
     public Object extractVCFromPayload(Payload payload) {
-        log.info("Retrieving verifiable credential ('vc') from JWT payload");
-        return payload.toJSONObject().get("vc");
+        Map<String, Object> claims = payload.toJSONObject();
+        Object vcClaim = claims.get("vc");
+        if (vcClaim != null) {
+            log.debug("Detected VCDM v1.1 credential (vc wrapper present)");
+            return vcClaim;
+        }
+        log.debug("Detected VCDM v2.0 credential (no vc wrapper, credential IS the payload)");
+        return claims;
     }
 
     @Override

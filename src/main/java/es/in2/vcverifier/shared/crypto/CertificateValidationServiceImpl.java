@@ -2,6 +2,7 @@ package es.in2.vcverifier.shared.crypto;
 
 import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
@@ -20,6 +21,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPublicKey;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -172,11 +174,23 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
             Set<String> defCriticalHeaders = new HashSet<>();
             defCriticalHeaders.add("sigT");
 
+            // SEC-S8: EC (ES256) preferred per HAIP; RSA accepted for QTSP compatibility.
             JWSVerifier verifier;
             if (publicKey instanceof ECPublicKey ecKey) {
                 verifier = new ECDSAVerifier(ecKey, defCriticalHeaders);
-            } else if (publicKey instanceof java.security.interfaces.RSAPublicKey rsaKey) {
-                verifier = new com.nimbusds.jose.crypto.RSASSAVerifier(rsaKey, defCriticalHeaders);
+            } else if (publicKey instanceof RSAPublicKey rsaKey) {
+                int keyBits = rsaKey.getModulus().bitLength();
+                if (keyBits < 2048) {
+                    throw new JWTVerificationException(
+                            "RSA key size " + keyBits + " bits is below minimum (2048). " +
+                            "HAIP requires ES256; RSA accepted only for QTSP compatibility with adequate key sizes.");
+                }
+                if (keyBits < 3072) {
+                    log.warn("RSA key size {} bits is below recommended minimum (3072). " +
+                            "Consider upgrading to >= 3072-bit RSA or migrating to EC (ES256).", keyBits);
+                }
+                log.debug("Using RSA verifier for JWT signature (QTSP compatibility)");
+                verifier = new RSASSAVerifier(rsaKey, defCriticalHeaders);
             } else {
                 throw new JWTVerificationException(
                         "Unsupported key type for JWT verification: " + publicKey.getAlgorithm()

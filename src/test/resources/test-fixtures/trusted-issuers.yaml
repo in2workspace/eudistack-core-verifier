@@ -5,3 +5,5 @@ trustedIssuers:
     - credentialsType: "learcredential.machine.w3c.3"
     - credentialsType: "learcredential.machine.sd.1"
     - credentialsType: "gx.labelcredential.w3c.1"
+    - credentialsType: "LEARCredentialEmployee"
+    - credentialsType: "LEARCredentialMachine"

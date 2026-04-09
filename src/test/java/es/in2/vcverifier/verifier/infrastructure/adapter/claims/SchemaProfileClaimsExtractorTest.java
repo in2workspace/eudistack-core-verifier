@@ -47,7 +47,7 @@ class SchemaProfileClaimsExtractorTest {
 
     private SchemaProfile employeeW3cProfile() {
         return new SchemaProfile(
-                "learcredential.employee.w3c.1",
+                "learcredential.employee.w3c.4",
                 "lear_credential_employee",
                 new TokenClaimsMapping(
                         List.of("credentialSubject.mandate.mandatee.email"),
@@ -72,7 +72,7 @@ class SchemaProfileClaimsExtractorTest {
 
     private SchemaProfile machineW3cProfile() {
         return new SchemaProfile(
-                "learcredential.machine.w3c.1",
+                "learcredential.machine.w3c.3",
                 "lear_credential_machine",
                 new TokenClaimsMapping(
                         List.of("credentialSubject.mandate.mandatee.ipAddress", "credentialSubject.mandate.mandatee.domain"),
@@ -89,7 +89,7 @@ class SchemaProfileClaimsExtractorTest {
     @Test
     void supports_knownType_true() {
         var extractor = buildExtractor(employeeW3cProfile());
-        assertTrue(extractor.supports("learcredential.employee.w3c.1"));
+        assertTrue(extractor.supports("learcredential.employee.w3c.4"));
     }
 
     @Test
@@ -135,7 +135,7 @@ class SchemaProfileClaimsExtractorTest {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("learcredential.employee.w3c.1");
+        type.add("learcredential.employee.w3c.4");
         ObjectNode cs = vc.putObject("credentialSubject");
         ObjectNode mandate = cs.putObject("mandate");
         ObjectNode mandatee = mandate.putObject("mandatee");
@@ -155,7 +155,7 @@ class SchemaProfileClaimsExtractorTest {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("learcredential.employee.w3c.1");
+        type.add("learcredential.employee.w3c.4");
         ObjectNode cs = vc.putObject("credentialSubject");
         ObjectNode mandate = cs.putObject("mandate");
         ObjectNode mandatee = mandate.putObject("mandatee");
@@ -175,7 +175,7 @@ class SchemaProfileClaimsExtractorTest {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("learcredential.employee.w3c.1");
+        type.add("learcredential.employee.w3c.4");
         ObjectNode cs = vc.putObject("credentialSubject");
         ObjectNode mandate = cs.putObject("mandate");
         mandate.putObject("mandatee");
@@ -242,7 +242,7 @@ class SchemaProfileClaimsExtractorTest {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("learcredential.employee.w3c.1");
+        type.add("learcredential.employee.w3c.4");
 
         ObjectNode cs = vc.putObject("credentialSubject");
         ObjectNode mandate = cs.putObject("mandate");
@@ -265,7 +265,7 @@ class SchemaProfileClaimsExtractorTest {
         ObjectNode vc = JsonNodeFactory.instance.objectNode();
         ArrayNode type = vc.putArray("type");
         type.add("VerifiableCredential");
-        type.add("learcredential.machine.w3c.1");
+        type.add("learcredential.machine.w3c.3");
 
         ObjectNode cs = vc.putObject("credentialSubject");
         ObjectNode mandate = cs.putObject("mandate");
