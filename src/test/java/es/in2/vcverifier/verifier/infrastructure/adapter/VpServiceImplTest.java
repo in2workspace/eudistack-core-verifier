@@ -194,10 +194,6 @@ class VpServiceImplTest {
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
             when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
-            JWTClaimsSet vcClaimsSet = mock(JWTClaimsSet.class);
-            when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaimsSet);
-            when(vcClaimsSet.getIssuer()).thenReturn("did:elsi:VATES-FOO");
-
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
@@ -212,7 +208,7 @@ class VpServiceImplTest {
                             .credentialsType("LEARCredentialEmployee")
                             .validFor(null).claims(null).build()
             );
-            when(trustFrameworkService.getTrustedIssuerListData("did:elsi:VATES-FOO")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
@@ -246,10 +242,6 @@ class VpServiceImplTest {
             when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
             when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
-            JWTClaimsSet vcClaimsSet = mock(JWTClaimsSet.class);
-            when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaimsSet);
-            when(vcClaimsSet.getIssuer()).thenReturn("did:elsi:issuer");
-
             Payload payload = mock(Payload.class);
             when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
@@ -266,7 +258,7 @@ class VpServiceImplTest {
                             .credentialsType("LEARCredentialEmployee")
                             .validFor(null).claims(null).build()
             );
-            when(trustFrameworkService.getTrustedIssuerListData("did:elsi:issuer")).thenReturn(caps);
+            when(trustFrameworkService.getTrustedIssuerListData("issuer")).thenReturn(caps);
             when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
@@ -574,10 +566,6 @@ class VpServiceImplTest {
         when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaims);
         when(vpClaims.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
 
-        JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
-        when(vcSignedJWT.getJWTClaimsSet()).thenReturn(vcClaims);
-        when(vcClaims.getIssuer()).thenReturn("did:elsi:VATES-FOO");
-
         Payload payload = mock(Payload.class);
         when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
 
@@ -594,7 +582,7 @@ class VpServiceImplTest {
                         .credentialsType("LEARCredentialEmployee")
                         .validFor(null).claims(null).build()
         );
-        when(trustFrameworkService.getTrustedIssuerListData("did:elsi:VATES-FOO")).thenReturn(caps);
+        when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
         when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
 
         JWSHeader header = mock(JWSHeader.class);

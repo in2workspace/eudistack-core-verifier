@@ -79,8 +79,11 @@ public class VpServiceImpl implements VpService {
             log.debug("No CredentialStatus block found; skipping revocation check");
         }
 
-        // Step 5: Extract issuer identifier from JWT iss claim
-        String credentialIssuer = extractIssFromJwt(jwtCredential);
+        // Step 5: Extract issuer identifier from profile-defined path
+        String issuerIdPath = credential.profile().issuerIdPath();
+        String credentialIssuer = credential.field(issuerIdPath)
+                .orElseThrow(() -> new CredentialMappingException(
+                        "Missing issuer ID at profile path: " + issuerIdPath));
 
         // Step 6: Validate credential types against issuer capabilities
         List<String> credentialTypes = credential.types();
@@ -89,12 +92,8 @@ public class VpServiceImpl implements VpService {
         log.info("Issuer {} is a trusted participant", credentialIssuer);
 
         // Step 7: Verify VC signature and certificate
-        String issuerOrgId = credential.field(credential.profile().issuerIdPath()).orElse(null);
-        if (issuerOrgId == null || issuerOrgId.isBlank()) {
-            issuerOrgId = credentialIssuer;
-        }
         Map<String, Object> vcHeader = jwtCredential.getHeader().toJSONObject();
-        certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, issuerOrgId);
+        certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, credentialIssuer);
 
         // Step 8: Validate mandator organization (skip if no mandator path in profile)
         String mandatorOrgIdPath = credential.profile().mandatorOrgIdPath();
@@ -151,43 +150,6 @@ public class VpServiceImpl implements VpService {
     }
 
     // --- Private helpers ---
-
-    @SuppressWarnings("unchecked")
-    private String extractIssFromJwt(SignedJWT jwtCredential) {
-        try {
-            var claims = jwtCredential.getJWTClaimsSet();
-
-            // 1. Standard JWT "iss" claim (v1.1 and v2.0 credentials that include optional iss)
-            String iss = claims.getIssuer();
-            if (iss != null && !iss.isBlank()) {
-                return iss;
-            }
-
-            // 2. VCDM v2.0: "issuer" claim (string or object with "id" field)
-            Object issuerClaim = claims.getClaim("issuer");
-            if (issuerClaim instanceof String issuerStr && !issuerStr.isBlank()) {
-                return issuerStr;
-            }
-            if (issuerClaim instanceof Map<?, ?> issuerMap) {
-                Object id = issuerMap.get("id");
-                if (id instanceof String idStr && !idStr.isBlank()) {
-                    return idStr;
-                }
-                Object orgId = issuerMap.get("organizationIdentifier");
-                if (orgId instanceof String orgIdStr && !orgIdStr.isBlank()) {
-                    log.debug("Resolved issuer from 'issuer.organizationIdentifier' (no 'id' field present)");
-                    return orgIdStr;
-                }
-            }
-
-            throw new JWTClaimMissingException(
-                    "Neither 'iss' claim nor 'issuer' property found in the VC JWT");
-        } catch (JWTClaimMissingException e) {
-            throw e;
-        } catch (ParseException e) {
-            throw new JWTParsingException("Error extracting issuer from VC JWT");
-        }
-    }
 
     private SignedJWT parseVpJwt(String verifiablePresentation) {
         try {
