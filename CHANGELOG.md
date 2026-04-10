@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Issuer identification uses profile `issuer_id_path`** — `VpServiceImpl` now resolves the issuer ID from the schema profile path (e.g. `issuer.organizationIdentifier` for W3C, `iss` for SD-JWT) instead of the JWT `iss` claim. Previously `extractIssFromJwt()` returned `did:elsi:VATES-...` which didn't match the trusted issuers list. Removed `extractIssFromJwt()`.
 - **RSA key rejection in BitstringStatusListVerifier** — `CertificateValidationServiceImpl.verifyJWTSignature` now accepts both EC and RSA public keys. Previously only EC was accepted, causing Status List Credential validation to fail when the issuer signs with an RSA certificate.
 
 ### Removed
