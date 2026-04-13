@@ -4,9 +4,12 @@ import es.in2.vcverifier.shared.crypto.SdJwtVerificationServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
@@ -22,11 +25,23 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.*;
+import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -284,6 +299,186 @@ class SdJwtVerificationServiceImplTest {
                 () -> service.verifyPresentation(compact, "https://v.example.com", "nonce"));
     }
 
+    @Test
+    @DisplayName("SD-JWT with RSA x5c header (QTSP scenario) verifies successfully")
+    void verifyPresentation_rsaX5cHeader_succeeds() throws Exception {
+        // Generate RSA 2048 key pair + self-signed X.509 cert (simulates QTSP)
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair rsaKeyPair = keyGen.generateKeyPair();
+        RSAPrivateKey rsaPrivKey = (RSAPrivateKey) rsaKeyPair.getPrivate();
+        X509Certificate x509Cert = generateSelfSignedCert(rsaKeyPair, "CN=ALTIA Sello,O=ALTIA,C=ES");
+
+        // The issuer is NOT a DID — it's the organizationIdentifier (QTSP cert subject)
+        String issuerOrgId = "VATES-A15456585";
+
+        String disclosureEncoded = createDisclosure("salt-rsa", "given_name", "Alice");
+        String digest = computeDigest(disclosureEncoded);
+
+        Map<String, Object> cnf = Map.of("jwk", holderKey.toPublicJWK().toJSONObject());
+        JWTClaimsSet issuerClaims = new JWTClaimsSet.Builder()
+                .issuer(issuerOrgId)
+                .claim("vct", "learcredential.employee.sd.1")
+                .claim("_sd", List.of(digest))
+                .claim("_sd_alg", "SHA-256")
+                .claim("cnf", cnf)
+                .issueTime(Date.from(Instant.now().minus(1, ChronoUnit.HOURS)))
+                .expirationTime(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
+                .build();
+
+        // Build JWS header with x5c (simulating JadesHeaderBuilderServiceImpl output)
+        JWSHeader rsaHeader = new JWSHeader.Builder(JWSAlgorithm.RS256)
+                .type(new JOSEObjectType("dc+sd-jwt"))
+                .x509CertChain(List.of(com.nimbusds.jose.util.Base64.encode(x509Cert.getEncoded())))
+                .build();
+
+        SignedJWT issuerJwt = new SignedJWT(rsaHeader, issuerClaims);
+        issuerJwt.sign(new RSASSASigner(rsaPrivKey));
+        String issuerJwtString = issuerJwt.serialize();
+
+        // Build KB-JWT (signed by holder with ES256)
+        String sdHashInput = issuerJwtString + "~" + disclosureEncoded + "~";
+        String sdHash = computeSha256(sdHashInput);
+
+        String expectedAud = "did:key:zVerifier123";
+        String expectedNonce = "test-nonce-rsa";
+
+        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
+                .audience(expectedAud)
+                .claim("nonce", expectedNonce)
+                .claim("sd_hash", sdHash)
+                .issueTime(new Date())
+                .build();
+        String kbJwtString = signJwt(kbClaims, holderKey);
+
+        String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
+
+        // No DID resolution should be called — x5c path should be used
+        when(trustFrameworkService.getTrustedIssuerListData(issuerOrgId)).thenReturn(List.of());
+
+        SdJwtVerificationResult result = service.verifyPresentation(compact, expectedAud, expectedNonce);
+
+        assertNotNull(result);
+        assertEquals("learcredential.employee.sd.1", result.vct());
+        assertEquals("Alice", result.resolvedClaims().get("given_name"));
+        assertNotNull(result.holderKey());
+
+        // Verify DID service was NOT called (x5c path used instead)
+        verify(didService, never()).resolvePublicKeyFromDid(anyString());
+    }
+
+    @Test
+    @DisplayName("SD-JWT with RSA x5c built via manual JSON header (QTSP sign-hash scenario) verifies")
+    void verifyPresentation_manualJsonHeaderRsaX5c_succeeds() throws Exception {
+        // Generate RSA key pair + self-signed X.509 cert
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair rsaKeyPair = keyGen.generateKeyPair();
+        RSAPrivateKey rsaPrivKey = (RSAPrivateKey) rsaKeyPair.getPrivate();
+        X509Certificate cert = generateSelfSignedCert(rsaKeyPair, "CN=Test Seal,O=TEST,C=ES");
+
+        // Build header as JSON map (exactly like JadesHeaderBuilderServiceImpl)
+        String certB64 = java.util.Base64.getEncoder().encodeToString(cert.getEncoded());
+        Map<String, Object> headerMap = new LinkedHashMap<>();
+        headerMap.put("alg", "RS256");
+        headerMap.put("typ", "dc+sd-jwt");
+        headerMap.put("x5c", List.of(certB64));
+        String headerJson = new ObjectMapper().writeValueAsString(headerMap);
+
+        // Build payload
+        String issuerOrgId = "VATES-TEST123";
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("iss", issuerOrgId);
+        payload.put("vct", "learcredential.employee.sd.1");
+        payload.put("iat", Instant.now().minus(1, ChronoUnit.HOURS).getEpochSecond());
+        payload.put("exp", Instant.now().plus(1, ChronoUnit.DAYS).getEpochSecond());
+        String payloadJson = new ObjectMapper().writeValueAsString(payload);
+
+        // Sign using raw sign-hash approach (same as mock QTSP)
+        String headerB64Url = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(headerJson.getBytes(StandardCharsets.UTF_8));
+        String payloadB64Url = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(payloadJson.getBytes(StandardCharsets.UTF_8));
+        String signingInput = headerB64Url + "." + payloadB64Url;
+
+        // Compute SHA-256 hash and sign with NONEwithRSA + DigestInfo (mock QTSP approach)
+        byte[] sha256Hash = MessageDigest.getInstance("SHA-256")
+                .digest(signingInput.getBytes(StandardCharsets.US_ASCII));
+
+        byte[] digestInfoPrefix = {
+                0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte) 0x86,
+                0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+                0x00, 0x04, 0x20
+        };
+        byte[] dataToSign = new byte[digestInfoPrefix.length + sha256Hash.length];
+        System.arraycopy(digestInfoPrefix, 0, dataToSign, 0, digestInfoPrefix.length);
+        System.arraycopy(sha256Hash, 0, dataToSign, digestInfoPrefix.length, sha256Hash.length);
+
+        Signature sig = Signature.getInstance("NONEwithRSA");
+        sig.initSign(rsaPrivKey);
+        sig.update(dataToSign);
+        byte[] signatureBytes = sig.sign();
+
+        String signatureB64Url = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(signatureBytes);
+
+        String issuerJwtString = signingInput + "." + signatureB64Url;
+
+        // Append trailing ~ (no disclosures, no KB-JWT for simplicity)
+        String compact = issuerJwtString + "~";
+
+        when(trustFrameworkService.getTrustedIssuerListData(issuerOrgId)).thenReturn(List.of());
+
+        SdJwtVerificationResult result = service.verifyPresentation(compact, "https://v.example.com", "nonce");
+
+        assertNotNull(result);
+        assertEquals("learcredential.employee.sd.1", result.vct());
+        verify(didService, never()).resolvePublicKeyFromDid(anyString());
+    }
+
+    @Test
+    @DisplayName("SD-JWT with did:elsi issuer + x5c header succeeds (x5c takes priority over unsupported DID)")
+    void verifyPresentation_didElsiIssuerWithX5c_succeedsViaX5c() throws Exception {
+        // This reproduces the likely STG scenario: the issuer sets iss="did:elsi:VATES-..."
+        // but the JWT is signed by the QTSP with x5c in the header.
+        // Before the fix, the verifier tried DID resolution first and failed
+        // because did:elsi is not supported. After the fix, x5c takes priority.
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair rsaKeyPair = keyGen.generateKeyPair();
+        RSAPrivateKey rsaPrivKey = (RSAPrivateKey) rsaKeyPair.getPrivate();
+        X509Certificate cert = generateSelfSignedCert(rsaKeyPair, "CN=ALTIA Sello,O=ALTIA,C=ES");
+
+        // iss is did:elsi:... (NOT did:key:) — this is what extractIssuerIdFromNode
+        // returns when it falls through to the "id" field of DetailedIssuer
+        String issuerDidElsi = "did:elsi:VATES-A15456585";
+
+        JWTClaimsSet issuerClaims = new JWTClaimsSet.Builder()
+                .issuer(issuerDidElsi)
+                .claim("vct", "learcredential.employee.sd.1")
+                .issueTime(Date.from(Instant.now().minus(1, ChronoUnit.HOURS)))
+                .expirationTime(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
+                .build();
+
+        JWSHeader rsaHeader = new JWSHeader.Builder(JWSAlgorithm.RS256)
+                .type(new JOSEObjectType("dc+sd-jwt"))
+                .x509CertChain(List.of(com.nimbusds.jose.util.Base64.encode(cert.getEncoded())))
+                .build();
+
+        SignedJWT issuerJwt = new SignedJWT(rsaHeader, issuerClaims);
+        issuerJwt.sign(new RSASSASigner(rsaPrivKey));
+        String compact = issuerJwt.serialize() + "~";
+
+        when(trustFrameworkService.getTrustedIssuerListData(issuerDidElsi)).thenReturn(List.of());
+
+        SdJwtVerificationResult result = service.verifyPresentation(compact, "https://v.example.com", "nonce");
+
+        assertNotNull(result);
+        assertEquals("learcredential.employee.sd.1", result.vct());
+        // x5c path used, DID service NOT called
+        verify(didService, never()).resolvePublicKeyFromDid(anyString());
+    }
+
     // --- Helpers ---
 
     private String signJwt(JWTClaimsSet claims, ECKey key) throws Exception {
@@ -312,5 +507,26 @@ class SdJwtVerificationServiceImplTest {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         byte[] hash = md.digest(input.getBytes(StandardCharsets.US_ASCII));
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+    }
+
+    private static X509Certificate generateSelfSignedCert(KeyPair keyPair, String dn) throws Exception {
+        Security.addProvider(new BouncyCastleProvider());
+        X500Name x500Name = new X500Name(dn);
+        Date notBefore = new Date(System.currentTimeMillis() - 86400_000L);
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 86400_000L);
+        String algorithm = keyPair.getPrivate().getAlgorithm().equals("RSA") ? "SHA256WithRSA" : "SHA256WithECDSA";
+
+        ContentSigner signer = new JcaContentSignerBuilder(algorithm)
+                .setProvider("BC")
+                .build(keyPair.getPrivate());
+
+        X509CertificateHolder holder = new JcaX509v3CertificateBuilder(
+                x500Name, BigInteger.valueOf(System.currentTimeMillis()),
+                notBefore, notAfter, x500Name, keyPair.getPublic()
+        ).build(signer);
+
+        return new JcaX509CertificateConverter()
+                .setProvider("BC")
+                .getCertificate(holder);
     }
 }

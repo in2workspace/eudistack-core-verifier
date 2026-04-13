@@ -28,8 +28,8 @@ public class ErrorResponseFactory {
     ) {
         String instance = UUID.randomUUID().toString();
         String path = request != null ? request.getRequestURI() : "";
-        log.error("instance={} path={} status={} ex={} detail={}",
-                instance, path, httpStatus.value(), ex.getClass().getName(), detail);
+        log.error("instance={} path={} status={} ex={} detail={} message={}",
+                instance, path, httpStatus.value(), ex.getClass().getName(), detail, ex.getMessage());
         return new GlobalErrorMessage(type, title, httpStatus.value(), detail, instance);
     }
 }

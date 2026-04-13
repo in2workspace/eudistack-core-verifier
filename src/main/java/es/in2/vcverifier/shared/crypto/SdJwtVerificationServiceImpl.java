@@ -96,19 +96,8 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
         String issuer = claims.getIssuer();
         JWSHeader header = issuerJwt.getHeader();
 
-        // Try DID-based key resolution
-        if (issuer != null && issuer.startsWith("did:")) {
-            log.debug("Resolving issuer public key from DID: {}", issuer);
-            PublicKey publicKey = didService.resolvePublicKeyFromDid(issuer);
-            JWSVerifier verifier = buildVerifier(publicKey);
-            if (!issuerJwt.verify(verifier)) {
-                throw new JWTVerificationException("SD-JWT issuer signature verification failed for DID: " + issuer);
-            }
-            log.debug("Issuer signature verified via DID");
-            return;
-        }
-
-        // Try x5c header (certificate chain)
+        // x5c takes priority when present — it is the authoritative source of the signing key
+        // for QTSP-signed credentials (RSA or EC certificate chain).
         List<com.nimbusds.jose.util.Base64> x5c = header.getX509CertChain();
         if (x5c != null && !x5c.isEmpty()) {
             log.debug("Resolving issuer public key from x5c header");
@@ -125,8 +114,20 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
             return;
         }
 
+        // Fallback: DID-based key resolution (did:key only)
+        if (issuer != null && issuer.startsWith("did:")) {
+            log.debug("Resolving issuer public key from DID: {}", issuer);
+            PublicKey publicKey = didService.resolvePublicKeyFromDid(issuer);
+            JWSVerifier verifier = buildVerifier(publicKey);
+            if (!issuerJwt.verify(verifier)) {
+                throw new JWTVerificationException("SD-JWT issuer signature verification failed for DID: " + issuer);
+            }
+            log.debug("Issuer signature verified via DID");
+            return;
+        }
+
         throw new JWTVerificationException(
-                "Cannot verify SD-JWT issuer signature: no DID issuer and no x5c header found");
+                "Cannot verify SD-JWT issuer signature: no x5c header and no DID issuer found. iss=" + issuer);
     }
 
     // SEC-S8: ES256 (P-256 EC) keys preferred per HAIP, RSA also accepted
