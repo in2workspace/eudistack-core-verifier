@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SD-JWT issuer signature: x5c takes priority over DID resolution (EUDISTACK-154)** — When the SD-JWT `iss` claim started with `did:` (e.g. `did:elsi:VATES-...`) but the JWT was signed via QTSP with an `x5c` certificate chain in the header, the verifier attempted DID resolution first and failed because only `did:key` is supported. Now `x5c` takes priority when present, falling back to DID only when no certificate chain exists.
+- **Error logging includes exception message** — `ErrorResponseFactory` now logs `ex.getMessage()` alongside the error type, making 401 failures diagnosable from logs without reproducing.
 - **Issuer identification uses profile `issuer_id_path`** — `VpServiceImpl` now resolves the issuer ID from the schema profile path (e.g. `issuer.organizationIdentifier` for W3C, `iss` for SD-JWT) instead of the JWT `iss` claim. Previously `extractIssFromJwt()` returned `did:elsi:VATES-...` which didn't match the trusted issuers list. Removed `extractIssFromJwt()`.
 - **RSA key rejection in BitstringStatusListVerifier** — `CertificateValidationServiceImpl.verifyJWTSignature` now accepts both EC and RSA public keys. Previously only EC was accepted, causing Status List Credential validation to fail when the issuer signs with an RSA certificate.
 
