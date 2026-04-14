@@ -39,6 +39,7 @@ import java.time.Instant;
 import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
@@ -132,7 +133,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
 
-        return throwRedirectAuthentication(authorizationContext.state(), result);
+        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient);
     }
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
@@ -150,21 +151,38 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
 
-        return throwRedirectAuthentication(authorizationContext.state(), result);
+        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient);
     }
 
     /**
      * Throws the redirect exception that Spring Authorization Server uses to redirect the user
      * to the login/QR page with the openid4vp URL.
+     * If the client has a custom loginPageUri, redirect there instead of the default MFE Login.
      */
-    private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result) {
-        String redirectUrl = String.format(
-                "%s/login?authRequest=%s&state=%s&homeUri=%s",
-                frontendConfig.getPortalUrl(),
-                URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
-                URLEncoder.encode(state, StandardCharsets.UTF_8),
-                URLEncoder.encode(result.homeUri(), StandardCharsets.UTF_8)
-        );
+    private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,
+                                                       RegisteredClient registeredClient) {
+        Map<String, Object> clientSettings = registeredClient.getClientSettings().getSettings();
+        String loginPageUri = clientSettings.containsKey(CLIENT_SETTING_LOGIN_PAGE_URI)
+                ? (String) clientSettings.get(CLIENT_SETTING_LOGIN_PAGE_URI)
+                : null;
+
+        String redirectUrl;
+        if (loginPageUri != null) {
+            redirectUrl = String.format(
+                    "%s?authRequest=%s&state=%s",
+                    loginPageUri,
+                    URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
+                    URLEncoder.encode(state, StandardCharsets.UTF_8)
+            );
+        } else {
+            redirectUrl = String.format(
+                    "%s/login?authRequest=%s&state=%s&homeUri=%s",
+                    frontendConfig.getPortalUrl(),
+                    URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
+                    URLEncoder.encode(state, StandardCharsets.UTF_8),
+                    URLEncoder.encode(result.homeUri(), StandardCharsets.UTF_8)
+            );
+        }
 
         OAuth2Error error = new OAuth2Error(REQUIRED_EXTERNAL_USER_AUTHENTICATION, "Redirection required", redirectUrl);
         throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);

@@ -13,6 +13,8 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -30,11 +32,14 @@ class CustomErrorResponseHandlerTest {
     @Mock
     private FrontendConfig frontendConfig;
 
+    private final Set<String> allowedClientsOrigins = new HashSet<>();
+
     private CustomErrorResponseHandler customErrorResponseHandler;
 
     @BeforeEach
     void setUp() {
-        customErrorResponseHandler = new CustomErrorResponseHandler(frontendConfig);
+        allowedClientsOrigins.clear();
+        customErrorResponseHandler = new CustomErrorResponseHandler(frontendConfig, allowedClientsOrigins);
     }
 
     @Test

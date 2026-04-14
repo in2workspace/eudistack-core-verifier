@@ -34,7 +34,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.dome.example.com"),
                 true, null, null,
-                "dome"
+                "dome", null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -63,7 +63,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null
+                null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -92,7 +92,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "INVALID TENANT WITH SPACES!"
+                "INVALID TENANT WITH SPACES!", null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -117,7 +117,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "my-tenant-123"
+                "my-tenant-123", null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);

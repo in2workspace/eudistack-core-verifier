@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 
 import java.net.http.HttpClient;
+import java.util.Set;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -69,6 +70,7 @@ public class AuthorizationServerConfig {
     private final TokenGenerationWorkflow tokenGenerationWorkflow;
     private final SafeUrlValidator safeUrlValidator;
     private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
+    private final Set<String> allowedClientsOrigins;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -84,7 +86,7 @@ public class AuthorizationServerConfig {
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
                                 .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,frontendConfig,safeUrlValidator))
-                                .errorResponseHandler(new CustomErrorResponseHandler(frontendConfig))
+                                .errorResponseHandler(new CustomErrorResponseHandler(frontendConfig, allowedClientsOrigins))
                 )
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
