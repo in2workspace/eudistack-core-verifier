@@ -58,8 +58,8 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
                 return true;
             }
 
-            // Allow registered client origins (includes loginPageUri origins)
-            return allowedClientsOrigins.contains(origin);
+            // Allow registered client origins (includes loginPageUri origins) — enforce HTTPS
+            return "https".equals(parsed.getScheme()) && allowedClientsOrigins.contains(origin);
         } catch (Exception e) {
             return false;
         }

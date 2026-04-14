@@ -103,18 +103,20 @@ public class ClientLoaderConfig {
                     clientSettingsBuilder.setting(CLIENT_SETTING_TENANT, clientData.tenant());
                 }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
+                    URI loginUri = URI.create(clientData.loginPageUri());
+                    if (!"https".equals(loginUri.getScheme())) {
+                        throw new ClientLoadingException("loginPageUri must use HTTPS scheme for client '"
+                                + clientData.clientId() + "': " + clientData.loginPageUri());
+                    }
                     clientSettingsBuilder.setting(CLIENT_SETTING_LOGIN_PAGE_URI, clientData.loginPageUri());
+                    String origin = loginUri.getScheme() + "://" + loginUri.getAuthority();
+                    freshOrigins.add(origin);
                 }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());
 
                 if (clientData.url() != null && !clientData.url().isBlank()) {
                     freshOrigins.add(clientData.url());
-                }
-                if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
-                    URI loginUri = URI.create(clientData.loginPageUri());
-                    String origin = loginUri.getScheme() + "://" + loginUri.getAuthority();
-                    freshOrigins.add(origin);
                 }
             }
             // Atomically replace origins: remove stale, add fresh

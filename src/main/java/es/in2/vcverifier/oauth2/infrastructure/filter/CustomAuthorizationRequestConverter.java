@@ -168,6 +168,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         String redirectUrl;
         if (loginPageUri != null) {
+            // Custom login pages manage their own post-authentication navigation; homeUri is only for the default MFE Login
             redirectUrl = String.format(
                     "%s?authRequest=%s&state=%s",
                     loginPageUri,
