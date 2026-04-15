@@ -46,4 +46,48 @@ public class SseEmitterStore {
             log.warn("No SSE emitter found for state={}", state);
         }
     }
+
+    /**
+     * Send validation_failed SSE event to notify client of VP validation failure.
+     * 
+     * @param state OAuth2 state (SSE connection key)
+     * @param errorCode Error code (e.g., CREDENTIAL_REVOKED, SIGNATURE_INVALID)
+     * @param errorMessage Human-readable error message
+     */
+    public void sendValidationFailed(String state, String errorCode, String errorMessage) {
+        SseEmitter emitter = emitters.remove(state);
+        
+        if (emitter != null) {
+            try {
+                // Build JSON payload with error details
+                String payload = String.format(
+                    "{\"code\": \"%s\", \"message\": \"%s\"}", 
+                    errorCode, 
+                    escapeJson(errorMessage)
+                );
+                
+                emitter.send(SseEmitter.event()
+                    .name("validation_failed")
+                    .data(payload));
+                
+                emitter.complete();
+                log.info("SSE validation_failed event sent for state={}, code={}", state, errorCode);
+            } catch (IOException e) {
+                log.warn("Failed to send validation_failed SSE for state={}: {}", state, e.getMessage());
+                emitter.completeWithError(e);
+            }
+        } else {
+            log.debug("No SSE emitter found for state={} (validation_failed event not sent)", state);
+        }
+    }
+
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
+    }
 }

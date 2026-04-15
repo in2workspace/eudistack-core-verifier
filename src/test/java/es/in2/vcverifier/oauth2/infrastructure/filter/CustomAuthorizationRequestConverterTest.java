@@ -28,6 +28,7 @@ import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -38,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -563,6 +565,113 @@ class CustomAuthorizationRequestConverterTest {
 
         assertFalse(addl.containsKey(PkceParameterNames.CODE_CHALLENGE));
         assertFalse(addl.containsKey(PkceParameterNames.CODE_CHALLENGE_METHOD));
+    }
+
+    @Test
+    void convert_standardRequest_withLoginPageUri_shouldRedirectToCustomLoginPage() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String state = "test-state";
+        String scope = "learcredential";
+        String redirectUri = "https://client.example.com/callback";
+        String clientName = "Test Client";
+        String clientNonce = "test-nonce";
+        String loginPageUri = "https://custom-login.example.com/auth";
+        stubPkceParamsNull(request);
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(NONCE)).thenReturn(clientNonce);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+
+        ClientSettings clientSettings = ClientSettings.builder()
+                .setting(CLIENT_SETTING_LOGIN_PAGE_URI, loginPageUri)
+                .build();
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName(clientName)
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(redirectUri)
+                .clientSettings(clientSettings)
+                .build();
+
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+        AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
+                "signed-jwt", "openid4vp://...", "nonce-123", clientName);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state)).thenReturn(workflowResult);
+
+        OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> converter.convert(request)
+        );
+
+        OAuth2Error error = exception.getError();
+        assertEquals("required_external_user_authentication", error.getErrorCode());
+
+        String resultUrl = error.getUri();
+        assertNotNull(resultUrl);
+        assertTrue(resultUrl.startsWith(loginPageUri), "Redirect should start with custom loginPageUri");
+        assertTrue(resultUrl.contains("authRequest="), "Redirect should contain authRequest param");
+        assertTrue(resultUrl.contains("state="), "Redirect should contain state param");
+        assertFalse(resultUrl.contains("homeUri="), "Redirect should NOT contain homeUri param");
+    }
+
+    @Test
+    void convert_standardRequest_withoutLoginPageUri_shouldRedirectToPortalWithHomeUri() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String state = "test-state";
+        String scope = "learcredential";
+        String redirectUri = "https://client.example.com/callback";
+        String clientName = "Test Client";
+        String clientNonce = "test-nonce";
+        stubPkceParamsNull(request);
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(NONCE)).thenReturn(clientNonce);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName(clientName)
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(redirectUri)
+                .build();
+
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+        AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
+                "signed-jwt", "openid4vp://...", "nonce-123", clientName);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state)).thenReturn(workflowResult);
+
+        OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> converter.convert(request)
+        );
+
+        OAuth2Error error = exception.getError();
+        assertEquals("required_external_user_authentication", error.getErrorCode());
+
+        String resultUrl = error.getUri();
+        assertNotNull(resultUrl);
+        assertTrue(resultUrl.startsWith("http://localhost:4200/login?"), "Redirect should use portal URL");
+        assertTrue(resultUrl.contains("authRequest="), "Redirect should contain authRequest param");
+        assertTrue(resultUrl.contains("state="), "Redirect should contain state param");
+        assertTrue(resultUrl.contains("homeUri="), "Redirect should contain homeUri param");
     }
 
     private void stubPkceParamsNull(HttpServletRequest request) {

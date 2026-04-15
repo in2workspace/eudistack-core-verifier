@@ -13,6 +13,8 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -30,11 +32,14 @@ class CustomErrorResponseHandlerTest {
     @Mock
     private FrontendConfig frontendConfig;
 
+    private final Set<String> allowedClientsOrigins = new HashSet<>();
+
     private CustomErrorResponseHandler customErrorResponseHandler;
 
     @BeforeEach
     void setUp() {
-        customErrorResponseHandler = new CustomErrorResponseHandler(frontendConfig);
+        allowedClientsOrigins.clear();
+        customErrorResponseHandler = new CustomErrorResponseHandler(frontendConfig, allowedClientsOrigins);
     }
 
     @Test
@@ -103,6 +108,63 @@ class CustomErrorResponseHandlerTest {
                 "required_external_user_authentication",
                 "Redirection required",
                 untrustedUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response, never()).sendRedirect(anyString());
+        verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Authentication failed");
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithAllowedClientOrigin_ShouldRedirect() throws IOException {
+        allowedClientsOrigins.add("https://external-rp.example.com");
+        String redirectUri = "https://external-rp.example.com/login?foo=bar";
+        when(frontendConfig.getPortalUrl()).thenReturn("https://portal.example.com");
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithUnregisteredClientOrigin_ShouldBlock() throws IOException {
+        allowedClientsOrigins.add("https://legit.example.com");
+        String untrustedUri = "https://evil.com/phishing";
+        when(frontendConfig.getPortalUrl()).thenReturn("https://portal.example.com");
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                untrustedUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response, never()).sendRedirect(anyString());
+        verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Authentication failed");
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithHttpClientOrigin_ShouldBlock() throws IOException {
+        allowedClientsOrigins.add("http://insecure.example.com");
+        String httpUri = "http://insecure.example.com/login";
+        when(frontendConfig.getPortalUrl()).thenReturn("https://portal.example.com");
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                httpUri
         );
         AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
 

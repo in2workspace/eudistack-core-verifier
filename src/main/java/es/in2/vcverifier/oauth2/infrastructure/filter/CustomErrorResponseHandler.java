@@ -12,6 +12,7 @@ import org.springframework.security.web.authentication.AuthenticationFailureHand
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.Set;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.INVALID_CLIENT_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
@@ -21,6 +22,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_U
 public class CustomErrorResponseHandler implements AuthenticationFailureHandler {
 
     private final FrontendConfig frontendConfig;
+    private final Set<String> allowedClientsOrigins;
 
     @Override
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
@@ -30,7 +32,7 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
             // Redirect to the URI contained, if the error code is required_external_user_authentication or invalid_client_authentication
             if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION) || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)) {
                 String redirectUri = error.getUri();
-                // SEC-S7: Validate redirect URI belongs to allowed portal domain to prevent open redirect.
+                // SEC-S7: Validate redirect URI belongs to allowed portal domain or registered client origin to prevent open redirect.
                 if (redirectUri != null && isAllowedRedirectUri(redirectUri)) {
                     response.sendRedirect(redirectUri);
                     return;
@@ -46,10 +48,18 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
     private boolean isAllowedRedirectUri(String uri) {
         try {
             URI parsed = URI.create(uri);
+            String origin = parsed.getScheme() + "://" + parsed.getAuthority();
+
+            // Allow portal URL (default login page)
             URI allowed = URI.create(frontendConfig.getPortalUrl());
-            return parsed.getHost() != null
+            if (parsed.getHost() != null
                     && parsed.getHost().equals(allowed.getHost())
-                    && ("https".equals(parsed.getScheme()) || allowed.getScheme().equals(parsed.getScheme()));
+                    && ("https".equals(parsed.getScheme()) || allowed.getScheme().equals(parsed.getScheme()))) {
+                return true;
+            }
+
+            // Allow registered client origins (includes loginPageUri origins) — enforce HTTPS
+            return "https".equals(parsed.getScheme()) && allowedClientsOrigins.contains(origin);
         } catch (Exception e) {
             return false;
         }

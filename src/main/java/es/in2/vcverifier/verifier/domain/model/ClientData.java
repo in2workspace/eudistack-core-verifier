@@ -19,5 +19,6 @@ public record ClientData(
         Boolean requireProofKey,
         String jwkSetUrl,
         String tokenEndpointAuthenticationSigningAlgorithm,
-        String tenant
+        String tenant,
+        String loginPageUri
 ) {}

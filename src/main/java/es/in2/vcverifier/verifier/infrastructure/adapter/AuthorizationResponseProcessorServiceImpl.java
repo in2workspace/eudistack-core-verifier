@@ -8,10 +8,14 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
+import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
+import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
@@ -40,6 +44,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
@@ -67,130 +72,175 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     public void handleAuthResponse(String state, String vpToken){
         log.info("Processing authorization response");
 
-        // Validate if the state exists in the cache
-        OAuth2AuthorizationRequest oAuth2AuthorizationRequest = cacheStoreForOAuth2AuthorizationRequest.get(state);
+        try {
+            // Validate if the state exists in the cache
+            OAuth2AuthorizationRequest oAuth2AuthorizationRequest = cacheStoreForOAuth2AuthorizationRequest.get(state);
 
-        // Remove the state from cache after retrieving the Object
-        cacheStoreForOAuth2AuthorizationRequest.delete(state);
+            // Remove the state from cache after retrieving the Object
+            cacheStoreForOAuth2AuthorizationRequest.delete(state);
 
-        Instant issueTime = Instant.now();
+            Instant issueTime = Instant.now();
 
-        Object expirationLoginValue = oAuth2AuthorizationRequest.getAdditionalParameters().get(EXPIRATION);
+            Object expirationLoginValue = oAuth2AuthorizationRequest.getAdditionalParameters().get(EXPIRATION);
 
-        if(expirationLoginValue==null){
-            throw new LoginTimeoutException("Start time is missing from login request");
-        }
+            if(expirationLoginValue==null){
+                sseEmitterStore.sendValidationFailed(state, "INVALID_REQUEST", "Start time is missing from login request");
+                throw new LoginTimeoutException("Start time is missing from login request");
+            }
 
-        if (issueTime.getEpochSecond() >= (long) expirationLoginValue) {
-            throw new LoginTimeoutException("Login time has expired");
-        }
-        String redirectUri = oAuth2AuthorizationRequest.getRedirectUri();
-        // Decode vpToken from Base64
-        String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
+            if (issueTime.getEpochSecond() >= (long) expirationLoginValue) {
+                sseEmitterStore.sendValidationFailed(state, "LOGIN_TIMEOUT", "Login time has expired");
+                throw new LoginTimeoutException("Login time has expired");
+            }
+            String redirectUri = oAuth2AuthorizationRequest.getRedirectUri();
+            // Decode vpToken from Base64
+            String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
 
-        // Detect DCQL format (JSON object) vs legacy format (direct JWT/SD-JWT string)
-        String resolvedVpToken = extractVpTokenFromPossibleDcql(decodedVpToken);
+            // Detect DCQL format (JSON object) vs legacy format (direct JWT/SD-JWT string)
+            String resolvedVpToken = extractVpTokenFromPossibleDcql(decodedVpToken);
 
-        log.info("Decoded VP Token (format={})", isSdJwt(resolvedVpToken) ? "sd-jwt" : "jwt");
+            log.info("Decoded VP Token (format={})", isSdJwt(resolvedVpToken) ? "sd-jwt" : "jwt");
 
-        // Validate and extract credential based on format
-        JsonNode credentialJson;
-        if (isSdJwt(resolvedVpToken)) {
-            // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
-            // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
-            String cachedNonce = cacheForNonceByState.get(state);
-            String expectedAud = cryptoComponent.getClientId();
-            SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
-                    resolvedVpToken, expectedAud, cachedNonce);
-            credentialJson = objectMapper.valueToTree(result.resolvedClaims());
-            log.info("SD-JWT VC validated successfully. vct={}", result.vct());
-
-            // Check revocation via Token Status List (status.status_list)
-            validateSdJwtRevocationStatus(result.resolvedClaims());
-        } else {
-            // JWT VP path (existing logic, unchanged)
-            validateVpTokenNonceAndAudience(resolvedVpToken, state);
+            // Validate and extract credential based on format
+            JsonNode credentialJson;
             try {
-                vpService.verifyVerifiablePresentation(resolvedVpToken);
+                if (isSdJwt(resolvedVpToken)) {
+                    // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
+                    // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
+                    String cachedNonce = cacheForNonceByState.get(state);
+                    String expectedAud = cryptoComponent.getClientId();
+                    SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
+                            resolvedVpToken, expectedAud, cachedNonce);
+                    credentialJson = objectMapper.valueToTree(result.resolvedClaims());
+                    log.info("SD-JWT VC validated successfully. vct={}", result.vct());
+
+                    // Check revocation via Token Status List (status.status_list)
+                    try {
+                        validateSdJwtRevocationStatus(result.resolvedClaims());
+                    } catch (CredentialRevokedException e) {
+                        sseEmitterStore.sendValidationFailed(state, "CREDENTIAL_REVOKED", "The credential has been revoked");
+                        throw e;
+                    }
+                } else {
+                    // JWT VP path
+                    validateVpTokenNonceAndAudience(resolvedVpToken, state);
+                    try {
+                        vpService.verifyVerifiablePresentation(resolvedVpToken);
+                    } catch (CredentialRevokedException e) {
+                        sseEmitterStore.sendValidationFailed(state, "CREDENTIAL_REVOKED", "The credential has been revoked");
+                        throw e;
+                    }
+                    credentialJson = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(resolvedVpToken);
+                    log.info("JWT VP Token validated successfully");
+                }
+            } catch (CredentialRevokedException e) {
+                throw e;
+            } catch (JWTVerificationException e) {
+                sseEmitterStore.sendValidationFailed(state, "SIGNATURE_INVALID", "VP signature verification failed: " + e.getMessage());
+                throw e;
             } catch (Exception e) {
-                log.error("VP Token is invalid - VP Token used in H2M flow is invalid: {}", e.getMessage(), e);
+                sseEmitterStore.sendValidationFailed(state, "VALIDATION_ERROR", "VP validation failed: " + e.getMessage());
                 throw e;
             }
-            credentialJson = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(resolvedVpToken);
-            log.info("JWT VP Token validated successfully");
+
+            // Generate a code (code)
+            // SEC-S9: Authorization codes must not be logged in full.
+            String code = UUID.randomUUID().toString();
+            log.info("Authorization code generated: {}...", code.substring(0, 8));
+
+            RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
+
+            if (registeredClient == null) {
+                sseEmitterStore.sendValidationFailed(state, "UNAUTHORIZED_CLIENT", "Client not found or not authorized");
+                throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
+            }
+
+
+            var addl = oAuth2AuthorizationRequest.getAdditionalParameters();
+            String codeChallenge       = (String) addl.get(PkceParameterNames.CODE_CHALLENGE);
+            String codeChallengeMethod = (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD);
+
+
+            Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
+            // Register the Oauth2Authorization because is needed for verifications
+            OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
+                    .id(registeredClient.getId())
+                    .principalName(registeredClient.getClientId())
+                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                    .token(new OAuth2AuthorizationCode(code, issueTime, expirationTime))
+                    .attribute(OAuth2ParameterNames.CLIENT_ID, registeredClient.getClientId())
+                    .attribute(OAuth2ParameterNames.REDIRECT_URI, oAuth2AuthorizationRequest.getRedirectUri())
+                    .attribute(OAuth2ParameterNames.SCOPE, String.join(" ", oAuth2AuthorizationRequest.getScopes()))
+                    .attribute(OAuth2AuthorizationRequest.class.getName(), oAuth2AuthorizationRequest);
+
+            if (org.springframework.util.StringUtils.hasText(codeChallenge)) {
+                authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
+            }
+            if (org.springframework.util.StringUtils.hasText(codeChallengeMethod)) {
+                authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
+            }
+
+            OAuth2Authorization authorization = authBuilder.build();
+            oAuth2AuthorizationService.save(authorization);
+
+            log.info("OAuth2Authorization generated");
+
+            // Retrieve nonce from additional parameters
+            String nonceValue = (String) oAuth2AuthorizationRequest.getAdditionalParameters().get(NONCE);
+
+            // Create a builder
+            AuthorizationCodeData.AuthorizationCodeDataBuilder authCodeDataBuilder = AuthorizationCodeData.builder()
+                    .state(state)
+                    .verifiableCredential(credentialJson)
+                    .oAuth2Authorization(authorization)
+                    .requestedScopes(oAuth2AuthorizationRequest.getScopes());
+
+            authCodeDataBuilder.clientNonce(nonceValue);
+
+            // Finally build the object
+            AuthorizationCodeData authorizationCodeData = authCodeDataBuilder.build();
+            cacheStoreForAuthorizationCodeData.add(code, authorizationCodeData);
+
+
+            // Build the redirect URL with the code (code) and the state
+            String redirectUrl = UriComponentsBuilder.fromHttpUrl(redirectUri)
+                    .queryParam("code", code)
+                    .queryParam("state", state)
+                    .build()
+                    .toUriString();
+
+            // SEC-O2: Log redirect target without full authorization code.
+            log.info("Redirecting to: {}", redirectUri);
+
+            // Send the redirect URL to the browser via SSE
+            sseEmitterStore.send(state, redirectUrl);
+            
+        } catch (NoSuchElementException e) {
+            // State not found in cache (expired or invalid)
+            log.error("State not found or expired: {}", state);
+            sseEmitterStore.sendValidationFailed(state, "INVALID_STATE", "State not found or expired");
+            throw e;
+        } catch (CredentialExpiredException e) {
+            log.error("Credential has expired: {}", e.getMessage());
+            sseEmitterStore.sendValidationFailed(state, "CREDENTIAL_EXPIRED", "The credential has expired");
+            throw e;
+        } catch (CredentialNotActiveException e) {
+            log.error("Credential not yet active: {}", e.getMessage());
+            sseEmitterStore.sendValidationFailed(state, "CREDENTIAL_NOT_ACTIVE", "The credential is not yet active");
+            throw e;
+        } catch (IssuerNotAuthorizedException e) {
+            log.error("Issuer not authorized: {}", e.getMessage());
+            sseEmitterStore.sendValidationFailed(state, "ISSUER_NOT_TRUSTED", "The credential issuer is not trusted");
+            throw e;
+        } catch (LoginTimeoutException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException e) {
+            // Already sent SSE event in inner catch blocks, just re-throw
+            throw e;
+        } catch (Exception e) {
+            // Catch-all for unexpected errors
+            log.error("Unexpected error during VP validation: {}", e.getMessage(), e);
+            sseEmitterStore.sendValidationFailed(state, "VALIDATION_ERROR", "Validation failed: " + e.getMessage());
+            throw e;
         }
-
-        // Generate a code (code)
-        // SEC-S9: Authorization codes must not be logged in full.
-        String code = UUID.randomUUID().toString();
-        log.info("Authorization code generated: {}...", code.substring(0, 8));
-
-        RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
-
-        if (registeredClient == null) {
-            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
-        }
-
-
-        var addl = oAuth2AuthorizationRequest.getAdditionalParameters();
-        String codeChallenge       = (String) addl.get(PkceParameterNames.CODE_CHALLENGE);
-        String codeChallengeMethod = (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD);
-
-
-        Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
-        // Register the Oauth2Authorization because is needed for verifications
-        OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
-                .id(registeredClient.getId())
-                .principalName(registeredClient.getClientId())
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .token(new OAuth2AuthorizationCode(code, issueTime, expirationTime))
-                .attribute(OAuth2ParameterNames.CLIENT_ID, registeredClient.getClientId())
-                .attribute(OAuth2ParameterNames.REDIRECT_URI, oAuth2AuthorizationRequest.getRedirectUri())
-                .attribute(OAuth2ParameterNames.SCOPE, String.join(" ", oAuth2AuthorizationRequest.getScopes()))
-                .attribute(OAuth2AuthorizationRequest.class.getName(), oAuth2AuthorizationRequest);
-
-        if (org.springframework.util.StringUtils.hasText(codeChallenge)) {
-            authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
-        }
-        if (org.springframework.util.StringUtils.hasText(codeChallengeMethod)) {
-            authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
-        }
-
-        OAuth2Authorization authorization = authBuilder.build();
-        oAuth2AuthorizationService.save(authorization);
-
-        log.info("OAuth2Authorization generated");
-
-        // Retrieve nonce from additional parameters
-        String nonceValue = (String) oAuth2AuthorizationRequest.getAdditionalParameters().get(NONCE);
-
-        // Create a builder
-        AuthorizationCodeData.AuthorizationCodeDataBuilder authCodeDataBuilder = AuthorizationCodeData.builder()
-                .state(state)
-                .verifiableCredential(credentialJson)
-                .oAuth2Authorization(authorization)
-                .requestedScopes(oAuth2AuthorizationRequest.getScopes());
-
-        authCodeDataBuilder.clientNonce(nonceValue);
-
-        // Finally build the object
-        AuthorizationCodeData authorizationCodeData = authCodeDataBuilder.build();
-        cacheStoreForAuthorizationCodeData.add(code, authorizationCodeData);
-
-
-        // Build the redirect URL with the code (code) and the state
-        String redirectUrl = UriComponentsBuilder.fromHttpUrl(redirectUri)
-                .queryParam("code", code)
-                .queryParam("state", state)
-                .build()
-                .toUriString();
-
-        // SEC-O2: Log redirect target without full authorization code.
-        log.info("Redirecting to: {}", redirectUri);
-
-        // Send the redirect URL to the browser via SSE
-        sseEmitterStore.send(state, redirectUrl);
-
     }
 
 

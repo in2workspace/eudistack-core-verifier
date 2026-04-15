@@ -18,6 +18,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -25,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 
 @Slf4j
@@ -99,6 +101,16 @@ public class ClientLoaderConfig {
                                 + "' for client '" + clientData.clientId() + "'. Must match: " + TENANT_PATTERN.pattern());
                     }
                     clientSettingsBuilder.setting(CLIENT_SETTING_TENANT, clientData.tenant());
+                }
+                if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
+                    URI loginUri = URI.create(clientData.loginPageUri());
+                    if (!"https".equals(loginUri.getScheme())) {
+                        throw new ClientLoadingException("loginPageUri must use HTTPS scheme for client '"
+                                + clientData.clientId() + "': " + clientData.loginPageUri());
+                    }
+                    clientSettingsBuilder.setting(CLIENT_SETTING_LOGIN_PAGE_URI, clientData.loginPageUri());
+                    String origin = loginUri.getScheme() + "://" + loginUri.getAuthority();
+                    freshOrigins.add(origin);
                 }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());
