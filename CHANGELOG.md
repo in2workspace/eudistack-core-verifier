@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-04-15
+
+### Added
+
+- Added `Cache-Control` to allowed headers in `PublicCorsConfig` to support caching directives from wallets and prevent CORS errors on certain requests (e.g. VP submission with cache hints).
+
 ## [3.0.2] - 2026-04-15
 
 ### Added
