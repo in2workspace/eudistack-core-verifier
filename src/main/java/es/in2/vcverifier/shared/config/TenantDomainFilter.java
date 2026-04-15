@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -43,9 +44,14 @@ public class TenantDomainFilter extends OncePerRequestFilter {
         String tenant = extractTenantFromHostname(request);
         if (tenant != null) {
             request.setAttribute(TENANT_ATTRIBUTE, tenant);
+            MDC.put("tenantDomain", tenant);
             log.trace("Verifier: Resolved tenant '{}' from request hostname", tenant);
         }
-        filterChain.doFilter(request, response);
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            MDC.remove("tenantDomain");
+        }
     }
 
     private String extractTenantFromHostname(HttpServletRequest request) {

@@ -21,7 +21,7 @@ server:
 
 logging:
   pattern:
-    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{tenantDomain:-}]"
   level:
     es.in2.vcverifier: INFO
     org.springframework.security: INFO
