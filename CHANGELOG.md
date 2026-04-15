@@ -6,9 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-04-15
+
 ### Added
 
 - **EUDI-033:** Optional `loginPageUri` field in OIDC client registry for custom login page redirects
+- SSE event notifications for VP validation failures (error feedback to frontend)
 
 ## [3.0.1] - 2026-04-13
 
