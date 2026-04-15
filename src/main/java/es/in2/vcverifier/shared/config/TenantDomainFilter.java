@@ -14,14 +14,13 @@ import java.io.IOException;
 
 /**
  * Extracts the tenant identifier from the request hostname and stores it
- * as a request attribute. Pattern: {service}.{tenant}.domain
+ * as a request attribute. Atlassian-style: tenant is the first segment.
  *
  * <p>After {@code ForwardedHeaderFilter} has processed X-Forwarded-Host,
  * {@code request.getServerName()} returns the original public hostname.
- * The tenant is the second segment:
  * <ul>
- *   <li>{@code verifier.kpmg.127.0.0.1.nip.io} → {@code kpmg}</li>
- *   <li>{@code verifier.dome.eudistack.net} → {@code dome}</li>
+ *   <li>{@code kpmg.eudistack.net} → {@code kpmg}</li>
+ *   <li>{@code dome.127.0.0.1.nip.io} → {@code dome}</li>
  * </ul>
  *
  * <p>Read the tenant elsewhere via:
@@ -55,13 +54,14 @@ public class TenantDomainFilter extends OncePerRequestFilter {
             return null;
         }
 
-        String[] segments = hostname.split("\\.");
-        // Pattern: {service}.{tenant}.{rest...}
-        if (segments.length < 3) {
+        // Atlassian-style: tenant is the first segment
+        // kpmg.eudistack.net → kpmg, dome.127.0.0.1.nip.io → dome
+        int dotIndex = hostname.indexOf('.');
+        if (dotIndex <= 0) {
             return null;
         }
 
-        String tenant = segments[1];
+        String tenant = hostname.substring(0, dotIndex);
         if (!tenant.matches("^[a-zA-Z0-9_-]+$")) {
             log.warn("Verifier: Invalid tenant identifier from hostname: {}", tenant);
             return null;
