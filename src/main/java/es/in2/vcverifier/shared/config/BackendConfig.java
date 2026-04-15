@@ -30,10 +30,11 @@ public class BackendConfig {
                 String scheme = request.getScheme();
                 String host = request.getServerName();
                 int port = request.getServerPort();
-                String contextPath = request.getContextPath(); // e.g., "/verifier"
+                String prefix = request.getHeader("X-Forwarded-Prefix");
+                if (prefix == null) prefix = "";
                 boolean defaultPort = ("https".equals(scheme) && port == 443)
                         || ("http".equals(scheme) && port == 80);
-                return scheme + "://" + host + (defaultPort ? "" : ":" + port) + contextPath;
+                return scheme + "://" + host + (defaultPort ? "" : ":" + port) + prefix;
             }
         } catch (Exception ignored) {
             // No request context (startup, async, etc.) — use static config
