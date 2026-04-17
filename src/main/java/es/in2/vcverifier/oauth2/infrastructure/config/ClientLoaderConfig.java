@@ -48,7 +48,7 @@ public class ClientLoaderConfig {
         return new DelegatingRegisteredClientRepository(repositoryRef);
     }
 
-    @Scheduled(cron = "0 */30 * * * *")
+    @Scheduled(cron = "${verifier.oauth2.clientRefreshCron:0 */5 * * * ?}")
     public void refreshClients() {
         try {
             log.info("Refreshing client registry...");
@@ -116,7 +116,9 @@ public class ClientLoaderConfig {
                 registeredClients.add(registeredClientBuilder.build());
 
                 if (clientData.url() != null && !clientData.url().isBlank()) {
-                    freshOrigins.add(clientData.url());
+                    URI clientUri = URI.create(clientData.url());
+                    String clientOrigin = clientUri.getScheme() + "://" + clientUri.getAuthority();
+                    freshOrigins.add(clientOrigin);
                 }
             }
             // Atomically replace origins: remove stale, add fresh
