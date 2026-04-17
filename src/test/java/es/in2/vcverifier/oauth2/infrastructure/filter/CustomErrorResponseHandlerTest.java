@@ -1,6 +1,5 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
-import es.in2.vcverifier.shared.config.FrontendConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,9 +28,6 @@ class CustomErrorResponseHandlerTest {
     @Mock
     private HttpServletResponse response;
 
-    @Mock
-    private FrontendConfig frontendConfig;
-
     private final Set<String> allowedClientsOrigins = new HashSet<>();
 
     private CustomErrorResponseHandler customErrorResponseHandler;
@@ -39,13 +35,13 @@ class CustomErrorResponseHandlerTest {
     @BeforeEach
     void setUp() {
         allowedClientsOrigins.clear();
-        customErrorResponseHandler = new CustomErrorResponseHandler(frontendConfig, allowedClientsOrigins);
+        customErrorResponseHandler = new CustomErrorResponseHandler(allowedClientsOrigins);
     }
 
     @Test
     void testOnAuthenticationFailure_WithRequiredExternalUserAuthenticationError_ShouldRedirect() throws IOException {
+        allowedClientsOrigins.add("https://example.com");
         String redirectUri = "https://example.com/login";
-        when(frontendConfig.getPortalUrl()).thenReturn("https://example.com");
 
         OAuth2Error oauth2Error = new OAuth2Error(
                 "required_external_user_authentication",
@@ -62,8 +58,8 @@ class CustomErrorResponseHandlerTest {
 
     @Test
     void testOnAuthenticationFailure_WithInvalidClientAuthenticationError_ShouldRedirect() throws IOException {
+        allowedClientsOrigins.add("https://example.com");
         String redirectUri = "https://example.com/error";
-        when(frontendConfig.getPortalUrl()).thenReturn("https://example.com");
 
         OAuth2Error oauth2Error = new OAuth2Error(
                 "invalid_client_authentication",
@@ -101,8 +97,8 @@ class CustomErrorResponseHandlerTest {
 
     @Test
     void testOnAuthenticationFailure_WithUntrustedRedirectUri_ShouldSendError() throws IOException {
+        allowedClientsOrigins.add("https://example.com");
         String untrustedUri = "https://evil.com/phishing";
-        when(frontendConfig.getPortalUrl()).thenReturn("https://example.com");
 
         OAuth2Error oauth2Error = new OAuth2Error(
                 "required_external_user_authentication",
@@ -121,7 +117,6 @@ class CustomErrorResponseHandlerTest {
     void testOnAuthenticationFailure_WithAllowedClientOrigin_ShouldRedirect() throws IOException {
         allowedClientsOrigins.add("https://external-rp.example.com");
         String redirectUri = "https://external-rp.example.com/login?foo=bar";
-        when(frontendConfig.getPortalUrl()).thenReturn("https://portal.example.com");
 
         OAuth2Error oauth2Error = new OAuth2Error(
                 "required_external_user_authentication",
@@ -140,7 +135,6 @@ class CustomErrorResponseHandlerTest {
     void testOnAuthenticationFailure_WithUnregisteredClientOrigin_ShouldBlock() throws IOException {
         allowedClientsOrigins.add("https://legit.example.com");
         String untrustedUri = "https://evil.com/phishing";
-        when(frontendConfig.getPortalUrl()).thenReturn("https://portal.example.com");
 
         OAuth2Error oauth2Error = new OAuth2Error(
                 "required_external_user_authentication",
@@ -159,7 +153,6 @@ class CustomErrorResponseHandlerTest {
     void testOnAuthenticationFailure_WithHttpClientOrigin_ShouldBlock() throws IOException {
         allowedClientsOrigins.add("http://insecure.example.com");
         String httpUri = "http://insecure.example.com/login";
-        when(frontendConfig.getPortalUrl()).thenReturn("https://portal.example.com");
 
         OAuth2Error oauth2Error = new OAuth2Error(
                 "required_external_user_authentication",

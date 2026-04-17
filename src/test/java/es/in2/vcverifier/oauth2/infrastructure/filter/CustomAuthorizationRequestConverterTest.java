@@ -1,12 +1,9 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
-import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
-
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
-import es.in2.vcverifier.shared.config.FrontendConfig;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -70,9 +67,6 @@ class CustomAuthorizationRequestConverterTest {
     private AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
 
     @Mock
-    private FrontendConfig frontendConfig;
-
-    @Mock
     private SafeUrlValidator safeUrlValidator;
 
     private boolean isNonceRequiredOnFapiProfile = true;
@@ -82,7 +76,6 @@ class CustomAuthorizationRequestConverterTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(frontendConfig.getPortalUrl()).thenReturn("http://localhost:4200");
         converter = new CustomAuthorizationRequestConverter(
                 didService,
                 jwtService,
@@ -93,7 +86,6 @@ class CustomAuthorizationRequestConverterTest {
                 loginTimeoutSeconds,
                 httpClient,
                 authorizationRequestBuildWorkflow,
-                frontendConfig,
                 safeUrlValidator
         );
     }
@@ -147,7 +139,7 @@ class CustomAuthorizationRequestConverterTest {
 
         String redirectUrl = error.getUri();
         assertNotNull(redirectUrl);
-        assertTrue(redirectUrl.contains("/login?"));
+        assertTrue(redirectUrl.contains("/verifier/login?"));
         assertTrue(redirectUrl.contains("authRequest="));
         assertTrue(redirectUrl.contains("state="));
         assertTrue(redirectUrl.contains("homeUri="));
@@ -633,8 +625,9 @@ class CustomAuthorizationRequestConverterTest {
         String clientName = "Test Client";
         String clientNonce = "test-nonce";
         stubPkceParamsNull(request);
+        stubPortalUrlHeaders(request, "https", "kpmg.example.com:4443");
 
-        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://kpmg.example.com:4443/verifier/oidc/authorize"));
         when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
         when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
         when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
@@ -668,7 +661,7 @@ class CustomAuthorizationRequestConverterTest {
 
         String resultUrl = error.getUri();
         assertNotNull(resultUrl);
-        assertTrue(resultUrl.startsWith("http://localhost:4200/login?"), "Redirect should use portal URL");
+        assertTrue(resultUrl.startsWith("https://kpmg.example.com:4443/verifier/login?"), "Redirect should use tenant portal URL derived from request");
         assertTrue(resultUrl.contains("authRequest="), "Redirect should contain authRequest param");
         assertTrue(resultUrl.contains("state="), "Redirect should contain state param");
         assertTrue(resultUrl.contains("homeUri="), "Redirect should contain homeUri param");
@@ -677,5 +670,10 @@ class CustomAuthorizationRequestConverterTest {
     private void stubPkceParamsNull(HttpServletRequest request) {
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
+    }
+
+    private void stubPortalUrlHeaders(HttpServletRequest request, String scheme, String host) {
+        when(request.getHeader("X-Forwarded-Host")).thenReturn(host);
+        when(request.getHeader("X-Forwarded-Proto")).thenReturn(scheme);
     }
 }
