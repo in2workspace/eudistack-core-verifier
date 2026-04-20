@@ -18,6 +18,8 @@ springdoc:
 server:
   port: 8082
   forward-headers-strategy: framework
+  servlet:
+    context-path: ${APP_CONTEXT_PATH:/verifier}
 
 logging:
   pattern:

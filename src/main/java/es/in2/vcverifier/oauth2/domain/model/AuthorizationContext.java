@@ -12,6 +12,7 @@ public record AuthorizationContext(
         String requestUri,
         String codeChallenge,
         String codeChallengeMethod,
-        String portalUrl
+        String portalUrl,
+        String contextPath
 ) {
 }
