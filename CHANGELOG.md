@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `PublicCorsConfigTest`: aligned assertion with production config that includes `Cache-Control` in allowed headers (added in 3.0.3). CI `:test` task was failing with `expected: <[Content-Type, Authorization]> but was: <[Content-Type, Authorization, Cache-Control]>`.
+
 ## [3.1.0] - 2026-04-20
 
 ### Fixed (EUDI-064: AWS deployment readiness) — Verifier context-path
