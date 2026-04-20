@@ -48,7 +48,7 @@ public class RateLimitFilter implements Filter {
         }
 
         String clientIp = resolveClientIp(httpRequest);
-        String path = httpRequest.getRequestURI();
+        String path = resolvePathWithoutContext(httpRequest);
 
         // Stricter limit for auth-sensitive endpoints
         if (isAuthEndpoint(path)) {
@@ -84,6 +84,20 @@ public class RateLimitFilter implements Filter {
         } catch (ExecutionException e) {
             return false;
         }
+    }
+
+    /**
+     * Returns the request URI with the servlet context-path stripped, so matching
+     * can be performed against paths independent of the configured context-path
+     * (e.g. {@code /verifier}).
+     */
+    private String resolvePathWithoutContext(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (contextPath != null && !contextPath.isEmpty() && uri.startsWith(contextPath)) {
+            return uri.substring(contextPath.length());
+        }
+        return uri;
     }
 
     private String resolveClientIp(HttpServletRequest request) {
