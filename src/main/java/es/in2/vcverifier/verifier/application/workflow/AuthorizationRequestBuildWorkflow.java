@@ -10,6 +10,7 @@ import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.model.oid4vp.ClientMetadata;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
+import es.in2.vcverifier.verifier.domain.service.RelyingPartyMetadataService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -46,6 +47,7 @@ public class AuthorizationRequestBuildWorkflow {
     private final CacheStore<String> cacheForNonceByState;
     private final DcqlProfileResolver dcqlProfileResolver;
     private final ObjectMapper objectMapper;
+    private final RelyingPartyMetadataService relyingPartyMetadataService;
 
     public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String homeUri) {}
 
@@ -99,11 +101,10 @@ public class AuthorizationRequestBuildWorkflow {
                 .claim("dcql_query", objectMapper.convertValue(dcqlQuery, Map.class))
                 .jwtID(UUID.randomUUID().toString());
 
-        // OID4VP §5.1: include client_metadata when using x509_hash or did: prefix
-        if (clientId.startsWith("x509_hash:") || clientId.startsWith("did:")) {
-            ClientMetadata clientMetadata = ClientMetadata.defaultMetadata();
-            builder.claim("client_metadata", objectMapper.convertValue(clientMetadata, Map.class));
-        }
+        // OID4VP §5.1: include client_metadata
+        ClientMetadata clientMetadata = relyingPartyMetadataService.getMetadataByClientId(clientId)
+                .orElseGet(ClientMetadata::defaultMetadata);
+        builder.claim("client_metadata", objectMapper.convertValue(clientMetadata, Map.class));
 
         JWTClaimsSet payload = builder.build();
 

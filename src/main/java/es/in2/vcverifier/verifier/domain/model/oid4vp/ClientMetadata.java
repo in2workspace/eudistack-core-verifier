@@ -43,6 +43,21 @@ public record ClientMetadata(
                         List.of("ES256"), List.of("ES256"), null),
                 "jwt_vc_json", new FormatAlgorithms(
                         null, null, List.of("ES256"))
-        ));
+                ),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public ClientMetadata withVpFormatsSupported(Map<String, FormatAlgorithms> vpFormatsSupported) {
+        return new ClientMetadata(
+                vpFormatsSupported, this.clientName, this.logoUri, this.clientUri,
+                    this.policyUri, this.tosUri, this.contacts, this.localizedClaims
+        );
     }
 }

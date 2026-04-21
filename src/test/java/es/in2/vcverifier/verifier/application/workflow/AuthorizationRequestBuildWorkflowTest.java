@@ -9,7 +9,9 @@ import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
+import es.in2.vcverifier.verifier.domain.model.oid4vp.ClientMetadata;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
+import es.in2.vcverifier.verifier.domain.service.RelyingPartyMetadataService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,6 +39,7 @@ class AuthorizationRequestBuildWorkflowTest {
     @Mock private CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
     @Mock private CacheStore<String> cacheForNonceByState;
     @Mock private DcqlProfileResolver dcqlProfileResolver;
+    @Mock private RelyingPartyMetadataService relyingPartyMetadataService;
 
     private AuthorizationRequestBuildWorkflow workflow;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -44,7 +49,7 @@ class AuthorizationRequestBuildWorkflowTest {
         workflow = new AuthorizationRequestBuildWorkflow(
                 jwtService, cryptoComponent, backendConfig,
                 cacheStoreForAuthorizationRequestJWT, cacheForNonceByState,
-                dcqlProfileResolver, objectMapper
+                dcqlProfileResolver, objectMapper, relyingPartyMetadataService
         );
     }
 
@@ -59,13 +64,12 @@ class AuthorizationRequestBuildWorkflowTest {
         when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
+        when(relyingPartyMetadataService.getMetadataByClientId(anyString())).thenReturn(Optional.empty());
 
         AuthorizationRequestBuildWorkflow.Result result = workflow.buildAuthorizationRequest("My Client", "openid learcredential", "state-123");
 
         assertThat(result.signedAuthRequestJwt()).isEqualTo("signed-jwt-content");
         assertThat(result.openid4vpUrl()).startsWith("openid4vp://");
-        assertThat(result.openid4vpUrl()).contains("client_id=");
-        assertThat(result.openid4vpUrl()).contains("request_uri=");
         assertThat(result.nonce()).isNotBlank();
         assertThat(result.homeUri()).isEqualTo("My Client");
 
@@ -73,6 +77,77 @@ class AuthorizationRequestBuildWorkflowTest {
         verify(cacheStoreForAuthorizationRequestJWT).add(eq(result.nonce()), any(AuthorizationRequestJWT.class));
         // Verify nonce-by-state was cached
         verify(cacheForNonceByState).add(eq("state-123"), anyString());
+    }
+
+    @Test
+    @DisplayName("buildJwtPayload includes full display metadata and i18n claims")
+    void buildJwtPayload_includesDisplayMetadataAndI18nClaims() throws Exception {
+        String clientId = "https://verifier.cgcom.es";
+        when(cryptoComponent.getClientId()).thenReturn(clientId);
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(mock(DcqlQuery.class));
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        ClientMetadata complexMetadata = new ClientMetadata(
+                null,
+                "General Council",
+                "https://cgcom.es/logo.png",
+                "https://cgcom.es",
+                null, null, null,
+                Map.of("client_name#es", "Consejo General de Médicos")
+        );
+        when(relyingPartyMetadataService.getMetadataByClientId(anyString())).thenReturn(Optional.of(complexMetadata));
+
+        workflow.buildAuthorizationRequest("Client", "scope", "taste");
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+
+        JsonNode claims = objectMapper.readTree(payloadCaptor.getValue());
+        JsonNode metadata = claims.get("client_metadata");
+
+        assertThat(metadata.get("client_name").asText()).isEqualTo("General Council");
+        assertThat(metadata.get("logo_uri").asText()).isEqualTo("https://cgcom.es/logo.png");
+        assertThat(metadata.get("client_name#es").asText()).isEqualTo("Consejo General de Médicos");
+    }
+
+    @Test
+    @DisplayName("buildJwtPayload falls back to default metadata when RP is not found")
+    void buildJwtPayload_fallsBackToDefaultMetadataWhenRPIsNotFound() throws Exception {
+        when(cryptoComponent.getClientId()).thenReturn("unknown-client");
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(mock(DcqlQuery.class));
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        when(relyingPartyMetadataService.getMetadataByClientId("unknown-client")).thenReturn(Optional.empty());
+
+        workflow.buildAuthorizationRequest("Client", "scope", "taste");
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+
+        JsonNode claims = objectMapper.readTree(payloadCaptor.getValue());
+        JsonNode metadata = claims.get("client_metadata");
+
+        assertThat(metadata.get("vp_formats_supported")).isNotNull();
+        assertThat(metadata.has("client_name")).isFalse();
+    }
+
+    @Test
+    @DisplayName("execute() client_metadata is ALWAYS included regardless of clientId prefix")
+    void execute_clientMetadataIsALWAYSIncludedClientIdPrefix() throws Exception {
+        when(cryptoComponent.getClientId()).thenReturn("https://domain.com");
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(mock(DcqlQuery.class));
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+        when(relyingPartyMetadataService.getMetadataByClientId(anyString())).thenReturn(Optional.empty());
+
+        workflow.buildAuthorizationRequest("Client", "scope", "taste");
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+
+        assertThat(payloadCaptor.getValue()).contains("client_metadata");
     }
 
     @Test

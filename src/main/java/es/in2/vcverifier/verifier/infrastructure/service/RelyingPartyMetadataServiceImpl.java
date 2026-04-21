@@ -1,4 +1,4 @@
-package es.in2.vcverifier.verifier.infrastructure;
+package es.in2.vcverifier.verifier.infrastructure.service;
 
 import es.in2.vcverifier.verifier.domain.model.oid4vp.ClientMetadata;
 import es.in2.vcverifier.verifier.domain.service.RelyingPartyMetadataService;
@@ -29,7 +29,10 @@ public class RelyingPartyMetadataServiceImpl implements RelyingPartyMetadataServ
 
     @Override
     public Optional<ClientMetadata> getMetadataByClientId(String clientId) {
-        return Optional.ofNullable(RP_STORAGE.get(clientId));
+        return Optional.ofNullable(RP_STORAGE.get(clientId))
+                .map(rpMetadata -> rpMetadata.withVpFormatsSupported(
+                        ClientMetadata.defaultMetadata().vpFormatsSupported()
+                ));
     }
 }
 

@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `Cache-Control` to allowed headers in `PublicCorsConfig` to support caching directives from wallets and prevent CORS errors on certain requests (e.g. VP submission with cache hints).
+- Added unit tests for `clientMetadata` generation and localized claims.
+
+### Changed
+- Extended `ClientMetadata` with display fields (name, logo, etc.).
+- Integrated `RelyingPartyMetadataService` into the workflow.
 
 ## [3.0.2] - 2026-04-15
 
