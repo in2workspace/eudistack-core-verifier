@@ -11,7 +11,7 @@ import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.service.RelyingPartyMetadataService;
-import es.in2.vcverifier.verifier.infrastructure.service.RelyingPartyMetadataServiceImpl;
+import es.in2.vcverifier.verifier.infrastructure.service.impl.RelyingPartyMetadataServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -92,10 +92,6 @@ class AuthorizationRequestBuildWorkflowTest {
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
-
-        System.out.println("\n--- CONTENIDO DEL JWT GENERADO ---");
-        System.out.println(payloadCaptor.getValue());
-        System.out.println("----------------------------------\n");
 
         JsonNode claims = objectMapper.readTree(payloadCaptor.getValue());
         JsonNode metadata = claims.get("client_metadata");

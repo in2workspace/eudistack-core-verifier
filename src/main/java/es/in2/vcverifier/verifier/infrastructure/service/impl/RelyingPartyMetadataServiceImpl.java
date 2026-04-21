@@ -1,4 +1,4 @@
-package es.in2.vcverifier.verifier.infrastructure.service;
+package es.in2.vcverifier.verifier.infrastructure.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
