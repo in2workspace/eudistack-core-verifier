@@ -30,9 +30,11 @@ public class BackendConfig {
                 String scheme = request.getScheme();
                 String host = request.getServerName();
                 int port = request.getServerPort();
+                // ForwardedHeaderFilter sets contextPath from X-Forwarded-Prefix
+                String contextPath = request.getContextPath();
                 boolean defaultPort = ("https".equals(scheme) && port == 443)
                         || ("http".equals(scheme) && port == 80);
-                return scheme + "://" + host + (defaultPort ? "" : ":" + port);
+                return scheme + "://" + host + (defaultPort ? "" : ":" + port) + contextPath;
             }
         } catch (Exception ignored) {
             // No request context (startup, async, etc.) — use static config

@@ -7,7 +7,6 @@ import com.nimbusds.jose.proc.SecurityContext;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
-import es.in2.vcverifier.shared.config.FrontendConfig;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.application.workflow.ClientCredentialsValidationWorkflow;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
@@ -30,14 +29,9 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
@@ -65,7 +59,6 @@ public class AuthorizationServerConfig {
     private final CacheStore<RefreshTokenDataCache> refreshTokenDataCacheCacheStore;
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
-    private final FrontendConfig frontendConfig;
     private final ClientCredentialsValidationWorkflow clientCredentialsValidationWorkflow;
     private final TokenGenerationWorkflow tokenGenerationWorkflow;
     private final SafeUrlValidator safeUrlValidator;
@@ -85,8 +78,8 @@ public class AuthorizationServerConfig {
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
-                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,frontendConfig,safeUrlValidator))
-                                .errorResponseHandler(new CustomErrorResponseHandler(frontendConfig, allowedClientsOrigins))
+                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,safeUrlValidator))
+                                .errorResponseHandler(new CustomErrorResponseHandler(allowedClientsOrigins))
                 )
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
@@ -104,13 +97,11 @@ public class AuthorizationServerConfig {
 
     @Bean
     public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
-        NimbusJwtDecoder jwtDecoder = (NimbusJwtDecoder) OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
-        // Audience is dynamic (derived from request host), so validate at request time
-        OAuth2TokenValidator<Jwt> audienceValidator = new JwtClaimValidator<>(
-                "aud", aud -> aud.equals(backendConfig.getUrl()));
-        OAuth2TokenValidator<Jwt> withAudience = new DelegatingOAuth2TokenValidator<>(audienceValidator);
-        jwtDecoder.setJwtValidator(withAudience);
-        return jwtDecoder;
+        // Spring Authorization Server sets the aud claim to the client_id.
+        // No custom audience validation needed — the AS already validates the token
+        // against registered clients. Adding a URL-based aud check would break
+        // multi-tenant (different subdomains) and mismatches with client_id-based aud.
+        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
     }
 
     @Bean

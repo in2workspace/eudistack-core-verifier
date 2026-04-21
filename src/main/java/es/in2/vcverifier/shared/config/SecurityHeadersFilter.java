@@ -27,8 +27,14 @@ public class SecurityHeadersFilter implements Filter {
             httpResponse.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
             httpResponse.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
             // Cache-Control: no-store only for non-public endpoints (JWKS/.well-known can be cached)
-            String path = request instanceof jakarta.servlet.http.HttpServletRequest httpReq
-                    ? httpReq.getRequestURI() : "";
+            String path = "";
+            if (request instanceof jakarta.servlet.http.HttpServletRequest httpReq) {
+                path = httpReq.getRequestURI();
+                String contextPath = httpReq.getContextPath();
+                if (contextPath != null && !contextPath.isEmpty() && path.startsWith(contextPath)) {
+                    path = path.substring(contextPath.length());
+                }
+            }
             if (!path.startsWith("/oidc/jwks") && !path.startsWith("/.well-known")) {
                 httpResponse.setHeader("Cache-Control", "no-store");
             }

@@ -1,12 +1,9 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
-import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
-
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
-import es.in2.vcverifier.shared.config.FrontendConfig;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -70,9 +67,6 @@ class CustomAuthorizationRequestConverterTest {
     private AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
 
     @Mock
-    private FrontendConfig frontendConfig;
-
-    @Mock
     private SafeUrlValidator safeUrlValidator;
 
     private boolean isNonceRequiredOnFapiProfile = true;
@@ -82,7 +76,6 @@ class CustomAuthorizationRequestConverterTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(frontendConfig.getPortalUrl()).thenReturn("http://localhost:4200");
         converter = new CustomAuthorizationRequestConverter(
                 didService,
                 jwtService,
@@ -93,7 +86,6 @@ class CustomAuthorizationRequestConverterTest {
                 loginTimeoutSeconds,
                 httpClient,
                 authorizationRequestBuildWorkflow,
-                frontendConfig,
                 safeUrlValidator
         );
     }
@@ -147,6 +139,8 @@ class CustomAuthorizationRequestConverterTest {
 
         String redirectUrl = error.getUri();
         assertNotNull(redirectUrl);
+        // Context-path comes from HttpServletRequest.getContextPath() dynamically.
+        // This test does not stub it, so the redirect targets the root-level "/login".
         assertTrue(redirectUrl.contains("/login?"));
         assertTrue(redirectUrl.contains("authRequest="));
         assertTrue(redirectUrl.contains("state="));
@@ -633,8 +627,10 @@ class CustomAuthorizationRequestConverterTest {
         String clientName = "Test Client";
         String clientNonce = "test-nonce";
         stubPkceParamsNull(request);
+        stubPortalUrlHeaders(request, "https", "kpmg.example.com:4443");
 
-        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getContextPath()).thenReturn("/verifier");
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://kpmg.example.com:4443/verifier/oidc/authorize"));
         when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
         when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
         when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
@@ -668,14 +664,125 @@ class CustomAuthorizationRequestConverterTest {
 
         String resultUrl = error.getUri();
         assertNotNull(resultUrl);
-        assertTrue(resultUrl.startsWith("http://localhost:4200/login?"), "Redirect should use portal URL");
+        assertTrue(resultUrl.startsWith("https://kpmg.example.com:4443/verifier/login?"), "Redirect should use tenant portal URL derived from request");
         assertTrue(resultUrl.contains("authRequest="), "Redirect should contain authRequest param");
         assertTrue(resultUrl.contains("state="), "Redirect should contain state param");
         assertTrue(resultUrl.contains("homeUri="), "Redirect should contain homeUri param");
     }
 
+    @Test
+    void convert_standardRequest_usesContextPathFromRequest_noHardcodedVerifierPrefix() {
+        // Given a servlet context-path different from the legacy "/verifier" nginx prefix,
+        // the redirect URL must honour that context-path dynamically.
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String state = "test-state";
+        String scope = "learcredential";
+        String redirectUri = "https://client.example.com/callback";
+        String clientName = "Test Client";
+        String clientNonce = "test-nonce";
+        stubPkceParamsNull(request);
+        stubPortalUrlHeaders(request, "https", "tenant.example.com");
+
+        when(request.getContextPath()).thenReturn("/custom-ctx");
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://tenant.example.com/custom-ctx/oidc/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(NONCE)).thenReturn(clientNonce);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName(clientName)
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(redirectUri)
+                .build();
+
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+        AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
+                "signed-jwt", "openid4vp://...", "nonce-ctx", clientName);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(clientName, scope, state)).thenReturn(workflowResult);
+
+        OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> converter.convert(request)
+        );
+
+        String resultUrl = exception.getError().getUri();
+        assertNotNull(resultUrl);
+        assertTrue(resultUrl.startsWith("https://tenant.example.com/custom-ctx/login?"),
+                "Redirect must use the servlet context-path, not a hardcoded /verifier prefix");
+        assertFalse(resultUrl.contains("/verifier/login"),
+                "Redirect must not contain the hardcoded /verifier/login path");
+    }
+
+    @Test
+    void convert_fapiRequestWithMismatchedScope_errorUrlUsesContextPathFromRequest() {
+        // Given an invalid FAPI request, the error redirect URL must also be built from request.getContextPath(),
+        // not the hardcoded "/verifier/error".
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String state = "test-state";
+        String scope = "learcredential";
+        String redirectUri = "https://client.example.com/callback";
+        String jwt = "mock-jwt-token";
+        String clientName = "Test Client";
+        String clientNonce = "test-nonce";
+        List<String> authorizationGrantTypes = List.of("authorization_code");
+        stubPkceParamsNull(request);
+        stubPortalUrlHeaders(request, "https", "tenant.example.com");
+
+        when(request.getContextPath()).thenReturn("/custom-ctx");
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://tenant.example.com/custom-ctx/oidc/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(NONCE)).thenReturn(clientNonce);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(jwt);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName(clientName)
+                .authorizationGrantTypes(grantTypes -> authorizationGrantTypes.forEach(grantType -> grantTypes.add(new AuthorizationGrantType(grantType))))
+                .redirectUris(uris -> uris.add(redirectUri))
+                .build();
+
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+
+        SignedJWT signedJWT = mock(SignedJWT.class);
+        Payload payload = mock(Payload.class);
+        when(signedJWT.getPayload()).thenReturn(payload);
+        when(jwtService.parseJWT(jwt)).thenReturn(signedJWT);
+
+        OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> converter.convert(request)
+        );
+
+        String errorUrl = exception.getError().getUri();
+        assertNotNull(errorUrl);
+        assertTrue(errorUrl.startsWith("https://tenant.example.com/custom-ctx/error?"),
+                "Error redirect must use the servlet context-path, not a hardcoded /verifier prefix");
+        assertFalse(errorUrl.contains("/verifier/error"),
+                "Error redirect must not contain the hardcoded /verifier/error path");
+    }
+
     private void stubPkceParamsNull(HttpServletRequest request) {
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
+    }
+
+    private void stubPortalUrlHeaders(HttpServletRequest request, String scheme, String host) {
+        when(request.getHeader("X-Forwarded-Host")).thenReturn(host);
+        when(request.getHeader("X-Forwarded-Proto")).thenReturn(scheme);
     }
 }

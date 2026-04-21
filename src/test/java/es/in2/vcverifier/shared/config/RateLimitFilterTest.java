@@ -107,4 +107,62 @@ class RateLimitFilterTest {
 
         verify(chain).doFilter(request, response);
     }
+
+    // Regression: when server.servlet.context-path=/verifier is configured,
+    // HttpServletRequest#getRequestURI() includes the context-path prefix.
+    // The filter must strip it before classifying auth-sensitive endpoints,
+    // otherwise the stricter 30 req/min limit is never applied.
+
+    @Test
+    void doFilter_tokenEndpoint_withContextPath_appliesAuthLimit()
+            throws IOException, ServletException {
+        when(request.getRemoteAddr()).thenReturn("10.0.0.10");
+        when(request.getRequestURI()).thenReturn("/verifier/oidc/token");
+        when(request.getContextPath()).thenReturn("/verifier");
+
+        // Exceed the 30 req/min auth limit
+        for (int i = 0; i < 30; i++) {
+            rateLimitFilter.doFilter(request, response, chain);
+        }
+        reset(response);
+
+        rateLimitFilter.doFilter(request, response, chain);
+
+        verify(response).setStatus(429);
+        verify(response).setHeader("Retry-After", "60");
+    }
+
+    @Test
+    void doFilter_authResponse_withContextPath_appliesAuthLimit()
+            throws IOException, ServletException {
+        when(request.getRemoteAddr()).thenReturn("10.0.0.11");
+        when(request.getRequestURI()).thenReturn("/verifier/oid4vp/auth-response");
+        when(request.getContextPath()).thenReturn("/verifier");
+
+        // Exceed the 30 req/min auth limit
+        for (int i = 0; i < 30; i++) {
+            rateLimitFilter.doFilter(request, response, chain);
+        }
+        reset(response);
+
+        rateLimitFilter.doFilter(request, response, chain);
+
+        verify(response).setStatus(429);
+        verify(response).setHeader("Retry-After", "60");
+    }
+
+    @Test
+    void doFilter_jwksEndpoint_withContextPath_appliesOnlyGeneralLimit()
+            throws IOException, ServletException {
+        when(request.getRemoteAddr()).thenReturn("10.0.0.12");
+        when(request.getRequestURI()).thenReturn("/verifier/oidc/jwks");
+        when(request.getContextPath()).thenReturn("/verifier");
+
+        // 31 requests: would exceed auth limit (30) but must stay under general limit (120)
+        for (int i = 0; i < 31; i++) {
+            rateLimitFilter.doFilter(request, response, chain);
+        }
+
+        verify(response, never()).setStatus(429);
+    }
 }

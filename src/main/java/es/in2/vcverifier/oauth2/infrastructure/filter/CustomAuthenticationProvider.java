@@ -22,6 +22,7 @@ import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.authentication.*;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -58,7 +59,10 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         log.info("Processing authorization grant");
 
         String clientId = getClientId(authentication);
-        RegisteredClient registeredClient = getRegisteredClient(clientId);
+        boolean isM2M = authentication instanceof OAuth2ClientCredentialsAuthenticationToken;
+        RegisteredClient registeredClient = isM2M
+                ? getOrBuildRegisteredClient(clientId, authentication)
+                : getRegisteredClient(clientId);
 
         if (authentication instanceof OAuth2AuthorizationCodeAuthenticationToken authCodeToken) {
             if (isPublicPkceClient(registeredClient)) {
@@ -69,7 +73,6 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         }
 
         JsonNode credentialJson = getJsonCredential(authentication);
-        boolean isM2M = authentication instanceof OAuth2ClientCredentialsAuthenticationToken;
 
         // Resolve audience
         String audience;
@@ -230,6 +233,53 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
         return registeredClient;
+    }
+
+    /**
+     * For M2M (client_credentials): first tries the registered client repository.
+     * If not found, builds a synthetic RegisteredClient from the validated credential,
+     * so machines don't need to be pre-registered in clients.yaml.
+     */
+    private RegisteredClient getOrBuildRegisteredClient(String clientId, OAuth2AuthorizationGrantAuthenticationToken authentication) {
+        RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
+        if (registeredClient != null) {
+            return registeredClient;
+        }
+        log.info("M2M client '{}' not pre-registered, building synthetic client from credential", clientId);
+        JsonNode credentialJson = getJsonCredential(authentication);
+        String tenant = extractTenantFromCredential(credentialJson);
+
+        ClientSettings.Builder settingsBuilder = ClientSettings.builder();
+        if (tenant != null) {
+            settingsBuilder.setting(CLIENT_SETTING_TENANT, tenant);
+        }
+
+        return RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId(clientId)
+                .clientAuthenticationMethod(ClientAuthenticationMethod.PRIVATE_KEY_JWT)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .clientSettings(settingsBuilder.build())
+                .build();
+    }
+
+    /**
+     * Extracts the tenant identifier from the mandator's organizationIdentifier
+     * in the credential. Navigates: credentialSubject.mandate.mandator.organizationIdentifier
+     */
+    private String extractTenantFromCredential(JsonNode credentialJson) {
+        JsonNode mandator = credentialJson.at("/credentialSubject/mandate/mandator");
+        if (mandator.isMissingNode()) {
+            log.warn("No mandator found in credential, cannot resolve tenant");
+            return null;
+        }
+        JsonNode orgId = mandator.get("organizationIdentifier");
+        if (orgId == null || orgId.isNull()) {
+            log.warn("No organizationIdentifier found in mandator");
+            return null;
+        }
+        String organizationIdentifier = orgId.asText();
+        log.info("Extracted organizationIdentifier from M2M credential: {}", organizationIdentifier);
+        return organizationIdentifier;
     }
 
     private JsonNode getJsonCredential(OAuth2AuthorizationGrantAuthenticationToken authentication) {

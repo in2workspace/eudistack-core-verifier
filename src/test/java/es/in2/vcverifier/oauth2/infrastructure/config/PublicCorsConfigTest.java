@@ -103,7 +103,7 @@ class PublicCorsConfigTest {
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
 
         assertNotNull(corsConfig);
-        assertEquals(List.of("Content-Type", "Authorization"), corsConfig.getAllowedHeaders());
+        assertEquals(List.of("Content-Type", "Authorization", "Cache-Control"), corsConfig.getAllowedHeaders());
     }
 
     @Test

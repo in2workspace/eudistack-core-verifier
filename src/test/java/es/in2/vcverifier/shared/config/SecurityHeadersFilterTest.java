@@ -70,4 +70,44 @@ class SecurityHeadersFilterTest {
         verify(response, never()).setHeader(eq("Cache-Control"), anyString());
         verify(chain).doFilter(request, response);
     }
+
+    // Regression: when server.servlet.context-path=/verifier is configured,
+    // HttpServletRequest#getRequestURI() includes the context-path prefix.
+    // The filter must strip it before matching public endpoints.
+
+    @Test
+    void doFilter_jwksEndpoint_withContextPath_shouldNotSetCacheControlNoStore()
+            throws IOException, ServletException {
+        when(request.getRequestURI()).thenReturn("/verifier/oidc/jwks");
+        when(request.getContextPath()).thenReturn("/verifier");
+
+        securityHeadersFilter.doFilter(request, response, chain);
+
+        verify(response, never()).setHeader(eq("Cache-Control"), anyString());
+        verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void doFilter_wellKnownEndpoint_withContextPath_shouldNotSetCacheControlNoStore()
+            throws IOException, ServletException {
+        when(request.getRequestURI()).thenReturn("/verifier/.well-known/openid-configuration");
+        when(request.getContextPath()).thenReturn("/verifier");
+
+        securityHeadersFilter.doFilter(request, response, chain);
+
+        verify(response, never()).setHeader(eq("Cache-Control"), anyString());
+        verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void doFilter_authResponse_withContextPath_shouldSetCacheControlNoStore()
+            throws IOException, ServletException {
+        when(request.getRequestURI()).thenReturn("/verifier/oid4vp/auth-response");
+        when(request.getContextPath()).thenReturn("/verifier");
+
+        securityHeadersFilter.doFilter(request, response, chain);
+
+        verify(response).setHeader("Cache-Control", "no-store");
+        verify(chain).doFilter(request, response);
+    }
 }

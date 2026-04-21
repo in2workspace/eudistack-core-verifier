@@ -4,7 +4,6 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
-import es.in2.vcverifier.shared.config.FrontendConfig;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -61,14 +60,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final long loginTimeoutSeconds;
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
-    private final FrontendConfig frontendConfig;
     private final SafeUrlValidator safeUrlValidator;
 
     @Override
     public Authentication convert(HttpServletRequest request) {
         log.info("CustomAuthorizationRequestConverter.convert");
 
+        String portalUrl = resolvePortalUrlFromRequest(request);
         String originalRequestURL = getFullRequestUrl(request);
+        String contextPath = request.getContextPath();
 
         String requestUri = request.getParameter(REQUEST_URI);
         String clientId = request.getParameter(OAuth2ParameterNames.CLIENT_ID);
@@ -87,6 +87,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .codeChallenge(codeChallenge)
                 .codeChallengeMethod(codeChallengeMethod)
                 .scope(scope)
+                .portalUrl(portalUrl)
+                .contextPath(contextPath)
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
@@ -109,15 +111,19 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                                              HttpServletRequest request,
                                              RegisteredClient registeredClient) {
         String jwt = retrieveJwtFromRequestUriOrRequest(
-                authorizationContext.requestUri(), request, registeredClient, authorizationContext.originalRequestURL());
+                authorizationContext.requestUri(), request, registeredClient, authorizationContext.originalRequestURL(),
+                authorizationContext.portalUrl(), authorizationContext.contextPath());
 
         SignedJWT signedJwt = jwtService.parseJWT(jwt);
 
-        validateOAuth2Parameters(registeredClient, authorizationContext.scope(), signedJwt, authorizationContext.originalRequestURL());
-        validateRedirectUri(registeredClient, authorizationContext.redirectUri(), signedJwt, authorizationContext.originalRequestURL());
+        validateOAuth2Parameters(registeredClient, authorizationContext.scope(), signedJwt,
+                authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
+        validateRedirectUri(registeredClient, authorizationContext.redirectUri(), signedJwt,
+                authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
 
         if (isNonceRequiredOnFapiProfile) {
-            validateNonceRequired(authorizationContext.clientNonce(), registeredClient, authorizationContext.originalRequestURL());
+            validateNonceRequired(authorizationContext.clientNonce(), registeredClient,
+                    authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
         }
 
         return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient);
@@ -125,7 +131,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication handleOIDCStandardRequest(AuthorizationContext authorizationContext,
                                                      RegisteredClient registeredClient) {
-        validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null, authorizationContext.originalRequestURL());
+        validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null,
+                authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
 
         cacheAuthorizationRequest(authorizationContext, registeredClient.getClientId(), authorizationContext.redirectUri());
 
@@ -133,7 +140,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
 
-        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient);
+        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
+                authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
@@ -151,7 +159,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
 
-        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient);
+        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
+                authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
     /**
@@ -160,7 +169,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * If the client has a custom loginPageUri, redirect there instead of the default MFE Login.
      */
     private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,
-                                                       RegisteredClient registeredClient) {
+                                                       RegisteredClient registeredClient, String portalUrl,
+                                                       String contextPath) {
         Map<String, Object> clientSettings = registeredClient.getClientSettings().getSettings();
         String loginPageUri = clientSettings.containsKey(CLIENT_SETTING_LOGIN_PAGE_URI)
                 ? (String) clientSettings.get(CLIENT_SETTING_LOGIN_PAGE_URI)
@@ -177,8 +187,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             );
         } else {
             redirectUrl = String.format(
-                    "%s/login?authRequest=%s&state=%s&homeUri=%s",
-                    frontendConfig.getPortalUrl(),
+                    "%s%s/login?authRequest=%s&state=%s&homeUri=%s",
+                    portalUrl,
+                    nullSafeContextPath(contextPath),
                     URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
                     URLEncoder.encode(state, StandardCharsets.UTF_8),
                     URLEncoder.encode(result.homeUri(), StandardCharsets.UTF_8)
@@ -192,10 +203,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     // --- Validation methods (framework-level, kept in filter) ---
 
     private void throwInvalidClientAuthenticationException(String errorMessage, String clientName,
-                                                           String errorCode, String originalRequestURL) {
+                                                           String errorCode, String originalRequestURL,
+                                                           String portalUrl, String contextPath) {
         String redirectUrl = String.format(
-                "%s/error?errorCode=%s&errorMessage=%s&clientUrl=%s&originalRequestURL=%s",
-                frontendConfig.getPortalUrl(),
+                "%s%s/error?errorCode=%s&errorMessage=%s&clientUrl=%s&originalRequestURL=%s",
+                portalUrl,
+                nullSafeContextPath(contextPath),
                 URLEncoder.encode(errorCode, StandardCharsets.UTF_8),
                 URLEncoder.encode(errorMessage, StandardCharsets.UTF_8),
                 URLEncoder.encode(clientName, StandardCharsets.UTF_8),
@@ -205,8 +218,17 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
     }
 
+    /**
+     * Returns the servlet context-path, defaulting to an empty string when absent (root deployment).
+     * Ensures URLs are well-formed regardless of whether a context-path is configured.
+     */
+    private String nullSafeContextPath(String contextPath) {
+        return contextPath == null ? "" : contextPath;
+    }
+
     private String retrieveJwtFromRequestUriOrRequest(String requestUri, HttpServletRequest request,
-                                                      RegisteredClient registeredClient, String originalRequestURL) {
+                                                      RegisteredClient registeredClient, String originalRequestURL,
+                                                      String portalUrl, String contextPath) {
         if (requestUri != null) {
             try {
                 // SEC-14: SSRF protection — validate URL before outbound request
@@ -219,47 +241,50 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 if (httpResponse.statusCode() != 200 || StringUtils.isBlank(httpResponse.body())) {
                     String errorCode = UUID.randomUUID().toString();
                     throwInvalidClientAuthenticationException("Failed to retrieve JWT from request_uri: Invalid response.",
-                            registeredClient.getClientName(), errorCode, originalRequestURL);
+                            registeredClient.getClientName(), errorCode, originalRequestURL, portalUrl, contextPath);
                 }
                 return httpResponse.body();
             } catch (IOException | InterruptedException e) {
                 Thread.currentThread().interrupt();
                 String errorCode = UUID.randomUUID().toString();
                 throwInvalidClientAuthenticationException("Failed to retrieve JWT from request_uri.",
-                        registeredClient.getClientName(), errorCode, originalRequestURL);
+                        registeredClient.getClientName(), errorCode, originalRequestURL, portalUrl, contextPath);
             }
         }
         return request.getParameter("request");
     }
 
     private void validateOAuth2Parameters(RegisteredClient registeredClient, String scope,
-                                          SignedJWT signedJwt, String originalRequestURL) {
+                                          SignedJWT signedJwt, String originalRequestURL, String portalUrl,
+                                          String contextPath) {
         Payload payload = signedJwt.getPayload();
         String jwtClientId = jwtService.extractClaimFromPayload(payload, CLIENT_ID);
         String jwtScope = jwtService.extractClaimFromPayload(payload, SCOPE);
 
         if (!registeredClient.getClientId().equals(jwtClientId) || !scope.equals(jwtScope)) {
             throwInvalidClientAuthenticationException("The OAuth 2.0 parameters do not match the JWT claims.",
-                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL);
+                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }
     }
 
     private void validateRedirectUri(RegisteredClient registeredClient, String redirectUri,
-                                     SignedJWT signedJwt, String originalRequestURL) {
+                                     SignedJWT signedJwt, String originalRequestURL, String portalUrl,
+                                     String contextPath) {
         String jwtRedirectUri = signedJwt != null
                 ? jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI)
                 : redirectUri;
 
         if (!registeredClient.getRedirectUris().contains(jwtRedirectUri)) {
             throwInvalidClientAuthenticationException("The redirect_uri does not match any of the registered client's redirect_uris.",
-                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL);
+                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }
     }
 
-    private void validateNonceRequired(String clientNonce, RegisteredClient registeredClient, String originalRequestURL) {
+    private void validateNonceRequired(String clientNonce, RegisteredClient registeredClient,
+                                       String originalRequestURL, String portalUrl, String contextPath) {
         if (StringUtils.isBlank(clientNonce)) {
             throwInvalidClientAuthenticationException("The 'nonce' parameter is required but is missing.",
-                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL);
+                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }
     }
 
@@ -290,6 +315,27 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         builder.additionalParameters(additionalParameters);
         cacheStoreForOAuth2AuthorizationRequest.add(authorizationContext.state(), builder.build());
+    }
+
+    /**
+     * Derives the portal base URL from the incoming request, using X-Forwarded headers
+     * set by nginx. In multi-tenant mode, each tenant has its own subdomain
+     * (e.g., kpmg.127.0.0.1.nip.io), so the portal URL must match the request origin.
+     */
+    private String resolvePortalUrlFromRequest(HttpServletRequest request) {
+        String host = request.getHeader("X-Forwarded-Host");
+        if (host == null || host.isBlank()) {
+            host = request.getServerName();
+            int port = request.getServerPort();
+            if (port != 80 && port != 443) {
+                host = host + ":" + port;
+            }
+        }
+        String scheme = request.getHeader("X-Forwarded-Proto");
+        if (scheme == null || scheme.isBlank()) {
+            scheme = request.getScheme();
+        }
+        return scheme + "://" + host;
     }
 
     private String getFullRequestUrl(HttpServletRequest request) {

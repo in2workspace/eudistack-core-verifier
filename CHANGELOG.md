@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `PublicCorsConfigTest`: aligned assertion with production config that includes `Cache-Control` in allowed headers (added in 3.0.3). CI `:test` task was failing with `expected: <[Content-Type, Authorization]> but was: <[Content-Type, Authorization, Cache-Control]>`.
+
+## [3.1.0] - 2026-04-20
+
+### Fixed (EUDI-064: AWS deployment readiness) — Verifier context-path
+
+- **AWS deployment readiness (CloudFront + ALB, no nginx):** previously the verifier relied on nginx to strip the `/verifier/` prefix before forwarding requests; Spring controllers were mapped without the prefix (e.g. `@RequestMapping("/api/login")`). On AWS, requests arrive at the pod with `/verifier/...` intact and Spring did not match them.
+  - `application.yaml`: added `server.servlet.context-path: ${APP_CONTEXT_PATH:/verifier}` so Spring itself handles the prefix. The default keeps local dev via nginx working (nginx still forwards with the prefix) and AWS direct routing works without extra infrastructure.
+  - `CustomAuthorizationRequestConverter`: replaced hardcoded `"/verifier/login"` and `"/verifier/error"` strings with dynamic construction from `HttpServletRequest.getContextPath()`. The value is captured in `convert()` and propagated through `AuthorizationContext` so login and error redirect URLs honour whatever context-path is active.
+  - `SecurityHeadersFilter` and `RateLimitFilter` now strip the context-path before matching request URIs, so security headers and rate limiting work consistently regardless of the active context-path.
+  - OID4VP / OIDC endpoints moved under `/verifier/` (Spring Authorization Server auto-prepends the context-path).
+  - Added two unit tests verifying that the login and error redirect URLs are built from the request's context-path and contain no hardcoded `/verifier` segment. Full suite: 497 tests pass.
+
 ## [3.0.3] - 2026-04-15
 
 ### Added
