@@ -26,11 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `Cache-Control` to allowed headers in `PublicCorsConfig` to support caching directives from wallets and prevent CORS errors on certain requests (e.g. VP submission with cache hints).
-- Added unit tests for `clientMetadata` generation and localized claims.
+- **Dynamic Relying Metadata:** Implemented an externalized configuration system via `relying-party-metadata.json` to manage Verifier identities without code changes.
+- **Internationalization (i18n) Support:** Added `localized_claims` support in `ClientMetadata` to provide multi-language UI strings to the Wallet.
+- **Enhanced Integratino Testing:** Refactored `AuthorizationRequestBuildWorkflowTest` to validate the real JSON parsing logic and JWT payload structure.
 
 ### Changed
-- Extended `ClientMetadata` with display fields (name, logo, etc.).
-- Integrated `RelyingPartyMetadataService` into the workflow.
+- **Extended OID4VP Metadata:** Updated `ClientMetadata` record to include standard display fields such as `logo_uri`, `client_uri`, `contacts`, etc.
+- **Workflow Refactoring:** Integrated `RelyingPartyMetadataService` into the `AuthorizationRequestBuildWorkflow` to automatically inject client-specific metadata based on the `client_id`.
+- **JWT Payload Structure:** Optimized the generated Authorization Request JWT to strictly follow OID4VP and DCQL profiles, ensuring correct `vp_formats_supported` for `dc+sd-jwt` and `jwt_vc_json`.
 
 ## [3.0.2] - 2026-04-15
 

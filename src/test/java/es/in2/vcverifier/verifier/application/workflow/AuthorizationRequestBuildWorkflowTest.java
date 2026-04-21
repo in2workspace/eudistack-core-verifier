@@ -9,7 +9,6 @@ import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
-import es.in2.vcverifier.verifier.domain.model.oid4vp.ClientMetadata;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.service.RelyingPartyMetadataService;
 import es.in2.vcverifier.verifier.infrastructure.service.RelyingPartyMetadataServiceImpl;
@@ -22,8 +21,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
