@@ -24,7 +24,7 @@ public record ClientMetadata(
         @JsonProperty("contacts") List<String> contacts,
 
         // --- i18n Support (BCP 47) ---
-        @JsonAnyGetter Map<String,Object> localizedClaims
+        @JsonProperty("localized_claims") Map<String,Object> localizedClaims
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
