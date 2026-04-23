@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.3] - 2026-04-23
+
+### Changed
+
+- **CI deploy health check is now warning-only**: `deploy.yml` was failing the deploy on non-200 responses, but the configured host (`verifier-stg.api.altia.eudistack.net`) does not resolve from the GitHub runner — `altia` is not published in Route53, only tenant subdomains (`<tenant>-stg.eudistack.net`) go through CloudFront. The issuer workflow has always treated the same condition as a warning, which is why its deploys kept "passing". Aligned the verifier step to emit `::warning::` instead of `::error::` + `exit 1`, so a broken post-deploy probe no longer blocks rollouts while the real target-group health check (managed by `aws ecs wait services-stable`) keeps validating task health. True end-to-end validation should be performed manually against `https://<tenant>-stg.eudistack.net/verifier/health`.
+
 ## [3.1.2] - 2026-04-23
 
 ### Fixed
