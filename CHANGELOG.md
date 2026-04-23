@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-04-23
+
+### Fixed
+
+- **CI deploy health check**: `deploy.yml` probed `https://verifier-<env>.api.altia.eudistack.net/health`, but the ALB only routes `/verifier/*` to the verifier target group and Spring exposes the endpoint at `/verifier/health` (context-path introduced in 3.1.0). The health step returned HTTP 000 for five attempts and failed the deploy. Updated `HEALTH_URL` to `/verifier/health`.
+
 ## [3.1.1] - 2026-04-23
 
 ### Changed
