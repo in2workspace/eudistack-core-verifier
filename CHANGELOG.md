@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-04-23
+
+### Changed
+
+- **`application.yaml`**: `server.forward-headers-strategy: framework` remains hardcoded, but the matching `SERVER_FORWARD_HEADERS_STRATEGY` env var has been removed from the ECS task definition in `eudistack-platform-iac` to eliminate redundancy. Behaviour unchanged.
+
 ### Fixed
 
 - `PublicCorsConfigTest`: aligned assertion with production config that includes `Cache-Control` in allowed headers (added in 3.0.3). CI `:test` task was failing with `expected: <[Content-Type, Authorization]> but was: <[Content-Type, Authorization, Cache-Control]>`.
