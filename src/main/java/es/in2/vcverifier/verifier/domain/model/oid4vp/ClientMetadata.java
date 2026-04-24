@@ -44,7 +44,7 @@ public record ClientMetadata(
                 "jwt_vc_json", new FormatAlgorithms(
                         null, null, List.of("ES256"))
                 ),
-                null,
+                "Unknown Relying Party",
                 null,
                 null,
                 null,

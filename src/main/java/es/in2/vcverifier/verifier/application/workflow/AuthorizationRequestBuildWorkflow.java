@@ -49,7 +49,7 @@ public class AuthorizationRequestBuildWorkflow {
     private final ObjectMapper objectMapper;
     private final RelyingPartyMetadataService relyingPartyMetadataService;
 
-    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String homeUri) {}
+    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String homeUri, ClientMetadata clientMetadata) {}
 
     /**
      * Resolves the scope to a DCQL query, builds the JWT payload for an OID4VP
@@ -65,6 +65,9 @@ public class AuthorizationRequestBuildWorkflow {
         DcqlQuery dcqlQuery = dcqlProfileResolver.resolve(scope);
 
         String nonce = UUID.randomUUID().toString();
+        String clientId = cryptoComponent.getClientId();
+        ClientMetadata clientMetadata = relyingPartyMetadataService.getMetadataByClientId(clientId)
+                .orElseGet(ClientMetadata::defaultMetadata);
         String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery);
         String signedJwt = jwtService.issueJWTwithOI4VPType(jwtPayload);
 
@@ -77,7 +80,9 @@ public class AuthorizationRequestBuildWorkflow {
 
         String openid4vpUrl = generateOpenId4VpUrl(qrNonce);
 
-        return new Result(signedJwt, openid4vpUrl, qrNonce, clientName);
+        Result result = new Result(signedJwt, openid4vpUrl, qrNonce, clientName, clientMetadata);
+        log.info("Final Authorization Request Request Result: {}", result);
+        return result;
     }
 
     private String buildJwtPayload(String scope, String state, String nonce, DcqlQuery dcqlQuery) {
@@ -106,7 +111,10 @@ public class AuthorizationRequestBuildWorkflow {
                 .orElseGet(ClientMetadata::defaultMetadata);
         builder.claim("client_metadata", objectMapper.convertValue(clientMetadata, Map.class));
 
+        log.info("Client Metadata resolved: {}", clientMetadata);
+
         JWTClaimsSet payload = builder.build();
+        log.info("Client payload resolved: {}", payload);
 
         cacheForNonceByState.add(state, nonce);
         return payload.toString();

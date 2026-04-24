@@ -12,17 +12,17 @@
       "client_name#ca": "Consell General de Metges"
     }
   },
-  "https://verifier-proximity-stg.altia.eudistack.net": {
-    "client_name": "Altia Consultores S.A.",
-    "logo_uri": "https:/www.altiacompany/logo.png",
-    "client_uri": "https://www.altiacompany.com/es",
-    "policy_uri": "https://www.altiacompany.com/es/politica-de-cookies",
-    "tos_uri": "https://www.altiacompany.com/es/altia/compromiso-etico",
-    "contacts": ["aina.gomez@altia.es", "contacto@altia.es"],
+  "default": {
+    "client_name": "Consejo General de Médicos",
+    "logo_uri": "https://www.cgcom.es/sites/main/files/omc_consejo_principal_blanco1_0.png",
+    "client_uri": "https://www.cgcom.es",
+    "policy_uri": "https://www.cgcom.es/politica-privacidad",
+    "tos_uri": "https://www.cgcom.es/registro-de-actividades-de-tratamiento",
+    "contacts": ["cgcom@cgcom.es"],
     "localized_claims": {
-      "client_name#es": "ALTIA",
-      "client_name#en": "ALTIA",
-      "client_name#ca": "ALTIA"
+      "client_name#es": "Consejo General de Médicos",
+      "client_name#en": "General Council of Medical Colleges",
+      "client_name#ca": "Consell General de Metges"
     }
   }
 }

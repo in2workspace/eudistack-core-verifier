@@ -46,7 +46,15 @@ public class RelyingPartyMetadataServiceImpl implements RelyingPartyMetadataServ
 
     @Override
     public Optional<ClientMetadata> getMetadataByClientId(String clientId) {
-        return Optional.ofNullable(metadataMap.get(clientId))
+        ClientMetadata metadata = metadataMap.get(clientId);
+
+        if (metadata == null) {
+            log.warn("Metadata not found for clientId: {}. Falling back to 'default' entry.", clientId);
+            metadata = metadataMap.get("default");
+        } else {
+            metadata = metadataMap.get(clientId);
+        }
+        return Optional.ofNullable(metadata)
                 .map(rpMetadata -> rpMetadata.withVpFormatsSupported(
                         ClientMetadata.defaultMetadata().vpFormatsSupported()
                 ));
