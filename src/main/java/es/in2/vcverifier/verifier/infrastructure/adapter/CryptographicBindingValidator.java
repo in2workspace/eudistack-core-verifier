@@ -39,7 +39,8 @@ public class CryptographicBindingValidator {
     public void validateVpSignatureAndBinding(
             String verifiablePresentation,
             SignedJWT vpJwt,
-            SignedJWT jwtCredential) {
+            SignedJWT jwtCredential,
+            boolean requireCnfBinding) {
 
         ECPublicKey vpSignerKey = null;
         String holderDid = null;
@@ -85,14 +86,18 @@ public class CryptographicBindingValidator {
         }
 
         // Cryptographic binding via cnf.jwk (RFC 7800)
-        ECKey vcCnfJwk = extractCnfJwkFromVc(jwtCredential);
-        if (vcCnfJwk == null) {
-            throw new InvalidScopeException("Credential missing cnf.jwk — cannot validate cryptographic binding");
+        if (requireCnfBinding) {
+            ECKey vcCnfJwk = extractCnfJwkFromVc(jwtCredential);
+            if (vcCnfJwk == null) {
+                throw new InvalidScopeException("Credential missing cnf.jwk — cannot validate cryptographic binding");
+            }
+            if (vpSignerKey == null) {
+                throw new InvalidScopeException("Cannot extract VP signer key — cannot validate cryptographic binding");
+            }
+            validateBindingByJwkThumbprint(vpSignerKey, vcCnfJwk);
+        } else {
+            log.info("[BIND] cnf.jwk binding check skipped (M2M flow without holder binding)");
         }
-        if (vpSignerKey == null) {
-            throw new InvalidScopeException("Cannot extract VP signer key — cannot validate cryptographic binding");
-        }
-        validateBindingByJwkThumbprint(vpSignerKey, vcCnfJwk);
     }
 
     String normalizeDid(String did) {

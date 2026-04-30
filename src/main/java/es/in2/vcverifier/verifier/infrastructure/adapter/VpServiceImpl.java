@@ -45,6 +45,11 @@ public class VpServiceImpl implements VpService {
 
     @Override
     public void verifyVerifiablePresentation(String verifiablePresentation) {
+        verifyVerifiablePresentation(verifiablePresentation, true);
+    }
+
+    @Override
+    public void verifyVerifiablePresentation(String verifiablePresentation, boolean requireCnfBinding) {
         log.info("Starting validation of Verifiable Presentation");
 
         // Step 1: Extract the first VC from the VP
@@ -108,7 +113,7 @@ public class VpServiceImpl implements VpService {
         // Step 9: Validate VP signature + cryptographic binding
         SignedJWT vpJwt = parseVpJwt(verifiablePresentation);
         cryptographicBindingValidator.validateVpSignatureAndBinding(
-                verifiablePresentation, vpJwt, jwtCredential
+                verifiablePresentation, vpJwt, jwtCredential, requireCnfBinding
         );
 
         log.info("Verifiable Presentation validation completed successfully");

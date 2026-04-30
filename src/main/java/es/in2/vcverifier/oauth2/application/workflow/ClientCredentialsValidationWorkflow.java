@@ -70,8 +70,9 @@ public class ClientCredentialsValidationWorkflow {
             throw new IllegalArgumentException("Invalid JWT claims from assertion");
         }
 
-        // Full VP validation
-        vpService.verifyVerifiablePresentation(decodedVpToken);
+        // Full VP validation — cnf.jwk binding skipped: credential is obtained via wallet,
+        // the calling app does not hold the wallet's private key.
+        vpService.verifyVerifiablePresentation(decodedVpToken, false);
         log.info("ClientCredentialsValidationWorkflow: VP validated successfully");
 
         return vc;
