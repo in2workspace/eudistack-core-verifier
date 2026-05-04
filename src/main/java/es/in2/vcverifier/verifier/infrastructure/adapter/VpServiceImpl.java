@@ -76,11 +76,11 @@ public class VpServiceImpl implements VpService {
         // Step 4: Validate revocation (only if credentialStatus is present)
         // SEC-S2: Fail-closed — if revocation status cannot be determined, reject the credential.
         if (hasRevocationConfig(credential)) {
-            log.debug("CredentialStatus detected in credential");
+            log.debug("CredentialStatus detected in credential.");
             if (!validateCredentialNotRevoked(credential)) {
                 throw new CredentialRevokedException("Credential is revoked.");
             }
-            log.info("Credential is not revoked");
+            log.info("Credential is not revoked.");
         } else {
             log.debug("No CredentialStatus block found; skipping revocation check");
         }
