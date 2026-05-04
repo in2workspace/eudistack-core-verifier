@@ -219,10 +219,11 @@ class VpServiceImplTest {
 
             doNothing().when(certificateValidationService)
                     .extractAndVerifyCertificate(vcJwt, vcHeaderMap, "VATES-FOO");
-            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
 
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
-            verify(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+            verify(cryptographicBindingValidator).validateVpSignature(any(), any());
+            verify(cryptographicBindingValidator).validateCryptographicBinding(isNull(), any());
         }
     }
 
@@ -269,10 +270,11 @@ class VpServiceImplTest {
             when(vcSignedJWT.serialize()).thenReturn(vcJwt);
 
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), eq(vcHeaderMap), eq("issuer"));
-            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
 
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
-            verify(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+            verify(cryptographicBindingValidator).validateVpSignature(any(), any());
+            verify(cryptographicBindingValidator).validateCryptographicBinding(isNull(), any());
         }
     }
 
@@ -427,8 +429,9 @@ class VpServiceImplTest {
 
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
             doThrow(new InvalidScopeException("Cryptographic binding mismatch"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+                    .when(cryptographicBindingValidator).validateCryptographicBinding(any(), any());
 
             assertThrows(InvalidScopeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -450,7 +453,7 @@ class VpServiceImplTest {
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
             doThrow(new RuntimeException("Signature verification failed"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+                    .when(cryptographicBindingValidator).validateVpSignature(any(), any());
 
             RuntimeException ex = assertThrows(RuntimeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -473,7 +476,7 @@ class VpServiceImplTest {
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
             doThrow(new InvalidScopeException("Cannot extract holder identity from VP"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+                    .when(cryptographicBindingValidator).validateVpSignature(any(), any());
 
             assertThrows(InvalidScopeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -495,7 +498,7 @@ class VpServiceImplTest {
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
             doThrow(new RuntimeException("Public key not found"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any(), any());
+                    .when(cryptographicBindingValidator).validateVpSignature(any(), any());
 
             RuntimeException ex = assertThrows(RuntimeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));

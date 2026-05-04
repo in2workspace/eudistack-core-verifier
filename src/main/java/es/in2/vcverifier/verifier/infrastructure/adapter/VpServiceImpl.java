@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
 
+import java.security.interfaces.ECPublicKey;
 import java.text.ParseException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -110,11 +111,14 @@ public class VpServiceImpl implements VpService {
             log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrgId);
         }
 
-        // Step 9: Validate VP signature + cryptographic binding
+        // Step 9: Validate VP signature + (optionally) cryptographic binding
         SignedJWT vpJwt = parseVpJwt(verifiablePresentation);
-        cryptographicBindingValidator.validateVpSignatureAndBinding(
-                verifiablePresentation, vpJwt, jwtCredential, requireCnfBinding
-        );
+        ECPublicKey vpSignerKey = cryptographicBindingValidator.validateVpSignature(verifiablePresentation, vpJwt);
+        if (requireCnfBinding) {
+            cryptographicBindingValidator.validateCryptographicBinding(vpSignerKey, jwtCredential);
+        } else {
+            log.info("[BIND] cnf.jwk binding check skipped (M2M flow without holder binding)");
+        }
 
         log.info("Verifiable Presentation validation completed successfully");
     }
