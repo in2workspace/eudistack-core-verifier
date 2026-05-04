@@ -16,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.util.Map;
 
@@ -132,6 +133,53 @@ class CryptographicBindingValidatorTest {
 
         assertEquals(resolvedPublicKey, result);
         verify(didService).resolvePublicKeyFromDid("did:web:issuer.example");
+    }
+
+    @Test
+    void validateVpSignature_didFromSub_verifiesAndReturnsKey() throws Exception {
+        SignedJWT vpJwt = mock(SignedJWT.class);
+        JWSHeader header = mock(JWSHeader.class);
+        JWTClaimsSet claims = mock(JWTClaimsSet.class);
+
+        when(vpJwt.getHeader()).thenReturn(header);
+        when(header.getJWK()).thenReturn(null);
+        when(header.getKeyID()).thenReturn("not-a-did");
+        when(vpJwt.getJWTClaimsSet()).thenReturn(claims);
+        when(claims.getIssuer()).thenReturn("https://example.com");
+        when(claims.getSubject()).thenReturn("did:key:zSub");
+
+        ECKey resolvedKey = new ECKeyGenerator(Curve.P_256).generate();
+        ECPublicKey resolvedPublicKey = resolvedKey.toECPublicKey();
+        when(didService.resolvePublicKeyFromDid("did:key:zSub")).thenReturn(resolvedPublicKey);
+        doNothing().when(jwtService).verifyJWTWithECKey(any(), eq(resolvedPublicKey));
+
+        ECPublicKey result = validator.validateVpSignature("vp.jwt.raw", vpJwt);
+
+        assertEquals(resolvedPublicKey, result);
+        verify(didService).resolvePublicKeyFromDid("did:key:zSub");
+    }
+
+    @Test
+    void validateVpSignature_didResolvesToNonEcKey_returnsNull() throws Exception {
+        SignedJWT vpJwt = mock(SignedJWT.class);
+        JWSHeader header = mock(JWSHeader.class);
+        JWTClaimsSet claims = mock(JWTClaimsSet.class);
+
+        when(vpJwt.getHeader()).thenReturn(header);
+        when(header.getJWK()).thenReturn(null);
+        when(header.getKeyID()).thenReturn("did:key:zABC");
+        when(vpJwt.getJWTClaimsSet()).thenReturn(claims);
+        when(claims.getIssuer()).thenReturn(null);
+        when(claims.getSubject()).thenReturn(null);
+
+        PublicKey nonEcKey = mock(PublicKey.class);
+        when(didService.resolvePublicKeyFromDid("did:key:zABC")).thenReturn(nonEcKey);
+        doNothing().when(jwtService).verifyJWTWithECKey(any(), eq(nonEcKey));
+
+        ECPublicKey result = validator.validateVpSignature("vp.jwt.raw", vpJwt);
+
+        assertNull(result);
+        verify(didService).resolvePublicKeyFromDid("did:key:zABC");
     }
 
     @Test
