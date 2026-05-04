@@ -30,6 +30,7 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Method;
+import java.security.interfaces.ECPublicKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -185,6 +186,7 @@ class VpServiceImplTest {
 
         SignedJWT vpSignedJWT = mock(SignedJWT.class);
         SignedJWT vcSignedJWT = mock(SignedJWT.class);
+        ECPublicKey vpSignerKey = mock(ECPublicKey.class);
 
         try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
             mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
@@ -200,18 +202,24 @@ class VpServiceImplTest {
             GenericCredential credential = buildGenericCredential(
                     Instant.now().minus(1, ChronoUnit.MINUTES),
                     Instant.now().plus(5, ChronoUnit.MINUTES),
-                    "VATES-FOO", null, null);
+                    "VATES-FOO",
+                    null,
+                    null
+            );
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
             List<IssuerCredentialsCapabilities> caps = List.of(
                     IssuerCredentialsCapabilities.builder()
                             .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
+                            .validFor(null)
+                            .claims(null)
+                            .build()
             );
             when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
+
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
             when(vcHeader.toJSONObject()).thenReturn(vcHeaderMap);
@@ -219,11 +227,14 @@ class VpServiceImplTest {
 
             doNothing().when(certificateValidationService)
                     .extractAndVerifyCertificate(vcJwt, vcHeaderMap, "VATES-FOO");
-            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
+
+            when(cryptographicBindingValidator.validateVpSignature(vpToken, vpSignedJWT))
+                    .thenReturn(vpSignerKey);
 
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
-            verify(cryptographicBindingValidator).validateVpSignature(any(), any());
-            verify(cryptographicBindingValidator).validateCryptographicBinding(isNull(), any());
+
+            verify(cryptographicBindingValidator).validateVpSignature(vpToken, vpSignedJWT);
+            verify(cryptographicBindingValidator).validateCryptographicBinding(vpSignerKey, vcSignedJWT);
         }
     }
 

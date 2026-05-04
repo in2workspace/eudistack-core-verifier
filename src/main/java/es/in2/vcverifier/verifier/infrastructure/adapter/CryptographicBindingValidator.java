@@ -71,13 +71,15 @@ public class CryptographicBindingValidator {
 
         log.info("[BIND] VP holder DID resolved as {}", holderDid);
         PublicKey holderPublicKey = didService.resolvePublicKeyFromDid(holderDid);
-        jwtService.verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
+
+        if (!(holderPublicKey instanceof ECPublicKey ecPub)) {
+            throw new InvalidVPtokenException("Resolved DID public key is not an EC public key");
+        }
+
+        jwtService.verifyJWTWithECKey(verifiablePresentation, ecPub);
         log.info("VP signature verified via DID resolution (legacy)");
 
-        if (holderPublicKey instanceof ECPublicKey ecPub) {
-            return ecPub;
-        }
-        return null;
+        return ecPub;
     }
 
     /**

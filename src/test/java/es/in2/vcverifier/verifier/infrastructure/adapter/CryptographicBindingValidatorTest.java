@@ -160,7 +160,7 @@ class CryptographicBindingValidatorTest {
     }
 
     @Test
-    void validateVpSignature_didResolvesToNonEcKey_returnsNull() throws Exception {
+    void validateVpSignature_didResolvesToNonEcKey_throwsInvalidVPtokenException() throws Exception {
         SignedJWT vpJwt = mock(SignedJWT.class);
         JWSHeader header = mock(JWSHeader.class);
         JWTClaimsSet claims = mock(JWTClaimsSet.class);
@@ -174,12 +174,15 @@ class CryptographicBindingValidatorTest {
 
         PublicKey nonEcKey = mock(PublicKey.class);
         when(didService.resolvePublicKeyFromDid("did:key:zABC")).thenReturn(nonEcKey);
-        doNothing().when(jwtService).verifyJWTWithECKey(any(), eq(nonEcKey));
 
-        ECPublicKey result = validator.validateVpSignature("vp.jwt.raw", vpJwt);
+        InvalidVPtokenException exception = assertThrows(
+                InvalidVPtokenException.class,
+                () -> validator.validateVpSignature("vp.jwt.raw", vpJwt)
+        );
 
-        assertNull(result);
+        assertEquals("Resolved DID public key is not an EC public key", exception.getMessage());
         verify(didService).resolvePublicKeyFromDid("did:key:zABC");
+        verifyNoInteractions(jwtService);
     }
 
     @Test
