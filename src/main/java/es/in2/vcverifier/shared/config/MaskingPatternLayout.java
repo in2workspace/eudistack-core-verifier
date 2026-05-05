@@ -19,7 +19,7 @@ public class MaskingPatternLayout extends PatternLayout {
                     "$1" + MASK
             ),
             new PatternReplacement(
-                    Pattern.compile("[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,6}"),
+                    Pattern.compile("[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,63}"),
                     MASK
             ),
             new PatternReplacement(

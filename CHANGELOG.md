@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Implemented Logback masking filter (`MaskingPatternLayout`) to redact PII and secrets in application logs (emails, JWTs, Bearer tokens, `tx_code`, `access_token`, `refresh_token`, passwords and `secret`) 
+- Implemented a custom Logback `PatternLayout` (`MaskingPatternLayout`) for the `CONSOLE` appender to redact PII and secrets in application logs (emails, JWTs, Bearer tokens, `tx_code`, `access_token`, `refresh_token`, passwords and `secret`)
 
 ### Added
 

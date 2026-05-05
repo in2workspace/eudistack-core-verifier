@@ -27,7 +27,7 @@ class MaskingPatternLayoutTest {
 
         layout = new MaskingPatternLayout();
         layout.setContext(loggerContext);
-        layout.setPattern("%msg");
+        layout.setPattern("%msg");   // salida = exactamente el mensaje formateado
         layout.start();
     }
 
@@ -505,6 +505,7 @@ class MaskingPatternLayoutTest {
     @Test
     void doLayout_MessageWithPasswordInUrlPathNotKeyValue_DoesNotMaskPathSegment() {
         // Arrange
+        // "password-reset" es un segmento de ruta, no un par clave=valor; no debe enmascararse.
         String message = "Redirecting to /api/password-reset?code=resetCode123";
 
         // Act
@@ -518,6 +519,7 @@ class MaskingPatternLayoutTest {
     @Test
     void doLayout_MessageWithSingleBase64SegmentWithoutJwtStructure_DoesNotMask() {
         // Arrange
+        // Un único segmento Base64 sin la estructura eyJ...eyJ...sig no es un JWT
         String message = "Encoded value: dGhpcyBpcyBub3QgYSBqd3Q=";
 
         // Act
@@ -532,6 +534,7 @@ class MaskingPatternLayoutTest {
     @Test
     void doLayout_MessageWithAtSymbolNotFollowedByValidDomain_DoesNotMaskAnnotation() {
         // Arrange
+        // "@NotNull" no es un email válido: no tiene dominio con TLD tras el @
         String message = "Annotation @NotNull applied to field username";
 
         // Act
@@ -612,6 +615,7 @@ class MaskingPatternLayoutTest {
     @Test
     void doLayout_MessageWithSpecialRegexCharacters_DoesNotThrowException() {
         // Arrange
+        // Caracteres que podrían romper un regex mal construido
         String message = "Unexpected chars: []{}.^$|*+?()\\";
 
         // Act & Assert
