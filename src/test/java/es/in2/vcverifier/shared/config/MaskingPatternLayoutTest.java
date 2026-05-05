@@ -27,7 +27,7 @@ class MaskingPatternLayoutTest {
 
         layout = new MaskingPatternLayout();
         layout.setContext(loggerContext);
-        layout.setPattern("%msg");   // salida = exactamente el mensaje formateado
+        layout.setPattern("%msg");   // output = exactly the formatted message
         layout.start();
     }
 
