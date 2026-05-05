@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.4] - 2026-05-05
+
+### Fixed
+
+- Implemented Logback masking filter (`MaskingPatternLayout`) to redact PII and secrets in application logs (emails, JWTs, Bearer tokens, `tx_code`, `access_token`, `refresh_token`, passwords and `secret`) 
+
+### Added
+
+- Add test for log masking filter to verify that sensitive data is redacted in logs.
+
 ## [3.1.3] - 2026-04-23
 
 ### Changed
