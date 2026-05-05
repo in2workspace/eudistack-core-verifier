@@ -30,6 +30,7 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Method;
+import java.security.interfaces.ECPublicKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -185,6 +186,7 @@ class VpServiceImplTest {
 
         SignedJWT vpSignedJWT = mock(SignedJWT.class);
         SignedJWT vcSignedJWT = mock(SignedJWT.class);
+        ECPublicKey vpSignerKey = mock(ECPublicKey.class);
 
         try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
             mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
@@ -200,18 +202,24 @@ class VpServiceImplTest {
             GenericCredential credential = buildGenericCredential(
                     Instant.now().minus(1, ChronoUnit.MINUTES),
                     Instant.now().plus(5, ChronoUnit.MINUTES),
-                    "VATES-FOO", null, null);
+                    "VATES-FOO",
+                    null,
+                    null
+            );
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
             List<IssuerCredentialsCapabilities> caps = List.of(
                     IssuerCredentialsCapabilities.builder()
                             .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
+                            .validFor(null)
+                            .claims(null)
+                            .build()
             );
             when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
+
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
             when(vcHeader.toJSONObject()).thenReturn(vcHeaderMap);
@@ -219,10 +227,14 @@ class VpServiceImplTest {
 
             doNothing().when(certificateValidationService)
                     .extractAndVerifyCertificate(vcJwt, vcHeaderMap, "VATES-FOO");
-            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+
+            when(cryptographicBindingValidator.validateVpSignature(vpToken, vpSignedJWT))
+                    .thenReturn(vpSignerKey);
 
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
-            verify(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+
+            verify(cryptographicBindingValidator).validateVpSignature(vpToken, vpSignedJWT);
+            verify(cryptographicBindingValidator).validateCryptographicBinding(vpSignerKey, vcSignedJWT);
         }
     }
 
@@ -269,10 +281,57 @@ class VpServiceImplTest {
             when(vcSignedJWT.serialize()).thenReturn(vcJwt);
 
             doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), eq(vcHeaderMap), eq("issuer"));
-            doNothing().when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
 
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
-            verify(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+            verify(cryptographicBindingValidator).validateVpSignature(any(), any());
+            verify(cryptographicBindingValidator).validateCryptographicBinding(isNull(), any());
+        }
+    }
+
+    @Test
+    void verifyVerifiablePresentation_m2mFlow_skipsCnfBinding_callsSignatureButNotBinding() throws Exception {
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+
+        try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
+            mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
+            when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            GenericCredential credential = buildGenericCredential(
+                    Instant.now().minus(1, ChronoUnit.MINUTES),
+                    Instant.now().plus(5, ChronoUnit.MINUTES),
+                    "VATES-FOO", null, null);
+            when(genericCredentialFactory.create(payload)).thenReturn(credential);
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder()
+                            .credentialsType("LEARCredentialEmployee")
+                            .validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
+
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
+
+            assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken, false));
+
+            verify(cryptographicBindingValidator).validateVpSignature(any(), any());
+            verify(cryptographicBindingValidator, never()).validateCryptographicBinding(any(), any());
         }
     }
 
@@ -427,8 +486,9 @@ class VpServiceImplTest {
 
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
             doThrow(new InvalidScopeException("Cryptographic binding mismatch"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+                    .when(cryptographicBindingValidator).validateCryptographicBinding(any(), any());
 
             assertThrows(InvalidScopeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -450,7 +510,7 @@ class VpServiceImplTest {
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
             doThrow(new RuntimeException("Signature verification failed"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+                    .when(cryptographicBindingValidator).validateVpSignature(any(), any());
 
             RuntimeException ex = assertThrows(RuntimeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -473,7 +533,7 @@ class VpServiceImplTest {
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
             doThrow(new InvalidScopeException("Cannot extract holder identity from VP"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+                    .when(cryptographicBindingValidator).validateVpSignature(any(), any());
 
             assertThrows(InvalidScopeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
@@ -495,7 +555,7 @@ class VpServiceImplTest {
             setupFullPipelineMocks(vpSignedJWT, vcSignedJWT, vcJwt);
 
             doThrow(new RuntimeException("Public key not found"))
-                    .when(cryptographicBindingValidator).validateVpSignatureAndBinding(any(), any(), any());
+                    .when(cryptographicBindingValidator).validateVpSignature(any(), any());
 
             RuntimeException ex = assertThrows(RuntimeException.class,
                     () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));

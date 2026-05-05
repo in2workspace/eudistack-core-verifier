@@ -29,62 +29,67 @@ public class CryptographicBindingValidator {
     private final DIDService didService;
 
     /**
-     * Verifies the VP's signature and validates cryptographic binding between the VP signer
-     * and the VC subject via cnf.jwk thumbprint (RFC 7638).
+     * Verifies the VP signature and returns the signer's EC public key.
+     * Tries embedded JWK first; falls back to DID resolution from kid/iss/sub.
      *
      * @param verifiablePresentation the raw VP JWT string
      * @param vpJwt                  the parsed VP JWT
-     * @param jwtCredential          the parsed VC JWT (first credential in the VP)
+     * @return the EC public key of the VP signer
      */
-    public void validateVpSignatureAndBinding(
-            String verifiablePresentation,
-            SignedJWT vpJwt,
-            SignedJWT jwtCredential) {
-
-        ECPublicKey vpSignerKey = null;
-        String holderDid = null;
-
+    public ECPublicKey validateVpSignature(String verifiablePresentation, SignedJWT vpJwt) {
         // Strategy 1: Embedded JWK in VP header
         ECKey vpHeaderJwk = extractJwkFromHeader(vpJwt);
         if (vpHeaderJwk != null) {
             log.info("[BIND] VP signed with embedded JWK (kid={})", vpHeaderJwk.getKeyID());
+            ECPublicKey signerKey;
             try {
-                vpSignerKey = vpHeaderJwk.toECPublicKey();
+                signerKey = vpHeaderJwk.toECPublicKey();
             } catch (JOSEException e) {
                 throw new InvalidVPtokenException("Cannot extract EC public key from VP header JWK");
             }
-            jwtService.verifyJWTWithECKey(verifiablePresentation, vpSignerKey);
+            jwtService.verifyJWTWithECKey(verifiablePresentation, signerKey);
             log.info("VP signature verified via embedded JWK");
-        } else {
-            // Strategy 2: Legacy DID resolution from kid/iss/sub
-            String vpKid = vpJwt.getHeader().getKeyID();
-            String vpIss;
-            String vpSub;
-            try {
-                var claims = vpJwt.getJWTClaimsSet();
-                vpIss = claims.getIssuer();
-                vpSub = claims.getSubject();
-            } catch (Exception e) {
-                throw new InvalidVPtokenException("Cannot read vp_token claims");
-            }
-
-            holderDid = extractDidFromKidIssSub(vpKid, vpIss, vpSub);
-            holderDid = normalizeDid(holderDid);
-
-            if (holderDid == null || holderDid.isBlank()) {
-                throw new InvalidScopeException("Cannot extract holder identity from VP (no jwk header and no DID in kid/iss/sub)");
-            }
-
-            log.info("[BIND] VP holder DID resolved as {}", holderDid);
-            PublicKey holderPublicKey = didService.resolvePublicKeyFromDid(holderDid);
-            jwtService.verifyJWTWithECKey(verifiablePresentation, holderPublicKey);
-            if (holderPublicKey instanceof ECPublicKey ecPub) {
-                vpSignerKey = ecPub;
-            }
-            log.info("VP signature verified via DID resolution (legacy)");
+            return signerKey;
         }
 
-        // Cryptographic binding via cnf.jwk (RFC 7800)
+        // Strategy 2: Legacy DID resolution from kid/iss/sub
+        String vpKid = vpJwt.getHeader().getKeyID();
+        String vpIss;
+        String vpSub;
+        try {
+            var claims = vpJwt.getJWTClaimsSet();
+            vpIss = claims.getIssuer();
+            vpSub = claims.getSubject();
+        } catch (Exception e) {
+            throw new InvalidVPtokenException("Cannot read vp_token claims");
+        }
+
+        String holderDid = normalizeDid(extractDidFromKidIssSub(vpKid, vpIss, vpSub));
+        if (holderDid == null || holderDid.isBlank()) {
+            throw new InvalidScopeException("Cannot extract holder identity from VP (no jwk header and no DID in kid/iss/sub)");
+        }
+
+        log.info("[BIND] VP holder DID resolved as {}", holderDid);
+        PublicKey holderPublicKey = didService.resolvePublicKeyFromDid(holderDid);
+
+        if (!(holderPublicKey instanceof ECPublicKey ecPub)) {
+            throw new InvalidVPtokenException("Resolved DID public key is not an EC public key");
+        }
+
+        jwtService.verifyJWTWithECKey(verifiablePresentation, ecPub);
+        log.info("VP signature verified via DID resolution (legacy)");
+
+        return ecPub;
+    }
+
+    /**
+     * Validates cryptographic binding between the VP signer and the VC subject
+     * via cnf.jwk thumbprint comparison (RFC 7638 / RFC 7800).
+     *
+     * @param vpSignerKey   the EC public key of the VP signer
+     * @param jwtCredential the parsed VC JWT
+     */
+    public void validateCryptographicBinding(ECPublicKey vpSignerKey, SignedJWT jwtCredential) {
         ECKey vcCnfJwk = extractCnfJwkFromVc(jwtCredential);
         if (vcCnfJwk == null) {
             throw new InvalidScopeException("Credential missing cnf.jwk — cannot validate cryptographic binding");
