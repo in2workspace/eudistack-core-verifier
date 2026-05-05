@@ -12,7 +12,17 @@ import java.util.Map;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ClientMetadata(
-        @JsonProperty("vp_formats_supported") Map<String, FormatAlgorithms> vpFormatsSupported
+        @JsonProperty("vp_formats_supported") Map<String, FormatAlgorithms> vpFormatsSupported,
+
+        @JsonProperty("client_name") String clientName,
+        @JsonProperty("logo_uri") String logoUri,
+        @JsonProperty("client_uri") String clientUri,
+        @JsonProperty("policy_uri") String policyUri,
+        @JsonProperty("tos_uri") String tosUri,
+        @JsonProperty("contacts") List<String> contacts,
+
+        // --- i18n Support (BCP 47) ---
+        @JsonProperty("localized_claims") Map<String,Object> localizedClaims
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -26,11 +36,18 @@ public record ClientMetadata(
      * Default client_metadata with ES256 support for SD-JWT and JWT VC formats.
      */
     public static ClientMetadata defaultMetadata() {
-        return new ClientMetadata(Map.of(
-                "dc+sd-jwt", new FormatAlgorithms(
-                        List.of("ES256"), List.of("ES256"), null),
-                "jwt_vc_json", new FormatAlgorithms(
-                        null, null, List.of("ES256"))
-        ));
+        return new ClientMetadata(
+                Map.of(
+                        "dc+sd-jwt", new FormatAlgorithms(List.of("ES256"), List.of("ES256"), null),
+                        "jwt_vc_json", new FormatAlgorithms(null, null, List.of("ES256"))
+                ),
+                null, // clientName
+                null, // logoUri
+                null, // clientUri
+                null, // policyUri
+                null, // tosUri
+                null, // contacts
+                null  // localizedClaims
+        );
     }
 }

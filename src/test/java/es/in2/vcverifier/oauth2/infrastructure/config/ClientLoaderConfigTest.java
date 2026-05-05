@@ -35,7 +35,8 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.dome.example.com"),
                 true, null, null,
-                "dome", null
+                "dome", null,
+                null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -64,7 +65,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null
+                null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -93,7 +94,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "INVALID TENANT WITH SPACES!", null
+                "INVALID TENANT WITH SPACES!", null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -118,7 +119,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "my-tenant-123", null
+                "my-tenant-123", null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -148,7 +149,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, loginPageUri
+                null, loginPageUri, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -179,7 +180,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, "http://insecure.example.com/login"
+                null, "http://insecure.example.com/login", null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);

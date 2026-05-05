@@ -1,6 +1,7 @@
 package es.in2.vcverifier.verifier.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import es.in2.vcverifier.verifier.domain.model.oid4vp.ClientMetadata;
 
 import java.util.List;
 
@@ -20,5 +21,6 @@ public record ClientData(
         String jwkSetUrl,
         String tokenEndpointAuthenticationSigningAlgorithm,
         String tenant,
-        String loginPageUri
+        String loginPageUri,
+        ClientMetadata clientMetadata
 ) {}

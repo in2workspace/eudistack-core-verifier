@@ -17,6 +17,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
 import java.util.List;
 
@@ -48,6 +50,15 @@ class AuthorizationRequestBuildWorkflowTest {
         );
     }
 
+    private RegisteredClient createDummyClient(String clientName) {
+        return RegisteredClient.withId("1234")
+                .clientId("did:key:test")
+                .clientName(clientName)
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri("https://verifier.example.com/callback")
+                .build();
+    }
+
     @Test
     @DisplayName("execute() builds JWT, generates openid4vp URL, and caches the result")
     void execute_buildsJwtAndGeneratesUrl() {
@@ -60,7 +71,8 @@ class AuthorizationRequestBuildWorkflowTest {
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
-        AuthorizationRequestBuildWorkflow.Result result = workflow.buildAuthorizationRequest("My Client", "openid learcredential", "state-123");
+        RegisteredClient client = createDummyClient("My Client");
+        AuthorizationRequestBuildWorkflow.Result result = workflow.buildAuthorizationRequest(client, "openid learcredential", "state-123");
 
         assertThat(result.signedAuthRequestJwt()).isEqualTo("signed-jwt-content");
         assertThat(result.openid4vpUrl()).startsWith("openid4vp://");
@@ -87,7 +99,8 @@ class AuthorizationRequestBuildWorkflowTest {
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
-        workflow.buildAuthorizationRequest("Client", "openid learcredential.employee", "my-state");
+        RegisteredClient client = createDummyClient("Client");
+        workflow.buildAuthorizationRequest(client, "openid learcredential.employee", "my-state");
 
         verify(dcqlProfileResolver).resolve("openid learcredential.employee");
     }
@@ -104,7 +117,8 @@ class AuthorizationRequestBuildWorkflowTest {
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
-        workflow.buildAuthorizationRequest("Client", "openid learcredential", "my-state");
+        RegisteredClient client = createDummyClient("Client");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "my-state");
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -133,7 +147,8 @@ class AuthorizationRequestBuildWorkflowTest {
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
-        workflow.buildAuthorizationRequest("Client", "openid learcredential", "state-1");
+        RegisteredClient client = createDummyClient("Client");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-1");
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -155,7 +170,8 @@ class AuthorizationRequestBuildWorkflowTest {
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
-        workflow.buildAuthorizationRequest("Client", "openid learcredential", "state-2");
+        RegisteredClient client = createDummyClient("Client");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-2");
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -177,7 +193,8 @@ class AuthorizationRequestBuildWorkflowTest {
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
-        workflow.buildAuthorizationRequest("Client", "openid learcredential", "state-3");
+        RegisteredClient client = createDummyClient("Client");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-3");
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());

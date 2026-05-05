@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIENT_METADATA;
 
 @Slf4j
 @Configuration
@@ -119,6 +120,10 @@ public class ClientLoaderConfig {
                     URI clientUri = URI.create(clientData.url());
                     String clientOrigin = clientUri.getScheme() + "://" + clientUri.getAuthority();
                     freshOrigins.add(clientOrigin);
+                }
+
+                if (clientData.clientMetadata() != null) {
+                    clientSettingsBuilder.setting(CLIENT_SETTING_CLIENT_METADATA, clientData.clientMetadata());
                 }
             }
             // Atomically replace origins: remove stale, add fresh
