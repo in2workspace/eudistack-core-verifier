@@ -2,7 +2,12 @@
 <configuration>
 
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <layout class="es.in2.vcverifier.shared.config.MaskingPatternLayout">
+            <!-- Reuses the Spring Boot default pattern (colour codes, trace IDs, etc.) -->
+            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+        </layout>
+    </appender>
 
     <!-- Suppress DEBUG logs for /health and /.well-known/openid-configuration -->
     <turboFilter class="es.in2.vcverifier.shared.config.SuppressEndpointLogFilter"/>
@@ -11,4 +16,13 @@
         <appender-ref ref="CONSOLE"/>
     </root>
 
+    <!-- Production / Staging profile: reduce verbosity of noisy libraries. -->
+    <springProfile name="prod,stg">
+        <logger name="org.springframework.security" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="com.nimbusds" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+    </springProfile>
 </configuration>
