@@ -12,24 +12,24 @@ import java.util.Map;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ClientMetadata(
-        @JsonProperty("vp_formats_supported") Map<String, FormatAlgorithms> vpFormatsSupported,
+        @JsonProperty("vpFormatsSupported") Map<String, FormatAlgorithms> vpFormatsSupported,
 
-        @JsonProperty("client_name") String clientName,
-        @JsonProperty("logo_uri") String logoUri,
-        @JsonProperty("client_uri") String clientUri,
-        @JsonProperty("policy_uri") String policyUri,
-        @JsonProperty("tos_uri") String tosUri,
+        @JsonProperty("clientName") String clientName,
+        @JsonProperty("logoUri") String logoUri,
+        @JsonProperty("clientUri") String clientUri,
+        @JsonProperty("policyUri") String policyUri,
+        @JsonProperty("tosUri") String tosUri,
         @JsonProperty("contacts") List<String> contacts,
 
         // --- i18n Support (BCP 47) ---
-        @JsonProperty("localized_claims") Map<String,Object> localizedClaims
+        @JsonProperty("localizedClaims") Map<String,Object> localizedClaims
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record FormatAlgorithms(
-            @JsonProperty("sd-jwt_alg_values") List<String> sdJwtAlgValues,
-            @JsonProperty("kb-jwt_alg_values") List<String> kbJwtAlgValues,
-            @JsonProperty("alg_values_supported") List<String> algValuesSupported
+            @JsonProperty("sdJwtAlgValues") List<String> sdJwtAlgValues,
+            @JsonProperty("kbJwtAlgValues") List<String> kbJwtAlgValues,
+            @JsonProperty("algValuesSupported") List<String> algValuesSupported
     ) {}
 
     /**
@@ -41,13 +41,13 @@ public record ClientMetadata(
                         "dc+sd-jwt", new FormatAlgorithms(List.of("ES256"), List.of("ES256"), null),
                         "jwt_vc_json", new FormatAlgorithms(null, null, List.of("ES256"))
                 ),
-                null, // clientName
-                null, // logoUri
-                null, // clientUri
-                null, // policyUri
-                null, // tosUri
-                null, // contacts
-                null  // localizedClaims
+                "", // clientName
+                "", // logoUri
+                "", // clientUri
+                "", // policyUri
+                "", // tosUri
+                List.of(), // contacts
+                Map.of()  // localizedClaims
         );
     }
 }

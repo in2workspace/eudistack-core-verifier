@@ -103,6 +103,9 @@ public class ClientLoaderConfig {
                     }
                     clientSettingsBuilder.setting(CLIENT_SETTING_TENANT, clientData.tenant());
                 }
+                if (clientData.clientMetadata() != null) {
+                    clientSettingsBuilder.setting(CLIENT_SETTING_CLIENT_METADATA, clientData.clientMetadata());
+                }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
                     URI loginUri = URI.create(clientData.loginPageUri());
                     if (!"https".equals(loginUri.getScheme())) {
@@ -120,10 +123,6 @@ public class ClientLoaderConfig {
                     URI clientUri = URI.create(clientData.url());
                     String clientOrigin = clientUri.getScheme() + "://" + clientUri.getAuthority();
                     freshOrigins.add(clientOrigin);
-                }
-
-                if (clientData.clientMetadata() != null) {
-                    clientSettingsBuilder.setting(CLIENT_SETTING_CLIENT_METADATA, clientData.clientMetadata());
                 }
             }
             // Atomically replace origins: remove stale, add fresh

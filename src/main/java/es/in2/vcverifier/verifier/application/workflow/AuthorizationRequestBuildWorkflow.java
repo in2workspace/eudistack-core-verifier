@@ -85,6 +85,7 @@ public class AuthorizationRequestBuildWorkflow {
         Instant expirationTime = issueTime.plus(5, ChronoUnit.MINUTES);
 
         String clientId = cryptoComponent.getClientId();
+        log.info("RegisteredClient: " + registeredClient);
 
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .issuer(clientId)
@@ -116,6 +117,7 @@ public class AuthorizationRequestBuildWorkflow {
     private ClientMetadata resolveClientMetadata(RegisteredClient registeredClient) {
         Map<String, Object> settings = registeredClient.getClientSettings().getSettings();
         Object stored = settings.get(CLIENT_SETTING_CLIENT_METADATA);
+
         if (stored instanceof ClientMetadata cm) {
             return cm;
         }
