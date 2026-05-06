@@ -79,7 +79,11 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(result.openid4vpUrl()).contains("client_id=");
         assertThat(result.openid4vpUrl()).contains("request_uri=");
         assertThat(result.nonce()).isNotBlank();
-        assertThat(result.homeUri()).isEqualTo("My Client");
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+        String payload = payloadCaptor.getValue();
+        assertThat(payload).contains("client_metadata");
 
         // Verify JWT was cached
         verify(cacheStoreForAuthorizationRequestJWT).add(eq(result.nonce()), any(AuthorizationRequestJWT.class));
