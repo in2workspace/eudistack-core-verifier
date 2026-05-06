@@ -62,14 +62,14 @@ public record ClientMetadata(
                         "dc+sd-jwt", new FormatAlgorithms(List.of("ES256"), List.of("ES256"), null),
                         "jwt_vc_json", new FormatAlgorithms(null, null, List.of("ES256"))
                 ),
-                null, // clientName
-                null, // logoUri
                 null,
-                null, // clientUri
-                null, // policyUri
-                null, // tosUri
-                null, // contacts
-                null  // localizedClaims
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
         );
     }
 }
