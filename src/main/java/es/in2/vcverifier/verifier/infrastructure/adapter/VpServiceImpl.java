@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
 
+import java.security.interfaces.ECPublicKey;
 import java.text.ParseException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,6 +46,11 @@ public class VpServiceImpl implements VpService {
 
     @Override
     public void verifyVerifiablePresentation(String verifiablePresentation) {
+        verifyVerifiablePresentation(verifiablePresentation, true);
+    }
+
+    @Override
+    public void verifyVerifiablePresentation(String verifiablePresentation, boolean requireCnfBinding) {
         log.info("Starting validation of Verifiable Presentation");
 
         // Step 1: Extract the first VC from the VP
@@ -70,11 +76,11 @@ public class VpServiceImpl implements VpService {
         // Step 4: Validate revocation (only if credentialStatus is present)
         // SEC-S2: Fail-closed — if revocation status cannot be determined, reject the credential.
         if (hasRevocationConfig(credential)) {
-            log.debug("CredentialStatus detected in credential");
+            log.debug("CredentialStatus detected in credential.");
             if (!validateCredentialNotRevoked(credential)) {
                 throw new CredentialRevokedException("Credential is revoked.");
             }
-            log.info("Credential is not revoked");
+            log.info("Credential is not revoked.");
         } else {
             log.debug("No CredentialStatus block found; skipping revocation check");
         }
@@ -105,11 +111,14 @@ public class VpServiceImpl implements VpService {
             log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrgId);
         }
 
-        // Step 9: Validate VP signature + cryptographic binding
+        // Step 9: Validate VP signature + (optionally) cryptographic binding
         SignedJWT vpJwt = parseVpJwt(verifiablePresentation);
-        cryptographicBindingValidator.validateVpSignatureAndBinding(
-                verifiablePresentation, vpJwt, jwtCredential
-        );
+        ECPublicKey vpSignerKey = cryptographicBindingValidator.validateVpSignature(verifiablePresentation, vpJwt);
+        if (requireCnfBinding) {
+            cryptographicBindingValidator.validateCryptographicBinding(vpSignerKey, jwtCredential);
+        } else {
+            log.info("[BIND] cnf.jwk binding check skipped (M2M flow without holder binding)");
+        }
 
         log.info("Verifiable Presentation validation completed successfully");
     }
