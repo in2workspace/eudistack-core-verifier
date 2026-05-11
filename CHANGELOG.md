@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Authorization Flow**: Updated the `authorization-request` logic to support metadata transmission.
+- **ClientMetadata:** Updated the `clientMetada` structure to align with the latest metadata specifications and requirements.
+- **Testing:** Updated existing tests to validate the integrity of the updated `clientMetadata` and authorization workflows.
+
 ## [3.1.5] - 2026-05-05
 
 ### Fixed

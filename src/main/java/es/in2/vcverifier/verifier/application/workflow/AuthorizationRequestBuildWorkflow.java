@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.stereotype.Service;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +24,7 @@ import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_RESPONSE_ENDPOINT;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIENT_METADATA;
 
 /**
  * Builds the OID4VP authorization request: resolves scopes to a DCQL query,
@@ -54,16 +56,16 @@ public class AuthorizationRequestBuildWorkflow {
      * authorization request, signs it, generates the openid4vp:// redirect URL,
      * and caches the JWT.
      *
-     * @param clientName   the registered client's name (used as homeUri)
+     * @param registeredClient   the registered client's name (used as homeUri)
      * @param scope        the requested scope (e.g. "openid learcredential.employee")
      * @param state        the OAuth2 state parameter
      * @return a Result with the signed JWT, openid4vp URL, nonce and homeUri
      */
-    public Result buildAuthorizationRequest(String clientName, String scope, String state) {
+    public Result buildAuthorizationRequest(RegisteredClient registeredClient, String scope, String state) {
         DcqlQuery dcqlQuery = dcqlProfileResolver.resolve(scope);
 
         String nonce = UUID.randomUUID().toString();
-        String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery);
+        String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery, registeredClient);
         String signedJwt = jwtService.issueJWTwithOI4VPType(jwtPayload);
 
         // Cache the auth request JWT keyed by a new nonce for the QR
@@ -75,14 +77,15 @@ public class AuthorizationRequestBuildWorkflow {
 
         String openid4vpUrl = generateOpenId4VpUrl(qrNonce);
 
-        return new Result(signedJwt, openid4vpUrl, qrNonce, clientName);
+        return new Result(signedJwt, openid4vpUrl, qrNonce, registeredClient.getClientId());
     }
 
-    private String buildJwtPayload(String scope, String state, String nonce, DcqlQuery dcqlQuery) {
+    private String buildJwtPayload(String scope, String state, String nonce, DcqlQuery dcqlQuery, RegisteredClient registeredClient) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(5, ChronoUnit.MINUTES);
 
         String clientId = cryptoComponent.getClientId();
+        log.info("RegisteredClient: " + registeredClient);
 
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .issuer(clientId)
@@ -101,7 +104,7 @@ public class AuthorizationRequestBuildWorkflow {
 
         // OID4VP §5.1: include client_metadata when using x509_hash or did: prefix
         if (clientId.startsWith("x509_hash:") || clientId.startsWith("did:")) {
-            ClientMetadata clientMetadata = ClientMetadata.defaultMetadata();
+            ClientMetadata clientMetadata = resolveClientMetadata(registeredClient);
             builder.claim("client_metadata", objectMapper.convertValue(clientMetadata, Map.class));
         }
 
@@ -109,6 +112,16 @@ public class AuthorizationRequestBuildWorkflow {
 
         cacheForNonceByState.add(state, nonce);
         return payload.toString();
+    }
+
+    private ClientMetadata resolveClientMetadata(RegisteredClient registeredClient) {
+        Map<String, Object> settings = registeredClient.getClientSettings().getSettings();
+        Object stored = settings.get(CLIENT_SETTING_CLIENT_METADATA);
+
+        if (stored instanceof ClientMetadata cm) {
+            return cm;
+        }
+        return ClientMetadata.defaultMetadata();
     }
 
     private String generateOpenId4VpUrl(String nonce) {

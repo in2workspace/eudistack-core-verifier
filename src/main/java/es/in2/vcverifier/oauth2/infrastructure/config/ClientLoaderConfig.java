@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIENT_METADATA;
 
 @Slf4j
 @Configuration
@@ -101,6 +102,9 @@ public class ClientLoaderConfig {
                                 + "' for client '" + clientData.clientId() + "'. Must match: " + TENANT_PATTERN.pattern());
                     }
                     clientSettingsBuilder.setting(CLIENT_SETTING_TENANT, clientData.tenant());
+                }
+                if (clientData.clientMetadata() != null) {
+                    clientSettingsBuilder.setting(CLIENT_SETTING_CLIENT_METADATA, clientData.clientMetadata());
                 }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
                     URI loginUri = URI.create(clientData.loginPageUri());
