@@ -615,7 +615,7 @@ class VpServiceImplTest {
     }
 
     @Test
-    void verifyVerifiablePresentation_mandatorDefined_extractsOrgIdWithoutCallingTrustFramework() throws Exception {
+    void verifyVerifiablePresentation_mandatorDefined_extractsOrgIdWithoutCallingTrustFrameworkForMandator() throws Exception {
         // Arrange
         String vpToken = "valid.vp.jwt";
         String vcJwt = "valid.vc.jwt";
