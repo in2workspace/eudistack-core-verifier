@@ -271,8 +271,6 @@ class VpServiceImplTest {
                             .validFor(null).claims(null).build()
             );
             when(trustFrameworkService.getTrustedIssuerListData("issuer")).thenReturn(caps);
-            when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
-
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
             JWSHeader vcHeader = mock(JWSHeader.class);
@@ -286,6 +284,55 @@ class VpServiceImplTest {
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
             verify(cryptographicBindingValidator).validateVpSignature(any(), any());
             verify(cryptographicBindingValidator).validateCryptographicBinding(isNull(), any());
+        }
+    }
+
+    @Test
+    void validateVerifiablePresentation_success_withExternalMandatorOrgId_notValidatedAgainstTrustFramework()
+            throws Exception {
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+
+        try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
+            mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
+            when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            GenericCredential credential = buildGenericCredentialWithExternalMandator(
+                    Instant.now().minus(1, ChronoUnit.MINUTES),
+                    Instant.now().plus(1, ChronoUnit.DAYS),
+                    "VATES-ISSUER",
+                    "credentialSubject.mandate.mandator.organizationIdentifier",
+                    "VATDE-99999");
+            when(genericCredentialFactory.create(payload)).thenReturn(credential);
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder()
+                            .credentialsType("LEARCredentialEmployee")
+                            .validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
+
+            assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken),
+                    "Presentation with external mandator org must be accepted; " +
+                    "mandator identity is NOT a trust-framework concern");
+
+            verify(trustFrameworkService, never()).getTrustedIssuerListData("VATDE-99999");
         }
     }
 
@@ -643,7 +690,6 @@ class VpServiceImplTest {
                         .validFor(null).claims(null).build()
         );
         when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
-        when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
 
         JWSHeader header = mock(JWSHeader.class);
         when(vcSignedJWT.getHeader()).thenReturn(header);
@@ -747,6 +793,52 @@ class VpServiceImplTest {
         root.set("credentialStatus", statusNode);
 
         ValidationPaths validationPaths = new ValidationPaths("validFrom", "validUntil", revocationPaths);
+
+        SchemaProfile profile = new SchemaProfile(
+                "LEARCredentialEmployee",
+                "learcredential.employee",
+                null,
+                validationPaths,
+                null,
+                false,
+                "issuer.organizationIdentifier",
+                mandatorOrgIdPath
+        );
+
+        return new GenericCredential(
+                root, profile, "LEARCredentialEmployee",
+                List.of("VerifiableCredential", "LEARCredentialEmployee"),
+                List.of("https://www.w3.org/ns/credentials/v2")
+        );
+    }
+
+
+    private GenericCredential buildGenericCredentialWithExternalMandator(
+            Instant validFrom, Instant validUntil,
+            String issuerOrgId, String mandatorOrgIdPath,
+            String externalMandatorOrgId) {
+
+        ObjectNode root = MAPPER.createObjectNode();
+        root.putArray("type").add("VerifiableCredential").add("LEARCredentialEmployee");
+        root.putArray("@context").add("https://www.w3.org/ns/credentials/v2");
+        root.put("id", "urn:uuid:external-mandator-test");
+        root.put("validFrom", validFrom.toString());
+        root.put("validUntil", validUntil.toString());
+
+        ObjectNode issuerNode = MAPPER.createObjectNode();
+        issuerNode.put("organizationIdentifier", issuerOrgId != null ? issuerOrgId : "");
+        root.set("issuer", issuerNode);
+
+        // External mandator — different organization than the issuer
+        ObjectNode mandator = MAPPER.createObjectNode();
+        mandator.put("organizationIdentifier", externalMandatorOrgId);
+        ObjectNode mandate = MAPPER.createObjectNode();
+        mandate.set("mandator", mandator);
+        ObjectNode credentialSubject = MAPPER.createObjectNode();
+        credentialSubject.set("mandate", mandate);
+        root.set("credentialSubject", credentialSubject);
+
+        ValidationPaths validationPaths = new ValidationPaths("validFrom", "validUntil", null);
 
         SchemaProfile profile = new SchemaProfile(
                 "LEARCredentialEmployee",
