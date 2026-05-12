@@ -101,14 +101,13 @@ public class VpServiceImpl implements VpService {
         Map<String, Object> vcHeader = jwtCredential.getHeader().toJSONObject();
         certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, credentialIssuer);
 
-        // Step 8: Validate mandator organization (skip if no mandator path in profile)
+        // Step 8: Extract mandator organization identifier (skip if not declared in profile)
         String mandatorOrgIdPath = credential.profile().mandatorOrgIdPath();
         if (mandatorOrgIdPath != null) {
             String mandatorOrgId = credential.field(mandatorOrgIdPath)
                     .orElseThrow(() -> new CredentialMappingException(
                             "Missing mandator org ID at path: " + mandatorOrgIdPath));
-            trustFrameworkService.getTrustedIssuerListData(mandatorOrgId);
-            log.info("Mandator OrganizationIdentifier {} is valid and allowed", mandatorOrgId);
+            log.info("Mandator OrganizationIdentifier extracted: {}", mandatorOrgId);
         }
 
         // Step 9: Validate VP signature + (optionally) cryptographic binding

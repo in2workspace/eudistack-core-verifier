@@ -615,6 +615,236 @@ class VpServiceImplTest {
         assertNull(result);
     }
 
+    @Test
+    void verifyVerifiablePresentation_mandatorDefined_extractsOrgIdWithoutCallingTrustFramework() throws Exception {
+        // Arrange
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+
+        try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
+            mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
+            when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            GenericCredential credential = buildGenericCredential(
+                    Instant.now().minus(1, ChronoUnit.MINUTES),
+                    Instant.now().plus(1, ChronoUnit.DAYS),
+                    "VATES-ISSUER",
+                    "credentialSubject.mandate.mandator.organizationIdentifier",
+                    null);
+            when(genericCredentialFactory.create(payload)).thenReturn(credential);
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder()
+                            .credentialsType("LEARCredentialEmployee")
+                            .validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
+
+            // Act
+            assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
+
+            // Assert
+            verify(trustFrameworkService, times(1)).getTrustedIssuerListData("VATES-ISSUER");
+            verify(trustFrameworkService, never()).getTrustedIssuerListData("VATIT-1234");
+        }
+    }
+
+    @Test
+    void verifyVerifiablePresentation_mandatorPathNull_skipsMandatorStep_andCompletesSuccessfully() throws Exception {
+        // Arrange
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+
+        try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
+            mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
+            when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            GenericCredential credential = buildGenericCredential(
+                    Instant.now().minus(1, ChronoUnit.MINUTES),
+                    Instant.now().plus(1, ChronoUnit.DAYS),
+                    "VATES-ISSUER",
+                    null,
+                    null);
+            when(genericCredentialFactory.create(payload)).thenReturn(credential);
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder()
+                            .credentialsType("LEARCredentialEmployee")
+                            .validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(null);
+
+            // Act
+            assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
+
+            // Assert
+            verify(trustFrameworkService, times(1)).getTrustedIssuerListData("VATES-ISSUER");
+            verify(trustFrameworkService, times(1)).getTrustedIssuerListData(anyString());
+        }
+    }
+
+    @Test
+    void verifyVerifiablePresentation_mandatorFieldMissing_throwsCredentialMappingException() throws Exception {
+        // Arrange
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+
+        try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
+            mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
+            when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            SchemaProfile profile = new SchemaProfile(
+                    "LEARCredentialEmployee",
+                    "learcredential.employee",
+                    null,
+                    new ValidationPaths("validFrom", "validUntil", null),
+                    null,
+                    false,
+                    "issuer.organizationIdentifier",
+                    "credentialSubject.mandate.mandator.nonExistentField"
+            );
+
+            com.fasterxml.jackson.databind.node.ObjectNode root = MAPPER.createObjectNode();
+            root.putArray("type").add("VerifiableCredential").add("LEARCredentialEmployee");
+            root.put("validFrom", Instant.now().minus(1, ChronoUnit.MINUTES).toString());
+            root.put("validUntil", Instant.now().plus(1, ChronoUnit.DAYS).toString());
+            com.fasterxml.jackson.databind.node.ObjectNode issuerNode = MAPPER.createObjectNode();
+            issuerNode.put("organizationIdentifier", "VATES-ISSUER");
+            root.set("issuer", issuerNode);
+            com.fasterxml.jackson.databind.node.ObjectNode credentialSubject = MAPPER.createObjectNode();
+            root.set("credentialSubject", credentialSubject);
+
+            GenericCredential credential = new GenericCredential(
+                    root, profile, "LEARCredentialEmployee",
+                    List.of("VerifiableCredential", "LEARCredentialEmployee"),
+                    List.of("https://www.w3.org/ns/credentials/v2")
+            );
+            when(genericCredentialFactory.create(payload)).thenReturn(credential);
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder()
+                            .credentialsType("LEARCredentialEmployee")
+                            .validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(Map.of("x5c", List.of("base64Cert")));
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+            doNothing().when(certificateValidationService).extractAndVerifyCertificate(any(), anyMap(), anyString());
+
+            // Act & Assert
+            CredentialMappingException ex = assertThrows(CredentialMappingException.class,
+                    () -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
+            assertTrue(ex.getMessage().contains("Missing mandator org ID at path:"));
+            assertTrue(ex.getMessage().contains("nonExistentField"));
+        }
+    }
+
+    @Test
+    void verifyVerifiablePresentation_issuerStepsIntact_trustFrameworkCalledOnlyForIssuer() throws Exception {
+        // Arrange
+        String vpToken = "valid.vp.jwt";
+        String vcJwt = "valid.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+        ECPublicKey vpSignerKey = mock(ECPublicKey.class);
+
+        try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
+            mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
+            when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            GenericCredential credential = buildGenericCredential(
+                    Instant.now().minus(1, ChronoUnit.MINUTES),
+                    Instant.now().plus(1, ChronoUnit.DAYS),
+                    "VATES-REAL-ISSUER",
+                    "credentialSubject.mandate.mandator.organizationIdentifier",
+                    null);
+            when(genericCredentialFactory.create(payload)).thenReturn(credential);
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder()
+                            .credentialsType("LEARCredentialEmployee")
+                            .validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-REAL-ISSUER")).thenReturn(caps);
+
+            Map<String, Object> vcHeaderMap = new HashMap<>();
+            vcHeaderMap.put("x5c", List.of("base64Cert"));
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(vcHeaderMap);
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+
+            doNothing().when(certificateValidationService)
+                    .extractAndVerifyCertificate(eq(vcJwt), eq(vcHeaderMap), eq("VATES-REAL-ISSUER"));
+            when(cryptographicBindingValidator.validateVpSignature(vpToken, vpSignedJWT)).thenReturn(vpSignerKey);
+
+            // Act
+            assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
+
+            // Assert
+            verify(trustFrameworkService).getTrustedIssuerListData("VATES-REAL-ISSUER");
+            verify(certificateValidationService).extractAndVerifyCertificate(vcJwt, vcHeaderMap, "VATES-REAL-ISSUER");
+            verify(trustFrameworkService, never()).getTrustedIssuerListData("VATIT-1234");
+            verify(cryptographicBindingValidator).validateVpSignature(vpToken, vpSignedJWT);
+            verify(cryptographicBindingValidator).validateCryptographicBinding(vpSignerKey, vcSignedJWT);
+        }
+    }
+
     // --- Helper methods ---
 
     /**
