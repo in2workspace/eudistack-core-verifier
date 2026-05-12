@@ -271,7 +271,6 @@ class VpServiceImplTest {
                             .validFor(null).claims(null).build()
             );
             when(trustFrameworkService.getTrustedIssuerListData("issuer")).thenReturn(caps);
-            when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
@@ -286,6 +285,65 @@ class VpServiceImplTest {
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
             verify(cryptographicBindingValidator).validateVpSignature(any(), any());
             verify(cryptographicBindingValidator).validateCryptographicBinding(isNull(), any());
+            // Regression guard: the mandator's org ID must never reach the trust framework
+            verify(trustFrameworkService, never()).getTrustedIssuerListData("VATIT-1234");
+        }
+    }
+
+    @Test
+    void verifyVerifiablePresentation_externalMandatorNotInTrustFramework_presentationSucceeds() throws Exception {
+        // --- Arrange ---
+        String vpToken = "external-mandator.vp.jwt";
+        String vcJwt = "external-mandator.vc.jwt";
+
+        SignedJWT vpSignedJWT = mock(SignedJWT.class);
+        SignedJWT vcSignedJWT = mock(SignedJWT.class);
+        ECPublicKey vpSignerKey = mock(ECPublicKey.class);
+
+        try (MockedStatic<SignedJWT> mockedSignedJWT = mockStatic(SignedJWT.class)) {
+            mockedSignedJWT.when(() -> SignedJWT.parse(vpToken)).thenReturn(vpSignedJWT);
+            mockedSignedJWT.when(() -> SignedJWT.parse(vcJwt)).thenReturn(vcSignedJWT);
+
+            JWTClaimsSet vpClaimsSet = mock(JWTClaimsSet.class);
+            when(vpSignedJWT.getJWTClaimsSet()).thenReturn(vpClaimsSet);
+            when(vpClaimsSet.getClaim("vp")).thenReturn(Map.of("verifiableCredential", List.of(vcJwt)));
+
+            Payload payload = mock(Payload.class);
+            when(jwtService.extractPayloadFromSignedJWT(vcSignedJWT)).thenReturn(payload);
+
+            GenericCredential credential = buildGenericCredential(
+                    Instant.now().minus(1, ChronoUnit.MINUTES),
+                    Instant.now().plus(1, ChronoUnit.DAYS),
+                    "VATES-FOO",                                               // trusted issuer
+                    "credentialSubject.mandate.mandator.organizationIdentifier", // mandator path present
+                    null);
+            when(genericCredentialFactory.create(payload)).thenReturn(credential);
+
+            List<IssuerCredentialsCapabilities> caps = List.of(
+                    IssuerCredentialsCapabilities.builder()
+                            .credentialsType("LEARCredentialEmployee")
+                            .validFor(null).claims(null).build()
+            );
+            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
+
+            Map<String, Object> vcHeaderMap = new HashMap<>();
+            vcHeaderMap.put("x5c", List.of("base64Cert"));
+            JWSHeader vcHeader = mock(JWSHeader.class);
+            when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
+            when(vcHeader.toJSONObject()).thenReturn(vcHeaderMap);
+            when(vcSignedJWT.serialize()).thenReturn(vcJwt);
+            doNothing().when(certificateValidationService)
+                    .extractAndVerifyCertificate(any(), eq(vcHeaderMap), eq("VATES-FOO"));
+            when(cryptographicBindingValidator.validateVpSignature(any(), any())).thenReturn(vpSignerKey);
+
+            // --- Act ---
+            assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
+
+            // --- Assert ---
+            verify(trustFrameworkService, never()).getTrustedIssuerListData("VATIT-1234");
+            verify(trustFrameworkService).getTrustedIssuerListData("VATES-FOO");
+            verify(cryptographicBindingValidator).validateVpSignature(any(), any());
+            verify(cryptographicBindingValidator).validateCryptographicBinding(vpSignerKey, vcSignedJWT);
         }
     }
 
@@ -643,7 +701,6 @@ class VpServiceImplTest {
                         .validFor(null).claims(null).build()
         );
         when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
-        when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
 
         JWSHeader header = mock(JWSHeader.class);
         when(vcSignedJWT.getHeader()).thenReturn(header);
