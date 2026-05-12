@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.4] - 2026-05-12
+
+### Changed
+- **Authorization Flow**: Updated the `authorization-request` logic to support metadata transmission.
+- **ClientMetadata:** Updated the `clientMetadata` structure to align with the latest metadata specifications and requirements.
+- **Testing:** Updated existing tests to validate the integrity of the updated `clientMetadata` and authorization workflows.
+
+### Fixed
+
+- Implemented a custom Logback `PatternLayout` (`MaskingPatternLayout`) for the `CONSOLE` appender to redact PII and secrets in application logs (emails, JWTs, Bearer tokens, `tx_code`, `access_token`, `refresh_token`, passwords and `secret`).
+- Avoid cryptographic binding validation for client credentials presentation.
+
 ## [3.1.3] - 2026-04-23
 
 ### Changed

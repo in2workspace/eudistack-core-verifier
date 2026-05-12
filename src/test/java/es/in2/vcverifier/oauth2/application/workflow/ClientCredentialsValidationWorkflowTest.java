@@ -81,7 +81,7 @@ class ClientCredentialsValidationWorkflowTest {
         JsonNode result = workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION);
 
         assertThat(result).isEqualTo(credential);
-        verify(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW);
+        verify(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW, false);
     }
 
     @Test
@@ -141,7 +141,7 @@ class ClientCredentialsValidationWorkflowTest {
         when(schemaProfileRegistry.findByConfigId("learcredential.machine.w3c.3")).thenReturn(
                 Optional.of(new SchemaProfile("learcredential.machine.w3c.3", null, null, null, Set.of("client_credentials"), false, null, null)));
         when(clientAssertionValidationService.verifyClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(true);
-        doThrow(new RuntimeException("VP invalid")).when(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW);
+        doThrow(new RuntimeException("VP invalid")).when(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW, false);
 
         assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
                 .isInstanceOf(RuntimeException.class)

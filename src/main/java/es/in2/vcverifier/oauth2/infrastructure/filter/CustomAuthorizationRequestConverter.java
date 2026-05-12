@@ -138,7 +138,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
+                registeredClient, authorizationContext.scope(), authorizationContext.state());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -157,7 +157,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient.getClientName(), authorizationContext.scope(), authorizationContext.state());
+                registeredClient, authorizationContext.scope(), authorizationContext.state());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
