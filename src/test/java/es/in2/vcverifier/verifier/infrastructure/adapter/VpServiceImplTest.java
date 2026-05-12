@@ -271,7 +271,6 @@ class VpServiceImplTest {
                             .validFor(null).claims(null).build()
             );
             when(trustFrameworkService.getTrustedIssuerListData("issuer")).thenReturn(caps);
-            when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
@@ -873,7 +872,6 @@ class VpServiceImplTest {
                         .validFor(null).claims(null).build()
         );
         when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
-        when(trustFrameworkService.getTrustedIssuerListData("VATIT-1234")).thenReturn(caps);
 
         JWSHeader header = mock(JWSHeader.class);
         when(vcSignedJWT.getHeader()).thenReturn(header);
