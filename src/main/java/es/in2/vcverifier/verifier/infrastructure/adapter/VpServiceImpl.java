@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.security.interfaces.ECPublicKey;
 import java.text.ParseException;
@@ -103,7 +104,7 @@ public class VpServiceImpl implements VpService {
 
         // Step 8: Extract mandator organization identifier (skip if not declared in profile)
         String mandatorOrgIdPath = credential.profile().mandatorOrgIdPath();
-        if (mandatorOrgIdPath != null) {
+        if (StringUtils.hasText(mandatorOrgIdPath)) {
             String mandatorOrgId = credential.field(mandatorOrgIdPath)
                     .orElseThrow(() -> new CredentialMappingException(
                             "Missing mandator org ID at path: " + mandatorOrgIdPath));
