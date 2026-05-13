@@ -712,7 +712,7 @@ class VpServiceImplTest {
 
             // Assert
             verify(trustFrameworkService, times(1)).getTrustedIssuerListData("VATES-ISSUER");
-            verify(trustFrameworkService, times(1)).getTrustedIssuerListData(anyString());
+            verifyNoMoreInteractions(trustFrameworkService);
         }
     }
 
