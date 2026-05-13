@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.6] - 2026-05-13
+
+### Added
+
+- **QR refresh endpoint** (`POST /api/login/refresh`): allows the login screen to generate a new QR code for an existing session without reloading the page. Returns a new QR URL as JSON; the existing session and SSE connection remain active.
+
 ## [3.1.5] - 2026-05-12
 
 ### Fixed
