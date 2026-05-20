@@ -12,7 +12,8 @@ public record SchemaProfile(
         Set<String> grantEligibility,
         boolean schemaRequired,
         String issuerIdPath,
-        String mandatorOrgIdPath
+        String mandatorOrgIdPath,
+        boolean wrapVcInAccessToken
 ) {
     public record TokenClaimsMapping(
             List<String> subjectPaths,
