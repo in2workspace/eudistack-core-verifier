@@ -107,6 +107,31 @@ class LocalSchemaProfileRegistryTest {
     }
 
     @Test
+    void parseAndRegister_withWrapVcInAccessToken_readsFlag() throws IOException {
+        // Given
+        String json = """
+                {
+                  "credential_configuration_id": "bumped.w3c.4",
+                  "scope": "openid bumped",
+                  "wrap_vc_in_access_token": true,
+                  "token_claims_mapping": {
+                    "subject_paths": ["credentialSubject.id"],
+                    "id_token": {},
+                    "access_token": {}
+                  }
+                }
+                """;
+        Files.writeString(tempDir.resolve("bumped.w3c.4.profile.json"), json);
+
+        // When
+        var registry = new LocalSchemaProfileRegistry(tempDir.toString());
+
+        // Then
+        SchemaProfile profile = registry.findByConfigId("bumped.w3c.4").orElseThrow();
+        assertTrue(profile.wrapVcInAccessToken());
+    }
+
+    @Test
     void parseAndRegister_withNullRevocation_parsesValidationWithoutRevocation() throws IOException {
         // Given
         String json = """
