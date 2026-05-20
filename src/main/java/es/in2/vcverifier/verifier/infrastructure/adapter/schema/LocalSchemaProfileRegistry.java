@@ -112,6 +112,7 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             boolean schemaRequired = parseSchemaRequired(root.get("validation"));
             String issuerIdPath = parseNullableText(root, "validation", "issuer_id_path");
             String mandatorOrgIdPath = parseNullableText(root, "validation", "mandator_org_id_path");
+            boolean wrapVcInAccessToken = root.path("wrap_vc_in_access_token").asBoolean(false);
 
             SchemaProfile profile = new SchemaProfile(
                     configId,
@@ -121,7 +122,8 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
                     grantEligibility,
                     schemaRequired,
                     issuerIdPath,
-                    mandatorOrgIdPath
+                    mandatorOrgIdPath,
+                    wrapVcInAccessToken
             );
             profiles.put(configId, profile);
             log.info("Registered schema profile: {} from {}", configId, source);
