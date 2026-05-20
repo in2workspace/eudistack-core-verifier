@@ -103,6 +103,7 @@ class LocalSchemaProfileRegistryTest {
         assertFalse(profile.schemaRequired());
         assertNull(profile.issuerIdPath());
         assertNull(profile.mandatorOrgIdPath());
+        assertFalse(profile.wrapVcInAccessToken());
     }
 
     @Test
