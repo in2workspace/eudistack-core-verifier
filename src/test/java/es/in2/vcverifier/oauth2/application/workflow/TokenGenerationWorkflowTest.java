@@ -4,9 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import es.in2.vcverifier.shared.config.BackendConfig;
-import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
-import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
 import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
+import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
+import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
+import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.service.AccessTokenBuilder;
+import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
+import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -20,6 +27,8 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,13 +41,21 @@ class TokenGenerationWorkflowTest {
     @Mock private JWTService jwtService;
     @Mock private BackendConfig backendConfig;
     @Mock private ClaimsExtractor claimsExtractor;
+    @Mock private AccessTokenBuilder accessTokenBuilder;
+    @Mock private SchemaProfileRegistry schemaProfileRegistry;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private TokenGenerationWorkflow workflow;
 
     @BeforeEach
     void setUp() {
-        workflow = new TokenGenerationWorkflow(jwtService, backendConfig, objectMapper, List.of(claimsExtractor));
+        workflow = new TokenGenerationWorkflow(
+                jwtService,
+                backendConfig,
+                objectMapper,
+                List.of(claimsExtractor),
+                accessTokenBuilder,
+                schemaProfileRegistry);
     }
 
     private ObjectNode buildW3cCredential(String credentialType) {
@@ -57,6 +74,19 @@ class TokenGenerationWorkflowTest {
         ObjectNode credentialSubject = credential.putObject("credentialSubject");
         credentialSubject.put("id", "did:key:z6MkSubject");
         return credential;
+    }
+
+    private SchemaProfile schemaProfile(String configId, boolean wrapVcInAccessToken, String... grantEligibility) {
+        return new SchemaProfile(
+                configId,
+                null,
+                null,
+                null,
+                Set.of(grantEligibility),
+                false,
+                null,
+                null,
+                wrapVcInAccessToken);
     }
 
     @Nested
@@ -89,7 +119,7 @@ class TokenGenerationWorkflowTest {
     @DisplayName("issueAccessToken()")
     class IssueAccessTokenTests {
         @Test
-        @DisplayName("generates access token and ID token for authorization_code grant")
+        @DisplayName("delegates access token construction and still builds the ID token")
         void generatesAccessAndIdToken() {
             ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
             ExtractedClaims claims = ExtractedClaims.builder()
@@ -102,12 +132,18 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
+            when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(Optional.of(
+                    schemaProfile("learcredential.employee.w3c.4", true, "authorization_code")));
+            when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
 
-            Map<String, Object> additionalParams = Map.of(
-                    OAuth2ParameterNames.SCOPE, "openid learcredential"
-            );
-            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(credential, "did:key:client", additionalParams, true, "altia");
+            Map<String, Object> additionalParams = Map.of(OAuth2ParameterNames.SCOPE, "openid learcredential");
+            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(
+                    credential,
+                    "did:key:client",
+                    additionalParams,
+                    true,
+                    "altia");
 
             assertThat(result.accessTokenJwt()).isEqualTo("access-jwt");
             assertThat(result.idTokenJwt()).isEqualTo("id-jwt");
@@ -116,7 +152,15 @@ class TokenGenerationWorkflowTest {
             assertThat(result.issueTime()).isNotNull();
             assertThat(result.expirationTime()).isAfterOrEqualTo(result.issueTime());
 
-            verify(jwtService, times(2)).issueJWT(anyString());
+            ArgumentCaptor<BuildContext> captor = ArgumentCaptor.forClass(BuildContext.class);
+            verify(accessTokenBuilder).build(captor.capture());
+            BuildContext buildContext = captor.getValue();
+            assertThat(buildContext.dispatchDecision()).isEqualTo(
+                    DispatchDecision.permitted("learcredential.employee.w3c.4", CredentialFormat.BUMPED_V2_0, DispatchReason.BY_TYPE));
+            assertThat(buildContext.tenant()).isEqualTo("altia");
+            assertThat(buildContext.audience()).isEqualTo("did:key:client");
+            assertThat(buildContext.generateIdToken()).isTrue();
+            verify(jwtService, times(1)).issueJWT(anyString());
         }
 
         @Test
@@ -133,110 +177,26 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports("learcredential.machine.w3c.3")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.issueJWT(anyString())).thenReturn("access-jwt-only");
+            when(schemaProfileRegistry.findByConfigId("learcredential.machine.w3c.3")).thenReturn(Optional.of(
+                    schemaProfile("learcredential.machine.w3c.3", false, "client_credentials")));
+            when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt-only");
 
-            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(credential, "https://verifier.example.com", Map.of(), false, "dome");
+            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(
+                    credential,
+                    "https://verifier.example.com",
+                    Map.of(),
+                    false,
+                    "dome");
 
             assertThat(result.accessTokenJwt()).isEqualTo("access-jwt-only");
             assertThat(result.idTokenJwt()).isNull();
-
-            verify(jwtService, times(1)).issueJWT(anyString());
+            verify(accessTokenBuilder).build(any(BuildContext.class));
+            verify(jwtService, never()).issueJWT(anyString());
         }
 
         @Test
-        @DisplayName("includes credential_type, tenant and embeds in the JWT payload")
-        void includesCredentialTypeAndEmbedsInAccessToken() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
-            ExtractedClaims claims = ExtractedClaims.builder()
-                    .subject("did:key:z6MkSubject")
-                    .scope("openid learcredential")
-                    .idTokenClaims(Map.of())
-                    .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
-                    .accessTokenEmbeds(Map.of("mandatee", Map.of("firstName", "John")))
-                    .build();
-
-            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
-            when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.issueJWT(anyString())).thenReturn("jwt");
-
-            workflow.issueAccessToken(credential, "did:key:client", Map.of(), false, "altia");
-
-            ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-            verify(jwtService).issueJWT(captor.capture());
-            String payload = captor.getValue();
-            assertThat(payload).contains("\"credential_type\":\"learcredential.employee.w3c.4\"");
-            assertThat(payload).contains("\"tenant\":\"altia\"");
-            assertThat(payload).contains("\"mandatee\":");
-            assertThat(payload).doesNotContain("\"vc\":");
-        }
-
-        @Test
-        @DisplayName("includes credential_type and embeds in the ID token payload")
-        void includesCredentialTypeAndEmbedsInIdToken() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
-            ExtractedClaims claims = ExtractedClaims.builder()
-                    .subject("did:key:z6MkSubject")
-                    .scope("openid learcredential")
-                    .idTokenClaims(Map.of("name", "John Doe"))
-                    .idTokenEmbeds(Map.of(
-                            "mandatee", Map.of("firstName", "John", "lastName", "Doe"),
-                            "mandator", Map.of("organizationIdentifier", "VATES-B12345678"),
-                            "power", List.of(Map.of("function", "Onboarding", "action", "Execute"))
-                    ))
-                    .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
-                    .accessTokenEmbeds(Map.of("mandatee", Map.of("firstName", "John")))
-                    .build();
-
-            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
-            when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.issueJWT(anyString())).thenReturn("access-jwt", "id-jwt");
-
-            Map<String, Object> additionalParams = Map.of(
-                    OAuth2ParameterNames.SCOPE, "openid learcredential"
-            );
-            workflow.issueAccessToken(credential, "did:key:client", additionalParams, true, "altia");
-
-            ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-            verify(jwtService, times(2)).issueJWT(captor.capture());
-            // Second call is the ID token
-            String idTokenPayload = captor.getAllValues().get(1);
-            assertThat(idTokenPayload).contains("\"credential_type\":\"learcredential.employee.w3c.4\"");
-            assertThat(idTokenPayload).contains("\"mandatee\":");
-            assertThat(idTokenPayload).contains("\"mandator\":");
-            assertThat(idTokenPayload).contains("\"power\":");
-            assertThat(idTokenPayload).contains("\"name\":\"John Doe\"");
-        }
-
-        @Test
-        @DisplayName("injects tenant claim from parameter, overriding any extractedClaims tenant")
-        void injectsTenantFromParameter() {
-            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
-            ExtractedClaims claims = ExtractedClaims.builder()
-                    .subject("did:key:z6MkSubject")
-                    .scope("openid learcredential")
-                    .idTokenClaims(Map.of())
-                    .accessTokenClaims(Map.of("tenant", "VATES-B12345678"))
-                    .build();
-
-            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
-            when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.issueJWT(anyString())).thenReturn("jwt");
-
-            workflow.issueAccessToken(credential, "did:key:client", Map.of(), false, "dome");
-
-            ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-            verify(jwtService).issueJWT(captor.capture());
-            String payload = captor.getValue();
-            // The tenant claim from the parameter ("dome") overrides the extractedClaims value
-            assertThat(payload).contains("\"tenant\":\"dome\"");
-        }
-
-        @Test
-        @DisplayName("omits tenant claim when tenant parameter is null")
-        void omitsTenantWhenNull() {
+        @DisplayName("propagates tenant and additional params into the BuildContext")
+        void propagatesBuildContext() {
             ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
             ExtractedClaims claims = ExtractedClaims.builder()
                     .subject("did:key:z6MkSubject")
@@ -248,14 +208,18 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(jwtService.issueJWT(anyString())).thenReturn("jwt");
+            when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(Optional.of(
+                    schemaProfile("learcredential.employee.w3c.4", true, "authorization_code")));
+            when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("jwt");
 
-            workflow.issueAccessToken(credential, "did:key:client", Map.of(), false, null);
+            workflow.issueAccessToken(credential, "did:key:client", Map.of("custom", "value"), false, null);
 
-            ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-            verify(jwtService).issueJWT(captor.capture());
-            String payload = captor.getValue();
-            assertThat(payload).doesNotContain("\"tenant\"");
+            ArgumentCaptor<BuildContext> captor = ArgumentCaptor.forClass(BuildContext.class);
+            verify(accessTokenBuilder).build(captor.capture());
+            BuildContext buildContext = captor.getValue();
+            assertThat(buildContext.tenant()).isNull();
+            assertThat(buildContext.additionalParameters()).containsEntry("custom", "value");
+            assertThat(buildContext.dispatchDecision().credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.4");
         }
 
         @Test
@@ -266,6 +230,7 @@ class TokenGenerationWorkflowTest {
 
             assertThatThrownBy(() -> workflow.issueAccessToken(credential, "aud", Map.of(), false, "altia"))
                     .isInstanceOf(OAuth2AuthenticationException.class);
+            verifyNoInteractions(accessTokenBuilder);
         }
     }
 }
