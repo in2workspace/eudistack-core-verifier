@@ -1,6 +1,9 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter.dispatch;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
@@ -21,8 +24,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.util.List;
 import java.util.Locale;
+import java.util.List;
 
 @Slf4j
 @Component
@@ -34,32 +37,48 @@ public class ContextAndTypeCredentialSchemaDispatcher implements CredentialSchem
 
     private final List<DispatchRule> dispatchRules;
     private final TenantConfigPort tenantConfigPort;
+    private final MeterRegistry meterRegistry;
 
     @Override
     public DispatchDecision dispatch(JsonNode credential) {
+        String tenant = resolveTenantDomain();
+        Timer.Sample sample = Timer.start(meterRegistry);
         String configIdFromType = resolveConfigIdFromType(credential);
         CredentialFormat formatFromContext = resolveFormatFromContext(credential);
 
-        if (configIdFromType == null && formatFromContext == null) {
-            throw new UnknownCredentialFormatException("Cannot dispatch credential: missing both type/vct and @context");
-        }
+        try {
+            if (configIdFromType == null && formatFromContext == null) {
+                recordDecision(tenant, "unknown", "deny", DispatchReason.MISSING_TYPE_AND_CONTEXT.name());
+                throw new UnknownCredentialFormatException("Cannot dispatch credential: missing both type/vct and @context");
+            }
 
-        if (configIdFromType == null) {
-            throw new UnknownCredentialFormatException("Cannot dispatch credential: no credential configuration id could be resolved from type/vct");
-        }
+            if (configIdFromType == null) {
+                recordDecision(tenant, "unknown", "deny", DispatchReason.UNKNOWN_CREDENTIAL_TYPE.name());
+                throw new UnknownCredentialFormatException("Cannot dispatch credential: no credential configuration id could be resolved from type/vct");
+            }
 
-        CredentialFormat format = resolveFormatByConfigId(configIdFromType);
-        DispatchReason reason = resolveReason(format, formatFromContext);
+            CredentialFormat format = resolveFormatByConfigId(configIdFromType);
+            DispatchReason reason = resolveReason(format, formatFromContext);
 
-        TenantDomeConfig tenantConfig = tenantConfigPort.getDomeConfig(resolveTenantDomain());
-        if (format == CredentialFormat.LEGACY_V1_1 && !tenantConfig.legacyReadEnabled()) {
-            throw new LegacyFormatSunsetClosedException("Legacy format is disabled for the current tenant");
-        }
-        if (format == CredentialFormat.BUMPED_V2_0 && !tenantConfig.bumpedReadEnabled()) {
-            throw new BumpedFormatTemporarilyDisabledException("Bumped format is temporarily disabled for the current tenant");
-        }
+            TenantDomeConfig tenantConfig = tenantConfigPort.getDomeConfig(tenant);
+            if (format == CredentialFormat.LEGACY_V1_1 && !tenantConfig.legacyReadEnabled()) {
+                recordDecision(tenant, format.name().toLowerCase(Locale.ROOT), "deny", DispatchReason.LEGACY_SUNSET_CLOSED.name());
+                throw new LegacyFormatSunsetClosedException("Legacy format is disabled for the current tenant");
+            }
+            if (format == CredentialFormat.BUMPED_V2_0 && !tenantConfig.bumpedReadEnabled()) {
+                recordDecision(tenant, format.name().toLowerCase(Locale.ROOT), "deny", DispatchReason.BUMPED_DISABLED.name());
+                throw new BumpedFormatTemporarilyDisabledException("Bumped format is temporarily disabled for the current tenant");
+            }
 
-        return DispatchDecision.permitted(configIdFromType, format, reason);
+            recordDecision(tenant, format.name().toLowerCase(Locale.ROOT), "permit", reason.name());
+            return DispatchDecision.permitted(configIdFromType, format, reason);
+        } finally {
+            Timer timer = Timer.builder("dome_verifier_dispatcher_duration_ms")
+                    .description("Dispatcher latency in milliseconds")
+                    .tag("tenant", tenant)
+                    .register(meterRegistry);
+            sample.stop(timer);
+        }
     }
 
     private String resolveConfigIdFromType(JsonNode credential) {
@@ -87,6 +106,17 @@ public class ContextAndTypeCredentialSchemaDispatcher implements CredentialSchem
             return DispatchReason.BY_TYPE_CONTEXT_MISMATCH;
         }
         return DispatchReason.BY_TYPE;
+    }
+
+    private void recordDecision(String tenant, String format, String decision, String reason) {
+        Counter.builder("dome_verifier_dispatcher_total")
+                .description("Credential schema dispatch outcomes")
+                .tag("tenant", tenant)
+                .tag("format", format)
+                .tag("decision", decision)
+                .tag("reason", reason)
+                .register(meterRegistry)
+                .increment();
     }
 
     private CredentialFormat resolveFormatFromContext(JsonNode credential) {
