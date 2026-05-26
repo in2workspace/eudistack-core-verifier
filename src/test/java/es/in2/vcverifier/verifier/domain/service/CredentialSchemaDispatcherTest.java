@@ -22,6 +22,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -46,7 +47,7 @@ class CredentialSchemaDispatcherTest {
                 new DispatchRule("gx:LabelCredential.2", CredentialFormat.BUMPED_V2_0)
         );
 
-        when(tenantConfigPort.getDomeConfig(anyString())).thenReturn(new TenantDomeConfig(true, true));
+        lenient().when(tenantConfigPort.getDomeConfig(anyString())).thenReturn(new TenantDomeConfig(true, true));
         dispatcher = new ContextAndTypeCredentialSchemaDispatcher(
                 dispatchRules,
                 tenantConfigPort,
