@@ -4,10 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jwt.JWTClaimsSet;
 import org.junit.jupiter.api.Test;
-import org.skyscreamer.jsonassert.JSONAssert;
-import org.skyscreamer.jsonassert.JSONCompareMode;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import static java.util.Map.entry;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AccessTokenStructureParityIT {
 
@@ -28,23 +32,25 @@ class AccessTokenStructureParityIT {
         assertNotNull(legacyClaims.getClaim("credential_type"));
         assertNotNull(bumpedClaims.getClaim("credential_type"));
 
-        ObjectNode legacyJson = MAPPER.createObjectNode();
-        legacyClaims.getClaims().forEach((k, v) -> legacyJson.set(k, MAPPER.valueToTree(v)));
+        Map<String, Object> legacyEnvelope = normalizedEnvelope(legacyClaims);
+        Map<String, Object> bumpedEnvelope = normalizedEnvelope(bumpedClaims);
 
-        ObjectNode bumpedJson = MAPPER.createObjectNode();
-        bumpedClaims.getClaims().forEach((k, v) -> bumpedJson.set(k, MAPPER.valueToTree(v)));
+        assertEquals(legacyEnvelope.keySet(), bumpedEnvelope.keySet());
+        assertEquals(legacyEnvelope, bumpedEnvelope);
 
-        legacyJson.remove("jti");
-        legacyJson.remove("iat");
-        legacyJson.remove("exp");
+        assertEquals("LEARCredentialEmployee.3", legacyClaims.getStringClaim("credential_type"));
+        assertEquals("LEARCredentialEmployee.4", bumpedClaims.getStringClaim("credential_type"));
+        assertTrue(legacyClaims.getClaim("vc") instanceof String);
+        assertTrue(bumpedClaims.getClaim("vc") instanceof Map);
+    }
 
-        bumpedJson.remove("jti");
-        bumpedJson.remove("iat");
-        bumpedJson.remove("exp");
-
-        String legacyStr = MAPPER.writeValueAsString(legacyJson);
-        String bumpedStr = MAPPER.writeValueAsString(bumpedJson);
-
-        JSONAssert.assertEquals(legacyStr, bumpedStr, JSONCompareMode.LENIENT);
+    private Map<String, Object> normalizedEnvelope(JWTClaimsSet claimsSet) {
+        Map<String, Object> normalized = new LinkedHashMap<>(claimsSet.getClaims());
+        normalized.remove("jti");
+        normalized.remove("iat");
+        normalized.remove("exp");
+        normalized.put("credential_type", "<credential_type>");
+        normalized.put("vc", "<vc>");
+        return normalized;
     }
 }
