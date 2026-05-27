@@ -176,7 +176,6 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.machine.w3c.3")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(schemaProfileRegistry.findByConfigId("learcredential.machine.w3c.3")).thenReturn(Optional.of(
                     schemaProfile("learcredential.machine.w3c.3", false, "client_credentials")));
             when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt-only");
@@ -207,7 +206,6 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
             when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(Optional.of(
                     schemaProfile("learcredential.employee.w3c.4", true, "authorization_code")));
             when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("jwt");

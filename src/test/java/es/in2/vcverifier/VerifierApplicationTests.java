@@ -6,6 +6,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -13,6 +14,9 @@ class VerifierApplicationTests {
 
     @MockitoBean
     private RegisteredClientRepository registeredClientRepository;
+
+    @MockitoBean
+    private TenantConfigPort tenantConfigPort;
 
     @Test
     void contextLoads() {

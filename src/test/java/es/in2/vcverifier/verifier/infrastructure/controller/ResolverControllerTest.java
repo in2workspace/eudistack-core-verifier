@@ -5,6 +5,7 @@ import es.in2.vcverifier.verifier.infrastructure.controller.ResolverController;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.exception.handler.ErrorResponseFactory;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
+import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.test.web.servlet.MockMvc;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.math.BigInteger;
 import java.security.interfaces.ECPublicKey;
@@ -47,6 +49,12 @@ class ResolverControllerTest {
 
     @MockBean
     private ErrorResponseFactory errorResponseFactory;
+
+    @MockBean
+    private TenantConfigPort tenantConfigPort;
+
+    @MockBean
+    private MeterRegistry meterRegistry;
 
     @Test
     void testResolveDid() throws Exception {
