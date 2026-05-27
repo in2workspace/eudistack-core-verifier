@@ -2,7 +2,6 @@ package es.in2.vcverifier.verifier.dualformat;
 
 import es.in2.vcverifier.shared.config.properties.DispatchProperties;
 import es.in2.vcverifier.shared.config.properties.TenantDomeConfigProperties;
-import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -31,13 +30,13 @@ class FlagDefaultsTest {
         assertThat(dispatchProperties.legacyRules())
                 .anySatisfy(rule -> {
                     assertThat(rule.credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.3");
-                    assertThat(rule.format()).isEqualTo(CredentialFormat.LEGACY_V1_1);
+                    assertThat(rule.format()).isEqualTo("LEGACY_V1_1");
                 });
 
         assertThat(dispatchProperties.bumpedRules())
                 .anySatisfy(rule -> {
                     assertThat(rule.credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.4");
-                    assertThat(rule.format()).isEqualTo(CredentialFormat.BUMPED_V2_0);
+                    assertThat(rule.format()).isEqualTo("BUMPED_V2_0");
                 });
     }
 
