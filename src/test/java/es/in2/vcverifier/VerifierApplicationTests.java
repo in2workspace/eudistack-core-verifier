@@ -16,7 +16,7 @@ class VerifierApplicationTests {
 
     @Test
     void contextLoads() {
-        // The test will automatically fail if the application context cannot be loaded.
+        // The test will automatically fail if the app context cannot be loaded.
     }
 
     @Test
