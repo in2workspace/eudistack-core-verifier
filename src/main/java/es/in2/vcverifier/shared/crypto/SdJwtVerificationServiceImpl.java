@@ -130,11 +130,23 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
                 "Cannot verify SD-JWT issuer signature: no x5c header and no DID issuer found. iss=" + issuer);
     }
 
+    // JAdES QTSPs (e.g. JAdES-B-T) include critical extensions like "sigT" in the protected header.
+    // Per RFC 7515 §4.1.11, Nimbus rejects unrecognized crit params. We declare them as deferred
+    // (understood by this application layer) so the cryptographic verification can proceed.
+    private static final Set<String> JADES_DEFERRED_CRIT = Set.of(
+            "sigT",    // JAdES-B-T: signing timestamp
+            "sigD",    // JAdES: detached signature parameters
+            "sigPId",  // JAdES: signature policy identifier
+            "sigPSp",  // JAdES: signature policy store
+            "tstVd",   // JAdES: timestamp validation data
+            "etsiU"    // JAdES: ETSI unsigned properties in protected header
+    );
+
     // SEC-S8: ES256 (P-256 EC) keys preferred per HAIP, RSA also accepted
     // for compatibility with QTSPs that have not yet migrated to EC certificates.
     private JWSVerifier buildVerifier(PublicKey publicKey) throws Exception {
         if (publicKey instanceof ECPublicKey ecKey) {
-            return new ECDSAVerifier(ecKey);
+            return new ECDSAVerifier(ecKey, JADES_DEFERRED_CRIT);
         }
         if (publicKey instanceof RSAPublicKey rsaKey) {
             int keyBits = rsaKey.getModulus().bitLength();
@@ -148,7 +160,7 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
                         "Consider upgrading to >= 3072-bit RSA or migrating to EC (ES256).", keyBits);
             }
             log.debug("Using RSA verifier for issuer signature (QTSP compatibility)");
-            return new RSASSAVerifier(rsaKey);
+            return new RSASSAVerifier(rsaKey, JADES_DEFERRED_CRIT);
         }
         throw new JWTVerificationException(
                 "Unsupported public key type for SD-JWT verification: " + publicKey.getAlgorithm()
