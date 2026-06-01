@@ -32,6 +32,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Set;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -170,12 +171,19 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
         }
     }
 
+    // JAdES QTSPs include critical extensions (e.g. "sigT") in the protected header.
+    // Declaring them as deferred lets Nimbus proceed with cryptographic verification
+    // without rejecting the JWT due to unrecognized crit params (RFC 7515 §4.1.11).
+    private static final Set<String> JADES_DEFERRED_CRIT = Set.of(
+            "sigT", "sigD", "sigPId", "sigPSp", "tstVd", "etsiU"
+    );
+
     private JWSVerifier buildStatusListVerifier(PublicKey publicKey) throws Exception {
         if (publicKey instanceof ECPublicKey ecKey) {
-            return new ECDSAVerifier(ecKey);
+            return new ECDSAVerifier(ecKey, JADES_DEFERRED_CRIT);
         }
         if (publicKey instanceof RSAPublicKey rsaKey) {
-            return new RSASSAVerifier(rsaKey);
+            return new RSASSAVerifier(rsaKey, JADES_DEFERRED_CRIT);
         }
         throw new StatusListCredentialException(
                 "Token Status List JWT uses unsupported key type: " + publicKey.getAlgorithm());
