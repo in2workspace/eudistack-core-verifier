@@ -706,7 +706,7 @@ Reorganizacion completa del codebase en arquitectura hexagonal con 2 bounded con
 - [x] `LocalSchemaResolver`: acepta `externalSchemasDir` con prioridad sobre classpath
 - [x] Exponer paths via `BackendConfig` getters
 - [x] Actualizar `ClientRegistryConfig`, `TrustedIssuersConfig`, `CredentialValidationConfig` para inyectar paths
-- [x] Documentar env vars: `VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH`, `TRUSTEDISSUERSPATH`, `SCHEMASDIR`
+- [x] Documentar env vars: `VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH`,`VERIFIER_BACKEND_SSO_CONFIG_PATH`, `TRUSTEDISSUERSPATH`, `SCHEMASDIR`
 - [x] Actualizar `.env.example`
 - [x] Crear guia de despliegue `.claude/docs/deployment.md`
 
