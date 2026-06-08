@@ -1,0 +1,228 @@
+package es.in2.vcverifier.sso.infrastructure.adapter;
+
+import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.model.SsoSessionId;
+import es.in2.vcverifier.sso.domain.model.SsoSessionState;
+import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Repository;
+
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.lang.reflect.Constructor;
+
+/**
+ * JDBC implementation of {@link SsoSessionRepositoryPort}.
+ *
+ * - Executes queries in tenant schema by setting search_path.
+ * - Uses a simple in-memory circuit breaker to fail-closed when DB is unstable.
+ * - Handles partial unique constraint on (tenant, holder_hash) WHERE state='ACTIVE'
+ *   by attempting supersede on duplicate-key and retrying once (idempotent behavior).
+ */
+@Repository
+@Slf4j
+public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
+
+    private static final String TENANT_PATTERN = "^[a-z0-9-]{1,64}$";
+
+    private final DataSource dataSource;
+
+    // Statement timeout in milliseconds
+    private final int statementTimeoutMs = 5_000;
+
+    // Simple circuit breaker
+    private final int failureThreshold = 5;
+    private final long openMillis = 60_000;
+    private final AtomicInteger failureCounter = new AtomicInteger(0);
+    private volatile long openUntil = 0L;
+
+    public SsoSessionJdbcRepository(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    private void ensureTenantSafe(String tenant) {
+        if (tenant == null || !tenant.matches(TENANT_PATTERN)) {
+            throw new IllegalArgumentException("Invalid tenant identifier: " + tenant);
+        }
+    }
+
+    private void checkCircuit() {
+        long now = System.currentTimeMillis();
+        if (openUntil > now) {
+            throw new IllegalStateException("SSO repository circuit is open until " + openUntil);
+        }
+    }
+
+    private void recordSuccess() {
+        failureCounter.set(0);
+        openUntil = 0L;
+    }
+
+    private void recordFailure() {
+        int f = failureCounter.incrementAndGet();
+        if (f >= failureThreshold) {
+            openUntil = System.currentTimeMillis() + openMillis;
+            log.warn("SSO repository circuit opened for {} ms after {} consecutive failures", openMillis, f);
+        }
+    }
+
+    @Override
+    public SsoSession save(SsoSession session) {
+        ensureTenantSafe(session.getTenant());
+        checkCircuit();
+
+        String insertSql = "INSERT INTO sso_session (id, tenant, holder_hash, established_at, expires_at, state) VALUES (?, ?, ?, ?, ?, ?)";
+
+        try (Connection c = dataSource.getConnection()) {
+            // set tenant schema and statement timeout local to this transaction
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + session.getTenant() + ", public")) {
+                s.execute();
+            } catch (SQLException e) {
+                // ignore; will proceed and rely on fully-qualified names if necessary
+                log.debug("Failed to set search_path to tenant {}: {}", session.getTenant(), e.getMessage());
+            }
+
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) {
+                s.execute();
+            } catch (SQLException ex) {
+                log.debug("Failed to set statement_timeout: {}", ex.getMessage());
+            }
+
+            try (PreparedStatement ps = c.prepareStatement(insertSql)) {
+                ps.setObject(1, session.getId().getValue());
+                ps.setString(2, session.getTenant());
+                ps.setString(3, session.getHolderHash());
+                ps.setObject(4, session.getEstablishedAt());
+                ps.setObject(5, session.getExpiresAt());
+                ps.setString(6, session.getState().name());
+                ps.executeUpdate();
+                recordSuccess();
+                return session;
+            } catch (SQLException e) {
+                // Handle duplicate active constraint: try to supersede existing active and retry once
+                log.warn("Insert failed for session {}: {}", session.getId(), e.getMessage());
+                recordFailure();
+                if (isUniqueViolation(e)) {
+                    log.info("Unique active session exists for tenant={} holderHash={} - attempting supersede and retry", session.getTenant(), session.getHolderHash());
+                    try {
+                        supersedeActive(session.getTenant(), session.getHolderHash());
+                    } catch (Exception supEx) {
+                        log.warn("Supersede attempt failed: {}", supEx.getMessage());
+                    }
+
+                    // retry insert once
+                    try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
+                        ps2.setObject(1, session.getId().getValue());
+                        ps2.setString(2, session.getTenant());
+                        ps2.setString(3, session.getHolderHash());
+                        ps2.setObject(4, session.getEstablishedAt());
+                        ps2.setObject(5, session.getExpiresAt());
+                        ps2.setString(6, session.getState().name());
+                        ps2.executeUpdate();
+                        recordSuccess();
+                        return session;
+                    } catch (SQLException e2) {
+                        log.error("Retry insert failed: {}", e2.getMessage());
+                        recordFailure();
+                        throw new RuntimeException("Failed to persist SSO session after retry", e2);
+                    }
+                }
+
+                throw new RuntimeException("Failed to persist SSO session", e);
+            }
+
+        } catch (SQLException ex) {
+            recordFailure();
+            throw new RuntimeException("Failed to persist SSO session (connection error)", ex);
+        }
+    }
+
+    @Override
+    public Optional<SsoSession> findActiveByTenantAndHolder(String tenant, String holderHash) {
+        ensureTenantSafe(tenant);
+        checkCircuit();
+
+        String sql = "SELECT id, tenant, holder_hash, established_at, expires_at, state FROM sso_session WHERE tenant = ? AND holder_hash = ? AND state = 'ACTIVE' LIMIT 1";
+
+        try (Connection c = dataSource.getConnection()) {
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + tenant + ", public")) { s.execute(); } catch (SQLException ignored) {}
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) { s.execute(); } catch (SQLException ignored) {}
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setString(1, tenant);
+                ps.setString(2, holderHash);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        SsoSession session = sessionFromResultSet(rs);
+                        recordSuccess();
+                        return Optional.of(session);
+                    } else {
+                        recordSuccess();
+                        return Optional.empty();
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            log.debug("findActiveByTenantAndHolder error: {}", e.getMessage());
+            recordFailure();
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public void supersedeActive(String tenant, String holderHash) {
+        ensureTenantSafe(tenant);
+        checkCircuit();
+        String sql = "UPDATE sso_session SET state = 'SUPERSEDED' WHERE tenant = ? AND holder_hash = ? AND state = 'ACTIVE'";
+
+        try (Connection c = dataSource.getConnection()) {
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + tenant + ", public")) { s.execute(); } catch (SQLException ignored) {}
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) { s.execute(); } catch (SQLException ignored) {}
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setString(1, tenant);
+                ps.setString(2, holderHash);
+                int updated = ps.executeUpdate();
+                log.info("Superseded {} rows for tenant={} holderHash={}", updated, tenant, holderHash);
+                recordSuccess();
+            }
+        } catch (SQLException e) {
+            recordFailure();
+            throw new RuntimeException("Failed to supersede active SSO sessions", e);
+        }
+    }
+
+    private boolean isUniqueViolation(SQLException e) {
+        // PostgreSQL unique_violation SQL state = 23505
+        String sqlState = e.getSQLState();
+        return sqlState != null && sqlState.equals("23505");
+    }
+
+    private SsoSession sessionFromResultSet(ResultSet rs) throws SQLException {
+        UUID id = (UUID) rs.getObject("id");
+        String tenant = rs.getString("tenant");
+        String holderHash = rs.getString("holder_hash");
+        Instant established = rs.getObject("established_at", Instant.class);
+        Instant expires = rs.getObject("expires_at", Instant.class);
+        String state = rs.getString("state");
+
+        try {
+            Constructor<SsoSession> ctor = SsoSession.class.getDeclaredConstructor(
+                    SsoSessionId.class, String.class, String.class, Instant.class, Instant.class, SsoSessionState.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(SsoSessionId.of(id), tenant, holderHash, established, expires, SsoSessionState.valueOf(state));
+        } catch (ReflectiveOperationException ex) {
+            throw new RuntimeException("Failed to reconstruct SsoSession from DB", ex);
+        }
+    }
+}
+
