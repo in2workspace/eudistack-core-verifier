@@ -6,10 +6,10 @@ import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
-import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -29,10 +29,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-
 import java.io.IOException;
 import java.io.InputStream;
-
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
@@ -78,8 +76,6 @@ public class TenantSsoConfigConsistencyIT {
     void setUp() {
         securityHeadersFilter = new SecurityHeadersFilter();
     }
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
 
 
@@ -164,7 +160,15 @@ public class TenantSsoConfigConsistencyIT {
                     try (InputStream is =
                                  getClass().getClassLoader().getResourceAsStream("sso-config.yaml")) {
 
-                        return mapper.readValue(is, TenantSsoConfigYamlData.class);
+                        es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData infraData =
+                                mapper.readValue(is, es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData.class);
+
+                        // Convert infrastructure model to domain model
+                        var domainEntries = infraData.tenants().stream()
+                                .map(e -> new es.in2.vcverifier.shared.domain.port.TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled()))
+                                .toList();
+
+                        return new TenantSsoConfigYamlData(domainEntries);
 
                     } catch (IOException e) {
                         throw new RuntimeException(e);

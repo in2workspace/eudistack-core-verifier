@@ -2,8 +2,8 @@ package es.in2.vcverifier.shared.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigYamlData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,14 +37,22 @@ class OidcMetadataPerTenantHostIT {
     @BeforeEach
     void setup() {
         when(tenantSsoConfigProvider.retrieve())
-                .thenReturn(loadYaml("sso-config.yaml"));
+                .thenReturn(loadYaml());
     }
 
-    private TenantSsoConfigYamlData loadYaml(String path) {
+    private TenantSsoConfigYamlData loadYaml() {
         try {
             ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-            try (InputStream is = getClass().getClassLoader().getResourceAsStream(path)) {
-                return mapper.readValue(is, TenantSsoConfigYamlData.class);
+            try (InputStream is = getClass().getClassLoader().getResourceAsStream("sso-config.yaml")) {
+                es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData infraData =
+                        mapper.readValue(is, es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData.class);
+
+                // Convert infrastructure model to domain model
+                var domainEntries = infraData.tenants().stream()
+                        .map(e -> new es.in2.vcverifier.shared.domain.port.TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled()))
+                        .toList();
+
+                return new TenantSsoConfigYamlData(domainEntries);
             }
         } catch (Exception e) {
             throw new RuntimeException(e);

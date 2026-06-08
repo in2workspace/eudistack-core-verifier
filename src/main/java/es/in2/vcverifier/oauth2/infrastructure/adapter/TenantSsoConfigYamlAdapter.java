@@ -1,7 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.adapter;
 
 
-import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
@@ -48,7 +47,7 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
 
     private Map<String, TenantSsoConfig> load() {
 
-        TenantSsoConfigYamlData yaml = provider.retrieve();
+        es.in2.vcverifier.shared.domain.port.TenantSsoConfigYamlData yaml = provider.retrieve();
 
         Map<String, TenantSsoConfig> result = new HashMap<>();
 

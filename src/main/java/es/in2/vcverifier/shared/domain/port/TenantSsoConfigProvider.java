@@ -1,8 +1,10 @@
 package es.in2.vcverifier.shared.domain.port;
 
-
-import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
-
+/**
+ * Port (SPI) for retrieving SSO tenant configurations.
+ * Implementations should load configurations from YAML or other sources.
+ * Returns domain model {@link TenantSsoConfigYamlData}.
+ */
 public interface TenantSsoConfigProvider {
     TenantSsoConfigYamlData retrieve();
 }
