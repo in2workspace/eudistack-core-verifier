@@ -4,9 +4,7 @@ import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 

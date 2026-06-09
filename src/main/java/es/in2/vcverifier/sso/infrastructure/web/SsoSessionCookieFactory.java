@@ -15,7 +15,6 @@ public class SsoSessionCookieFactory {
 
     /**
      * Generates a cryptographically secure opaque session identifier.
-     *
      * AD-2:
      * - 256 bits entropy
      * - URL-safe Base64

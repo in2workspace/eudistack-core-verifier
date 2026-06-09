@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
+import java.lang.reflect.Constructor;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -16,11 +17,9 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.lang.reflect.Constructor;
 
 /**
  * JDBC implementation of {@link SsoSessionRepositoryPort}.
- *
  * - Executes queries in tenant schema by setting search_path.
  * - Uses a simple in-memory circuit breaker to fail-closed when DB is unstable.
  * - Handles partial unique constraint on (tenant, holder_hash) WHERE state='ACTIVE'
