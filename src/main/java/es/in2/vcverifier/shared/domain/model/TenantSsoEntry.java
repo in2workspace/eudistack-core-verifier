@@ -1,4 +1,4 @@
-package es.in2.vcverifier.shared.domain.port;
+package es.in2.vcverifier.shared.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

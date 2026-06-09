@@ -1,56 +1,72 @@
 package es.in2.vcverifier.oauth2.infrastructure.adapter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import es.in2.vcverifier.oauth2.domain.exception.SsoConfigLoadingException;
 import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
+import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.yaml.snakeyaml.Yaml;
+
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Component
 public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
 
-    @Override
-    public es.in2.vcverifier.shared.domain.port.TenantSsoConfigYamlData retrieve() {
-        try (InputStream is =
-                     getClass().getClassLoader().getResourceAsStream("sso-config.yaml")) {
+    private final BackendProperties backendProperties;
+    private final ObjectMapper yamlMapper;
 
-            if (is == null) {
-                throw new SsoConfigLoadingException("sso-config.yaml not found");
+    public TenantSsoConfigYamlProvider(BackendProperties backendProperties) {
+        this.backendProperties = backendProperties;
+        this.yamlMapper = new ObjectMapper(new YAMLFactory());
+    }
+
+    @Override
+    public es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData retrieve() {
+
+        try {
+            String path = backendProperties.localFiles() != null
+                    ? backendProperties.localFiles().ssoConfigPath()
+                    : null;
+
+            // Caso 1: no configurado → devolver vacío
+            if (path == null || path.isBlank()) {
+                log.warn("ssoConfigPath not configured. Returning empty SSO config.");
+                return new es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData(List.of());
             }
 
-            TenantSsoConfigYamlData infraData = new Yaml().loadAs(is, TenantSsoConfigYamlData.class);
+            // Caso 2: leer desde filesystem
+            try (InputStream is = Files.newInputStream(Path.of(path))) {
 
-            // Convert infrastructure model to domain model
-            List<es.in2.vcverifier.shared.domain.port.TenantSsoEntry> domainEntries = infraData.tenants().stream()
-                    .map(e -> new es.in2.vcverifier.shared.domain.port.TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled()))
-                    .collect(Collectors.toList());
+                TenantSsoConfigYamlData infraData =
+                        yamlMapper.readValue(is, TenantSsoConfigYamlData.class);
 
-            return new es.in2.vcverifier.shared.domain.port.TenantSsoConfigYamlData(domainEntries);
+                List<TenantSsoEntry> domainEntries =
+                        infraData.tenants()
+                                .stream()
+                                .map(e -> new TenantSsoEntry(
+                                        e.tenant(),
+                                        e.rootDomain(),
+                                        e.ssoEnabled()
+                                ))
+                                .toList();
 
-        } catch (SsoConfigLoadingException e) {
-            throw e;
+                return new es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData(domainEntries);
+            }
+
         } catch (Exception e) {
             log.error("Error loading SSO config", e);
             throw new SsoConfigLoadingException("Error loading SSO config", e);
         }
     }
 
-    /**
-     * Domain exception for SSO config loading failures.
-     */
-    public static class SsoConfigLoadingException extends RuntimeException {
-        public SsoConfigLoadingException(String message) {
-            super(message);
-        }
 
-        public SsoConfigLoadingException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
 }
 
 

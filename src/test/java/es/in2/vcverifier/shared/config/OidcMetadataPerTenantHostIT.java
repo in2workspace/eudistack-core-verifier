@@ -2,8 +2,10 @@ package es.in2.vcverifier.shared.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
+import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
-import es.in2.vcverifier.shared.domain.port.TenantSsoConfigYamlData;
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +36,9 @@ class OidcMetadataPerTenantHostIT {
     @MockitoBean
     private RegisteredClientRepository registeredClientRepository;
 
+    @MockitoBean
+    TenantSsoConfigYamlAdapter tenantSsoConfigYamlAdapter;
+
     @BeforeEach
     void setup() {
         when(tenantSsoConfigProvider.retrieve())
@@ -49,7 +54,7 @@ class OidcMetadataPerTenantHostIT {
 
                 // Convert infrastructure model to domain model
                 var domainEntries = infraData.tenants().stream()
-                        .map(e -> new es.in2.vcverifier.shared.domain.port.TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled()))
+                        .map(e -> new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled()))
                         .toList();
 
                 return new TenantSsoConfigYamlData(domainEntries);
@@ -61,11 +66,22 @@ class OidcMetadataPerTenantHostIT {
 
     @Test
     void shouldReturnIssuerBasedOnForwardedHost() throws Exception {
+
+        String base = "https://idp.tenant-a.com";
+
         mockMvc.perform(get("/.well-known/openid-configuration")
                         .header("X-Forwarded-Host", "idp.tenant-a.com")
                         .header("X-Forwarded-Proto", "https"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.issuer").value("https://idp.tenant-a.com"));
+                .andExpect(jsonPath("$.issuer").value(base))
+                .andExpect(jsonPath("$.authorization_endpoint")
+                        .value(base + "/oidc/authorize"))
+                .andExpect(jsonPath("$.token_endpoint")
+                        .value(base + "/oidc/token"))
+                .andExpect(jsonPath("$.jwks_uri")
+                        .value(base + "/oidc/jwks"))
+                .andExpect(jsonPath("$.end_session_endpoint")
+                        .value(base + "/oidc/logout"));
     }
 
 

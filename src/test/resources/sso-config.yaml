@@ -2,3 +2,7 @@ tenants:
   - tenant: "sandbox"
     rootDomain: ""
     sso.enabled: true
+
+  - tenant: "sandboxDos"
+    rootDomain: ""
+    sso.enabled: false

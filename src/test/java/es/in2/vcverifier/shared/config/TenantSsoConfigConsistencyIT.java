@@ -7,9 +7,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
-import es.in2.vcverifier.shared.domain.port.TenantSsoConfigYamlData;
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -104,7 +105,6 @@ public class TenantSsoConfigConsistencyIT {
         appender.start();
 
         // limpiar otros appenders heredados (IMPORTANTE en Spring Boot)
-        logger.detachAndStopAllAppenders();
         logger.addAppender(appender);
 
         try {
@@ -165,7 +165,7 @@ public class TenantSsoConfigConsistencyIT {
 
                         // Convert infrastructure model to domain model
                         var domainEntries = infraData.tenants().stream()
-                                .map(e -> new es.in2.vcverifier.shared.domain.port.TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled()))
+                                .map(e -> new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled()))
                                 .toList();
 
                         return new TenantSsoConfigYamlData(domainEntries);

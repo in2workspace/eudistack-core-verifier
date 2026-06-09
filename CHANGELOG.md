@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **EUDISTACK-546**: US-01: Custom domain operativo per tenant en el Verifier IdP
+
 ## [3.1.6] - 2026-05-28
 
 ### Added
