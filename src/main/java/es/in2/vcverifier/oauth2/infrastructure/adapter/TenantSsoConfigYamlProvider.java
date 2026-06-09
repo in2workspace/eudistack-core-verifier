@@ -2,11 +2,13 @@ package es.in2.vcverifier.oauth2.infrastructure.adapter;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.InputStream;
 
+@Primary
 @Component
 public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
 

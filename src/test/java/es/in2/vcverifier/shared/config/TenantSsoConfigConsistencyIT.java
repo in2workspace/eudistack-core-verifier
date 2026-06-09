@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -62,9 +63,6 @@ public class TenantSsoConfigConsistencyIT {
 
     @Mock
     private FilterChain chain;
-
-    @Autowired
-    private TenantSsoConfigProvider tenantSsoConfigProvider;
 
     @Mock
     private HttpServletRequest request;
@@ -152,21 +150,18 @@ public class TenantSsoConfigConsistencyIT {
     @TestConfiguration
     static class TestConfig {
 
-        @Bean
-        public TenantSsoConfigProvider tenantSsoConfigProvider() {
+        @Bean(name = "tenantSsoConfigYamlProvider")
+        public TenantSsoConfigProvider provider() {
             return new TenantSsoConfigProvider() {
                 @Override
                 public TenantSsoConfigYamlData retrieve() {
-
-                    // Carga real desde classpath
-                    ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-
                     try (InputStream is =
                                  getClass().getClassLoader().getResourceAsStream("sso-config.yaml")) {
 
-                        return mapper.readValue(is, TenantSsoConfigYamlData.class);
+                        return new ObjectMapper(new YAMLFactory())
+                                .readValue(is, TenantSsoConfigYamlData.class);
 
-                    } catch (IOException e) {
+                    } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
                 }

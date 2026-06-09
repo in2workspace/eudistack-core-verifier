@@ -1,4 +1,4 @@
-package es.in2.vcverifier.sso.infrastructure.adapter;
+package es.in2.vcverifier.sso.infrastructure.persistence;
 
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
@@ -13,8 +13,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -77,7 +75,11 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
     @Override
     public SsoSession save(SsoSession session) {
+
+        // Validamos el tenant
         ensureTenantSafe(session.getTenant());
+
+        // Comprobamos que el circuito esté cerrado.
         checkCircuit();
 
         String insertSql = "INSERT INTO sso_session (id, tenant, holder_hash, established_at, expires_at, state) VALUES (?, ?, ?, ?, ?, ?)";
