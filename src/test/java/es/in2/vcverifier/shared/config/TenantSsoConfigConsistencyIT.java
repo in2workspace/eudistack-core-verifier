@@ -70,15 +70,8 @@ public class TenantSsoConfigConsistencyIT {
     @Mock
     private HttpServletRequest request;
 
-    private SecurityHeadersFilter securityHeadersFilter;
-
     @MockitoBean
     ClientRegistryProvider clientRegistryProvider;
-
-    @BeforeEach
-    void setUp() {
-        securityHeadersFilter = new SecurityHeadersFilter();
-    }
 
 
 
