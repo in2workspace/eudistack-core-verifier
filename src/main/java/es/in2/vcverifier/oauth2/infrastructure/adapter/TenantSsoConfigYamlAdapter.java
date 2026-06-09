@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +27,9 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
 
     private final AtomicReference<Map<String, TenantSsoConfig>> cache =
             new AtomicReference<>(new HashMap<>());
+
+    private static final Duration DEFAULT_ABSOLUTE_TTL = Duration.ofHours(8);
+    private static final Duration DEFAULT_IDLE_TTL = Duration.ofMinutes(30);
 
 
     @PostConstruct
@@ -52,6 +56,7 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
         return Optional.ofNullable(cache.get().get(tenant));
     }
 
+
     private Map<String, TenantSsoConfig> load() {
 
         TenantSsoConfigYamlData yaml = provider.retrieve();
@@ -65,6 +70,9 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
             String rootDomain = t.rootDomain();
             boolean enabled = Boolean.TRUE.equals(t.ssoEnabled());
 
+            Duration absoluteTtl = DEFAULT_ABSOLUTE_TTL;
+            Duration idleTtl = DEFAULT_IDLE_TTL;
+
 
             /** FAIL-CLOSED: Se incluye una validación de seguridad fail-closed:
              * si alguien configura sso.enabled: true pero rootDomain está vacío, el sistema NO habilita el SSO
@@ -75,7 +83,11 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                 result.put(tenant, new TenantSsoConfig(
                         tenant,
                         rootDomain,
-                        false
+                        false,
+                        new TenantSsoConfig.SsoTtlConfig(
+                                DEFAULT_ABSOLUTE_TTL,
+                                DEFAULT_IDLE_TTL
+                        )
                 ));
 
                 // Informamos del error por consola.
@@ -86,7 +98,11 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
             }
 
             // Devolvemos el resultado
-            result.put(tenant, new TenantSsoConfig(tenant, rootDomain, enabled));
+            result.put(tenant, new TenantSsoConfig(tenant, rootDomain, enabled,
+                    new TenantSsoConfig.SsoTtlConfig(
+                            absoluteTtl,
+                            idleTtl
+                    )));
         }
 
         return result;
