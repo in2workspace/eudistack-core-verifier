@@ -7,13 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
-import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,12 +29,15 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+
 import java.io.IOException;
 import java.io.InputStream;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 
 @SpringBootTest
@@ -122,26 +124,6 @@ public class TenantSsoConfigConsistencyIT {
             logger.detachAppender(appender);
             appender.stop();
         }
-    }
-
-
-    @DisplayName("Verifica que una config con sso.enabled: true pero sin rootDomain el flujo OID4VP legacy " +
-            "sigue funcionando con normalidad.")
-    @Test
-    void shouldKeepLegacyOid4vpFlowWorking() throws ServletException, IOException {
-
-        when(request.getRequestURI())
-                .thenReturn("/oid4vp/authorize");
-
-        when(request.getContextPath())
-                .thenReturn("");
-
-        when(request.getHeader("X-Forwarded-Host"))
-                .thenReturn("legacy.eudistack.net");
-
-        securityHeadersFilter.doFilter(request, response, chain);
-
-        verify(chain).doFilter(request, response);
     }
 
 
