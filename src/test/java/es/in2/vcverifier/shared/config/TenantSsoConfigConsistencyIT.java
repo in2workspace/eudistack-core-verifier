@@ -70,16 +70,8 @@ public class TenantSsoConfigConsistencyIT {
     @Mock
     private HttpServletRequest request;
 
-    private SecurityHeadersFilter securityHeadersFilter;
-
     @MockitoBean
     ClientRegistryProvider clientRegistryProvider;
-
-    @BeforeEach
-    void setUp() {
-        securityHeadersFilter = new SecurityHeadersFilter();
-    }
-
 
 
     @DisplayName("Verifica que una config con sso.enabled: true pero sin rootDomain resulta SSO no habilitado")
