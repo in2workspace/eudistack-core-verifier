@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.7] - 2026-06-09
+
+### Fixed
+
+- **Cryptographic Binding**: `validateCryptographicBinding()` now follows a priority fallback chain instead of failing immediately when `cnf.jwk` is absent. Chain: (1) `cnf.jwk` — direct JWK Thumbprint comparison (RFC 7638), (2) `cnf.kid` — DID resolution via `DIDService` + thumbprint, (3) `credentialSubject.mandate.mandatee.id` — DID resolution via `DIDService` + thumbprint. Supports both W3C (`credentialSubject.mandate.mandatee.id`) and SD-JWT flat (`mandate.mandatee.id`) credential formats.
+
 ## [3.1.6] - 2026-05-28
 
 ### Added

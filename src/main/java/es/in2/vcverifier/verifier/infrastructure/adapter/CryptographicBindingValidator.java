@@ -83,21 +83,47 @@ public class CryptographicBindingValidator {
     }
 
     /**
-     * Validates cryptographic binding between the VP signer and the VC subject
-     * via cnf.jwk thumbprint comparison (RFC 7638 / RFC 7800).
+     * Validates cryptographic binding between the VP signer and the VC holder via a priority chain:
+     * 1. cnf.jwk (RFC 7800 embedded JWK) — direct thumbprint comparison
+     * 2. cnf.kid (key ID as DID URL) — resolve via DIDService, then thumbprint comparison
+     * 3. credentialSubject.mandate.mandatee.id (did:key fallback) — resolve via DIDService
      *
      * @param vpSignerKey   the EC public key of the VP signer
      * @param jwtCredential the parsed VC JWT
      */
     public void validateCryptographicBinding(ECPublicKey vpSignerKey, SignedJWT jwtCredential) {
-        ECKey vcCnfJwk = extractCnfJwkFromVc(jwtCredential);
-        if (vcCnfJwk == null) {
-            throw new InvalidScopeException("Credential missing cnf.jwk — cannot validate cryptographic binding");
-        }
         if (vpSignerKey == null) {
             throw new InvalidScopeException("Cannot extract VP signer key — cannot validate cryptographic binding");
         }
-        validateBindingByJwkThumbprint(vpSignerKey, vcCnfJwk);
+
+        // Strategy 1: cnf.jwk
+        ECKey cnfJwk = extractCnfJwkFromVc(jwtCredential);
+        if (cnfJwk != null) {
+            log.info("[BIND] Validating binding via cnf.jwk");
+            validateBindingByJwkThumbprint(vpSignerKey, cnfJwk);
+            return;
+        }
+
+        // Strategy 2: cnf.kid (DID URL)
+        String cnfKid = extractCnfKidFromVc(jwtCredential);
+        if (cnfKid != null) {
+            log.info("[BIND] Validating binding via cnf.kid: {}", cnfKid);
+            ECKey resolved = resolveEcKeyFromDid(normalizeDid(cnfKid));
+            validateBindingByJwkThumbprint(vpSignerKey, resolved);
+            return;
+        }
+
+        // Strategy 3: mandatee.id fallback
+        String mandateeId = extractMandateeIdFromVc(jwtCredential);
+        if (mandateeId != null && mandateeId.startsWith("did:")) {
+            log.info("[BIND] Validating binding via mandatee.id fallback: {}", mandateeId);
+            ECKey resolved = resolveEcKeyFromDid(normalizeDid(mandateeId));
+            validateBindingByJwkThumbprint(vpSignerKey, resolved);
+            return;
+        }
+
+        throw new InvalidScopeException(
+                "Credential missing cnf.jwk / cnf.kid / mandatee.id — cannot validate cryptographic binding");
     }
 
     String normalizeDid(String did) {
@@ -136,6 +162,65 @@ public class CryptographicBindingValidator {
         } catch (Exception e) {
             log.warn("Failed to extract cnf.jwk from VC: {}", e.getMessage());
             return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractCnfKidFromVc(SignedJWT vcJwt) {
+        try {
+            Map<String, Object> cnf = (Map<String, Object>) vcJwt.getJWTClaimsSet().getClaim("cnf");
+            if (cnf == null) return null;
+            Object kid = cnf.get("kid");
+            return kid instanceof String s ? s : null;
+        } catch (Exception e) {
+            log.warn("Failed to extract cnf.kid from VC: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String extractMandateeIdFromVc(SignedJWT vcJwt) {
+        try {
+            var claims = vcJwt.getJWTClaimsSet();
+
+            // W3C format: credentialSubject.mandate.mandatee.id
+            Object cs = claims.getClaim("credentialSubject");
+            if (cs instanceof Map<?, ?> csMap) {
+                Object mandate = csMap.get("mandate");
+                if (mandate instanceof Map<?, ?> mandateMap) {
+                    Object mandatee = mandateMap.get("mandatee");
+                    if (mandatee instanceof Map<?, ?> mandateeMap) {
+                        Object id = mandateeMap.get("id");
+                        if (id instanceof String s) return s;
+                    }
+                }
+            }
+
+            // SD-JWT flat format: mandate.mandatee.id (top-level)
+            Object mandate = claims.getClaim("mandate");
+            if (mandate instanceof Map<?, ?> mandateMap) {
+                Object mandatee = mandateMap.get("mandatee");
+                if (mandatee instanceof Map<?, ?> mandateeMap) {
+                    Object id = mandateeMap.get("id");
+                    if (id instanceof String s) return s;
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.warn("Failed to extract mandatee.id from VC: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private ECKey resolveEcKeyFromDid(String did) {
+        PublicKey resolved = didService.resolvePublicKeyFromDid(did);
+        if (!(resolved instanceof ECPublicKey ecPub)) {
+            throw new InvalidScopeException("Resolved DID key is not EC — cannot validate cryptographic binding: " + did);
+        }
+        try {
+            return new ECKey.Builder(Curve.P_256, ecPub).build();
+        } catch (Exception e) {
+            throw new InvalidScopeException("Failed to wrap resolved EC key: " + e.getMessage());
         }
     }
 
