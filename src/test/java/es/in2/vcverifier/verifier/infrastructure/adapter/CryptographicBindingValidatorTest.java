@@ -262,16 +262,92 @@ class CryptographicBindingValidatorTest {
     }
 
     @Test
-    void validateCryptographicBinding_nullVpSignerKey_throwsInvalidScopeException() throws Exception {
-        ECKey ecKey = new ECKeyGenerator(Curve.P_256).generate();
+    void validateCryptographicBinding_nullVpSignerKey_throwsInvalidScopeException() {
+        // vpSignerKey null-check fires before any claim extraction
+        SignedJWT vcJwt = mock(SignedJWT.class);
+
+        assertThrows(InvalidScopeException.class,
+                () -> validator.validateCryptographicBinding(null, vcJwt));
+
+        verifyNoInteractions(vcJwt);
+    }
+
+    @Test
+    void validateCryptographicBinding_cnfKid_resolvesAndValidates() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+        ECPublicKey vpSignerKey = holderKey.toECPublicKey();
+        ECPublicKey resolvedKey = holderKey.toECPublicKey();
 
         SignedJWT vcJwt = mock(SignedJWT.class);
         JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
         when(vcJwt.getJWTClaimsSet()).thenReturn(vcClaims);
-        when(vcClaims.getClaim("cnf")).thenReturn(Map.of("jwk", ecKey.toPublicJWK().toJSONObject()));
+        // cnf.jwk is absent; cnf.kid is present — strategy 2 succeeds, no further claims needed
+        when(vcClaims.getClaim("cnf")).thenReturn(Map.of("kid", "did:key:zABC#key-1"));
+        when(didService.resolvePublicKeyFromDid("did:key:zABC")).thenReturn(resolvedKey);
+
+        assertDoesNotThrow(() -> validator.validateCryptographicBinding(vpSignerKey, vcJwt));
+        verify(didService).resolvePublicKeyFromDid("did:key:zABC");
+    }
+
+    @Test
+    void validateCryptographicBinding_mandateeIdW3cFormat_resolvesAndValidates() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+        ECPublicKey vpSignerKey = holderKey.toECPublicKey();
+        ECPublicKey resolvedKey = holderKey.toECPublicKey();
+
+        SignedJWT vcJwt = mock(SignedJWT.class);
+        JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
+        when(vcJwt.getJWTClaimsSet()).thenReturn(vcClaims);
+        // no cnf at all
+        when(vcClaims.getClaim("cnf")).thenReturn(null);
+        // credentialSubject.mandate.mandatee.id present
+        Map<String, Object> mandatee = Map.of("id", "did:key:zHolder");
+        Map<String, Object> mandate = Map.of("mandatee", mandatee);
+        Map<String, Object> cs = Map.of("mandate", mandate);
+        when(vcClaims.getClaim("credentialSubject")).thenReturn(cs);
+        when(didService.resolvePublicKeyFromDid("did:key:zHolder")).thenReturn(resolvedKey);
+
+        assertDoesNotThrow(() -> validator.validateCryptographicBinding(vpSignerKey, vcJwt));
+        verify(didService).resolvePublicKeyFromDid("did:key:zHolder");
+    }
+
+    @Test
+    void validateCryptographicBinding_mandateeIdSdJwtFlatFormat_resolvesAndValidates() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+        ECPublicKey vpSignerKey = holderKey.toECPublicKey();
+        ECPublicKey resolvedKey = holderKey.toECPublicKey();
+
+        SignedJWT vcJwt = mock(SignedJWT.class);
+        JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
+        when(vcJwt.getJWTClaimsSet()).thenReturn(vcClaims);
+        // no cnf, no credentialSubject
+        when(vcClaims.getClaim("cnf")).thenReturn(null);
+        when(vcClaims.getClaim("credentialSubject")).thenReturn(null);
+        // top-level mandate.mandatee.id
+        Map<String, Object> mandatee = Map.of("id", "did:key:zFlat");
+        Map<String, Object> mandate = Map.of("mandatee", mandatee);
+        when(vcClaims.getClaim("mandate")).thenReturn(mandate);
+        when(didService.resolvePublicKeyFromDid("did:key:zFlat")).thenReturn(resolvedKey);
+
+        assertDoesNotThrow(() -> validator.validateCryptographicBinding(vpSignerKey, vcJwt));
+        verify(didService).resolvePublicKeyFromDid("did:key:zFlat");
+    }
+
+    @Test
+    void validateCryptographicBinding_allStrategiesMiss_throwsInvalidScopeException() throws Exception {
+        ECKey ecKey = new ECKeyGenerator(Curve.P_256).generate();
+        ECPublicKey vpSignerKey = ecKey.toECPublicKey();
+
+        SignedJWT vcJwt = mock(SignedJWT.class);
+        JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
+        when(vcJwt.getJWTClaimsSet()).thenReturn(vcClaims);
+        when(vcClaims.getClaim("cnf")).thenReturn(null);
+        when(vcClaims.getClaim("credentialSubject")).thenReturn(null);
+        when(vcClaims.getClaim("mandate")).thenReturn(null);
 
         assertThrows(InvalidScopeException.class,
-                () -> validator.validateCryptographicBinding(null, vcJwt));
+                () -> validator.validateCryptographicBinding(vpSignerKey, vcJwt));
+        verifyNoInteractions(didService);
     }
 
     // --- normalizeDid ---
