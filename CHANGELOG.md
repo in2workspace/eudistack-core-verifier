@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.8] - 2026-06-12
+
+### Added
+
+- **Tenant Resolution Fallback**: `TenantDomainFilter` now falls back to the `X-Tenant` request header when no valid tenant subdomain can be extracted from the hostname. Primary resolution via `request.getServerName()` (which already reflects `X-Forwarded-Host` through Spring's `forward-headers-strategy: framework`) is unchanged. Added `X_TENANT_HEADER` constant to `Constants`.
+
 ## [3.1.7] - 2026-06-09
 
 ### Fixed
