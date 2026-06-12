@@ -26,5 +26,6 @@ public class Constants {
     public static final String CLIENT_SETTING_CLIENT_METADATA = "settings.clientMetadata";
     // JTI cache TTL: 2x access token lifetime (900s) to ensure replay window coverage
     public static final long JTI_CACHE_TTL_SECONDS = 1800L;
+    public static final String X_TENANT_HEADER = "X-Tenant";
 
 }

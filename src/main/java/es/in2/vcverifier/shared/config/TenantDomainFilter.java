@@ -13,6 +13,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
+
 /**
  * Extracts the tenant identifier from the request hostname and stores it
  * as a request attribute. Atlassian-style: tenant is the first segment.
@@ -42,6 +44,9 @@ public class TenantDomainFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String tenant = extractTenantFromHostname(request);
+        if (tenant == null) {
+            tenant = extractTenantFromHeader(request);
+        }
         if (tenant != null) {
             request.setAttribute(TENANT_ATTRIBUTE, tenant);
             MDC.put("tenantDomain", tenant);
@@ -73,6 +78,18 @@ public class TenantDomainFilter extends OncePerRequestFilter {
             return null;
         }
         return tenant.toLowerCase();
+    }
+
+    private String extractTenantFromHeader(HttpServletRequest request) {
+        String header = request.getHeader(X_TENANT_HEADER);
+        if (header == null || header.isBlank()) {
+            return null;
+        }
+        if (!header.matches("^[a-zA-Z0-9_-]+$")) {
+            log.warn("Verifier: Invalid tenant identifier from X-Tenant header: {}", header);
+            return null;
+        }
+        return header.toLowerCase();
     }
 
     /**
