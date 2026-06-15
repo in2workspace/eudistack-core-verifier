@@ -25,45 +25,25 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.time.Clock;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
-
-/**
- * ES-02
- *
- * Caso:
- * - fallo de persistencia (DB down o circuit breaker abierto)
- *
- * Esperado:
- * - NO cookie emitida
- * - evento sso_persist_error
- * - fallo controlado (sin propagación indefinida)
- */
 
 @ActiveProfiles("test")
 @Import(TimeConfig.class)
 @ExtendWith(MockitoExtension.class)
 class EstablishSsoSessionPersistenceFailureIT {
 
-    @MockitoBean
-    ClientRegistryProvider clientRegistryProvider;
-
-    @MockitoBean
-    private RegisteredClientRepository registeredClientRepository;
-
-    @MockitoBean
-    private ClientLoaderConfig clientLoaderConfig;
-
-    @MockitoBean
-    private SsoSessionAuthenticationSuccessHandler ssoSessionAuthenticationSuccessHandler;
+    @MockitoBean ClientRegistryProvider clientRegistryProvider;
+    @MockitoBean RegisteredClientRepository registeredClientRepository;
+    @MockitoBean ClientLoaderConfig clientLoaderConfig;
+    @MockitoBean SsoSessionAuthenticationSuccessHandler handler;
 
     @InjectMocks
     private EstablishSsoSessionWorkflow workflow;
 
-    @Mock
-    private SsoSessionRepositoryPort repository;
+    @Mock private SsoSessionRepositoryPort repository;
     @Mock private SsoAuditPort auditPort;
     @Mock private TenantSsoConfigPort tenantSsoConfigPort;
     @Mock private HashingService hashingService;
@@ -72,7 +52,6 @@ class EstablishSsoSessionPersistenceFailureIT {
     @Test
     void shouldFailClosed_whenPersistenceFails_andEmitPersistErrorEvent() {
 
-        // GIVEN
         SsoSessionCommand command = new SsoSessionCommand(
                 "tenant-a",
                 "holder-xyz",
@@ -80,27 +59,39 @@ class EstablishSsoSessionPersistenceFailureIT {
                 "corr-123"
         );
 
-        // Config válida (CLAVE para llegar a persistencia)
-        var validConfig = mock(TenantSsoConfig.class);
+        // CONFIG MOCK CORRECTO
+        TenantSsoConfig config = mock(TenantSsoConfig.class);
+        when(config.ssoEnabled()).thenReturn(true);
 
         when(tenantSsoConfigPort.getByTenant("tenant-a"))
-                .thenReturn(Optional.of(validConfig));
+                .thenReturn(Optional.of(config));
+
+        when(hashingService.sha256(any())).thenReturn("hash-123");
+
+        // fallo SOLO en save (no en supersedeActive)
+        doNothing().when(repository).supersedeActive(any(), any());
+        doThrow(new RuntimeException("DB down"))
+                .when(repository).save(any());
 
         // WHEN
-        Exception exception = assertThrows(RuntimeException.class, () -> {
-            workflow.execute(command);
-        });
+        var result = assertDoesNotThrow(() -> workflow.execute(command));
+
 
         // THEN
-        assertNotNull(exception);
+        assertNull(result, "No debe emitirse cookie en fallo de persistencia");
 
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT &&
+                event.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR &&
                         event.getTenant().equals("tenant-a")
         ));
 
-        verify(repository, never()).save(any());
-        verify(repository, never()).supersedeActive(any(), any());
+        verify(repository).supersedeActive(eq("tenant-a"), any());
+
+        verifyNoMoreInteractions(repository);
+
+        verify(auditPort).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR &&
+                        e.getTenant().equals("tenant-a")
+        ));
     }
 }
-
