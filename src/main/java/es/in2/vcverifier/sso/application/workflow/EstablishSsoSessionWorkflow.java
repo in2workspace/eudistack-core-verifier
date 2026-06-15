@@ -60,16 +60,33 @@ public class EstablishSsoSessionWorkflow {
         String holderHash = hashingService.sha256(command.sub());
 
         Instant now = Instant.now(clock);
+        SsoSession session;
 
-        sessionRepositoryPort.supersedeActive(command.tenant(), holderHash);
+        try {
+            sessionRepositoryPort.supersedeActive(command.tenant(), holderHash);
 
-        SsoSession session = SsoSession.establish(
-                command.tenant(),
-                holderHash,
-                DEFAULT_SESSION_TTL
-        );
+            session = SsoSession.establish(
+                    command.tenant(),
+                    holderHash,
+                    DEFAULT_SESSION_TTL
+            );
 
-        sessionRepositoryPort.save(session);
+            sessionRepositoryPort.save(session);
+
+        } catch (Exception ex) {
+
+            auditPort.publish(new SsoAuditEvent(
+                    SsoAuditEvent.EventType.SSO_PERSIST_ERROR,
+                    command.tenant(),
+                    command.clientId(),
+                    holderHash,
+                    "PERSIST_ERROR",
+                    command.correlationId(),
+                    Instant.now(clock)
+            ));
+
+            return null; // fail-closed
+        }
 
         auditPort.publish(new SsoAuditEvent(
                 SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
