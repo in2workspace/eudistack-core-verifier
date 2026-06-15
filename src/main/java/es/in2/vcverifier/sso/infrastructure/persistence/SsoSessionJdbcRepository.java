@@ -6,7 +6,6 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionState;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
-
 import javax.sql.DataSource;
 import java.lang.reflect.Constructor;
 import java.sql.Connection;

@@ -25,10 +25,10 @@ public class SsoAuditAdapter implements SsoAuditPort {
         logEvent.put("correlationId", event.getCorrelationId());
         logEvent.put("occurredAt", event.getOccurredAt());
 
-        // 🔒 NFR-S-547-01: never log sub in clear
+        // NFR-S-547-01: never log sub in clear
         logEvent.put("sub", maskSubject(event.getHolderHash()));
 
-        // 🔒 NFR-S-547-02: only prefix of session id
+        // NFR-S-547-02: only prefix of session id
         logEvent.put("sessionId", prefix(event.getHolderHash()));
 
         log.info("SSO_AUDIT_EVENT {}", logEvent);
@@ -52,16 +52,5 @@ public class SsoAuditAdapter implements SsoAuditPort {
                 ? sessionId
                 : sessionId.substring(0, 8);
     }
-
-
-
-
-
-
-
-
-
-
-
 
 }

@@ -1,7 +1,6 @@
 package es.in2.vcverifier.sso.domain.port;
 
 import es.in2.vcverifier.sso.domain.model.SsoSession;
-
 import java.util.Optional;
 
 public interface SsoSessionRepositoryPort {

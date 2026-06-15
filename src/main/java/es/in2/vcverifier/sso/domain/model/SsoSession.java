@@ -2,7 +2,6 @@ package es.in2.vcverifier.sso.domain.model;
 
 
 import lombok.Data;
-
 import java.time.Instant;
 import java.time.Duration;
 import java.util.Objects;

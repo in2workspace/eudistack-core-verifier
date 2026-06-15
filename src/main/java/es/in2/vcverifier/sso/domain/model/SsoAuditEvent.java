@@ -25,14 +25,4 @@ public class SsoAuditEvent {
     private final String correlationId;
     private final Instant occurredAt;
 
-
-
-
-
-
-
-
-
-
-
 }

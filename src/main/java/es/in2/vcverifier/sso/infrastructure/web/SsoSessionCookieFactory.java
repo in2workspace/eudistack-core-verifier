@@ -2,7 +2,6 @@ package es.in2.vcverifier.sso.infrastructure.web;
 
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
-
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
