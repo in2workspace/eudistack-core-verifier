@@ -1,115 +1,104 @@
 package es.in2.vcverifier.sso.it;
 
-
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
+import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
-import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
-import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 /**
- * ES-03
- *
  * Caso:
- * - Config SSO inexistente o inconsistente en establish-time
+ * Verifica que, cuando la configuración SSO está ausente o deshabilitada, el workflow lanza una excepción
+ * y publica un evento de auditoría de configuración inconsistente sin crear sesión ni persistir datos.
  *
- * Resultado esperado:
- * - fallback legacy (NO sesión SSO creada)
- * - evento sso_config_inconsistent emitido
- * - flujo continúa sin bloquear sistema
+ * Esperado:
+ * - Se lanza SsoConfigInconsistentException
+ * - Se emite evento SSO_CONFIG_INCONSISTENT
+ * - NO se crea ni persiste sesión SSO
+ * - NO se ejecuta persistencia en el repositorio de sesiones
  */
-@SpringBootTest
-@ActiveProfiles("test")
+
+@ExtendWith(MockitoExtension.class)
 class TenantSsoConfigConsistencyIT {
 
-    @Autowired
+    @InjectMocks
     private EstablishSsoSessionWorkflow workflow;
 
-    @MockitoBean
-    private TenantSsoConfigPort tenantSsoConfigPort;
-
-    @MockitoBean
-    private SsoAuditPort auditPort;
+    @Mock private TenantSsoConfigPort tenantSsoConfigPort;
+    @Mock private SsoSessionRepositoryPort sessionRepositoryPort;
+    @Mock private SsoAuditPort auditPort;
+    @Mock private HashingService hashingService;
+    @Mock private Clock clock;
 
     @Test
-    void shouldFallbackToLegacy_whenConfigIsMissing_andEmitConfigInconsistentEvent() {
+    void shouldPublishAuditAndThrow_whenConfigIsMissing() {
 
         // GIVEN
-        SsoSessionCommand command = new SsoSessionCommand(
+        var command = new SsoSessionCommand(
                 "tenant-a",
                 "holder-xyz",
                 "client-test",
                 "corr-123"
         );
 
-        // Simulamos config AUSENTE
         when(tenantSsoConfigPort.getByTenant("tenant-a"))
                 .thenReturn(Optional.empty());
 
         // WHEN
-        Exception ex = assertThrows(RuntimeException.class, () -> {
-            workflow.execute(command);
-        });
+        assertThrows(
+                EstablishSsoSessionWorkflow.SsoConfigInconsistentException.class,
+                () -> workflow.execute(command)
+        );
 
-        // THEN: error controlado
-        assertNotNull(ex);
-
-        // AUDITORÍA obligatoria
+        // THEN - audit MUST be called
         verify(auditPort, times(1)).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT &&
-                        event.getTenant().equals("tenant-a")
+                        "tenant-a".equals(event.getTenant())
         ));
 
-        // FALLBACK LEGACY: NO debe intentar persistir sesión válida
-        verify(auditPort, never()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED
-        ));
+        verifyNoInteractions(sessionRepositoryPort);
     }
 
     @Test
-    void shouldFallbackToLegacy_whenSsoDisabled_andEmitConfigInconsistentEvent() {
+    void shouldPublishAuditAndThrow_whenSsoDisabled() {
 
-        // GIVEN
-        SsoSessionCommand command = new SsoSessionCommand(
+        var command = new SsoSessionCommand(
                 "tenant-b",
                 "holder-xyz",
                 "client-test",
                 "corr-456"
         );
 
-        TenantSsoConfig disabledConfig = mock(TenantSsoConfig.class);
-        when(disabledConfig.ssoEnabled()).thenReturn(false);
+        TenantSsoConfig config = mock(TenantSsoConfig.class);
+        when(config.ssoEnabled()).thenReturn(false);
 
         when(tenantSsoConfigPort.getByTenant("tenant-b"))
-                .thenReturn(Optional.of(disabledConfig));
+                .thenReturn(Optional.of(config));
 
-        // WHEN
-        Exception ex = assertThrows(RuntimeException.class, () -> {
-            workflow.execute(command);
-        });
-
-        // THEN
-        assertNotNull(ex);
+        assertThrows(
+                EstablishSsoSessionWorkflow.SsoConfigInconsistentException.class,
+                () -> workflow.execute(command)
+        );
 
         verify(auditPort, times(1)).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT &&
-                        event.getTenant().equals("tenant-b")
+                        "tenant-b".equals(event.getTenant())
         ));
 
-        verify(auditPort, never()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED
-        ));
+        verifyNoInteractions(sessionRepositoryPort);
     }
 }
