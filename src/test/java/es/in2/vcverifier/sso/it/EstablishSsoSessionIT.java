@@ -1,4 +1,4 @@
-package es.in2.vcverifier.sso.domain;
+package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -22,7 +23,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = {
+        "clients.config.path=test-fixtures/clients.yaml",
+        "spring.autoconfigure.exclude=es.in2.vcverifier.oauth2.infrastructure.config.AuthorizationServerConfig"
+})
 @AutoConfigureMockMvc
 class EstablishSsoSessionIT {
 
@@ -47,7 +51,12 @@ class EstablishSsoSessionIT {
     JdbcTemplate jdbcTemplate;
 
     @MockitoBean
+    RegisteredClientRepository registeredClientRepository;
+
+    @MockitoBean
     SsoAuditPort auditPort;
+
+
 
     @BeforeEach
     void clean() {
