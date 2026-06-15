@@ -124,6 +124,15 @@ public class ClientLoaderConfig {
                     String clientOrigin = clientUri.getScheme() + "://" + clientUri.getAuthority();
                     freshOrigins.add(clientOrigin);
                 }
+                if (clientData.redirectUris() != null) {
+                    for (String redirectUri : clientData.redirectUris()) {
+                        URI redirectUriParsed = URI.create(redirectUri);
+                        String scheme = redirectUriParsed.getScheme();
+                        if ("http".equals(scheme) || "https".equals(scheme)) {
+                            freshOrigins.add(scheme + "://" + redirectUriParsed.getAuthority());
+                        }
+                    }
+                }
             }
             // Atomically replace origins: remove stale, add fresh
             allowedClientsOrigins.retainAll(freshOrigins);
