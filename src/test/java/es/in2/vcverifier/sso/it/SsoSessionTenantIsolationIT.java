@@ -57,6 +57,11 @@ class SsoSessionTenantIsolationIT {
 
         verify(auditPort, times(1)).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT &&
+                        "tenant-b".equals(event.getTenant())
+        ));
+
+        verify(auditPort, times(1)).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT &&
                         event.getTenant().equals("tenant-b")
         ));
     }
