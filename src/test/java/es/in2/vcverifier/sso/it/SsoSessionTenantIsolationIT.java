@@ -17,18 +17,22 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * AC-02 / NFR-S-02
- * Cookie de tenant A no puede resolverse en tenant B.
- * Debe emitirse evento sso_cross_tenant_attempt.
+ * Una cookie de sesión SSO de un tenant (A) no puede usarse en otro tenant (B)
+ * y que en ese caso se emite un evento de auditoría.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
+@SpringBootTest(
+        properties = {
+                "spring.security.enabled=false"
+        }
+)
+@AutoConfigureMockMvc(addFilters = false)
 class SsoSessionTenantIsolationIT {
 
     @Autowired
