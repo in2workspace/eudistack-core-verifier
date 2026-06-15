@@ -1,14 +1,26 @@
 package es.in2.vcverifier.sso.it;
 
+import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
+import es.in2.vcverifier.shared.config.TimeConfig;
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
+import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
+import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -17,17 +29,19 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Clock;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@Testcontainers
-@SpringBootTest(properties = {
-        "clients.config.path=test-fixtures/clients.yaml",
-        "spring.autoconfigure.exclude=es.in2.vcverifier.oauth2.infrastructure.config.AuthorizationServerConfig"
-})
+@SpringBootTest
 @AutoConfigureMockMvc
+@Testcontainers
+@ActiveProfiles("test")
+@Import(TimeConfig.class)
 class EstablishSsoSessionIT {
 
     @Container
@@ -51,16 +65,26 @@ class EstablishSsoSessionIT {
     JdbcTemplate jdbcTemplate;
 
     @MockitoBean
-    RegisteredClientRepository registeredClientRepository;
+    ClientRegistryProvider clientRegistryProvider;
+    @MockitoBean RegisteredClientRepository registeredClientRepository;
+    @MockitoBean
+    ClientLoaderConfig clientLoaderConfig;
+    @MockitoBean
+    SsoSessionAuthenticationSuccessHandler handler;
 
     @MockitoBean
-    SsoAuditPort auditPort;
+    private SsoSessionRepositoryPort repository;
+    @MockitoBean private SsoAuditPort auditPort;
+    @MockitoBean private TenantSsoConfigPort tenantSsoConfigPort;
+    @MockitoBean private HashingService hashingService;
+    @MockitoBean private Clock clock;
 
 
 
     @BeforeEach
     void clean() {
-        jdbcTemplate.update("DELETE FROM sso_session");
+//        jdbcTemplate.update("CREATE TABLE sso_session IF NOT EXISTS");
+//        jdbcTemplate.update("DELETE FROM sso_session");
         reset(auditPort);
     }
 
@@ -91,7 +115,7 @@ class EstablishSsoSessionIT {
     @Test
     void establishSession_createsRow_and_setsCookie() throws Exception {
 
-        mockMvc.perform(post("/sso/session")
+        mockMvc.perform(get("/sso/session")
                         .principal(() -> "tenant-a")
                         .contentType("application/json")
                         .content(validVp()))
