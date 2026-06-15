@@ -108,6 +108,26 @@ public class BackendConfig {
         return properties.fapiNonceRequired() != null ? properties.fapiNonceRequired() : true;
     }
 
+    /**
+     * Returns true only when the operator has explicitly opted out of x5c chain validation.
+     * Null or false (the default) means chain validation is active (secure-by-default).
+     */
+    public boolean isX5cChainValidationBypassed() {
+        return properties.x5cChainValidation() != null
+                && Boolean.TRUE.equals(properties.x5cChainValidation().bypass());
+    }
+
+    /**
+     * Returns true unless the operator has explicitly set aia-chasing.enabled=false.
+     * Enabled by default so QTSP tokens with leaf-only x5c are handled automatically.
+     */
+    public boolean isAiaChasingEnabled() {
+        return properties.x5cChainValidation() == null
+                || properties.x5cChainValidation().aiaChasing() == null
+                || properties.x5cChainValidation().aiaChasing().enabled() == null
+                || Boolean.TRUE.equals(properties.x5cChainValidation().aiaChasing().enabled());
+    }
+
     public long getAccessTokenExpirationSeconds() {
         return properties.tokenExpiration() != null ? properties.tokenExpiration().accessTokenSeconds() : 900;
     }
