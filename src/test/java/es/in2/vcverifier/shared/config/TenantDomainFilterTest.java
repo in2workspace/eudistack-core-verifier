@@ -199,25 +199,26 @@ class TenantDomainFilterTest {
     }
 
     // ──────────────────────────────────────────────────────────
-    // Priority: subdomain takes precedence over header
+    // Priority: X-Tenant header takes precedence over subdomain
     // ──────────────────────────────────────────────────────────
 
     @Nested
     class Priority {
 
         @Test
-        void doFilterInternal_bothSubdomainAndHeader_subdomainWins() throws Exception {
+        void doFilterInternal_bothSubdomainAndHeader_headerWins() throws Exception {
             when(request.getServerName()).thenReturn("kpmg.eudistack.net");
             when(request.getHeader(X_TENANT_HEADER)).thenReturn("other");
 
             filter.doFilterInternal(request, response, chain);
 
-            verify(request).setAttribute(TENANT_ATTRIBUTE, "kpmg");
-            verify(request, never()).setAttribute(eq(TENANT_ATTRIBUTE), eq("other"));
+            verify(request).setAttribute(TENANT_ATTRIBUTE, "other");
+            verify(request, never()).setAttribute(eq(TENANT_ATTRIBUTE), eq("kpmg"));
+            verify(chain).doFilter(request, response);
         }
 
         @Test
-        void doFilterInternal_invalidSubdomainValidHeader_fallsBackToHeader() throws Exception {
+        void doFilterInternal_invalidSubdomainValidHeader_usesHeader() throws Exception {
             when(request.getServerName()).thenReturn("invalid tenant.eudistack.net");
             when(request.getHeader(X_TENANT_HEADER)).thenReturn("dome");
 
