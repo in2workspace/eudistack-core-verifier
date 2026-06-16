@@ -7,6 +7,20 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/verifier}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  flyway:
+    # Disabled: TenantSchemaFlywayMigrator runs migrations for `public` + all
+    # tenant schemas using R2DBC credentials. Spring Boot's auto-configured
+    # flywayInitializer would need its own JDBC user/password and would also
+    # double-migrate `public`.
+    enabled: false
+    url: ${SPRING_FLYWAY_URL:jdbc:postgresql://localhost:5432/verifier}
+    locations: classpath:db/migration
+    default-schema: ${SPRING_FLYWAY_DEFAULT_SCHEMA:public}
+    baseline-on-migrate: true
 
 # SEC-F8: Swagger UI disabled by default. Enable via env var in dev only.
 springdoc:

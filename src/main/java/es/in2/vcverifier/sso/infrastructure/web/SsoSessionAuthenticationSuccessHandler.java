@@ -8,24 +8,37 @@ import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 
 @Component
-@RequiredArgsConstructor
 public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuccessHandler {
 
     private final AuthenticationSuccessHandler oid4vpSuccessHandler;
     private final EstablishSsoSessionWorkflow establishSsoSessionWorkflow;
     private final SsoSessionCookieFactory cookieFactory;
     private final SsoAuditPort auditPort;
+
+
+    public SsoSessionAuthenticationSuccessHandler(
+            @Lazy AuthenticationSuccessHandler oid4vpSuccessHandler,
+            EstablishSsoSessionWorkflow establishSsoSessionWorkflow,
+            SsoSessionCookieFactory cookieFactory,
+            SsoAuditPort auditPort
+    ) {
+        this.oid4vpSuccessHandler = oid4vpSuccessHandler;
+        this.establishSsoSessionWorkflow = establishSsoSessionWorkflow;
+        this.cookieFactory = cookieFactory;
+        this.auditPort = auditPort;
+    }
 
     @Override
     public void onAuthenticationSuccess(

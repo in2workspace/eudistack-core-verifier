@@ -7,11 +7,15 @@ import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
+import org.springframework.stereotype.Service;
+
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
+
+@Service
 public class EstablishSsoSessionWorkflow {
 
     private static final Duration DEFAULT_SESSION_TTL = Duration.ofHours(8);
