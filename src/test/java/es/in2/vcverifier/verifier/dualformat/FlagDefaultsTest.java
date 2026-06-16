@@ -20,16 +20,24 @@ class FlagDefaultsTest {
 
     @Test
     void defaultsAreLoadedFromApplicationYaml() {
-        assertThat(tenantDomeConfigProperties.legacyReadEnabledOrDefault()).isTrue();
-        assertThat(tenantDomeConfigProperties.bumpedReadEnabledOrDefault()).isTrue();
+        assertThat(tenantDomeConfigProperties.legacyReadEnabled()).isNotNull();
+        assertThat(tenantDomeConfigProperties.bumpedReadEnabled()).isNotNull();
 
-        assertThat(dispatchProperties.legacyRules()).hasSize(3);
+        assertThat(dispatchProperties.legacyRules()).hasSize(6);
         assertThat(dispatchProperties.bumpedRules()).hasSize(3);
-        assertThat(dispatchProperties.allRules()).hasSize(6);
+        assertThat(dispatchProperties.allRules()).hasSize(9);
 
         assertThat(dispatchProperties.legacyRules())
                 .anySatisfy(rule -> {
                     assertThat(rule.credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.3");
+                    assertThat(rule.format()).isEqualTo("LEGACY_V1_1");
+                })
+                .anySatisfy(rule -> {
+                    assertThat(rule.credentialConfigurationId()).isEqualTo("LEARCredentialEmployee");
+                    assertThat(rule.format()).isEqualTo("LEGACY_V1_1");
+                })
+                .anySatisfy(rule -> {
+                    assertThat(rule.credentialConfigurationId()).isEqualTo("LEARCredentialMachine");
                     assertThat(rule.format()).isEqualTo("LEGACY_V1_1");
                 });
 

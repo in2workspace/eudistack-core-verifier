@@ -101,7 +101,7 @@ class LocalSchemaProfileRegistryTest {
         assertNull(profile.validationPaths());
         assertEquals(Set.of(), profile.grantEligibility());
         assertFalse(profile.schemaRequired());
-        assertNull(profile.issuerIdPath());
+        assertEquals("issuer.id", profile.issuerIdPath());
         assertNull(profile.mandatorOrgIdPath());
         assertFalse(profile.wrapVcInAccessToken());
     }
@@ -162,7 +162,7 @@ class LocalSchemaProfileRegistryTest {
         SchemaProfile profile = registry.findByConfigId("norevoc.w3c.1").orElseThrow();
 
         assertFalse(profile.schemaRequired());
-        assertNull(profile.issuerIdPath());
+        assertEquals("issuer.id", profile.issuerIdPath());
         assertNull(profile.mandatorOrgIdPath());
 
         ValidationPaths vp = profile.validationPaths();
