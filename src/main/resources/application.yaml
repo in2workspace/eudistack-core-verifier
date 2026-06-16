@@ -111,6 +111,8 @@ verifier:
           format: LEGACY_V1_1
         - credential-configuration-id: learcredential.machine.w3c.2
           format: LEGACY_V1_1
+        - credential-configuration-id: LEARCredentialMachine
+          format: LEGACY_V1_1
         - credential-configuration-id: gx.labelcredential.w3c.1
           format: LEGACY_V1_1
       bumped:

@@ -77,18 +77,29 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
             X500Principal subject = certificate.getSubjectX500Principal();
             String distinguishedName = subject.getName();
             log.debug("Extracted DN for certificate validation");
-
+            
             // Try to extract the organizationIdentifier from the DN
             String orgIdentifierFromDN = extractOrganizationIdentifierFromDN(distinguishedName);
-            if (orgIdentifierFromDN != null && orgIdentifierFromDN.equals(expectedOrgId)) {
+
+            // Strip "did:elsi:" prefix when present so DOME-style issuer ids match
+            // the plain VATES-/PEPPOL-style organizationIdentifier carried in the cert DN.
+            String normalizedExpected = stripDidElsiPrefix(expectedOrgId);
+
+            if (orgIdentifierFromDN != null && orgIdentifierFromDN.equals(normalizedExpected)) {
                 log.debug("Found matching organization identifier in DN");
-                return certificate.getPublicKey(); // Return the public key of the matching certificate
+                return certificate.getPublicKey();
             }
         } catch (CertificateException e) {
             log.error("Error processing certificate: {}", e.getMessage());
             // Continue to the next certificate in the list
         }
         return null; // Return null if no matching certificate is found
+    }
+
+    private static String stripDidElsiPrefix(String value) {
+        return value != null && value.startsWith("did:elsi:")
+                ? value.substring("did:elsi:".length())
+                : value;
     }
 
 

@@ -190,6 +190,11 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             String issuerIdPath = parseNullableText(root, "validation", "issuer_id_path");
             String mandatorOrgIdPath = parseNullableText(root, "validation", "mandator_org_id_path");
             boolean wrapVcInAccessToken = root.path("wrap_vc_in_access_token").asBoolean(false);
+            
+            if (issuerIdPath == null) {
+                issuerIdPath = "issuer.id";
+                log.debug("Schema profile {} did not declare validation.issuer_id_path; defaulting to 'issuer'", configId);
+            }
 
             SchemaProfile profile = new SchemaProfile(
                     configId,
