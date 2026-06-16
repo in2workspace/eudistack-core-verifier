@@ -115,7 +115,7 @@ class EstablishSsoSessionIT {
     @Test
     void establishSession_createsRow_and_setsCookie() throws Exception {
 
-        mockMvc.perform(get("/sso/session")
+        mockMvc.perform(get("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
                         .contentType("application/json")
                         .content(validVp()))
@@ -140,7 +140,7 @@ class EstablishSsoSessionIT {
     @Test
     void legacyTenant_doesNotSetCookie() throws Exception {
 
-        mockMvc.perform(post("/sso/session")
+        mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "legacy-tenant")
                         .contentType("application/json")
                         .content(validVp()))
@@ -162,7 +162,7 @@ class EstablishSsoSessionIT {
     void reestablish_supersedes_previous_session() throws Exception {
 
         // primera sesión
-        mockMvc.perform(post("/sso/session")
+        mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
                         .contentType("application/json")
                         .content(validVp()))
@@ -176,7 +176,7 @@ class EstablishSsoSessionIT {
         assertThat(firstCount).isEqualTo(1);
 
         // segunda sesión (re-establish)
-        mockMvc.perform(post("/sso/session")
+        mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
                         .contentType("application/json")
                         .content(validVp()))
@@ -204,7 +204,7 @@ class EstablishSsoSessionIT {
     @Test
     void invalidVp_returnsAccessDenied_and_noSession() throws Exception {
 
-        mockMvc.perform(post("/sso/session")
+        mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
                         .contentType("application/json")
                         .content(invalidVp()))
