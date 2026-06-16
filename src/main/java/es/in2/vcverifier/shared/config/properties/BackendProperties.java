@@ -18,7 +18,8 @@ public record BackendProperties(
         LocalFiles localFiles,
         TokenExpiration tokenExpiration,
         Long loginTimeoutSeconds,
-        Boolean fapiNonceRequired
+        Boolean fapiNonceRequired,
+        X5cChainValidation x5cChainValidation
 ) {
 
     public record Identity(
@@ -43,6 +44,15 @@ public record BackendProperties(
             String trustedIssuersListUrl,
             String trustedServicesListUrl
     ) {}
+
+    /**
+     * Secure-by-default: x5c chain validation is always active.
+     * Set bypass=true only as an operational escape hatch to restore legacy leaf-only behaviour.
+     * Set aiaChasing.enabled=false to disable network fetching of intermediate CA certs.
+     */
+    public record X5cChainValidation(Boolean bypass, AiaChasing aiaChasing) {}
+
+    public record AiaChasing(Boolean enabled) {}
 
     /**
      * Optional external filesystem paths. When set, the corresponding local provider
