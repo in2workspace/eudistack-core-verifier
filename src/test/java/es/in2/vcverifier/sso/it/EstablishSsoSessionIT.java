@@ -4,7 +4,6 @@ import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.config.TimeConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
-import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
@@ -12,8 +11,6 @@ import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessH
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -115,8 +112,10 @@ class EstablishSsoSessionIT {
     @Test
     void establishSession_createsRow_and_setsCookie() throws Exception {
 
-        mockMvc.perform(get("/oid4vp/auth-response")
+        mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
+                        .param("state", "test-state")
+                        .param("vp_token", "valid-vp")
                         .contentType("application/json")
                         .content(validVp()))
                 .andExpect(status().isOk())
