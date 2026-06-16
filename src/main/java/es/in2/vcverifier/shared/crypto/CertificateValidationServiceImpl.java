@@ -4,6 +4,7 @@ import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.SignedJWT;
+import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.exception.MismatchOrganizationIdentifierException;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
@@ -30,6 +31,9 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class CertificateValidationServiceImpl implements CertificateValidationService {
+
+    private final CertificateChainValidator certificateChainValidator;
+    private final BackendConfig backendConfig;
     @Override
     public void extractAndVerifyCertificate(String verifiableCredential, Map<String, Object> vcHeader, String expectedOrgId) {
         // Retrieve the x5c claim (certificate chain)
@@ -56,6 +60,7 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
                 PublicKey publicKey = processCertificate(certBase64Str, expectedOrgId, certificateFactory);
                 if (publicKey != null) {
                     verifyJWTSignature(verifiableCredential, publicKey);
+                    validateChainIfEnabled(x5c, certificateFactory);
                     return;
                 }
                 // If the loop finishes without finding a match, throw an exception
@@ -65,6 +70,26 @@ public class CertificateValidationServiceImpl implements CertificateValidationSe
             log.error("Error initializing CertificateFactory: {}", e.getMessage());
         }
 
+    }
+
+    private void validateChainIfEnabled(List<?> x5c, CertificateFactory cf) {
+        if (backendConfig.isX5cChainValidationBypassed()) {
+            log.warn("x5c chain validation BYPASSED by config — legacy leaf-only verification active");
+            return;
+        }
+        List<X509Certificate> fullChain = new ArrayList<>();
+        for (Object entry : x5c) {
+            if (entry instanceof String certStr) {
+                try {
+                    fullChain.add((X509Certificate) cf.generateCertificate(
+                            new ByteArrayInputStream(Base64.getDecoder().decode(certStr))));
+                } catch (CertificateException e) {
+                    log.warn("Skipping unparseable x5c entry during chain validation: {}", e.getMessage());
+                }
+            }
+        }
+        certificateChainValidator.validateSelfContainedChain(fullChain);
+        log.debug("x5c chain validated to self-contained root ({} certs)", fullChain.size());
     }
 
     private static PublicKey processCertificate(String certBase64Str, String expectedOrgId, CertificateFactory certificateFactory) {

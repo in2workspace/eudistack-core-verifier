@@ -92,6 +92,17 @@ verifier:
       access-token-seconds: ${VERIFIER_ACCESS_TOKEN_EXPIRATION:900}
       id-token-seconds: ${VERIFIER_ID_TOKEN_EXPIRATION:60}
       refresh-token-seconds: ${VERIFIER_REFRESH_TOKEN_EXPIRATION:43200}
+    x5c-chain-validation:
+      # Secure-by-default: self-contained PKIX chain validation is ALWAYS active.
+      # Set bypass=true ONLY as an operational escape hatch to restore legacy leaf-only behaviour.
+      # EUDISTACK-81 AC-04 — Q2 scope (no trust store / LOTL; Q3 roadmap).
+      bypass: ${VERIFIER_BACKEND_X5CCHAINVALIDATION_BYPASS:false}
+      aia-chasing:
+        # Enabled by default: fetches missing intermediate/root CA certs from the AIA
+        # caIssuers URL in the leaf certificate. Required for QTSP-signed credentials
+        # (e.g. Vintegris) that only include the leaf in x5c. Set to false in air-gapped
+        # environments or when all issuers supply the full chain in x5c.
+        enabled: ${VERIFIER_BACKEND_X5C_AIA_CHASING_ENABLED:true}
     trustFrameworks:
       - name: DOME
         # Leave URLs unset to use local providers (classpath YAML files)
