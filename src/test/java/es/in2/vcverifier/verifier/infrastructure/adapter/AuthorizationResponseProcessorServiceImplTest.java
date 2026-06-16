@@ -1,5 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 import es.in2.vcverifier.verifier.domain.service.VpService;
+import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 
@@ -81,6 +82,9 @@ class AuthorizationResponseProcessorServiceImplTest {
     private CryptoComponent cryptoComponent;
 
     @Mock
+    private CredentialSchemaDispatcher credentialSchemaDispatcher;
+
+    @Mock
     private AuthorizationResponseProcessorServiceImpl authorizationResponseProcessorService;
 
     @BeforeEach
@@ -97,7 +101,8 @@ class AuthorizationResponseProcessorServiceImplTest {
                 backendConfig,
                 cacheForNonceByState,
                 cryptoComponent,
-                java.util.List.of()
+                java.util.List.of(),
+                credentialSchemaDispatcher
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
         lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
