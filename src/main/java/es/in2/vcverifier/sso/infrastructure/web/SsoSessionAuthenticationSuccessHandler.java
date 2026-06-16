@@ -36,9 +36,14 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             Authentication authentication
     ) throws IOException, ServletException {
 
+        // 1. Mantener flujo OID4VP intacto, manteniendo la compatibilidad con el login externo.
+        oid4vpSuccessHandler.onAuthenticationSuccess(request, response, authentication);
+
+        // 2. Extrae los datos del usuario autenticado (tenant, holderHash, clientId, rootDomain, ...)
         VpData vpData = extractVpData(authentication);
         String correlationId = UUID.randomUUID().toString();
 
+        // 3. Crea sesión interna, valida el tenant, persiste en BD, define tiempo de expiración.
         var command = new SsoSessionCommand(
                 vpData.tenant(),
                 vpData.holderHash(),
