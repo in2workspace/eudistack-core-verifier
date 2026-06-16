@@ -54,7 +54,7 @@ public class DIDServiceImpl implements DIDService {
 
             // Multibase decode (Base58) the encoded part to get the bytes
             byte[] decodedBytes = Base58.base58Decode(multibaseEncoded);
-            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Decoded bytes from Base58: {}", Arrays.toString(decodedBytes));
+            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Base58 decoded successfully. Byte length: {}", decodedBytes.length);
 
             // Multicodec prefix is fixed for "0x1200" for the secp256r1 curve
             int prefixLength = 2;
@@ -70,7 +70,7 @@ public class DIDServiceImpl implements DIDService {
             // Recover the Y coordinate from the X coordinate and the curve
             BigInteger y = curve.decodePoint(publicKeyBytes).getYCoord().toBigInteger();
 
-            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Calculated ECPoint coordinates - X: {}, Y: {}", x, y);
+            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- ECPoint coordinates calculated");
             ECPoint point = new ECPoint(x, y);
 
             // Fetch the ECParameterSpec for secp256r1
