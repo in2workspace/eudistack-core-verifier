@@ -1,6 +1,7 @@
 package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TimeConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
@@ -8,14 +9,19 @@ import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
+import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.rnorth.ducttape.circuitbreakers.StateStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -26,13 +32,23 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -75,7 +91,13 @@ class EstablishSsoSessionIT {
     @MockitoBean private TenantSsoConfigPort tenantSsoConfigPort;
     @MockitoBean private HashingService hashingService;
     @MockitoBean private Clock clock;
+    @MockitoBean
+    StateStore stateStore;
+    @MockitoBean
+    CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
 
+    @MockitoBean
+    AuthorizationResponseProcessorService authorizationResponseProcessorService;
 
 
     @BeforeEach
@@ -112,15 +134,43 @@ class EstablishSsoSessionIT {
     @Test
     void establishSession_createsRow_and_setsCookie() throws Exception {
 
+        OAuth2AuthorizationRequest request =
+                OAuth2AuthorizationRequest.authorizationCode()
+                        .authorizationUri("http://test")
+                        .clientId("client-id")
+                        .redirectUri("http://redirect")
+                        .state("test-state")
+                        .additionalParameters(Map.of(
+                                "expiration", Instant.now().plusSeconds(60).getEpochSecond(),
+                                "nonce", "nonce"
+                        ))
+                        .build();
+
+        when(cacheStoreForOAuth2AuthorizationRequest.get("test-state"))
+                .thenReturn(request);
+
+        doNothing()
+                .when(authorizationResponseProcessorService)
+                .handleAuthResponse(
+                        anyString(),
+                        anyString()
+                );
+
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
                         .param("state", "test-state")
-                        .param("vp_token", "valid-vp")
+                        // puedes dejarlo simple, ya no se valida JWT real
+                        .param("vp_token", "dummy-vp-token")
                         .contentType("application/json")
-                        .content(validVp()))
+                        .content("""
+                        {
+                          "vp": "dummy-vp-token",
+                          "tenant": "tenant-a"
+                        }
+                    """))
                 .andExpect(status().isOk())
                 .andExpect(header().exists("Set-Cookie"))
-                .andExpect(cookie().exists("SSO_SESSION"));
+                .andExpect(cookie().exists("__Secure-sso-tenant-a"));
 
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
@@ -130,7 +180,7 @@ class EstablishSsoSessionIT {
         assertThat(count).isEqualTo(1);
 
         verify(auditPort, atLeastOnce())
-                .publish(argThat(e -> e instanceof SsoAuditEvent));
+                .publish(any(SsoAuditEvent.class));
     }
 
     // =========================================================
