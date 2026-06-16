@@ -1,31 +1,33 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
 
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
-import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
-import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuccessHandler {
 
-    private final AuthenticationSuccessHandler oid4vpSuccessHandler;
     private final EstablishSsoSessionWorkflow establishSsoSessionWorkflow;
     private final SsoSessionCookieFactory cookieFactory;
-    private final SsoAuditPort auditPort;
+    private final TenantSsoConfigPort tenantSsoConfigPort;
 
     @Override
     public void onAuthenticationSuccess(
@@ -34,15 +36,9 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             Authentication authentication
     ) throws IOException, ServletException {
 
-        // 1. mantener flujo OID4VP intacto
-        oid4vpSuccessHandler.onAuthenticationSuccess(request, response, authentication);
-
-        // 2. extraer VP data
         VpData vpData = extractVpData(authentication);
-
         String correlationId = UUID.randomUUID().toString();
 
-        // 3. command correcto
         var command = new SsoSessionCommand(
                 vpData.tenant(),
                 vpData.holderHash(),
@@ -50,28 +46,34 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 correlationId
         );
 
-        var sessionDescriptor = establishSsoSessionWorkflow.execute(command);
+        EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor sessionDescriptor;
+        try {
+            sessionDescriptor = establishSsoSessionWorkflow.execute(command);
+        } catch (EstablishSsoSessionWorkflow.SsoConfigInconsistentException e) {
+            // Tenant has SSO disabled (legacy mode) — no cookie, flow continues normally
+            log.debug("SSO disabled for tenant '{}', skipping session establishment", vpData.tenant());
+            return;
+        }
 
-        // 4. cookie
+        if (sessionDescriptor == null) {
+            // Fail-closed: persistence failure already audited inside the workflow
+            log.warn("SSO session could not be persisted for tenant '{}', skipping Set-Cookie", vpData.tenant());
+            return;
+        }
+
+        String rootDomain = tenantSsoConfigPort.getByTenant(vpData.tenant())
+                .map(TenantSsoConfig::rootDomain)
+                .orElse("");
+
         ResponseCookie cookie = cookieFactory.createCookie(
                 vpData.tenantSlug(),
-                vpData.tenantRootDomain(),
-                Duration.between(java.time.Instant.now(), sessionDescriptor.expiresAt()),
+                rootDomain,
+                Duration.between(Instant.now(), sessionDescriptor.expiresAt()),
                 sessionDescriptor.value()
         );
 
         response.addHeader("Set-Cookie", cookie.toString());
-
-        // 5. audit seguro
-        auditPort.publish(new SsoAuditEvent(
-                SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
-                vpData.tenant(),
-                vpData.clientId(),
-                vpData.holderHash(),
-                "SUCCESS",
-                correlationId,
-                java.time.Instant.now()
-        ));
+        // Audit is published inside EstablishSsoSessionWorkflow.execute() on success — no duplicate emit here
     }
 
     private VpData extractVpData(Authentication authentication) {
