@@ -34,15 +34,15 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             Authentication authentication
     ) throws IOException, ServletException {
 
-        // 1. mantener flujo OID4VP intacto
+        // 1. Mantener flujo OID4VP intacto, manteniendo la compatibilidad con el login externo.
         oid4vpSuccessHandler.onAuthenticationSuccess(request, response, authentication);
 
-        // 2. extraer VP data
+        // 2. Extrae los datos del usuario autenticado (tenant, holderHash, clientId, rootDomain, ...)
         VpData vpData = extractVpData(authentication);
 
         String correlationId = UUID.randomUUID().toString();
 
-        // 3. command correcto
+        // 3. Crea sesión interna, valida el tenant, persiste en BD, define tiempo de expiración.
         var command = new SsoSessionCommand(
                 vpData.tenant(),
                 vpData.holderHash(),
@@ -50,28 +50,46 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 correlationId
         );
 
-        var sessionDescriptor = establishSsoSessionWorkflow.execute(command);
+        try {
+            var sessionDescriptor = establishSsoSessionWorkflow.execute(command);
 
-        // 4. cookie
-        ResponseCookie cookie = cookieFactory.createCookie(
-                vpData.tenantSlug(),
-                vpData.tenantRootDomain(),
-                Duration.between(java.time.Instant.now(), sessionDescriptor.expiresAt()),
-                sessionDescriptor.value()
-        );
+            // 4. Genera cookie segura y la recibe en el navegador.
+            ResponseCookie cookie = cookieFactory.createCookie(
+                    vpData.tenantSlug(),
+                    vpData.tenantRootDomain(),
+                    Duration.between(java.time.Instant.now(), sessionDescriptor.expiresAt()),
+                    sessionDescriptor.value()
+            );
 
-        response.addHeader("Set-Cookie", cookie.toString());
+            response.addHeader("Set-Cookie", cookie.toString());
 
-        // 5. audit seguro
-        auditPort.publish(new SsoAuditEvent(
-                SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
-                vpData.tenant(),
-                vpData.clientId(),
-                vpData.holderHash(),
-                "SUCCESS",
-                correlationId,
-                java.time.Instant.now()
-        ));
+            // 5. Se crea el evento de auditoría de la sesión establecida con éxito.
+            auditPort.publish(new SsoAuditEvent(
+                    SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
+                    vpData.tenant(),
+                    vpData.clientId(),
+                    vpData.holderHash(),
+                    "SUCCESS",
+                    correlationId,
+                    java.time.Instant.now()
+            ));
+
+        } catch (Exception e) {
+            // 6. Se crea el evento de auditoría de la sesión establecida fallida.
+            auditPort.publish(new SsoAuditEvent(
+                    SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
+                    vpData.tenant(),
+                    vpData.clientId(),
+                    vpData.holderHash(),
+                    "FAILURE",
+                    correlationId,
+                    java.time.Instant.now()
+            ));
+
+            throw e;
+        }
+
+
     }
 
     private VpData extractVpData(Authentication authentication) {
