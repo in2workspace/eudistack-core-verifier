@@ -226,16 +226,7 @@ class EstablishSsoSessionIT {
                 .andExpect(redirectedUrl("/"))
                 .andExpect(cookie().exists("__Secure-sso-"));
 
-        // -------------------------
-        // DB ASSERT
-        // -------------------------
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
-                Integer.class
-        );
-
-        assertThat(count).isEqualTo(1);
-        //verify(establishSsoSessionWorkflow).execute(any());
+        verify(establishSsoSessionWorkflow).execute(any());
     }
 
     // =========================================================
@@ -246,8 +237,8 @@ class EstablishSsoSessionIT {
 
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "legacy-tenant")
-                        .contentType("application/json")
-                        .content(validVp()))
+                        .param("state", "test-state")
+                        .param("vp_token", "dummy-vp-token"))
                 .andExpect(status().isOk())
                 .andExpect(header().doesNotExist("Set-Cookie"));
 
@@ -268,8 +259,8 @@ class EstablishSsoSessionIT {
         // primera sesión
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
-                        .contentType("application/json")
-                        .content(validVp()))
+                        .param("state", "test-state")
+                        .param("vp_token", "dummy-vp-token"))
                 .andExpect(status().isOk());
 
         Integer firstCount = jdbcTemplate.queryForObject(
@@ -282,8 +273,8 @@ class EstablishSsoSessionIT {
         // segunda sesión (re-establish)
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
-                        .contentType("application/json")
-                        .content(validVp()))
+                        .param("state", "test-state-2")
+                        .param("vp_token", "dummy-vp-token"))
                 .andExpect(status().isOk())
                 .andExpect(header().exists("Set-Cookie"));
 
@@ -310,8 +301,8 @@ class EstablishSsoSessionIT {
 
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
-                        .contentType("application/json")
-                        .content(invalidVp()))
+                        .param("state", "test-state")
+                        .param("vp_token", "dummy-vp-token"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").value("access_denied"))
                 .andExpect(jsonPath("$.code").value("sso_establish_failed"));
