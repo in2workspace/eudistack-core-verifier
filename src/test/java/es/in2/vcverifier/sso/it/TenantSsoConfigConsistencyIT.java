@@ -25,6 +25,7 @@ import static org.mockito.Mockito.*;
  * Verifica que, cuando la configuración SSO está ausente o deshabilitada, el workflow lanza una excepción
  * y publica un evento de auditoría de configuración inconsistente sin crear sesión ni persistir datos.
  *
+ *
  * Esperado:
  * - Se lanza SsoConfigInconsistentException
  * - Se emite evento SSO_CONFIG_INCONSISTENT

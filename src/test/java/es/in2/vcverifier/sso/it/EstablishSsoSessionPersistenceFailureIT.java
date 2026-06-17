@@ -78,7 +78,7 @@ class EstablishSsoSessionPersistenceFailureIT {
 
 
         // THEN
-        assertNull(result, "No debe emitirse cookie en fallo de persistencia");
+        assertNull(result, "No debe emitirse cookie en fallo de persistencia.");
 
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR &&

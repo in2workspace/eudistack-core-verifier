@@ -83,6 +83,5 @@ class SsoSessionConcurrencyIT {
                 .supersedeActive(eq(tenant), anyString());
 
         verify(sessionRepositoryPort, times(2)).save(any());
-
     }
 }
