@@ -1,6 +1,5 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
-import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

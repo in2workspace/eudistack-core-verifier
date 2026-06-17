@@ -1,7 +1,6 @@
 package es.in2.vcverifier.shared.domain.exception.handler;
 
 import es.in2.vcverifier.shared.domain.model.GlobalErrorMessage;
-import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;

@@ -1,13 +1,10 @@
 package es.in2.vcverifier.shared.domain.exception.handler;
 
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
-import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
-import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
-import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
-import es.in2.vcverifier.verifier.domain.exception.InvalidVPtokenException;
 import es.in2.vcverifier.shared.domain.exception.*;
 import es.in2.vcverifier.shared.domain.model.GlobalErrorMessage;
 import es.in2.vcverifier.shared.domain.util.VerifierErrorTypes;
+import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.verifier.domain.exception.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
