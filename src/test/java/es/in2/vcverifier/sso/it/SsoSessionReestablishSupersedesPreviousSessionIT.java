@@ -2,11 +2,10 @@ package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.config.TimeConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
-import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
-import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
@@ -32,7 +31,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @AutoConfigureMockMvc(addFilters = false)
 @Import(TimeConfig.class)
-class EstablishSsoSessionReestablishSupersedesPreviousSessionIT {
+class SsoSessionReestablishSupersedesPreviousSessionIT {
 
     @Container
     static PostgreSQLContainer<?> postgres =
@@ -81,15 +79,17 @@ class EstablishSsoSessionReestablishSupersedesPreviousSessionIT {
     CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
     @MockitoBean AuthorizationResponseProcessorService authorizationResponseProcessorService;
     @Autowired SsoSessionRepositoryPort sessionRepositoryPort;
-    @MockitoBean EstablishSsoSessionWorkflow establishSsoSessionWorkflow;
 
     @BeforeEach
     void clean() {
         jdbcTemplate.execute("""
         CREATE TABLE IF NOT EXISTS sso_session (
-            id SERIAL PRIMARY KEY,
-            tenant VARCHAR(255),
-            state VARCHAR(50)
+            id UUID PRIMARY KEY,
+            tenant TEXT NOT NULL,
+            holder_hash TEXT NOT NULL,
+            established_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            state VARCHAR(32) NOT NULL
         )
         """);
 
@@ -123,23 +123,10 @@ class EstablishSsoSessionReestablishSupersedesPreviousSessionIT {
                 .thenReturn("hashed-user");
 
         // -----------------------------
-        // 3. WORKFLOW RESULT
-        // -----------------------------
-        EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor =
-                mock(EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor.class);
-
-        when(descriptor.value()).thenReturn("mock-session");
-
-        when(descriptor.expiresAt()).thenReturn(Instant.now().plusSeconds(60));
-
-        when(establishSsoSessionWorkflow.execute(any(SsoSessionCommand.class)))
-                .thenReturn(descriptor);
-
-        // -----------------------------
-        // 4. PRIMERA PETICIÓN
+        // 3. PRIMERA PETICIÓN
         // -----------------------------
         mockMvc.perform(post("/oid4vp/auth-response")
-                        .principal(() -> "tenant-a")
+                        .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state")
                         .param("vp_token", "dummy-vp-token"))
                 .andExpect(status().is3xxRedirection());
@@ -152,10 +139,10 @@ class EstablishSsoSessionReestablishSupersedesPreviousSessionIT {
         assertThat(firstCount).isEqualTo(1);
 
         // -----------------------------
-        // 5. SEGUNDA PETICIÓN
+        // 4. SEGUNDA PETICIÓN
         // -----------------------------
         mockMvc.perform(post("/oid4vp/auth-response")
-                        .principal(() -> "tenant-a")
+                        .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state-2")
                         .param("vp_token", "dummy-vp-token"))
                 .andExpect(status().is3xxRedirection())
@@ -173,7 +160,6 @@ class EstablishSsoSessionReestablishSupersedesPreviousSessionIT {
                 Integer.class
         );
 
-        verify(sessionRepositoryPort, atLeastOnce()).save(any());
         assertThat(activeCount).isEqualTo(1);
     }
 }

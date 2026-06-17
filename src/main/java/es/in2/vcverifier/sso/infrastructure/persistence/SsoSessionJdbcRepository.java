@@ -14,6 +14,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -102,8 +104,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 ps.setObject(1, session.getId().getValue());
                 ps.setString(2, session.getTenant());
                 ps.setString(3, session.getHolderHash());
-                ps.setObject(4, session.getEstablishedAt());
-                ps.setObject(5, session.getExpiresAt());
+                ps.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
+                ps.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
                 ps.setString(6, session.getState().name());
                 ps.executeUpdate();
                 recordSuccess();
@@ -125,8 +127,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                         ps2.setObject(1, session.getId().getValue());
                         ps2.setString(2, session.getTenant());
                         ps2.setString(3, session.getHolderHash());
-                        ps2.setObject(4, session.getEstablishedAt());
-                        ps2.setObject(5, session.getExpiresAt());
+                        ps2.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
+                        ps2.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
                         ps2.setString(6, session.getState().name());
                         ps2.executeUpdate();
                         recordSuccess();
@@ -212,8 +214,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         UUID id = (UUID) rs.getObject("id");
         String tenant = rs.getString("tenant");
         String holderHash = rs.getString("holder_hash");
-        Instant established = rs.getObject("established_at", Instant.class);
-        Instant expires = rs.getObject("expires_at", Instant.class);
+        Instant established = rs.getObject("established_at", OffsetDateTime.class).toInstant();
+        Instant expires = rs.getObject("expires_at", OffsetDateTime.class).toInstant();
         String state = rs.getString("state");
 
         try {
