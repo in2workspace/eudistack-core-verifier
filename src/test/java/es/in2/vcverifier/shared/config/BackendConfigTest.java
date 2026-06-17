@@ -1,15 +1,19 @@
 package es.in2.vcverifier.shared.config;
-import es.in2.vcverifier.shared.config.BackendConfig;
 
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,6 +24,42 @@ class BackendConfigTest {
 
     @Autowired
     private BackendConfig backendConfig;
+
+    @BeforeEach
+    @AfterEach
+    void clearRequestContext() {
+        RequestContextHolder.resetRequestAttributes();
+    }
+
+    @Test
+    void getUrl_canonical_returnsBaseWithContextPath() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setScheme("https");
+        request.setServerName("kpmg.eudistack.net");
+        request.setServerPort(443);
+        request.setContextPath("/verifier");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        assertThat(backendConfig.getUrl()).isEqualTo("https://kpmg.eudistack.net/verifier");
+    }
+
+    @Test
+    void getUrl_nonCanonical_returnsBaseWithoutContextPath() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setScheme("https");
+        request.setServerName("verifier.kpmg.com");
+        request.setServerPort(443);
+        request.setContextPath("/verifier");
+        request.addHeader("X-Tenant", "kpmg");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        assertThat(backendConfig.getUrl()).isEqualTo("https://verifier.kpmg.com");
+    }
+
+    @Test
+    void getUrl_noRequestContext_returnsStaticUrl() {
+        assertThat(backendConfig.getUrl()).isEqualTo("https://raw.githubusercontent.com");
+    }
 
     @Test
     void testBackendConfig() {
