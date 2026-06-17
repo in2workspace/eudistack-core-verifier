@@ -9,6 +9,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.List;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
+
 @Configuration
 @RequiredArgsConstructor
 public class BackendConfig {
@@ -30,11 +32,13 @@ public class BackendConfig {
                 String scheme = request.getScheme();
                 String host = request.getServerName();
                 int port = request.getServerPort();
-                // ForwardedHeaderFilter sets contextPath from X-Forwarded-Prefix
-                String contextPath = request.getContextPath();
                 boolean defaultPort = ("https".equals(scheme) && port == 443)
                         || ("http".equals(scheme) && port == 80);
-                return scheme + "://" + host + (defaultPort ? "" : ":" + port) + contextPath;
+                String base = scheme + "://" + host + (defaultPort ? "" : ":" + port);
+                // Non-canonical requests carry X-Tenant (added by CloudFront) and have their
+                // own domain structure — they do not include the /verifier context path.
+                boolean canonical = request.getHeader(X_TENANT_HEADER) == null;
+                return canonical ? base + request.getContextPath() : base;
             }
         } catch (Exception ignored) {
             // No request context (startup, async, etc.) — use static config
@@ -106,6 +110,26 @@ public class BackendConfig {
 
     public boolean isFapiNonceRequired() {
         return properties.fapiNonceRequired() != null ? properties.fapiNonceRequired() : true;
+    }
+
+    /**
+     * Returns true only when the operator has explicitly opted out of x5c chain validation.
+     * Null or false (the default) means chain validation is active (secure-by-default).
+     */
+    public boolean isX5cChainValidationBypassed() {
+        return properties.x5cChainValidation() != null
+                && Boolean.TRUE.equals(properties.x5cChainValidation().bypass());
+    }
+
+    /**
+     * Returns true unless the operator has explicitly set aia-chasing.enabled=false.
+     * Enabled by default so QTSP tokens with leaf-only x5c are handled automatically.
+     */
+    public boolean isAiaChasingEnabled() {
+        return properties.x5cChainValidation() == null
+                || properties.x5cChainValidation().aiaChasing() == null
+                || properties.x5cChainValidation().aiaChasing().enabled() == null
+                || Boolean.TRUE.equals(properties.x5cChainValidation().aiaChasing().enabled());
     }
 
     public long getAccessTokenExpirationSeconds() {

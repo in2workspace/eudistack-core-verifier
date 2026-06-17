@@ -10,8 +10,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 
+import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -61,6 +63,12 @@ public class CacheStoreConfig {
     @Bean
     public Set<String> allowedClientsOrigins() {
         return Collections.synchronizedSet(new HashSet<>());
+    }
+
+    // SEC-S3: maxSize bounded to prevent memory exhaustion; 24h TTL suits CA cert lifetimes
+    @Bean
+    public CacheStore<List<X509Certificate>> aiaCertCacheStore() {
+        return new CacheStore<>(24, TimeUnit.HOURS, 1_000L);
     }
 
 }

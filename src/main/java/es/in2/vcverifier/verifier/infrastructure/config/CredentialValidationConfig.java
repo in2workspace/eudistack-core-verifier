@@ -43,8 +43,12 @@ public class CredentialValidationConfig {
     }
 
     @Bean
-    public SdJwtVerificationService sdJwtVerificationService(DIDService didService, TrustFrameworkService trustFrameworkService) {
+    public SdJwtVerificationService sdJwtVerificationService(
+            DIDService didService,
+            TrustFrameworkService trustFrameworkService,
+            BackendConfig backendConfig,
+            CertificateChainValidator certificateChainValidator) {
         log.info("Registering SD-JWT Verification Service");
-        return new SdJwtVerificationServiceImpl(didService, trustFrameworkService);
+        return new SdJwtVerificationServiceImpl(didService, trustFrameworkService, backendConfig, certificateChainValidator);
     }
 }

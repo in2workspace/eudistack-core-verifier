@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **EUDISTACK-546**: US-01: Custom domain operativo per tenant en el Verifier IdP
 
+### Fixed - 2026-06-17
+- **CORS on public discovery endpoints**: `/.well-known/**` and `/oidc/jwks` were served by the Authorization Server filter chain (highest precedence), which applied the registered-clients CORS policy and blocked cross-origin requests from unregistered origins. These endpoints are public by spec (OpenID Connect Discovery 1.0, RFC 8414, RFC 7517) and now return a wildcard CORS configuration regardless of the requesting origin.
+- **Error/login redirect blocked by SSRF check**: `CustomErrorResponseHandler` was rejecting redirects to the verifier's own `/login` and `/error` pages because the verifier's origin was not in `allowedClientsOrigins`. The handler now also allows the verifier's own origin, derived dynamically from `BackendConfig.getUrl()`.
+
+### Changed - 2026-06-17
+- Enhance app URL generation to handle canonical and non-canonical requests based on X-Tenant header.
+
+### Added - 2026-06-16
+
+- **Tenant Resolution Header Support**: `TenantDomainFilter` now resolves the tenant from the `X-Tenant` request header first, validating and normalizing the value to lowercase before storing it as a request attribute and in the MDC. If the header is missing, blank, or invalid, tenant resolution falls back to the first valid hostname segment obtained from `request.getServerName()`. Added the `X_TENANT_HEADER` constant to `Constants`.
+- Build `allowedClientsOrigins` from registered redirect URIs to support multi-domain clients like DOME.
+- Validate certificate chain
+
+## [3.1.7] - 2026-06-09
+
+### Fixed
+
+- **Cryptographic Binding**: `validateCryptographicBinding()` now follows a priority fallback chain instead of failing immediately when `cnf.jwk` is absent. Chain: (1) `cnf.jwk` — direct JWK Thumbprint comparison (RFC 7638), (2) `cnf.kid` — DID resolution via `DIDService` + thumbprint, (3) `credentialSubject.mandate.mandatee.id` — DID resolution via `DIDService` + thumbprint. Supports both W3C (`credentialSubject.mandate.mandatee.id`) and SD-JWT flat (`mandate.mandatee.id`) credential formats.
+
 ## [3.1.6] - 2026-05-28
 
 ### Added

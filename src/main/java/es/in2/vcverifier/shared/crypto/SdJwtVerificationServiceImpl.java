@@ -7,6 +7,7 @@ import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.model.sdjwt.Disclosure;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwt;
@@ -18,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.security.PublicKey;
+import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
@@ -39,6 +41,8 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
 
     private final DIDService didService;
     private final TrustFrameworkService trustFrameworkService;
+    private final BackendConfig backendConfig;
+    private final CertificateChainValidator certificateChainValidator;
 
     @Override
     public SdJwtVerificationResult verifyPresentation(String sdJwtCompact, String expectedAud, String expectedNonce) {
@@ -111,6 +115,18 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
                 throw new JWTVerificationException("SD-JWT issuer signature verification failed via x5c");
             }
             log.debug("Issuer signature verified via x5c certificate (algorithm: {})", publicKey.getAlgorithm());
+
+            if (!backendConfig.isX5cChainValidationBypassed()) {
+                List<X509Certificate> fullChain = new ArrayList<>();
+                for (com.nimbusds.jose.util.Base64 b : x5c) {
+                    fullChain.add((X509Certificate) cf.generateCertificate(
+                            new java.io.ByteArrayInputStream(b.decode())));
+                }
+                certificateChainValidator.validateSelfContainedChain(fullChain);
+                log.debug("x5c chain validated to self-contained root ({} certs)", fullChain.size());
+            } else {
+                log.warn("x5c chain validation BYPASSED by config — legacy leaf-only verification active");
+            }
             return;
         }
 
