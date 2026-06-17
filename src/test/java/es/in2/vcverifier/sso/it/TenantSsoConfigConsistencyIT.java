@@ -84,7 +84,7 @@ class TenantSsoConfigConsistencyIT {
         );
 
         TenantSsoConfig config = mock(TenantSsoConfig.class);
-        when(config.ssoEnabled()).thenReturn(false);
+        when(config.ssoEnabled()).thenReturn(Boolean.FALSE);
 
         when(tenantSsoConfigPort.getByTenant("tenant-b"))
                 .thenReturn(Optional.of(config));

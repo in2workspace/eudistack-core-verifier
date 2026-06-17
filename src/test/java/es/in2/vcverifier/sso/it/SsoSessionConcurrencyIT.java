@@ -43,7 +43,7 @@ class SsoSessionConcurrencyIT {
 
         // GIVEN config activa
         TenantSsoConfig config = mock(TenantSsoConfig.class);
-        when(config.ssoEnabled()).thenReturn(true);
+        when(config.ssoEnabled()).thenReturn(Boolean.TRUE);
 
         when(tenantSsoConfigPort.getByTenant(tenant))
                 .thenReturn(Optional.of(config));
