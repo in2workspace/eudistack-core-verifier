@@ -147,7 +147,7 @@ class EstablishSsoSessionIT {
         // CONFIG
         // -------------------------
         TenantSsoConfig config = mock(TenantSsoConfig.class);
-        when(config.ssoEnabled()).thenReturn(true);
+        when(config.ssoEnabled()).thenReturn(Boolean.TRUE);
 
         when(tenantSsoConfigPort.getByTenant("tenant-a"))
                 .thenReturn(Optional.of(config));
