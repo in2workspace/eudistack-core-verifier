@@ -66,7 +66,10 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
         try {
             var sessionDescriptor = establishSsoSessionWorkflow.execute(command);
 
-            // 4. Genera cookie segura y la recibe en el navegador.
+            if (sessionDescriptor == null) {
+                throw new IllegalStateException("Session descriptor is null");
+            }
+
             ResponseCookie cookie = cookieFactory.createCookie(
                     vpData.tenantSlug(),
                     vpData.tenantRootDomain(),
@@ -76,7 +79,6 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
 
             response.addHeader("Set-Cookie", cookie.toString());
 
-            // 5. Se crea el evento de auditoría de la sesión establecida con éxito.
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
                     vpData.tenant(),
@@ -87,8 +89,22 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     java.time.Instant.now()
             ));
 
+        } catch (EstablishSsoSessionWorkflow.SsoConfigInconsistentException e) {
+
+            auditPort.publish(new SsoAuditEvent(
+                    SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
+                    vpData.tenant(),
+                    vpData.clientId(),
+                    vpData.holderHash(),
+                    "FAILURE",
+                    correlationId,
+                    java.time.Instant.now()
+            ));
+
+            throw e;
+
         } catch (Exception e) {
-            // 6. Se crea el evento de auditoría de la sesión establecida fallida.
+
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                     vpData.tenant(),

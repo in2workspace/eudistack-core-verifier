@@ -1,6 +1,7 @@
 package es.in2.vcverifier.shared.domain.exception.handler;
 
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
+import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidVPtokenException;
 import es.in2.vcverifier.shared.domain.exception.*;
@@ -236,5 +237,21 @@ public class GlobalExceptionHandler {
                 "Internal server error",
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "An unexpected error occurred");
+    }
+
+    @ExceptionHandler(EstablishSsoSessionWorkflow.SsoConfigInconsistentException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public GlobalErrorMessage handleSsoConfigInconsistent(
+            EstablishSsoSessionWorkflow.SsoConfigInconsistentException ex,
+            HttpServletRequest request
+    ) {
+        return errors.handleSafe(
+                ex,
+                request,
+                "access_denied",
+                "Sso Establish Failed",
+                HttpStatus.FORBIDDEN,
+                "sso_establish_failed"
+        );
     }
 }

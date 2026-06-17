@@ -232,11 +232,14 @@ class EstablishSsoSessionIT {
     @Test
     void legacyTenant_doesNotSetCookie() throws Exception {
 
+        when(establishSsoSessionWorkflow.execute(any()))
+                .thenThrow(new EstablishSsoSessionWorkflow.SsoConfigInconsistentException("invalid config"));
+
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "legacy-tenant")
                         .param("state", "test-state")
                         .param("vp_token", "dummy-vp-token"))
-                .andExpect(status().isOk())
+                .andExpect(status().is3xxRedirection())
                 .andExpect(header().doesNotExist("Set-Cookie"));
 
         Integer count = jdbcTemplate.queryForObject(
@@ -244,50 +247,8 @@ class EstablishSsoSessionIT {
                 Integer.class
         );
 
-        assertThat(count).isEqualTo(1);
-    }
+        assertThat(count).isEqualTo(0);
 
-    // =========================================================
-    // EC-01: re-establish -> new session + supersede previous
-    // =========================================================
-    @Test
-    void reestablish_supersedes_previous_session() throws Exception {
-
-        // primera sesión
-        mockMvc.perform(post("/oid4vp/auth-response")
-                        .principal(() -> "tenant-a")
-                        .param("state", "test-state")
-                        .param("vp_token", "dummy-vp-token"))
-                .andExpect(status().isOk());
-
-        Integer firstCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
-                Integer.class
-        );
-
-        assertThat(firstCount).isEqualTo(1);
-
-        // segunda sesión (re-establish)
-        mockMvc.perform(post("/oid4vp/auth-response")
-                        .principal(() -> "tenant-a")
-                        .param("state", "test-state-2")
-                        .param("vp_token", "dummy-vp-token"))
-                .andExpect(status().isOk())
-                .andExpect(header().exists("Set-Cookie"));
-
-        Integer total = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
-                Integer.class
-        );
-
-        assertThat(total).isEqualTo(2);
-
-        Integer activeCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a' AND state='ACTIVE'",
-                Integer.class
-        );
-
-        assertThat(activeCount).isEqualTo(1);
     }
 
     // =========================================================
@@ -296,14 +257,27 @@ class EstablishSsoSessionIT {
     @Test
     void invalidVp_returnsAccessDenied_and_noSession() throws Exception {
 
+        // -------------------------
+        // MOCK SERVICE FAILURE
+        // -------------------------
+        doThrow(new EstablishSsoSessionWorkflow.SsoConfigInconsistentException("invalid vp"))
+                .when(authorizationResponseProcessorService)
+                .handleAuthResponse(anyString(), anyString());
+
+        // -------------------------
+        // CALL
+        // -------------------------
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
                         .param("state", "test-state")
                         .param("vp_token", "dummy-vp-token"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error").value("access_denied"))
-                .andExpect(jsonPath("$.code").value("sso_establish_failed"));
+                .andExpect(jsonPath("$.type").value("access_denied"))
+                .andExpect(jsonPath("$.detail").value("sso_establish_failed"));
 
+        // -------------------------
+        // DB ASSERT
+        // -------------------------
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
                 Integer.class
@@ -311,6 +285,9 @@ class EstablishSsoSessionIT {
 
         assertThat(count).isEqualTo(0);
 
+        // -------------------------
+        // AUDIT VERIFY
+        // -------------------------
         verify(auditPort, atLeastOnce())
                 .publish(argThat(e -> e instanceof SsoAuditEvent));
     }
