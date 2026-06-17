@@ -155,4 +155,60 @@ class RegisteredClientsCorsConfigTest {
                 "https://client-b.example.com",
                 "https://client-c.example.com")));
     }
+
+    @Test
+    @DisplayName("/.well-known/openid-configuration returns public CORS (any origin)")
+    void getCorsConfiguration_openidConfiguration_returnsPublicCors() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setServletPath("/.well-known/openid-configuration");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertEquals(List.of("GET"), corsConfig.getAllowedMethods());
+        assertTrue(corsConfig.getAllowedOriginPatterns().contains("*"));
+        assertNull(corsConfig.getAllowedOrigins());
+    }
+
+    @Test
+    @DisplayName("/.well-known/oauth-authorization-server returns public CORS (any origin)")
+    void getCorsConfiguration_oauthAuthorizationServer_returnsPublicCors() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setServletPath("/.well-known/oauth-authorization-server");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertEquals(List.of("GET"), corsConfig.getAllowedMethods());
+        assertTrue(corsConfig.getAllowedOriginPatterns().contains("*"));
+        assertNull(corsConfig.getAllowedOrigins());
+    }
+
+    @Test
+    @DisplayName("/oidc/jwks returns public CORS (any origin)")
+    void getCorsConfiguration_jwks_returnsPublicCors() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setServletPath("/oidc/jwks");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertEquals(List.of("GET"), corsConfig.getAllowedMethods());
+        assertTrue(corsConfig.getAllowedOriginPatterns().contains("*"));
+        assertNull(corsConfig.getAllowedOrigins());
+    }
+
+    @Test
+    @DisplayName("/oidc/token uses registered-clients CORS, not public")
+    void getCorsConfiguration_tokenEndpoint_usesRegisteredClientsCors() {
+        allowedOrigins.add("https://client.example.com");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setServletPath("/oidc/token");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertTrue(corsConfig.getAllowedOrigins().contains("https://client.example.com"));
+        assertTrue(corsConfig.getAllowedMethods().containsAll(List.of("GET", "POST")));
+    }
 }

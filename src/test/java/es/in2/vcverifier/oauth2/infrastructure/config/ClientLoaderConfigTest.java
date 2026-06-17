@@ -169,6 +169,70 @@ class ClientLoaderConfigTest {
     }
 
     @Test
+    void retrieveClients_withMultipleRedirectUris_addsAllHttpOriginsToAllowedOrigins() {
+        ClientData clientData = new ClientData(
+                null, "https://main-app.example.com",
+                "vc-auth-client-multi", null,
+                List.of(
+                        "https://main-app.example.com/callback",
+                        "https://admin.example.com/callback",
+                        "myapp://oauth/callback"  // custom scheme — must be skipped
+                ),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://main-app.example.com"),
+                true, null, null,
+                null, null, null
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        config.getRegisteredClientRepository();
+
+        assertTrue(allowedOrigins.contains("https://main-app.example.com"),
+                "url origin must be present");
+        assertTrue(allowedOrigins.contains("https://admin.example.com"),
+                "secondary redirect URI origin must be present");
+        assertFalse(allowedOrigins.stream().anyMatch(o -> o.startsWith("myapp")),
+                "custom-scheme redirect URI must not be added");
+    }
+
+    @Test
+    void retrieveClients_withRedirectUriSameOriginAsUrl_doesNotDuplicate() {
+        ClientData clientData = new ClientData(
+                null, "https://app.example.com",
+                "vc-auth-client-same-origin", null,
+                List.of("https://app.example.com/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://app.example.com"),
+                true, null, null,
+                null, null, null
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        config.getRegisteredClientRepository();
+
+        assertEquals(1, allowedOrigins.size(), "same origin must not be duplicated");
+        assertTrue(allowedOrigins.contains("https://app.example.com"));
+    }
+
+    @Test
     void retrieveClients_withNonHttpsLoginPageUri_throwsException() {
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",

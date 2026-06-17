@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
+import es.in2.vcverifier.shared.config.BackendConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,11 +23,16 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class CustomErrorResponseHandlerTest {
 
+    private static final String VERIFIER_URL = "https://verifier.example.com/verifier";
+
     @Mock
     private HttpServletRequest request;
 
     @Mock
     private HttpServletResponse response;
+
+    @Mock
+    private BackendConfig backendConfig;
 
     private final Set<String> allowedClientsOrigins = new HashSet<>();
 
@@ -35,7 +41,8 @@ class CustomErrorResponseHandlerTest {
     @BeforeEach
     void setUp() {
         allowedClientsOrigins.clear();
-        customErrorResponseHandler = new CustomErrorResponseHandler(allowedClientsOrigins);
+        lenient().when(backendConfig.getUrl()).thenReturn(VERIFIER_URL);
+        customErrorResponseHandler = new CustomErrorResponseHandler(allowedClientsOrigins, backendConfig);
     }
 
     @Test
@@ -147,6 +154,40 @@ class CustomErrorResponseHandlerTest {
 
         verify(response, never()).sendRedirect(anyString());
         verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Authentication failed");
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithVerifierOwnOrigin_ShouldRedirect() throws IOException {
+        String redirectUri = "https://verifier.example.com/verifier/login?authRequest=openid4vp%3A%2F%2F&state=abc";
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithVerifierOwnOriginErrorPage_ShouldRedirect() throws IOException {
+        String redirectUri = "https://verifier.example.com/verifier/error?errorCode=abc&errorMessage=msg&clientUrl=x&originalRequestURL=y";
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "invalid_client_authentication",
+                "Invalid client authentication",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
     }
 
     @Test
