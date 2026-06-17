@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Added - 2026-06-17
 
 - **Dual-format dispatcher (US-08 / EUDISTACK-145)**: new `CredentialSchemaDispatcher` port + `ContextAndTypeCredentialSchemaDispatcher` adapter that classifies every incoming credential as `LEGACY_V1_1` or `BUMPED_V2_0` from `type[]` + `@context`, deterministically and without try/catch fallback (AD-3). The decision drives a `LegacyCredentialReader` / `BumpedCredentialReader` SPI and an `AccessTokenBuilder` (`JwsAccessTokenBuilder`) that wraps the credential under `vc` only for VCDM v2.0 — preserving the legacy wrap for v1.1 (FR-06a). Domain ports: `CredentialReader`, `AccessTokenBuilder`, `CredentialSchemaDispatcher`, `TenantConfigPort`. Records: `DispatchDecision`, `DispatchRule`, `DispatchReason`, `CredentialFormat`, `BuildContext`, `ReaderResult`, `TenantDomeConfig`.
 - **Independent feature flags `verifier.dome.legacy-read-enabled` and `verifier.dome.bumped-read-enabled`** (`TenantDomeConfigProperties` + `PropertiesTenantConfigAdapter`): boolean toggles (default `true`) that gate legacy and bumped credential acceptance per tenant. Closing the legacy flag triggers `LegacyFormatSunsetClosedException → 410 Gone`; disabling the bumped flag triggers `BumpedFormatTemporarilyDisabledException → 503 Service Unavailable`. Source is currently `@ConfigurationProperties`; the spec target (DB-backed `tenant_dome_config` with TTL ≤ 60 s hot-reload, AC-07 / NFR-S-145-03) is documented as follow-up.
@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RFC 9457 Problem+JSON error mapping** (`DomeDispatchExceptionHandler`): three new exceptions (`LegacyFormatSunsetClosedException`, `BumpedFormatTemporarilyDisabledException`, `UnknownCredentialFormatException`) mapped to `410` / `503` / `400` with a stable `properties.error` code (`legacy_format_sunset_closed`, `bumped_format_temporarily_disabled`, `unknown_credential_format`) so callers can branch on the machine-readable identifier instead of the human-readable `detail`.
 - **Micrometer instrumentation**: counter `dome_verifier_dispatcher_total{tenant, format, decision, reason}` and timer `dome_verifier_dispatcher_duration_ms{tenant}` in the dispatcher; counter `dome_verifier_legacy_replay_after_sunset_total{tenant}` in the exception handler. Drives the cutover dashboard / sunset-closure alerting (`architecture.md` §9.3).
 
-### Changed
+### Changed - 2026-06-17
 
 - **`AuthorizationResponseProcessorServiceImpl.handleAuthResponse`**: after JWT VP validation, the workflow now invokes `CredentialSchemaDispatcher.dispatch(credential)` so the OID4VP user-driven login path is subject to the same format gating as the M2M `client_credentials` grant (US-08 AC-07 / AC-10). The three dispatcher exceptions are added to the outer catch tree and trigger an SSE `FORMAT_GATED` event so the wallet can surface a specific message.
 - **`VerifyPresentationWorkflow`**: returns a `(credential, dispatchDecision)` record after dispatch so downstream workflows can read the resolved format and config-id without re-classifying.
@@ -25,9 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`LocalTrustedIssuersProvider`**: when a lookup by the credential's `issuer.id` misses (e.g. DOME credentials in full DID form `did:elsi:VATES-...`), the provider strips the `did:elsi:` prefix and retries once. A single `trusted-issuers.yaml` entry per organisation (plain identifier) now covers both EUDIStack-issued and DOME-issued credentials without duplication.
 - **`CertificateValidationServiceImpl.processCertificate`**: normalises the expected issuer id by stripping the `did:elsi:` prefix before matching the certificate's `organizationIdentifier` (OID `2.5.4.97`). Resolves `MismatchOrganizationIdentifierException` on DOME credentials whose JWT signs with a QTSP certificate whose DN carries only the bare VATES code.
 
-### Fixed
+### Fixed - 2026-06-17
 
 - **OID4VP login bypassed the sunset flag (US-08 AC-07 / AC-10)**: prior to this branch the legacy/bumped feature flags only affected the M2M `client_credentials` grant; OID4VP user-driven logins through `/oid4vp/auth-response` skipped the dispatcher entirely and accepted any well-formed VP, so closing the legacy flag would still mint authorization codes for legacy credentials presented from a wallet. Both code paths now share the same gating point — closing `verifier.dome.legacy-read-enabled` returns `410 Gone` consistently across M2M and user-driven flows.
+
+### Fixed - 2026-06-17
+- **CORS on public discovery endpoints**: `/.well-known/**` and `/oidc/jwks` were served by the Authorization Server filter chain (highest precedence), which applied the registered-clients CORS policy and blocked cross-origin requests from unregistered origins. These endpoints are public by spec (OpenID Connect Discovery 1.0, RFC 8414, RFC 7517) and now return a wildcard CORS configuration regardless of the requesting origin.
+- **Error/login redirect blocked by SSRF check**: `CustomErrorResponseHandler` was rejecting redirects to the verifier's own `/login` and `/error` pages because the verifier's origin was not in `allowedClientsOrigins`. The handler now also allows the verifier's own origin, derived dynamically from `BackendConfig.getUrl()`.
+
+### Changed - 2026-06-17
+- Enhance app URL generation to handle canonical and non-canonical requests based on X-Tenant header.
+
 ### Added - 2026-06-16
 
 - **Tenant Resolution Header Support**: `TenantDomainFilter` now resolves the tenant from the `X-Tenant` request header first, validating and normalizing the value to lowercase before storing it as a request attribute and in the MDC. If the header is missing, blank, or invalid, tenant resolution falls back to the first valid hostname segment obtained from `request.getServerName()`. Added the `X_TENANT_HEADER` constant to `Constants`.
