@@ -3,6 +3,7 @@ package es.in2.vcverifier.sso.infrastructure.web;
 
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
+import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
@@ -89,7 +90,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     java.time.Instant.now()
             ));
 
-        } catch (EstablishSsoSessionWorkflow.SsoConfigInconsistentException e) {
+        } catch (SsoConfigInconsistentException e) {
 
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,

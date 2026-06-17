@@ -1,5 +1,6 @@
 package es.in2.vcverifier.sso.infrastructure.persistence;
 
+import es.in2.vcverifier.sso.domain.exception.SsoSessionRepositoryException;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionState;
@@ -133,16 +134,16 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                     } catch (SQLException e2) {
                         log.error("Retry insert failed: {}", e2.getMessage());
                         recordFailure();
-                        throw new RuntimeException("Failed to persist SSO session after retry", e2);
+                        throw new SsoSessionRepositoryException("Failed to persist SSO session after retry", e2);
                     }
                 }
 
-                throw new RuntimeException("Failed to persist SSO session", e);
+                throw new SsoSessionRepositoryException("Failed to persist SSO session", e);
             }
 
         } catch (SQLException ex) {
             recordFailure();
-            throw new RuntimeException("Failed to persist SSO session (connection error)", ex);
+            throw new SsoSessionRepositoryException("Failed to persist SSO session (connection error)", ex);
         }
     }
 
@@ -197,7 +198,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             }
         } catch (SQLException e) {
             recordFailure();
-            throw new RuntimeException("Failed to supersede active SSO sessions", e);
+            throw new SsoSessionRepositoryException("Failed to supersede active SSO sessions", e);
         }
     }
 
@@ -221,7 +222,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             ctor.setAccessible(true);
             return ctor.newInstance(SsoSessionId.of(id), tenant, holderHash, established, expires, SsoSessionState.valueOf(state));
         } catch (ReflectiveOperationException ex) {
-            throw new RuntimeException("Failed to reconstruct SsoSession from DB", ex);
+            throw new SsoSessionRepositoryException("Failed to reconstruct SsoSession from DB", ex);
         }
     }
 }

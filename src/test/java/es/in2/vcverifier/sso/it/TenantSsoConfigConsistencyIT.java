@@ -5,6 +5,7 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
+import es.in2.vcverifier.sso.domain.exception.SsoSessionRepositoryException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
@@ -61,7 +62,7 @@ class TenantSsoConfigConsistencyIT {
 
         // WHEN
         assertThrows(
-                EstablishSsoSessionWorkflow.SsoConfigInconsistentException.class,
+                SsoSessionRepositoryException.class,
                 () -> workflow.execute(command)
         );
 
@@ -91,7 +92,7 @@ class TenantSsoConfigConsistencyIT {
                 .thenReturn(Optional.of(config));
 
         assertThrows(
-                EstablishSsoSessionWorkflow.SsoConfigInconsistentException.class,
+                SsoSessionRepositoryException.class,
                 () -> workflow.execute(command)
         );
 

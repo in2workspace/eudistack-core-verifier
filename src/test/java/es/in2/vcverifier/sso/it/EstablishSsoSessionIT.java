@@ -7,6 +7,7 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
+import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
@@ -233,7 +234,7 @@ class EstablishSsoSessionIT {
     void legacyTenant_doesNotSetCookie() throws Exception {
 
         when(establishSsoSessionWorkflow.execute(any()))
-                .thenThrow(new EstablishSsoSessionWorkflow.SsoConfigInconsistentException("invalid config"));
+                .thenThrow(new SsoConfigInconsistentException("invalid config"));
 
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "legacy-tenant")
@@ -260,7 +261,7 @@ class EstablishSsoSessionIT {
         // -------------------------
         // MOCK SERVICE FAILURE
         // -------------------------
-        doThrow(new EstablishSsoSessionWorkflow.SsoConfigInconsistentException("invalid vp"))
+        doThrow(new SsoConfigInconsistentException("invalid vp"))
                 .when(authorizationResponseProcessorService)
                 .handleAuthResponse(anyString(), anyString());
 
