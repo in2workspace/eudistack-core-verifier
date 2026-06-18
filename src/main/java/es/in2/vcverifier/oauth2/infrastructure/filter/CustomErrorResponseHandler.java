@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
+import es.in2.vcverifier.shared.config.BackendConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_U
 public class CustomErrorResponseHandler implements AuthenticationFailureHandler {
 
     private final Set<String> allowedClientsOrigins;
+    private final BackendConfig backendConfig;
 
     @Override
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
@@ -46,10 +48,24 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
     private boolean isAllowedRedirectUri(String uri) {
         try {
             URI parsed = URI.create(uri);
-            String origin = parsed.getScheme() + "://" + parsed.getAuthority();
+            String scheme = parsed.getScheme();
+            String origin = scheme + "://" + parsed.getAuthority();
 
+            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, origin);
+
+            if (!"https".equals(scheme)) {
+                return false;
+            }
             // Allow registered client origins (includes loginPageUri origins) — enforce HTTPS
-            return "https".equals(parsed.getScheme()) && allowedClientsOrigins.contains(origin);
+            if (allowedClientsOrigins.contains(origin)) {
+                return true;
+            }
+            // Allow the verifier's own origin (for /login and /error internal redirects).
+            // SEC-S7: still safe — backendConfig.getUrl() is derived from the trusted
+            // ForwardedHeaderFilter-resolved host, not from raw user input.
+            URI verifierUri = URI.create(backendConfig.getUrl());
+            String verifierOrigin = verifierUri.getScheme() + "://" + verifierUri.getAuthority();
+            return verifierOrigin.equals(origin);
         } catch (Exception e) {
             return false;
         }
