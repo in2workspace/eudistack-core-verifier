@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - 2026-06-18
+- **Unified URL generation — canonical/non-canonical distinction removed**: all requests now arrive with the `/verifier` servlet context path, so `BackendConfig.getUrl()` always appends `request.getContextPath()` unconditionally. The `X-Tenant`-based branch that stripped the context path for non-canonical routes has been deleted, along with `IssuerOverrideFilter` and its test. `AuthorizationServerSettings` no longer needs a custom filter to override the issuer; Spring AS derives it correctly from the request URL. Stale test `getUrl_nonCanonical_returnsBaseWithoutContextPath` updated to reflect the new behavior.
+
 ### Fixed 2026-06-18
 - **Discovery document URLs include `/verifier` for non-prefixed access**: Spring Authorization Server derives the issuer from `request.getRequestURI()`, which always includes the servlet context path (`/verifier`). For non-canonical deployments (where the external URL has no `/verifier` prefix), the discovery document URLs were incorrect. Added `IssuerOverrideFilter`, which runs after Spring AS's `AuthorizationServerContextFilter` and replaces the issuer in `AuthorizationServerContextHolder` with the value from `BackendConfig.getUrl()` — which already strips the context path when the `X-Tenant` header is present. Proxy must set `X-Tenant` for non-prefixed routes.
 

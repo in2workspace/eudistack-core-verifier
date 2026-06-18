@@ -9,8 +9,6 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.List;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
-
 @Configuration
 @RequiredArgsConstructor
 public class BackendConfig {
@@ -32,13 +30,10 @@ public class BackendConfig {
                 String scheme = request.getScheme();
                 String host = request.getServerName();
                 int port = request.getServerPort();
+                String contextPath = request.getContextPath();
                 boolean defaultPort = ("https".equals(scheme) && port == 443)
                         || ("http".equals(scheme) && port == 80);
-                String base = scheme + "://" + host + (defaultPort ? "" : ":" + port);
-                // Non-canonical requests carry X-Tenant (added by CloudFront) and have their
-                // own domain structure — they do not include the /verifier context path.
-                boolean canonical = request.getHeader(X_TENANT_HEADER) == null;
-                return canonical ? base + request.getContextPath() : base;
+                return scheme + "://" + host + (defaultPort ? "" : ":" + port) + contextPath;
             }
         } catch (Exception ignored) {
             // No request context (startup, async, etc.) — use static config
