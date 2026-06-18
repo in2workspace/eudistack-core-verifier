@@ -116,7 +116,6 @@ public class CryptographicBindingValidator {
         // Strategy 3: mandatee.id fallback
         String mandateeId = extractMandateeIdFromVc(jwtCredential);
         if (mandateeId != null && mandateeId.startsWith("did:")) {
-            log.info("[BIND] Validating binding via mandatee.id fallback: {}", mandateeId);
             ECKey resolved = resolveEcKeyFromDid(normalizeDid(mandateeId));
             validateBindingByJwkThumbprint(vpSignerKey, resolved);
             return;
