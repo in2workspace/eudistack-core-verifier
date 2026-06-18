@@ -16,6 +16,7 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthenticationProvid
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomTokenRequestConverter;
+import es.in2.vcverifier.oauth2.infrastructure.filter.IssuerOverrideFilter;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -29,6 +30,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -42,6 +44,7 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 @Configuration
 @RequiredArgsConstructor
@@ -87,7 +90,35 @@ public class AuthorizationServerConfig {
                                 .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry))
                 )
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
+
+        // IssuerOverrideFilter must run after AuthorizationServerContextFilter (order 401, registered
+        // by OAuth2AuthorizationServerConfigurer.configure()) and before any endpoint filter that reads
+        // AuthorizationServerContextHolder to build discovery-document URLs.
+        // Using AbstractHttpConfigurer.configure() guarantees this configurer runs DURING http.build(),
+        // after OAuth2AuthorizationServerConfigurer has already added AuthorizationServerContextFilter.
+        // Both filters end up at addFilterAfter(SecurityContextHolderFilter) order; stable sort puts
+        // AuthorizationServerContextFilter first (inserted first) and IssuerOverrideFilter second.
+        AuthorizationServerSettings settings = authorizationServerSettings();
+        http.with(new IssuerFilterConfigurer(backendConfig, settings), Customizer.withDefaults());
+
         return http.build();
+    }
+
+    private static class IssuerFilterConfigurer
+            extends AbstractHttpConfigurer<IssuerFilterConfigurer, HttpSecurity> {
+
+        private final BackendConfig backendConfig;
+        private final AuthorizationServerSettings settings;
+
+        IssuerFilterConfigurer(BackendConfig backendConfig, AuthorizationServerSettings settings) {
+            this.backendConfig = backendConfig;
+            this.settings = settings;
+        }
+
+        @Override
+        public void configure(HttpSecurity http) {
+            http.addFilterAfter(new IssuerOverrideFilter(backendConfig, settings), SecurityContextHolderFilter.class);
+        }
     }
     @Bean
     public JWKSource<SecurityContext> jwkSource() {
