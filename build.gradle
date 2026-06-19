@@ -81,6 +81,11 @@ dependencies {
 
     // --- PostgreSQL Driver ---
     runtimeOnly 'org.postgresql:postgresql:42.7.3'
+
+    // --- Flyway ---
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
 }
 
 // --- Quality & CI ---
