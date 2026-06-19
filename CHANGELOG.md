@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **OID4VP login bypassed the sunset flag (US-08 AC-07 / AC-10)**: prior to this branch the legacy/bumped feature flags only affected the M2M `client_credentials` grant; OID4VP user-driven logins through `/oid4vp/auth-response` skipped the dispatcher entirely and accepted any well-formed VP, so closing the legacy flag would still mint authorization codes for legacy credentials presented from a wallet. Both code paths now share the same gating point — closing `verifier.dome.legacy-read-enabled` returns `410 Gone` consistently across M2M and user-driven flows.
 
+### Changed - 2026-06-18
+- **Unified URL generation — canonical/non-canonical distinction removed**: all requests now arrive with the `/verifier` servlet context path, so `BackendConfig.getUrl()` always appends `request.getContextPath()` unconditionally. The `X-Tenant`-based branch that stripped the context path for non-canonical routes has been deleted, along with `IssuerOverrideFilter` and its test. `AuthorizationServerSettings` no longer needs a custom filter to override the issuer; Spring AS derives it correctly from the request URL. Stale test `getUrl_nonCanonical_returnsBaseWithoutContextPath` updated to reflect the new behavior.
+
 ### Fixed 2026-06-18
 - **Discovery document URLs include `/verifier` for non-prefixed access**: Spring Authorization Server derives the issuer from `request.getRequestURI()`, which always includes the servlet context path (`/verifier`). For non-canonical deployments (where the external URL has no `/verifier` prefix), the discovery document URLs were incorrect. Added `IssuerOverrideFilter`, which runs after Spring AS's `AuthorizationServerContextFilter` and replaces the issuer in `AuthorizationServerContextHolder` with the value from `BackendConfig.getUrl()` — which already strips the context path when the `X-Tenant` header is present. Proxy must set `X-Tenant` for non-prefixed routes.
 
@@ -44,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tenant Resolution Header Support**: `TenantDomainFilter` now resolves the tenant from the `X-Tenant` request header first, validating and normalizing the value to lowercase before storing it as a request attribute and in the MDC. If the header is missing, blank, or invalid, tenant resolution falls back to the first valid hostname segment obtained from `request.getServerName()`. Added the `X_TENANT_HEADER` constant to `Constants`.
 - Build `allowedClientsOrigins` from registered redirect URIs to support multi-domain clients like DOME.
 - Validate certificate chain
+- Improved GDPR compliance by reducing PII logging.
 
 ## [3.1.7] - 2026-06-09
 

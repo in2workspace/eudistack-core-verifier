@@ -27,15 +27,15 @@ public class DIDServiceImpl implements DIDService {
 
     @Override
     public PublicKey resolvePublicKeyFromDid(String did) {
-        log.info("Attempting to retrieve public key from DID: {}", did);
+        log.info("Attempting to retrieve public key from DID");
         if (!did.startsWith("did:key:")) {
-            log.error("DIDServiceImpl -- resolvePublicKeyFromDid -- Unsupported DID format detected: {}", did);
+            log.error("DIDServiceImpl -- resolvePublicKeyFromDid -- Unsupported DID format detected");
             throw new UnsupportedDIDTypeException("Unsupported DID type. Only did:key is supported for the moment.");
         }
 
         // Remove the "did:key:" prefix to get the actual encoded public key
         String encodedPublicKey = did.substring("did:key:".length());
-        log.debug("DIDServiceImpl -- resolvePublicKeyFromDid -- Encoded public key extracted from DID: {}", encodedPublicKey);
+        log.debug("DIDServiceImpl -- resolvePublicKeyFromDid -- Encoded public key length: {}", encodedPublicKey.length());
 
         // Decode the public key from its encoded representation
         return decodePublicKeyIntoPubKey(encodedPublicKey);
@@ -47,14 +47,14 @@ public class DIDServiceImpl implements DIDService {
         try {
             // Remove the prefix "z" to get the multibase encoded string
             if (!encodePublicKey.startsWith("z")) {
-                log.error("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Invalid public key format detected: {}", encodePublicKey);
+                log.error("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Invalid public key format detected");
                 throw new PublicKeyDecodingException("Invalid Public Key.");
             }
             String multibaseEncoded = encodePublicKey.substring(1);
 
             // Multibase decode (Base58) the encoded part to get the bytes
             byte[] decodedBytes = Base58.base58Decode(multibaseEncoded);
-            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Decoded bytes from Base58: {}", Arrays.toString(decodedBytes));
+            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Base58 decoded successfully. Byte length: {}", decodedBytes.length);
 
             // Multicodec prefix is fixed for "0x1200" for the secp256r1 curve
             int prefixLength = 2;
@@ -70,7 +70,7 @@ public class DIDServiceImpl implements DIDService {
             // Recover the Y coordinate from the X coordinate and the curve
             BigInteger y = curve.decodePoint(publicKeyBytes).getYCoord().toBigInteger();
 
-            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Calculated ECPoint coordinates - X: {}, Y: {}", x, y);
+            log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- ECPoint coordinates calculated");
             ECPoint point = new ECPoint(x, y);
 
             // Fetch the ECParameterSpec for secp256r1
