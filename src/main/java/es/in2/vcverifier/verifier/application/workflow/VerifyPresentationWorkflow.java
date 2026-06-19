@@ -1,6 +1,8 @@
 package es.in2.vcverifier.verifier.application.workflow;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.VpService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,18 +18,26 @@ import org.springframework.stereotype.Service;
 public class VerifyPresentationWorkflow {
 
     private final VpService vpService;
+    private final CredentialSchemaDispatcher credentialSchemaDispatcher;
+
+    public record Result(
+            JsonNode credential,
+            DispatchDecision dispatchDecision
+    ) {
+    }
 
     /**
      * Validates the VP and returns the embedded credential.
      *
      * @param vpToken the raw VP JWT string
-     * @return the credential extracted from the VP as a JsonNode
+     * @return credential + dispatch decision
      */
-    public JsonNode verifyPresentation(String vpToken) {
+    public Result verifyPresentation(String vpToken) {
         log.info("VerifyPresentationWorkflow: validating VP");
         vpService.verifyVerifiablePresentation(vpToken);
         JsonNode credential = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(vpToken);
-        log.info("VerifyPresentationWorkflow: VP validated and credential extracted");
-        return credential;
+        DispatchDecision dispatchDecision = credentialSchemaDispatcher.dispatch(credential);
+        log.info("VerifyPresentationWorkflow: VP validated, credential extracted and dispatched");
+        return new Result(credential, dispatchDecision);
     }
 }

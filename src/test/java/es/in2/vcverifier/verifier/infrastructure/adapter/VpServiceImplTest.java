@@ -846,7 +846,8 @@ class VpServiceImplTest {
                     null,
                     false,
                     "issuer.organizationIdentifier",
-                    "credentialSubject.mandate.mandator.nonExistentField"
+                    "credentialSubject.mandate.mandator.nonExistentField",
+                    false
             );
 
             com.fasterxml.jackson.databind.node.ObjectNode root = MAPPER.createObjectNode();
@@ -1023,7 +1024,8 @@ class VpServiceImplTest {
                 null,
                 false,
                 "issuer.organizationIdentifier",
-                mandatorOrgIdPath
+                mandatorOrgIdPath,
+                false
         );
 
         return new GenericCredential(
@@ -1086,7 +1088,8 @@ class VpServiceImplTest {
                 null,
                 false,
                 "issuer.organizationIdentifier",
-                mandatorOrgIdPath
+                mandatorOrgIdPath,
+                false
         );
 
         return new GenericCredential(
