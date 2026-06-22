@@ -38,6 +38,7 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
         this.resourceResolver = resourceResolver;
         loadFromExternalDir(externalSchemasDir);
         loadFromClasspath();
+        registerCredentialTypeAliases(externalSchemasDir);
         log.info("Schema Profile Registry loaded {} profiles: {}", profiles.size(), profiles.keySet());
     }
 
@@ -56,14 +57,24 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
         Path dir = Path.of(externalSchemasDir);
         if (!Files.isDirectory(dir)) return;
 
+        loadFromDirectory(dir);
+
+        Path legacyDir = dir.resolve("legacy");
+        if (Files.isDirectory(legacyDir)) {
+            loadFromDirectory(legacyDir);
+        }
+    }
+
+    private void loadFromDirectory(Path dir) {
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.json")) {
             for (Path file : stream) {
+                if (file.getFileName().toString().matches(".*\\.sample.*\\.json")) continue;
                 try (InputStream is = Files.newInputStream(file)) {
                     parseAndRegister(is, file.toString());
                 }
             }
         } catch (IOException e) {
-            log.error("Failed to scan external schemas directory: {}", externalSchemasDir, e);
+            log.error("Failed to scan schemas directory: {}", dir, e);
         }
     }
 
@@ -81,6 +92,72 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             }
         } catch (IOException e) {
             log.warn("Failed to scan classpath schemas directory: {}", e.getMessage());
+        }
+    }
+
+    private void registerCredentialTypeAliases(String externalSchemasDir) {
+        if (externalSchemasDir != null && !externalSchemasDir.isBlank()) {
+            Path dir = Path.of(externalSchemasDir);
+            if (Files.isDirectory(dir)) {
+                registerTypeAliasesFromDirectory(dir);
+                Path legacyDir = dir.resolve("legacy");
+                if (Files.isDirectory(legacyDir)) {
+                    registerTypeAliasesFromDirectory(legacyDir);
+                }
+            }
+        }
+
+        try {
+            Resource[] resources = resourceResolver.getResources(CLASSPATH_SCHEMA_PATTERN);
+            for (Resource resource : resources) {
+                try (InputStream is = resource.getInputStream()) {
+                    registerTypeAliasesFrom(is, "classpath:" + resource.getFilename());
+                } catch (IOException e) {
+                    log.debug("Failed to inspect schema for type aliases: {}", resource.getFilename(), e);
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Failed to scan classpath for type aliases: {}", e.getMessage());
+        }
+    }
+
+    private void registerTypeAliasesFromDirectory(Path dir) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.json")) {
+            for (Path file : stream) {
+                String name = file.getFileName().toString();
+                if (name.endsWith(".profile.json")) continue;
+                if (name.matches(".*\\.sample.*\\.json")) continue;
+                try (InputStream is = Files.newInputStream(file)) {
+                    registerTypeAliasesFrom(is, file.toString());
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Failed to inspect directory for type aliases: {}", dir, e);
+        }
+    }
+
+    private void registerTypeAliasesFrom(InputStream is, String source) {
+        try {
+            JsonNode root = objectMapper.readTree(is);
+            JsonNode configIdNode = root.get("credential_configuration_id");
+            if (configIdNode == null || !configIdNode.isTextual()) return;
+            String configId = configIdNode.asText();
+            SchemaProfile profile = profiles.get(configId);
+            if (profile == null) return;
+
+            JsonNode typeNode = root.path("credential_definition").path("type");
+            if (!typeNode.isArray()) return;
+
+            for (JsonNode t : typeNode) {
+                String type = t.asText();
+                if ("VerifiableCredential".equals(type) || "VerifiableAttestation".equals(type)) continue;
+                if (type.equals(configId)) continue;
+                if (profiles.putIfAbsent(type, profile) == null) {
+                    log.info("Registered schema profile alias '{}' → '{}' from {}", type, configId, source);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to register type aliases from {}: {}", source, e.getMessage());
         }
     }
 
@@ -112,6 +189,12 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             boolean schemaRequired = parseSchemaRequired(root.get("validation"));
             String issuerIdPath = parseNullableText(root, "validation", "issuer_id_path");
             String mandatorOrgIdPath = parseNullableText(root, "validation", "mandator_org_id_path");
+            boolean wrapVcInAccessToken = root.path("wrap_vc_in_access_token").asBoolean(false);
+            
+            if (issuerIdPath == null) {
+                issuerIdPath = "issuer.id";
+                log.debug("Schema profile {} did not declare validation.issuer_id_path; defaulting to 'issuer'", configId);
+            }
 
             SchemaProfile profile = new SchemaProfile(
                     configId,
@@ -121,7 +204,8 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
                     grantEligibility,
                     schemaRequired,
                     issuerIdPath,
-                    mandatorOrgIdPath
+                    mandatorOrgIdPath,
+                    wrapVcInAccessToken
             );
             profiles.put(configId, profile);
             log.info("Registered schema profile: {} from {}", configId, source);

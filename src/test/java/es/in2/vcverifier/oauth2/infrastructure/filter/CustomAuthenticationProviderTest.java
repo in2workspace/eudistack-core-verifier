@@ -166,7 +166,7 @@ class CustomAuthenticationProviderTest {
         when(tokenGenerationWorkflow.extractCredentialType(any(JsonNode.class))).thenReturn("learcredential.employee.w3c.4");
         // Employee profile has no client_credentials grant
         es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile employeeProfile = new es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile(
-                "learcredential.employee.w3c.4", null, null, null, java.util.Set.of("authorization_code"), false, null, null);
+                "learcredential.employee.w3c.4", null, null, null, java.util.Set.of("authorization_code"), false, null, null, false);
         when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(java.util.Optional.of(employeeProfile));
 
         Map<String, Object> additionalParams = new HashMap<>();
