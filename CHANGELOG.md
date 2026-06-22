@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - 2026-06-22
+
+- **SD-JWT credential types missing from dispatch catalogue**: `learcredential.employee.sd.1`, `learcredential.machine.sd.1` and `doctorid.sd.1` were absent from the `verifier.dispatch.rules` introduced in eba0126 (PR #31). Any wallet presenting an SD-JWT VC received `UnknownCredentialFormatException → HTTP 400` after full JWT + KB-JWT + status-list verification had already passed. Added the three SD-JWT config IDs to the `bumped` rule set. `FlagDefaultsTest` updated to assert the new catalogue sizes (6 legacy / 6 bumped / 12 total) and verify the SD-JWT entries explicitly.
+
 ### Added - 2026-06-17
 
 - **Dual-format dispatcher (US-08 / EUDISTACK-145)**: new `CredentialSchemaDispatcher` port + `ContextAndTypeCredentialSchemaDispatcher` adapter that classifies every incoming credential as `LEGACY_V1_1` or `BUMPED_V2_0` from `type[]` + `@context`, deterministically and without try/catch fallback (AD-3). The decision drives a `LegacyCredentialReader` / `BumpedCredentialReader` SPI and an `AccessTokenBuilder` (`JwsAccessTokenBuilder`) that wraps the credential under `vc` only for VCDM v2.0 — preserving the legacy wrap for v1.1 (FR-06a). Domain ports: `CredentialReader`, `AccessTokenBuilder`, `CredentialSchemaDispatcher`, `TenantConfigPort`. Records: `DispatchDecision`, `DispatchRule`, `DispatchReason`, `CredentialFormat`, `BuildContext`, `ReaderResult`, `TenantDomeConfig`.
