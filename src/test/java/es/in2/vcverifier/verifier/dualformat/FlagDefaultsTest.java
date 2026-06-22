@@ -24,8 +24,8 @@ class FlagDefaultsTest {
         assertThat(tenantDomeConfigProperties.bumpedReadEnabled()).isNotNull();
 
         assertThat(dispatchProperties.legacyRules()).hasSize(6);
-        assertThat(dispatchProperties.bumpedRules()).hasSize(3);
-        assertThat(dispatchProperties.allRules()).hasSize(9);
+        assertThat(dispatchProperties.bumpedRules()).hasSize(6);
+        assertThat(dispatchProperties.allRules()).hasSize(12);
 
         assertThat(dispatchProperties.legacyRules())
                 .anySatisfy(rule -> {
@@ -44,6 +44,18 @@ class FlagDefaultsTest {
         assertThat(dispatchProperties.bumpedRules())
                 .anySatisfy(rule -> {
                     assertThat(rule.credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.4");
+                    assertThat(rule.format()).isEqualTo("BUMPED_V2_0");
+                })
+                .anySatisfy(rule -> {
+                    assertThat(rule.credentialConfigurationId()).isEqualTo("learcredential.employee.sd.1");
+                    assertThat(rule.format()).isEqualTo("BUMPED_V2_0");
+                })
+                .anySatisfy(rule -> {
+                    assertThat(rule.credentialConfigurationId()).isEqualTo("learcredential.machine.sd.1");
+                    assertThat(rule.format()).isEqualTo("BUMPED_V2_0");
+                })
+                .anySatisfy(rule -> {
+                    assertThat(rule.credentialConfigurationId()).isEqualTo("doctorid.sd.1");
                     assertThat(rule.format()).isEqualTo("BUMPED_V2_0");
                 });
     }

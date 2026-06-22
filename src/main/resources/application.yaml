@@ -135,6 +135,12 @@ verifier:
           format: BUMPED_V2_0
         - credential-configuration-id: gx.labelcredential.w3c.2
           format: BUMPED_V2_0
+        - credential-configuration-id: learcredential.employee.sd.1
+          format: BUMPED_V2_0
+        - credential-configuration-id: learcredential.machine.sd.1
+          format: BUMPED_V2_0
+        - credential-configuration-id: doctorid.sd.1
+          format: BUMPED_V2_0
 
   # DCQL profiles are loaded from the external file specified by
   # VERIFIER_BACKEND_LOCALFILES_DCQLPATH (via spring.config.import).
