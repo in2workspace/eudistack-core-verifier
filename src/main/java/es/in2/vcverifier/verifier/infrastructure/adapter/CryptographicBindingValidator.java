@@ -181,26 +181,24 @@ public class CryptographicBindingValidator {
         try {
             var claims = vcJwt.getJWTClaimsSet();
 
-            // W3C format: credentialSubject.mandate.mandatee.id
-            Object cs = claims.getClaim("credentialSubject");
-            if (cs instanceof Map<?, ?> csMap) {
-                Object mandate = csMap.get("mandate");
-                if (mandate instanceof Map<?, ?> mandateMap) {
-                    Object mandatee = mandateMap.get("mandatee");
-                    if (mandatee instanceof Map<?, ?> mandateeMap) {
-                        Object id = mandateeMap.get("id");
-                        if (id instanceof String s) return s;
-                    }
-                }
+            // VCDM v1.1 (DOME legacy): vc.credentialSubject.mandate.mandatee.id
+            Object vc = claims.getClaim("vc");
+            if (vc instanceof Map<?, ?> vcMap) {
+                String id = readMandateeId(vcMap.get("credentialSubject"));
+                if (id != null) return id;
             }
+
+            // VCDM v2.0: credentialSubject.mandate.mandatee.id (root)
+            String id = readMandateeId(claims.getClaim("credentialSubject"));
+            if (id != null) return id;
 
             // SD-JWT flat format: mandate.mandatee.id (top-level)
             Object mandate = claims.getClaim("mandate");
             if (mandate instanceof Map<?, ?> mandateMap) {
                 Object mandatee = mandateMap.get("mandatee");
                 if (mandatee instanceof Map<?, ?> mandateeMap) {
-                    Object id = mandateeMap.get("id");
-                    if (id instanceof String s) return s;
+                    Object mid = mandateeMap.get("id");
+                    if (mid instanceof String s) return s;
                 }
             }
 
@@ -209,6 +207,16 @@ public class CryptographicBindingValidator {
             log.warn("Failed to extract mandatee.id from VC: {}", e.getMessage());
             return null;
         }
+    }
+
+    private String readMandateeId(Object credentialSubject) {
+        if (!(credentialSubject instanceof Map<?, ?> csMap)) return null;
+        Object mandate = csMap.get("mandate");
+        if (!(mandate instanceof Map<?, ?> mandateMap)) return null;
+        Object mandatee = mandateMap.get("mandatee");
+        if (!(mandatee instanceof Map<?, ?> mandateeMap)) return null;
+        Object id = mandateeMap.get("id");
+        return id instanceof String s ? s : null;
     }
 
     private ECKey resolveEcKeyFromDid(String did) {
