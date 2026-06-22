@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **EUDISTACK-546**: 
-Custom domain operativo per tenant en el Verifier IdP
-Sesión SSO establecida tras presentación OID4VP exitosa
+- US-01: Custom domain operativo per tenant en el Verifier IdP
+- US-02: Sesión SSO establecida tras presentación OID4VP exitosa
 
 ### Fixed - 2026-06-17
 - **CORS on public discovery endpoints**: `/.well-known/**` and `/oidc/jwks` were served by the Authorization Server filter chain (highest precedence), which applied the registered-clients CORS policy and blocked cross-origin requests from unregistered origins. These endpoints are public by spec (OpenID Connect Discovery 1.0, RFC 8414, RFC 7517) and now return a wildcard CORS configuration regardless of the requesting origin.
@@ -185,7 +185,7 @@ Sesión SSO establecida tras presentación OID4VP exitosa
 ### Added
 - **Hexagonal architecture**: Reorganized entire codebase into 2 bounded contexts (`verifier/`, `oauth2/`) + `shared/` module with ports & adapters pattern.
 - **Application workflows**: Extracted business logic from OAuth2 filters into testable workflow classes (AuthorizationRequestBuildWorkflow, TokenGenerationWorkflow, ClientCredentialsValidationWorkflow, VerifyPresentationWorkflow).
-- **External file injection**: Clients YAML, trusted issuers YAML, and JSON Schemas can now be injected via Docker volumes or Kubernetes ConfigMaps without rebuilding the image (`VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH`, `VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH`, `VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR`).
+- **External file injection**: Clients YAML, trusted issuers YAML, and JSON Schemas can now be injected via Docker volumes or Kubernetes ConfigMaps without rebuilding the image (`VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH`, `VERIFIER_BACKEND_SSO_CONFIG_PATH`, `VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH`, `VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR`).
 - **ArchUnit enforcement**: 17 architecture rules validating hexagonal layers, bounded context isolation, naming conventions, and dependency constraints.
 - **Deployment guide**: Comprehensive deployment documentation at `.claude/docs/deployment.md`.
 - **SSE login notification**: New `SseEmitterStore` + `LoginSseController` (`/api/login/events?state=...`) replaces WebSocket for cross-device QR login flow.
