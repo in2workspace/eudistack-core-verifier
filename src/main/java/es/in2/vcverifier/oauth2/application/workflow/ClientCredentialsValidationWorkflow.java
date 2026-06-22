@@ -4,9 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
-import es.in2.vcverifier.verifier.domain.util.CredentialTypeResolver;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
@@ -30,6 +31,7 @@ public class ClientCredentialsValidationWorkflow {
     private final JWTService jwtService;
     private final ClientAssertionValidationService clientAssertionValidationService;
     private final VpService vpService;
+    private final CredentialSchemaDispatcher credentialSchemaDispatcher;
     private final SchemaProfileRegistry schemaProfileRegistry;
 
     /**
@@ -54,7 +56,10 @@ public class ClientCredentialsValidationWorkflow {
 
         // Extract credential and validate grant eligibility via schema profile
         JsonNode vc = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(decodedVpToken);
-        String configId = CredentialTypeResolver.resolveConfigId(vc);
+        DispatchDecision dispatchDecision = credentialSchemaDispatcher.dispatch(vc);
+        String configId = dispatchDecision.credentialConfigurationId();
+        log.info("ClientCredentialsValidationWorkflow: dispatch decision format={}, reason={}, configId={}",
+            dispatchDecision.format(), dispatchDecision.reason(), configId);
         SchemaProfile profile = schemaProfileRegistry.findByConfigId(configId)
                 .orElseThrow(() -> new InvalidCredentialTypeException("No profile found for: " + configId));
         if (!profile.grantEligibility().contains("client_credentials")) {

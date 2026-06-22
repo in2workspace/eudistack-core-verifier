@@ -7,7 +7,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -36,6 +40,7 @@ class ClientCredentialsValidationWorkflowTest {
     @Mock private JWTService jwtService;
     @Mock private ClientAssertionValidationService clientAssertionValidationService;
     @Mock private VpService vpService;
+    @Mock private CredentialSchemaDispatcher credentialSchemaDispatcher;
     @Mock private SchemaProfileRegistry schemaProfileRegistry;
 
     @InjectMocks
@@ -74,8 +79,10 @@ class ClientCredentialsValidationWorkflowTest {
         when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
         when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(credentialSchemaDispatcher.dispatch(credential)).thenReturn(
+            DispatchDecision.permitted("learcredential.machine.w3c.3", CredentialFormat.BUMPED_V2_0, DispatchReason.BY_TYPE));
         when(schemaProfileRegistry.findByConfigId("learcredential.machine.w3c.3")).thenReturn(
-                Optional.of(new SchemaProfile("learcredential.machine.w3c.3", null, null, null, Set.of("client_credentials", "authorization_code"), false, null, null)));
+                Optional.of(new SchemaProfile("learcredential.machine.w3c.3", null, null, null, Set.of("client_credentials", "authorization_code"), false, null, null, false)));
         when(clientAssertionValidationService.verifyClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(true);
 
         JsonNode result = workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION);
@@ -95,8 +102,10 @@ class ClientCredentialsValidationWorkflowTest {
         when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
         when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(credentialSchemaDispatcher.dispatch(credential)).thenReturn(
+            DispatchDecision.permitted("learcredential.employee.w3c.4", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
         when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(
-                Optional.of(new SchemaProfile("learcredential.employee.w3c.4", null, null, null, Set.of("authorization_code"), false, null, null)));
+                Optional.of(new SchemaProfile("learcredential.employee.w3c.4", null, null, null, Set.of("authorization_code"), false, null, null, false)));
 
         assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
                 .isInstanceOf(InvalidCredentialTypeException.class)
@@ -116,8 +125,10 @@ class ClientCredentialsValidationWorkflowTest {
         when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
         when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(credentialSchemaDispatcher.dispatch(credential)).thenReturn(
+            DispatchDecision.permitted("learcredential.machine.w3c.3", CredentialFormat.BUMPED_V2_0, DispatchReason.BY_TYPE));
         when(schemaProfileRegistry.findByConfigId("learcredential.machine.w3c.3")).thenReturn(
-                Optional.of(new SchemaProfile("learcredential.machine.w3c.3", null, null, null, Set.of("client_credentials"), false, null, null)));
+                Optional.of(new SchemaProfile("learcredential.machine.w3c.3", null, null, null, Set.of("client_credentials"), false, null, null, false)));
         when(clientAssertionValidationService.verifyClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(false);
 
         assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
@@ -138,8 +149,10 @@ class ClientCredentialsValidationWorkflowTest {
         when(jwtService.extractPayloadFromSignedJWT(signedJWT)).thenReturn(payload);
         when(jwtService.extractClaimFromPayload(payload, "vp_token")).thenReturn(VP_TOKEN_B64);
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(VP_TOKEN_RAW)).thenReturn(credential);
+        when(credentialSchemaDispatcher.dispatch(credential)).thenReturn(
+            DispatchDecision.permitted("learcredential.machine.w3c.3", CredentialFormat.BUMPED_V2_0, DispatchReason.BY_TYPE));
         when(schemaProfileRegistry.findByConfigId("learcredential.machine.w3c.3")).thenReturn(
-                Optional.of(new SchemaProfile("learcredential.machine.w3c.3", null, null, null, Set.of("client_credentials"), false, null, null)));
+                Optional.of(new SchemaProfile("learcredential.machine.w3c.3", null, null, null, Set.of("client_credentials"), false, null, null, false)));
         when(clientAssertionValidationService.verifyClientAssertionJWTClaims(eq(CLIENT_ID), eq(payload))).thenReturn(true);
         doThrow(new RuntimeException("VP invalid")).when(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW, false);
 

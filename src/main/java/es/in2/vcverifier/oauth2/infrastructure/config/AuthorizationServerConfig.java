@@ -87,8 +87,10 @@ public class AuthorizationServerConfig {
                                 .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry))
                 )
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
+
         return http.build();
     }
+
     @Bean
     public JWKSource<SecurityContext> jwkSource() {
         JWKSet jwkSet = new JWKSet(cryptoComponent.getECKey());

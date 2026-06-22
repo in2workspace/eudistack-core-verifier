@@ -127,6 +127,38 @@ verifier:
 
     local-files:
       sso-config-path: ${VERIFIER_BACKEND_LOCALFILES_SSOCONFIGPATH:}
+  dome:
+    legacy-read-enabled: ${VERIFIER_DOME_LEGACY_READ_ENABLED:true}
+    bumped-read-enabled: ${VERIFIER_DOME_BUMPED_READ_ENABLED:true}
+
+  dispatch:
+    rules:
+      legacy:
+        - credential-configuration-id: learcredential.employee.w3c.2
+          format: LEGACY_V1_1
+        - credential-configuration-id: learcredential.employee.w3c.3
+          format: LEGACY_V1_1
+        - credential-configuration-id: learcredential.machine.w3c.2
+          format: LEGACY_V1_1
+        - credential-configuration-id: LEARCredentialEmployee
+          format: LEGACY_V1_1
+        - credential-configuration-id: LEARCredentialMachine
+          format: LEGACY_V1_1
+        - credential-configuration-id: gx.labelcredential.w3c.1
+          format: LEGACY_V1_1
+      bumped:
+        - credential-configuration-id: learcredential.employee.w3c.4
+          format: BUMPED_V2_0
+        - credential-configuration-id: learcredential.machine.w3c.3
+          format: BUMPED_V2_0
+        - credential-configuration-id: gx.labelcredential.w3c.2
+          format: BUMPED_V2_0
+        - credential-configuration-id: learcredential.employee.sd.1
+          format: BUMPED_V2_0
+        - credential-configuration-id: learcredential.machine.sd.1
+          format: BUMPED_V2_0
+        - credential-configuration-id: doctorid.sd.1
+          format: BUMPED_V2_0
 
   # DCQL profiles are loaded from the external file specified by
   # VERIFIER_BACKEND_LOCALFILES_DCQLPATH (via spring.config.import).
