@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record TenantSsoEntry(
         String tenant,
         String rootDomain,
-        @JsonProperty("sso.enabled")
-        Boolean ssoEnabled
+        //@JsonProperty("sso.enabled")
+        boolean ssoEnabled
 ) {}
 

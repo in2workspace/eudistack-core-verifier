@@ -66,10 +66,13 @@ class EstablishSsoSessionIT {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+
+        registry.add("spring.flyway.url", postgres::getJdbcUrl);
+        registry.add("spring.flyway.user", postgres::getUsername);
+        registry.add("spring.flyway.password", postgres::getPassword);
     }
 
-    @Autowired
-    MockMvc mockMvc;
+    @Autowired MockMvc mockMvc;
 
     @Autowired
     JdbcTemplate jdbcTemplate;
@@ -79,12 +82,9 @@ class EstablishSsoSessionIT {
     @MockitoBean RegisteredClientRepository registeredClientRepository;
     @MockitoBean
     ClientLoaderConfig clientLoaderConfig;
-    //@MockitoBean
     @Autowired
     SsoSessionAuthenticationSuccessHandler handler;
 
-    //@MockitoBean
-    //private SsoSessionRepositoryPort repository;
     @MockitoBean private SsoAuditPort auditPort;
     @MockitoBean private TenantSsoConfigPort tenantSsoConfigPort;
     @MockitoBean private HashingService hashingService;
@@ -101,8 +101,6 @@ class EstablishSsoSessionIT {
 
     @BeforeEach
     void clean() {
-//        jdbcTemplate.update("CREATE TABLE sso_session IF NOT EXISTS");
-//        jdbcTemplate.update("DELETE FROM sso_session");
         reset(auditPort);
 
         jdbcTemplate.execute("""

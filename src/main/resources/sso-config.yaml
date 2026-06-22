@@ -5,7 +5,7 @@ tenants:
 
   - tenant: "sandboxDos"
     rootDomain: ""
-    ssoEnabled: true
+    ssoEnabled: false
 
   - tenant: "sandboxTres"
     rootDomain: ""

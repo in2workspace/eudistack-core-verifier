@@ -68,14 +68,14 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
             // Variables cargadas con los valores del sso-config.yaml
             String tenant = t.tenant();
             String rootDomain = t.rootDomain();
-            boolean enabled = Boolean.TRUE.equals(t.ssoEnabled());
+            boolean enabled = t.ssoEnabled();
 
             Duration absoluteTtl = DEFAULT_ABSOLUTE_TTL;
             Duration idleTtl = DEFAULT_IDLE_TTL;
 
 
             /** FAIL-CLOSED: Se incluye una validación de seguridad fail-closed:
-             * si alguien configura sso.enabled: true pero rootDomain está vacío, el sistema NO habilita el SSO
+             * si alguien configura ssoEnabled: true pero rootDomain está vacío, el sistema NO habilita el SSO
              * y emite un log estructurado con campos tenant, host, correlation_id y event sso_config_inconsistent.
              */
             if (enabled && (rootDomain == null || rootDomain.isBlank())) {

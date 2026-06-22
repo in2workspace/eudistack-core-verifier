@@ -25,6 +25,9 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
     public TenantSsoConfigYamlProvider(BackendProperties backendProperties) {
         this.backendProperties = backendProperties;
         this.yamlMapper = new ObjectMapper(new YAMLFactory());
+        log.info("SSO config path = {}", backendProperties.localFiles() != null
+                ? backendProperties.localFiles().ssoConfigPath()
+                : "NULL");
     }
 
     @Override
@@ -35,35 +38,48 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
                     ? backendProperties.localFiles().ssoConfigPath()
                     : null;
 
-            // Caso 1: no configurado → devolver vacío
-            if (path == null || path.isBlank()) {
-                log.warn("ssoConfigPath not configured. Returning empty SSO config.");
+            // Caso 1: ruta externa configurada → leer desde filesystem
+            if (path != null && !path.isBlank()) {
+                try (InputStream is = Files.newInputStream(Path.of(path))) {
+                    return parseAndMap(is);
+                } catch (java.nio.file.NoSuchFileException e) {
+                    log.warn("sso-config.yaml not found at path: {}. Falling back to classpath.", path);
+                }
+            }
+
+            // Caso 2: sin ruta externa → intentar classpath
+            InputStream is = getClass().getClassLoader().getResourceAsStream("sso-config.yaml");
+            if (is == null) {
+                log.warn("sso-config.yaml not found in classpath. Returning empty SSO config.");
                 return new es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData(List.of());
             }
 
-            // Caso 2: leer desde filesystem
-            try (InputStream is = Files.newInputStream(Path.of(path))) {
-
-                TenantSsoConfigYamlData infraData =
-                        yamlMapper.readValue(is, TenantSsoConfigYamlData.class);
-
-                List<TenantSsoEntry> domainEntries =
-                        infraData.tenants()
-                                .stream()
-                                .map(e -> new TenantSsoEntry(
-                                        e.tenant(),
-                                        e.rootDomain(),
-                                        e.ssoEnabled()
-                                ))
-                                .toList();
-
-                return new es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData(domainEntries);
+            try (is) {
+                return parseAndMap(is);
             }
 
         } catch (Exception e) {
             log.error("Error loading SSO config", e);
             throw new SsoConfigLoadingException("Error loading SSO config", e);
         }
+    }
+
+    private es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData parseAndMap(InputStream is) throws Exception {
+        TenantSsoConfigYamlData infraData = yamlMapper.readValue(is, TenantSsoConfigYamlData.class);
+
+        log.info("ALL TENANTS LOADED = {}",
+                infraData.tenants().stream().map(TenantSsoEntry::tenant).toList());
+
+        List<TenantSsoEntry> domainEntries = infraData.tenants()
+                .stream()
+                .map(e -> new TenantSsoEntry(
+                        e.tenant(),
+                        e.rootDomain(),
+                        e.ssoEnabled()
+                ))
+                .toList();
+
+        return new es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData(domainEntries);
     }
 
 

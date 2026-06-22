@@ -85,7 +85,7 @@ public class TenantSsoConfigConsistencyIT {
                 tenantSsoConfigPort.getByTenant("sandbox")
                         .orElseThrow();
 
-        assertFalse(config.ssoEnabled());
+        assertTrue(config.ssoEnabled());
     }
 
 

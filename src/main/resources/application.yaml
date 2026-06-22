@@ -16,11 +16,13 @@ spring:
     # tenant schemas using R2DBC credentials. Spring Boot's auto-configured
     # flywayInitializer would need its own JDBC user/password and would also
     # double-migrate `public`.
-    enabled: false
+    enabled: true
+    validate-migration-naming: true
     url: ${SPRING_FLYWAY_URL:jdbc:postgresql://localhost:5432/verifier}
     locations: classpath:db/migration
     default-schema: ${SPRING_FLYWAY_DEFAULT_SCHEMA:public}
     baseline-on-migrate: true
+    baseline-version: "0"
 
 # SEC-F8: Swagger UI disabled by default. Enable via env var in dev only.
 springdoc:
@@ -122,6 +124,9 @@ verifier:
         # Leave URLs unset to use local providers (classpath YAML files)
         # trustedIssuersListUrl: https://example.org/trusted-issuers
         # trustedServicesListUrl: https://example.org/trusted-services
+
+    local-files:
+      sso-config-path: ${VERIFIER_BACKEND_LOCALFILES_SSOCONFIGPATH:}
 
   # DCQL profiles are loaded from the external file specified by
   # VERIFIER_BACKEND_LOCALFILES_DCQLPATH (via spring.config.import).

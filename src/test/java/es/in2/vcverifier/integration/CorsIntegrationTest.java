@@ -26,7 +26,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code RegisteredClientsCorsConfigTest} because the Authorization Server filter chain's
  * request matcher does not intercept OPTIONS preflight requests in MockMvc.
  */
-@SpringBootTest
+@SpringBootTest(
+        properties = {
+                "spring.flyway.enabled=false"
+        }
+)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class CorsIntegrationTest {
