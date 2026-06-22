@@ -40,12 +40,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     // --- Serialization ---
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.18.2'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
     implementation 'org.json:json:20240303'
 
     // --- Cryptography ---
     implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
     implementation 'io.github.novacrypto:Base58:2022.01.17'
 
     // --- Validation ---
@@ -70,7 +70,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
-    testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.80'
+    testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.84'
 }
 
 // --- Quality & CI ---

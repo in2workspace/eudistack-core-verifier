@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **DOME legacy `PlainListEntity` revocation skip**: `VpServiceImpl.validateCredentialNotRevoked` short-circuits to `not revoked` (WARN log) when `credentialStatus.type == "PlainListEntity"`. Resolves the previous `Unsupported credentialStatus.type` exception that broke OID4VP login for DOME legacy credentials, whose revocation lists are plain JSON arrays of `{ "nonce": "<id>" }` (no JWT, no signature) and not exposed by any existing `CredentialStatusVerifier` strategy. Intentional during the DOME legacy sunset window; inline `TODO` captures the open decision (migrate legacy to `BitstringStatusListEntry` vs implement a real `PlainListEntityVerifier` adapter).
 
+### Changed - 2026-06-18
+- Upgraded `org.bouncycastle:bcprov-jdk18on` from `1.80` to `1.84`. 
+- Upgraded `org.bouncycastle:bcpkix-jdk18on` from `1.80` to `1.84`.
+- Removed explicit version pin from `jackson-dataformat-yaml` to use the Spring Boot managed BOM version.
+
 ### Fixed - 2026-06-22
 
 - **SD-JWT credential types missing from dispatch catalogue**: `learcredential.employee.sd.1`, `learcredential.machine.sd.1` and `doctorid.sd.1` were absent from the `verifier.dispatch.rules` introduced in eba0126 (PR #31). Any wallet presenting an SD-JWT VC received `UnknownCredentialFormatException → HTTP 400` after full JWT + KB-JWT + status-list verification had already passed. Added the three SD-JWT config IDs to the `bumped` rule set. `FlagDefaultsTest` updated to assert the new catalogue sizes (6 legacy / 6 bumped / 12 total) and verify the SD-JWT entries explicitly.
