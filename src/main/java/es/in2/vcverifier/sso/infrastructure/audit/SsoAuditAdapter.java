@@ -40,7 +40,14 @@ public class SsoAuditAdapter implements SsoAuditPort {
      */
     private String maskSubject(String sub) {
         if (sub == null) return null;
-        return Integer.toHexString(sub.hashCode());
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(sub.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            // log only a short prefix to reduce correlatability
+            return java.util.HexFormat.of().formatHex(digest, 0, 8);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return Integer.toHexString(sub.hashCode());
+        }
     }
 
     /**
