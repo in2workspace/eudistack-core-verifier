@@ -9,8 +9,8 @@ spring:
       enabled: true
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/verifier}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    username: ${SPRING_DATASOURCE_USERNAME:}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
   flyway:
     # Disabled: TenantSchemaFlywayMigrator runs migrations for `public` + all
     # tenant schemas using R2DBC credentials. Spring Boot's auto-configured
