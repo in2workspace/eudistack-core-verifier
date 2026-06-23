@@ -87,11 +87,10 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
         try (Connection c = dataSource.getConnection()) {
             // set tenant schema and statement timeout local to this transaction
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + session.getTenant() + ", public")) {
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = \"" + session.getTenant() + "\", public")) {
                 s.execute();
             } catch (SQLException e) {
-                // ignore; will proceed and rely on fully-qualified names if necessary
-                log.debug("Failed to set search_path to tenant {}: {}", session.getTenant(), e.getMessage());
+                throw new SsoSessionRepositoryException("Failed to set search_path for tenant " + session.getTenant(), e);
             }
 
             try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) {
