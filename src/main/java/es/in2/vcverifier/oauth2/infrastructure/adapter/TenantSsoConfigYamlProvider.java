@@ -75,7 +75,8 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
                 .map(e -> new TenantSsoEntry(
                         e.tenant(),
                         e.rootDomain(),
-                        e.ssoEnabled()
+                        e.ssoEnabled(),
+                        e.eligibleClients() != null ? e.eligibleClients() : List.of()
                 ))
                 .toList();
 
