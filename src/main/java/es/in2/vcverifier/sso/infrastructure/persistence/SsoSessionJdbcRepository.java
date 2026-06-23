@@ -187,7 +187,11 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         String sql = "UPDATE sso_session SET state = 'SUPERSEDED' WHERE tenant = ? AND holder_hash = ? AND state = 'ACTIVE'";
 
         try (Connection c = dataSource.getConnection()) {
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + tenant + ", public")) { s.execute(); } catch (SQLException ignored) {}
+            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = \"" + tenant + "\", public")) {
+                s.execute();
+            } catch (SQLException e) {
+                throw new SsoSessionRepositoryException("Failed to set search_path for tenant " + tenant, e);
+            }
             try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) { s.execute(); } catch (SQLException ignored) {}
 
             try (PreparedStatement ps = c.prepareStatement(sql)) {
