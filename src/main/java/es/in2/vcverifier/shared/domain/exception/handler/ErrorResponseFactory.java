@@ -81,7 +81,7 @@ public class ErrorResponseFactory {
         // -------------------------
         log.error("instance={}", instance);
         log.error("path={}", path);
-        log.error("status={}", Optional.of(httpStatus.value()));
+        log.error("status={}", httpStatus.value());
         log.error("detail={}", detail);
         log.error("SSO exception", ex);
 

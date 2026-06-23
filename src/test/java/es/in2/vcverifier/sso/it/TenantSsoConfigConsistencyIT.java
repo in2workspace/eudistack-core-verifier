@@ -5,7 +5,7 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
-import es.in2.vcverifier.sso.domain.exception.SsoSessionRepositoryException;
+import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
@@ -26,14 +26,12 @@ import static org.mockito.Mockito.*;
  * Verifica que, cuando la configuración SSO está ausente o deshabilitada, el workflow lanza una excepción
  * y publica un evento de auditoría de configuración inconsistente sin crear sesión ni persistir datos.
  *
- *
  * Esperado:
  * - Se lanza SsoConfigInconsistentException
  * - Se emite evento SSO_CONFIG_INCONSISTENT
  * - NO se crea ni persiste sesión SSO
  * - NO se ejecuta persistencia en el repositorio de sesiones
  */
-
 @ExtendWith(MockitoExtension.class)
 class TenantSsoConfigConsistencyIT {
 
@@ -60,9 +58,9 @@ class TenantSsoConfigConsistencyIT {
         when(tenantSsoConfigPort.getByTenant("tenant-a"))
                 .thenReturn(Optional.empty());
 
-        // WHEN
+        // WHEN — el workflow lanza SsoConfigInconsistentException cuando no hay config
         assertThrows(
-                SsoSessionRepositoryException.class,
+                SsoConfigInconsistentException.class,
                 () -> workflow.execute(command)
         );
 
@@ -91,8 +89,9 @@ class TenantSsoConfigConsistencyIT {
         when(tenantSsoConfigPort.getByTenant("tenant-b"))
                 .thenReturn(Optional.of(config));
 
+        // WHEN — el workflow lanza SsoConfigInconsistentException cuando SSO está deshabilitado
         assertThrows(
-                SsoSessionRepositoryException.class,
+                SsoConfigInconsistentException.class,
                 () -> workflow.execute(command)
         );
 

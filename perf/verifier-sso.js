@@ -28,19 +28,20 @@ export let options = {
     }
 };
 
-// URLs (ajusta según entorno)
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+// Puerto 8082 y context path /verifier según configuración de la app
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8082/verifier';
 
 /**
  * Simulación baseline OID4VP
- * (sin SSO layer)
+ * Endpoint real: POST /oid4vp/auth-response
  */
 function oid4vpFlow() {
-    let res = http.post(`${BASE_URL}/oid4vp/verify`, JSON.stringify({
-        vp_token: "dummy-vp",
-        presentation_submission: {}
-    }), {
-        headers: { 'Content-Type': 'application/json' }
+    let res = http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        params: {
+            state: 'dummy-state',
+            vp_token: 'dummy-vp-token'
+        }
     });
 
     return res.timings.duration;
@@ -48,18 +49,18 @@ function oid4vpFlow() {
 
 /**
  * Flow con SSO (verifier extended path)
+ * El endpoint SSO se establece a través de /oid4vp/auth-response con credenciales válidas.
  */
 function ssoEstablishFlow() {
 
     let start = new Date().getTime();
 
-    let res = http.post(`${BASE_URL}/sso/establish`, JSON.stringify({
-        tenant: "tenant-a",
-        holderHash: "holder-xyz",
-        clientId: "client-test",
-        sub: "user-123"
-    }), {
-        headers: { 'Content-Type': 'application/json' }
+    let res = http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        params: {
+            state: __ENV.SSO_STATE || 'test-state',
+            vp_token: __ENV.SSO_VP_TOKEN || 'dummy-vp-token'
+        }
     });
 
     let end = new Date().getTime();
@@ -69,11 +70,11 @@ function ssoEstablishFlow() {
     ssoOverhead.add(duration);
 
     check(res, {
-        'SSO establish success': (r) => r.status === 200,
-        'has cookie or session': (r) => r.headers['Set-Cookie'] !== undefined
+        'SSO establish success': (r) => r.status === 200 || r.status === 302,
+        'has Set-Cookie': (r) => r.headers['Set-Cookie'] !== undefined
     });
 
-    if (res.status !== 200) {
+    if (res.status !== 200 && res.status !== 302) {
         ssoErrors.add(1);
     }
 
@@ -82,7 +83,7 @@ function ssoEstablishFlow() {
 
 export default function () {
 
-    // 1. baseline (OID4VP)
+    // 1. baseline (OID4VP sin sesión SSO activa)
     let oid4vpLatency = oid4vpFlow();
 
     // 2. SSO extended path

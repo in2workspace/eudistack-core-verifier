@@ -14,7 +14,7 @@ public interface SsoSessionRepositoryPort {
 
 
     /**
-     * Obtiene una sesión activa para un tentant y holder concreto.
+     * Obtiene una sesión activa para un tenant y holder concreto.
      * @param tenant
      * @param holderHash
      * @return

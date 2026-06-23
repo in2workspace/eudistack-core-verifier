@@ -106,7 +106,7 @@ public class Oid4vpController {
                     tenant != null ? tenant : "",
                     tenant != null ? tenant : "",
                     null,
-                    ex.getMessage(),
+                    "FAILURE",
                     correlationId,
                     Instant.now()
             ));

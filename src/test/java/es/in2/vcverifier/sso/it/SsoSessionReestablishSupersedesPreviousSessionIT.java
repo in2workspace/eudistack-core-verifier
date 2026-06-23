@@ -76,7 +76,6 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     @MockitoBean SsoAuditPort auditPort;
     @MockitoBean TenantSsoConfigPort tenantSsoConfigPort;
     @MockitoBean HashingService hashingService;
-    @MockitoBean Clock clock;
     @MockitoBean
     StateStore stateStore;
     @MockitoBean

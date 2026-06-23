@@ -74,31 +74,38 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         }
     }
 
+    /**
+     * Sets search_path to the quoted tenant schema + public.
+     * Fail-closed: if this fails, we must NOT continue with unqualified SQL
+     * as queries could hit the wrong schema (cross-tenant data leak risk).
+     */
+    private void setTenantSearchPath(Connection c, String tenant) throws SQLException {
+        // Tenant identifier is quoted to support hyphens (e.g. "my-tenant")
+        // which are valid per TENANT_PATTERN but require quoting in PostgreSQL.
+        String sql = "SET LOCAL search_path = \"" + tenant + "\", public";
+        try (PreparedStatement s = c.prepareStatement(sql)) {
+            s.execute();
+        }
+    }
+
+    private void setStatementTimeout(Connection c) throws SQLException {
+        try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) {
+            s.execute();
+        }
+    }
+
     @Override
     public SsoSession save(SsoSession session) {
 
-        // Validamos el tenant
         ensureTenantSafe(session.getTenant());
-
-        // Comprobamos que el circuito esté cerrado.
         checkCircuit();
 
         String insertSql = "INSERT INTO sso_session (id, tenant, holder_hash, established_at, expires_at, state) VALUES (?, ?, ?, ?, ?, ?)";
 
         try (Connection c = dataSource.getConnection()) {
-            // set tenant schema and statement timeout local to this transaction
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + session.getTenant() + ", public")) {
-                s.execute();
-            } catch (SQLException e) {
-                // ignore; will proceed and rely on fully-qualified names if necessary
-                log.debug("Failed to set search_path to tenant {}: {}", session.getTenant(), e.getMessage());
-            }
-
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) {
-                s.execute();
-            } catch (SQLException ex) {
-                log.debug("Failed to set statement_timeout: {}", ex.getMessage());
-            }
+            // Fail-closed: if search_path cannot be set, abort to avoid cross-tenant writes.
+            setTenantSearchPath(c, session.getTenant());
+            setStatementTimeout(c);
 
             try (PreparedStatement ps = c.prepareStatement(insertSql)) {
                 ps.setObject(1, session.getId().getValue());
@@ -111,7 +118,6 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 recordSuccess();
                 return session;
             } catch (SQLException e) {
-                // Handle duplicate active constraint: try to supersede existing active and retry once
                 log.warn("Insert failed for session {}: {}", session.getId(), e.getMessage());
                 recordFailure();
                 if (isUniqueViolation(e)) {
@@ -157,8 +163,9 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         String sql = "SELECT id, tenant, holder_hash, established_at, expires_at, state FROM sso_session WHERE tenant = ? AND holder_hash = ? AND state = 'ACTIVE' LIMIT 1";
 
         try (Connection c = dataSource.getConnection()) {
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + tenant + ", public")) { s.execute(); } catch (SQLException ignored) {}
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) { s.execute(); } catch (SQLException ignored) {}
+            // Fail-closed: if search_path cannot be set, abort to avoid reading from the wrong schema.
+            setTenantSearchPath(c, tenant);
+            setStatementTimeout(c);
 
             try (PreparedStatement ps = c.prepareStatement(sql)) {
                 ps.setString(1, tenant);
@@ -185,11 +192,13 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     public void supersedeActive(String tenant, String holderHash) {
         ensureTenantSafe(tenant);
         checkCircuit();
+
         String sql = "UPDATE sso_session SET state = 'SUPERSEDED' WHERE tenant = ? AND holder_hash = ? AND state = 'ACTIVE'";
 
         try (Connection c = dataSource.getConnection()) {
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + tenant + ", public")) { s.execute(); } catch (SQLException ignored) {}
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) { s.execute(); } catch (SQLException ignored) {}
+            // Fail-closed: if search_path cannot be set, abort to avoid updating the wrong schema.
+            setTenantSearchPath(c, tenant);
+            setStatementTimeout(c);
 
             try (PreparedStatement ps = c.prepareStatement(sql)) {
                 ps.setString(1, tenant);

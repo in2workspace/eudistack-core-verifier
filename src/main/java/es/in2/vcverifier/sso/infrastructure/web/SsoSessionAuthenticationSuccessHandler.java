@@ -1,6 +1,7 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
 
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
@@ -27,18 +28,21 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
     private final EstablishSsoSessionWorkflow establishSsoSessionWorkflow;
     private final SsoSessionCookieFactory cookieFactory;
     private final SsoAuditPort auditPort;
+    private final TenantSsoConfigPort tenantSsoConfigPort;
 
 
     public SsoSessionAuthenticationSuccessHandler(
             @Lazy AuthenticationSuccessHandler oid4vpSuccessHandler,
             EstablishSsoSessionWorkflow establishSsoSessionWorkflow,
             SsoSessionCookieFactory cookieFactory,
-            SsoAuditPort auditPort
+            SsoAuditPort auditPort,
+            TenantSsoConfigPort tenantSsoConfigPort
     ) {
         this.oid4vpSuccessHandler = oid4vpSuccessHandler;
         this.establishSsoSessionWorkflow = establishSsoSessionWorkflow;
         this.cookieFactory = cookieFactory;
         this.auditPort = auditPort;
+        this.tenantSsoConfigPort = tenantSsoConfigPort;
     }
 
     @Override
@@ -48,13 +52,17 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             Authentication authentication
     ) throws IOException, ServletException {
 
-        // 1. Mantener flujo OID4VP intacto, manteniendo la compatibilidad con el login externo.
-        oid4vpSuccessHandler.onAuthenticationSuccess(request, response, authentication);
-
-        // 2. Extrae los datos del usuario autenticado (tenant, holderHash, clientId, rootDomain, ...)
+        // 1. Extrae los datos del usuario autenticado (tenant, holderHash, clientId, ...)
         VpData vpData = extractVpData(authentication);
 
         String correlationId = UUID.randomUUID().toString();
+
+        // 2. Resuelve rootDomain desde TenantSsoConfigPort en lugar de depender
+        // de los detalles de autenticación, que pueden no estar populados
+        // (e.g. Oid4vpController.buildSsoAuthentication() no incluye tenantRootDomain).
+        String rootDomain = tenantSsoConfigPort.getByTenant(vpData.tenant())
+                .map(config -> config.rootDomain() != null ? config.rootDomain() : "")
+                .orElse("");
 
         // 3. Crea sesión interna, valida el tenant, persiste en BD, define tiempo de expiración.
         var command = new SsoSessionCommand(
@@ -67,31 +75,44 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
         try {
             var sessionDescriptor = establishSsoSessionWorkflow.execute(command);
 
+            // Fail-closed: si el descriptor es null (fallo de persistencia),
+            // registramos el fallo pero NO lanzamos excepción para no romper
+            // el flujo OID4VP que viene a continuación.
             if (sessionDescriptor == null) {
-                throw new IllegalStateException("Session descriptor is null");
+                auditPort.publish(new SsoAuditEvent(
+                        SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
+                        vpData.tenant(),
+                        vpData.clientId(),
+                        vpData.holderHash(),
+                        "FAILURE",
+                        correlationId,
+                        java.time.Instant.now()
+                ));
+            } else {
+                ResponseCookie cookie = cookieFactory.createCookie(
+                        vpData.tenantSlug(),
+                        rootDomain,
+                        Duration.between(java.time.Instant.now(), sessionDescriptor.expiresAt()),
+                        sessionDescriptor.value()
+                );
+
+                // Set-Cookie ANTES de delegar al handler que puede hacer commit del response.
+                response.addHeader("Set-Cookie", cookie.toString());
+
+                auditPort.publish(new SsoAuditEvent(
+                        SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
+                        vpData.tenant(),
+                        vpData.clientId(),
+                        vpData.holderHash(),
+                        "SUCCESS",
+                        correlationId,
+                        java.time.Instant.now()
+                ));
             }
 
-            ResponseCookie cookie = cookieFactory.createCookie(
-                    vpData.tenantSlug(),
-                    vpData.tenantRootDomain(),
-                    Duration.between(java.time.Instant.now(), sessionDescriptor.expiresAt()),
-                    sessionDescriptor.value()
-            );
-
-            response.addHeader("Set-Cookie", cookie.toString());
-
-            auditPort.publish(new SsoAuditEvent(
-                    SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
-                    vpData.tenant(),
-                    vpData.clientId(),
-                    vpData.holderHash(),
-                    "SUCCESS",
-                    correlationId,
-                    java.time.Instant.now()
-            ));
-
         } catch (SsoConfigInconsistentException e) {
-
+            // Tenant legacy o SSO deshabilitado: auditamos pero NO re-lanzamos.
+            // El flujo OID4VP debe completar con redirect aunque no haya cookie SSO.
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                     vpData.tenant(),
@@ -101,11 +122,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     correlationId,
                     java.time.Instant.now()
             ));
-
-            throw e;
-
         } catch (Exception e) {
-
+            // Cualquier otro error inesperado sí se re-lanza.
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                     vpData.tenant(),
@@ -115,11 +133,12 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     correlationId,
                     java.time.Instant.now()
             ));
-
             throw e;
         }
 
-
+        // 4. Siempre al final: puede hacer commit del response (redirect),
+        // por lo que ningún header debe añadirse después de esta llamada.
+        oid4vpSuccessHandler.onAuthenticationSuccess(request, response, authentication);
     }
 
     private VpData extractVpData(Authentication authentication) {
@@ -131,8 +150,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("tenant"),
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
-                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
-                    (String) (map.get("tenantRootDomain") != null ? map.get("tenantRootDomain") : "")
+                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant"))
             );
         }
 
@@ -143,8 +161,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("tenant"),
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
-                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
-                    (String) (map.get("tenantRootDomain") != null ? map.get("tenantRootDomain") : "")
+                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant"))
             );
         }
 
@@ -152,8 +169,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 authentication.getName(),
                 "",
                 authentication.getName(),
-                authentication.getName(),
-                ""
+                authentication.getName()
         );
     }
 
@@ -161,7 +177,6 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             String tenant,
             String holderHash,
             String clientId,
-            String tenantSlug,
-            String tenantRootDomain
+            String tenantSlug
     ) {}
 }

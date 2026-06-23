@@ -33,55 +33,60 @@ class SsoSessionConcurrencyIT {
     @Mock private HashingService hashingService;
     @Mock private Clock clock;
 
-    private final ExecutorService executor = Executors.newFixedThreadPool(2);
-
     @Test
     void shouldKeepOnlyOneActiveSession_whenTwoEstablishRunConcurrently() throws Exception {
 
-        String tenant = "tenant-a";
-        String holderHash = "holder-xyz";
+        ExecutorService executor = Executors.newFixedThreadPool(2);
 
-        // GIVEN config activa
-        TenantSsoConfig config = mock(TenantSsoConfig.class);
-        when(config.ssoEnabled()).thenReturn(Boolean.TRUE);
+        try {
+            String tenant = "tenant-a";
+            String holderHash = "holder-xyz";
 
-        when(tenantSsoConfigPort.getByTenant(tenant))
-                .thenReturn(Optional.of(config));
+            // GIVEN config activa
+            TenantSsoConfig config = mock(TenantSsoConfig.class);
+            when(config.ssoEnabled()).thenReturn(Boolean.TRUE);
 
-        when(hashingService.sha256(anyString()))
-                .thenReturn("hashed-value");
+            when(tenantSsoConfigPort.getByTenant(tenant))
+                    .thenReturn(Optional.of(config));
 
-        when(sessionRepositoryPort.save(any()))
-                .thenAnswer(inv -> inv.getArgument(0));
+            when(hashingService.sha256(anyString()))
+                    .thenReturn("hashed-value");
 
-        CountDownLatch startLatch = new CountDownLatch(1);
+            when(sessionRepositoryPort.save(any()))
+                    .thenAnswer(inv -> inv.getArgument(0));
 
-        SsoSessionCommand c1 = new SsoSessionCommand(tenant, holderHash, "client", "c1");
-        SsoSessionCommand c2 = new SsoSessionCommand(tenant, holderHash, "client", "c2");
+            CountDownLatch startLatch = new CountDownLatch(1);
 
-        Future<?> f1 = executor.submit(() -> {
-            startLatch.await();
-            workflow.execute(c1);
-            return null;
-        });
+            SsoSessionCommand c1 = new SsoSessionCommand(tenant, holderHash, "client", "c1");
+            SsoSessionCommand c2 = new SsoSessionCommand(tenant, holderHash, "client", "c2");
 
-        Future<?> f2 = executor.submit(() -> {
-            startLatch.await();
-            workflow.execute(c2);
-            return null;
-        });
+            Future<?> f1 = executor.submit(() -> {
+                startLatch.await();
+                workflow.execute(c1);
+                return null;
+            });
 
-        // WHEN
-        startLatch.countDown();
+            Future<?> f2 = executor.submit(() -> {
+                startLatch.await();
+                workflow.execute(c2);
+                return null;
+            });
 
-        // asegurar que ambas terminan sin error
-        f1.get(10, TimeUnit.SECONDS);
-        f2.get(10, TimeUnit.SECONDS);
+            // WHEN
+            startLatch.countDown();
 
-        // THEN (invariante EC-02)
-        verify(sessionRepositoryPort, atMost(2))
-                .supersedeActive(eq(tenant), anyString());
+            // asegurar que ambas terminan sin error
+            f1.get(10, TimeUnit.SECONDS);
+            f2.get(10, TimeUnit.SECONDS);
 
-        verify(sessionRepositoryPort, times(2)).save(any());
+            // THEN (invariante EC-02)
+            verify(sessionRepositoryPort, atMost(2))
+                    .supersedeActive(eq(tenant), anyString());
+
+            verify(sessionRepositoryPort, times(2)).save(any());
+
+        } finally {
+            executor.shutdownNow();
+        }
     }
 }

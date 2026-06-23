@@ -2,6 +2,7 @@ package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.config.TimeConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -88,7 +89,8 @@ class EstablishSsoSessionIT {
     @MockitoBean private SsoAuditPort auditPort;
     @MockitoBean private TenantSsoConfigPort tenantSsoConfigPort;
     @MockitoBean private HashingService hashingService;
-    @MockitoBean private Clock clock;
+    // Clock eliminado: @Import(TimeConfig.class) ya provee un Clock real.
+    // Un mock sin stubbear provoca NPE en Instant.now(clock).
     @MockitoBean
     StateStore stateStore;
     @MockitoBean
@@ -113,27 +115,6 @@ class EstablishSsoSessionIT {
     }
 
     // =========================================================
-    // Helper VP válido/inválido
-    // =========================================================
-    private String validVp() {
-        return """
-        {
-          "vp": "valid-vp",
-          "tenant": "tenant-a"
-        }
-        """;
-    }
-
-    private String invalidVp() {
-        return """
-        {
-          "vp": "invalid-vp",
-          "tenant": "tenant-a"
-        }
-        """;
-    }
-
-    // =========================================================
     // AC-01 + AC-03: happy path
     // =========================================================
     @Test
@@ -149,7 +130,7 @@ class EstablishSsoSessionIT {
                 .thenReturn(Optional.of(config));
 
         // -------------------------
-        // WORKFLOW MOCK (FIX CRÍTICO)
+        // WORKFLOW MOCK
         // -------------------------
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor =
                 mock(EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor.class);
@@ -193,7 +174,6 @@ class EstablishSsoSessionIT {
         principal.put("holderHash", "hash");
         principal.put("clientId", "client-id");
         principal.put("tenantSlug", "tenant-a");
-        principal.put("tenantRootDomain", "example.com");
 
         UsernamePasswordAuthenticationToken auth =
                 new UsernamePasswordAuthenticationToken(
@@ -208,6 +188,9 @@ class EstablishSsoSessionIT {
         // CALL
         // -------------------------
         mockMvc.perform(post("/oid4vp/auth-response")
+                        // TENANT_ATTRIBUTE necesario: buildSsoAuthentication() usa TenantDomainFilter.getCurrentTenant()
+                        // para construir el tenantSlug de la cookie. Sin él, la cookie queda como "__Secure-sso-".
+                        .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .principal(auth)
                         .param("state", "test-state")
                         .param("vp_token", "dummy-vp-token")
@@ -220,21 +203,24 @@ class EstablishSsoSessionIT {
                 """))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/"))
-                .andExpect(cookie().exists("__Secure-sso-"));
+                .andExpect(cookie().exists("__Secure-sso-tenant-a"));
 
         verify(establishSsoSessionWorkflow).execute(any());
     }
 
     // =========================================================
-    // AC-04: tenant legacy sso.enabled=false => no cookie
+    // AC-04: tenant legacy sso.enabled=false => no cookie, OID4VP redirect intacto
     // =========================================================
     @Test
     void legacyTenant_doesNotSetCookie() throws Exception {
 
+        // SsoConfigInconsistentException es capturada en el handler sin re-lanzarse,
+        // por lo que el flujo OID4VP completa con redirect (sin cookie SSO).
         when(establishSsoSessionWorkflow.execute(any()))
                 .thenThrow(new SsoConfigInconsistentException("invalid config"));
 
         mockMvc.perform(post("/oid4vp/auth-response")
+                        .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "legacy-tenant")
                         .principal(() -> "legacy-tenant")
                         .param("state", "test-state")
                         .param("vp_token", "dummy-vp-token"))
@@ -247,7 +233,6 @@ class EstablishSsoSessionIT {
         );
 
         assertThat(count).isEqualTo(0);
-
     }
 
     // =========================================================

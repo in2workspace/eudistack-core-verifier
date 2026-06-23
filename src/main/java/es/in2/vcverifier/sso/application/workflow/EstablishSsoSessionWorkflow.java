@@ -1,17 +1,17 @@
 package es.in2.vcverifier.sso.application.workflow;
 
-import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
-import es.in2.vcverifier.sso.domain.exception.SsoSessionRepositoryException;
-import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
+import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
-import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -64,9 +64,7 @@ public class EstablishSsoSessionWorkflow {
                     Instant.now(clock)
             ));
 
-            log.info("TENANT CONFIG RAW = {}", configOpt);
-            log.info("AVAILABLE TENANTS = {}", configOpt.map(TenantSsoConfig::tenant));
-            throw new SsoSessionRepositoryException("SSO disabled for tenant " + command.tenant());
+            throw new SsoConfigInconsistentException("SSO disabled for tenant " + command.tenant());
         }
 
         String holderHash = hashingService.sha256(command.sub());

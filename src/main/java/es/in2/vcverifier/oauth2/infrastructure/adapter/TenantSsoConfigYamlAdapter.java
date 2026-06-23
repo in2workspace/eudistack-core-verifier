@@ -53,7 +53,10 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
 
     @Override
     public Optional<TenantSsoConfig> getByTenant(String tenant) {
-        return Optional.ofNullable(cache.get().get(tenant));
+        // Normalización a lowercase para ser consistente con TenantDomainFilter
+        // y evitar fallos con entradas YAML en mixedCase (e.g. "sandboxDos").
+        if (tenant == null) return Optional.empty();
+        return Optional.ofNullable(cache.get().get(tenant.toLowerCase()));
     }
 
 
@@ -65,8 +68,9 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
 
         for (var t : yaml.tenants()) {
 
-            // Variables cargadas con los valores del sso-config.yaml
-            String tenant = t.tenant();
+            // Normalizamos el tenant a lowercase al cachear, para que las claves
+            // sean consistentes con la normalización de TenantDomainFilter.
+            String tenant = t.tenant() != null ? t.tenant().toLowerCase() : null;
             String rootDomain = t.rootDomain();
             boolean enabled = t.ssoEnabled();
 
@@ -90,14 +94,12 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                         )
                 ));
 
-                // Informamos del error por consola.
                 log.error("event=sso_config_inconsistent tenant={} host={} correlation_id={}", tenant, rootDomain,
                         UUID.randomUUID());
 
                 continue;
             }
 
-            // Devolvemos el resultado
             result.put(tenant, new TenantSsoConfig(tenant, rootDomain, enabled,
                     new TenantSsoConfig.SsoTtlConfig(
                             absoluteTtl,

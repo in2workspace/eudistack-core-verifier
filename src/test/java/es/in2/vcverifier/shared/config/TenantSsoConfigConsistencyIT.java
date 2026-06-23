@@ -75,7 +75,7 @@ public class TenantSsoConfigConsistencyIT {
 
 
 
-    @DisplayName("Verifica que una config con sso.enabled: true pero sin rootDomain resulta SSO no habilitado")
+    @DisplayName("SSO se deshabilita cuando ssoEnabled=true pero falta rootDomain")
     @Test
     void shouldDisableSsoWhenRootDomainIsMissing() {
 

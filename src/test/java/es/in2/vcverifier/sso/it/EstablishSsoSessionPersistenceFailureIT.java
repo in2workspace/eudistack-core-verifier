@@ -86,6 +86,7 @@ class EstablishSsoSessionPersistenceFailureIT {
         ));
 
         verify(repository).supersedeActive(eq("tenant-a"), any());
+        verify(repository).save(any());
 
         verifyNoMoreInteractions(repository);
 

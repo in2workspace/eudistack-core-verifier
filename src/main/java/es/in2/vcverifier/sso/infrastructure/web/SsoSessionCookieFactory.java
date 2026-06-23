@@ -38,17 +38,22 @@ public class SsoSessionCookieFactory {
             Duration ttl,
             String sessionId
     ) {
-
         String cookieName = "__Secure-sso-" + tenantSlug;
 
-        return ResponseCookie.from(cookieName, sessionId)
+        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(cookieName, sessionId)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Lax")
-                .domain(tenantRootDomain)
                 .path("/")
-                .maxAge(ttl)
-                .build();
+                .maxAge(ttl);
+
+        // Solo se establece el dominio si tenantRootDomain no está vacío,
+        // ya que pasar un dominio en blanco produce una cookie inválida.
+        if (tenantRootDomain != null && !tenantRootDomain.isBlank()) {
+            builder = builder.domain(tenantRootDomain);
+        }
+
+        return builder.build();
     }
 
 
