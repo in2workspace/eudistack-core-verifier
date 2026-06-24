@@ -2,11 +2,15 @@ tenants:
   - tenant: "sandbox"
     rootDomain: "sandbox.example.com"
     ssoEnabled: true
+    eligibleClients:
+      - "verifier-client"
 
   - tenant: "sandboxDos"
     rootDomain: ""
-    ssoEnabled: false
+    ssoEnabled: true
+    eligibleClients: []
 
   - tenant: "sandboxTres"
     rootDomain: ""
     ssoEnabled: false
+    eligibleClients: []

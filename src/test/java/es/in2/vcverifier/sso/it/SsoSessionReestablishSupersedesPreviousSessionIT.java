@@ -86,14 +86,15 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     @BeforeEach
     void clean() {
         jdbcTemplate.execute("""
-        CREATE TABLE IF NOT EXISTS sso_session (
-            id UUID PRIMARY KEY,
-            tenant TEXT NOT NULL,
-            holder_hash TEXT NOT NULL,
-            established_at TIMESTAMPTZ NOT NULL,
-            expires_at TIMESTAMPTZ NOT NULL,
-            state VARCHAR(32) NOT NULL
-        )
+            CREATE TABLE IF NOT EXISTS sso_session (
+                 id UUID PRIMARY KEY,
+                 tenant TEXT NOT NULL,
+                 holder_hash TEXT NOT NULL,
+                 established_at TIMESTAMPTZ NOT NULL,
+                 expires_at TIMESTAMPTZ NOT NULL,
+                 last_used_at TIMESTAMPTZ NOT NULL,
+                 state VARCHAR(32) NOT NULL
+             )
         """);
 
         jdbcTemplate.execute("DELETE FROM sso_session");
@@ -115,7 +116,8 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                                 new es.in2.vcverifier.shared.domain.model.TenantSsoConfig.SsoTtlConfig(
                                         Duration.ofHours(8),
                                         Duration.ofHours(1)
-                                )
+                                ),
+                                java.util.List.of()
                         )
                 ));
 

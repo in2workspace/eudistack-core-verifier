@@ -4,8 +4,10 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import java.time.Instant;
 
+import lombok.Builder;
 @AllArgsConstructor
 @Data
+@Builder
 public class SsoAuditEvent {
 
 
@@ -14,7 +16,8 @@ public class SsoAuditEvent {
         SSO_ESTABLISH_FAILED,
         SSO_PERSIST_ERROR,
         SSO_CONFIG_INCONSISTENT,
-        SSO_CROSS_TENANT_ATTEMPT
+        SSO_CROSS_TENANT_ATTEMPT,
+        SSO_SESSION_REUSED,
     }
 
     private final EventType eventType;

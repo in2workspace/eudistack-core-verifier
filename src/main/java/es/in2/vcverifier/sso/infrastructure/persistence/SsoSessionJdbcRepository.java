@@ -96,8 +96,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
         String insertSql = """
             INSERT INTO sso_session
-            (id, tenant, holder_hash, established_at, expires_at, state)
-            VALUES (?, ?, ?, ?, ?, ?)
+             (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
         """;
 
         try (Connection c = dataSource.getConnection()) {
@@ -111,7 +111,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 ps.setString(3, session.getHolderHash());
                 ps.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
                 ps.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
-                ps.setString(6, session.getState().name());
+                ps.setObject(6, session.getLastUsedAt().atOffset(ZoneOffset.UTC));
+                ps.setString(7, session.getState().name());
 
                 ps.executeUpdate();
                 recordSuccess();
@@ -129,7 +130,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                         ps2.setString(3, session.getHolderHash());
                         ps2.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
                         ps2.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
-                        ps2.setString(6, session.getState().name());
+                        ps2.setObject(6, session.getLastUsedAt().atOffset(ZoneOffset.UTC));
+                        ps2.setString(7, session.getState().name());
 
                         ps2.executeUpdate();
                         recordSuccess();
@@ -152,7 +154,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-        SELECT id, tenant, holder_hash, established_at, expires_at, state
+        SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state
         FROM sso_session
         WHERE tenant = ?
           AND holder_hash = ?
@@ -195,7 +197,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-            SELECT id, tenant, holder_hash, established_at, expires_at, state
+            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state
             FROM sso_session
             WHERE id = ?
               AND tenant = ?
@@ -243,6 +245,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             SET last_used_at = ?
             WHERE id = ?
               AND tenant = ?
+              AND state = 'ACTIVE'
         """;
 
         try (Connection c = dataSource.getConnection()) {
@@ -321,11 +324,20 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         Instant established = rs.getObject("established_at", OffsetDateTime.class).toInstant();
         Instant expires = rs.getObject("expires_at", OffsetDateTime.class).toInstant();
         String state = rs.getString("state");
+        OffsetDateTime lastUsedAtDb = rs.getObject("last_used_at", OffsetDateTime.class);
+        Instant lastUsedAt = (lastUsedAtDb != null)
+                ? lastUsedAtDb.toInstant()
+                : established;
 
         try {
             Constructor<SsoSession> ctor = SsoSession.class.getDeclaredConstructor(
-                    SsoSessionId.class, String.class, String.class,
-                    Instant.class, Instant.class, SsoSessionState.class
+                    SsoSessionId.class,
+                    String.class,
+                    String.class,
+                    Instant.class,
+                    Instant.class,
+                    Instant.class,
+                    SsoSessionState.class
             );
 
             ctor.setAccessible(true);
@@ -336,6 +348,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                     holderHash,
                     established,
                     expires,
+                    lastUsedAt,
                     SsoSessionState.valueOf(state)
             );
 

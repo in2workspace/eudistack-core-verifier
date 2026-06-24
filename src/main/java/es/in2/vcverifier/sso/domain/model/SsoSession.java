@@ -16,7 +16,7 @@ public class SsoSession {
     private final Instant establishedAt;
     private final Instant expiresAt;
 
-    // NUEVO: control de idle timeout
+    // control de idle timeout
     private Instant lastUsedAt;
 
     private SsoSessionState state;

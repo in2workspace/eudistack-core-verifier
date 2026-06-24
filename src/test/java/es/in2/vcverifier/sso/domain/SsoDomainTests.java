@@ -6,8 +6,10 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionState;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.infrastructure.audit.SsoAuditAdapter;
 import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
+import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -22,7 +24,6 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class SsoDomainTests {
-
 
     @Test
     void SsoSession_establish_setsActiveStateAndExpiry() {
@@ -94,14 +95,7 @@ public class SsoDomainTests {
         when(dataSource.getConnection())
                 .thenReturn(connection);
 
-        when(connection.prepareStatement(startsWith("SET LOCAL search_path")))
-                .thenReturn(searchPathStatement);
-
-        when(connection.prepareStatement(startsWith("SET LOCAL statement_timeout")))
-                .thenReturn(timeoutStatement);
-
-        when(connection.prepareStatement(
-                startsWith("SELECT id, tenant, holder_hash")))
+        when(connection.prepareStatement(anyString()))
                 .thenReturn(queryStatement);
 
         when(queryStatement.executeQuery())
