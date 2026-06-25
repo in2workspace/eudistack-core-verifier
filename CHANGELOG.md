@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - US-01: Custom domain operativo per tenant en el Verifier IdP
 - US-02: Sesión SSO establecida tras presentación OID4VP exitosa
 
+### Fixed - 2026-06-25
+
+- **EUDISTACK-547 F1**: Session id changed from UUID (122 bits) to SecureRandom 32-byte base64url (256 bits, 43 chars). DB column `sso_session.id` changed from `UUID` to `TEXT`. Dead code `generateOpaqueSessionId()` removed from `SsoSessionCookieFactory`.
+- **EUDISTACK-547 F2+F3**: `SsoSessionJdbcRepository.establishAtomically()` — supersede UPDATE + INSERT in a single explicit JDBC transaction (`setAutoCommit(false)`). `SET LOCAL search_path` properly quoted and executed before each SQL statement so tenant schema routing is sustained. Fixes cross-tenant data leak and race condition on concurrent establishment.
+- **EUDISTACK-547 F4**: `SsoAuditAdapter` now persists events to `sso_audit_event` table (write-once, PostgreSQL trigger enforced). `session_id_prefix` column added (only first 8 chars of session id — NFR-S-547-02). PK uses `DEFAULT gen_random_uuid()`. Removed `maskSubject` using `String.hashCode()` (non-cryptographic).
+- **EUDISTACK-547 F5**: SSO session now bound to cryptographically verified holder subject. `AuthorizationResponseProcessorServiceImpl` caches the verified `sub` keyed by `state` after signature verification. `Oid4vpController` reads it once; if absent, no session is established (fail-closed). Removed `extractSubFromVpToken()` raw base64 decode path (pre-verification).
+- **EUDISTACK-547 F6**: Migration files `V2__create_sso_audit_event.sql` and `V3__create_sso_session.sql` corrected in both `db/tenant/` and `src/test/resources/migration/`. `TenantSchemaFlywayMigrator` deferred to Tech Debt.
+
 ### Fixed - 2026-06-22
 
 - **SD-JWT credential types missing from dispatch catalogue**: `learcredential.employee.sd.1`, `learcredential.machine.sd.1` and `doctorid.sd.1` were absent from the `verifier.dispatch.rules` introduced in eba0126 (PR #31). Any wallet presenting an SD-JWT VC received `UnknownCredentialFormatException → HTTP 400` after full JWT + KB-JWT + status-list verification had already passed. Added the three SD-JWT config IDs to the `bumped` rule set. `FlagDefaultsTest` updated to assert the new catalogue sizes (6 legacy / 6 bumped / 12 total) and verify the SD-JWT entries explicitly.
