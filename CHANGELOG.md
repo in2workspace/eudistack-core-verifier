@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+
 ### Added
 - **EUDISTACK-546**: 2026-06-22
 - US-01: Custom domain operativo per tenant en el Verifier IdP
@@ -21,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EUDISTACK-547 F6**: Migration files `V2__create_sso_audit_event.sql` and `V3__create_sso_session.sql` corrected in both `db/tenant/` and `src/test/resources/migration/`. `TenantSchemaFlywayMigrator` deferred to Tech Debt.
 - **EUDISTACK-547 F-C1+F-C2**: Removed duplicate `SSO_SESSION_ESTABLISHED` / `SSO_ESTABLISH_FAILED` audit emissions from `SsoSessionAuthenticationSuccessHandler`. These were passing the raw `sub` (not SHA-256 hash) to `SsoAuditAdapter.publish()` and persisting it to `sso_audit_event.holder_hash` in clear — violating NFR-S-547-01. `EstablishSsoSessionWorkflow` is the sole source of audit events; it always hashes the subject via `HashingService.sha256()` before storing. `SsoAuditPort` removed from `SsoSessionAuthenticationSuccessHandler` constructor.
 - **EUDISTACK-547 B1**: `V2__create_sso_audit_event.sql` write-once trigger `DO` block — `pg_proc` and `pg_trigger` existence checks now scope by `current_schema()` (join `pg_namespace WHERE nspname = current_schema()`). Previous catalog-wide check caused all tenant schemas after the first to skip function/trigger creation, leaving their `sso_audit_event` tables without write-once protection.
+
+### Added - 2026-06-22
+
+- **DOME legacy `PlainListEntity` revocation skip**: `VpServiceImpl.validateCredentialNotRevoked` short-circuits to `not revoked` (WARN log) when `credentialStatus.type == "PlainListEntity"`. Resolves the previous `Unsupported credentialStatus.type` exception that broke OID4VP login for DOME legacy credentials, whose revocation lists are plain JSON arrays of `{ "nonce": "<id>" }` (no JWT, no signature) and not exposed by any existing `CredentialStatusVerifier` strategy. Intentional during the DOME legacy sunset window; inline `TODO` captures the open decision (migrate legacy to `BitstringStatusListEntry` vs implement a real `PlainListEntityVerifier` adapter).
+
+### Changed - 2026-06-18
+- Upgraded `org.bouncycastle:bcprov-jdk18on` from `1.80` to `1.84`. 
+- Upgraded `org.bouncycastle:bcpkix-jdk18on` from `1.80` to `1.84`.
+- Removed explicit version pin from `jackson-dataformat-yaml` to use the Spring Boot managed BOM version.
+
 
 ### Fixed - 2026-06-22
 
