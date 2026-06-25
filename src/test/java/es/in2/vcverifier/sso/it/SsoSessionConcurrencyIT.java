@@ -51,7 +51,7 @@ class SsoSessionConcurrencyIT {
         when(hashingService.sha256(anyString()))
                 .thenReturn("hashed-value");
 
-        when(sessionRepositoryPort.save(any()))
+        when(sessionRepositoryPort.establishAtomically(any()))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         CountDownLatch startLatch = new CountDownLatch(1);
@@ -79,9 +79,6 @@ class SsoSessionConcurrencyIT {
         f2.get(10, TimeUnit.SECONDS);
 
         // THEN (invariante EC-02)
-        verify(sessionRepositoryPort, atMost(2))
-                .supersedeActive(eq(tenant), anyString());
-
-        verify(sessionRepositoryPort, times(2)).save(any());
+        verify(sessionRepositoryPort, times(2)).establishAtomically(any());
     }
 }

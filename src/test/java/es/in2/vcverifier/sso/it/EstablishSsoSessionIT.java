@@ -86,6 +86,7 @@ class EstablishSsoSessionIT {
     SsoSessionAuthenticationSuccessHandler handler;
 
     @MockitoBean private SsoAuditPort auditPort;
+    @MockitoBean private CacheStore<String> verifiedSubjectByState;
     @MockitoBean private TenantSsoConfigPort tenantSsoConfigPort;
     @MockitoBean private HashingService hashingService;
     @MockitoBean private Clock clock;
@@ -185,6 +186,8 @@ class EstablishSsoSessionIT {
         doNothing().when(authorizationResponseProcessorService)
                 .handleAuthResponse(anyString(), anyString());
 
+        when(verifiedSubjectByState.get("test-state")).thenReturn("did:key:holdertest");
+
         // -------------------------
         // PRINCIPAL
         // -------------------------
@@ -233,6 +236,8 @@ class EstablishSsoSessionIT {
 
         when(establishSsoSessionWorkflow.execute(any()))
                 .thenThrow(new SsoConfigInconsistentException("invalid config"));
+
+        when(verifiedSubjectByState.get("test-state")).thenReturn("did:key:legacyholder");
 
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "legacy-tenant")

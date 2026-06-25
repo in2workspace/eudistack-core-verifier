@@ -8,9 +8,9 @@ import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessH
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class Oid4vpControllerTest {
 
-    @InjectMocks
+    // Explicit construction avoids @InjectMocks confusion between two CacheStore<?> mocks
     private Oid4vpController oid4vpController;
 
     @Mock
@@ -38,14 +38,24 @@ class Oid4vpControllerTest {
     private SsoAuditPort ssoAuditPort;
 
     @Mock
+    private CacheStore<String> verifiedSubjectByState;
+
+    @Mock
     private HttpServletRequest request;
 
     @Mock
     private HttpServletResponse response;
 
-
-
-
+    @BeforeEach
+    void setUp() {
+        oid4vpController = new Oid4vpController(
+                cacheStoreForAuthorizationRequestJWT,
+                authorizationResponseProcessorService,
+                ssoSessionHandler,
+                ssoAuditPort,
+                verifiedSubjectByState
+        );
+    }
 
     @Test
     void getAuthorizationRequest_validId_shouldReturnJwt() {
@@ -80,6 +90,8 @@ class Oid4vpControllerTest {
     void handleAuthResponse_validParameters_shouldInvokeService() throws Exception {
         String state = "validState";
         String vpToken = "validVpToken";
+
+        when(verifiedSubjectByState.get(state)).thenReturn("did:key:holdertest");
 
         oid4vpController.handleAuthResponse(state, vpToken, request, response);
 

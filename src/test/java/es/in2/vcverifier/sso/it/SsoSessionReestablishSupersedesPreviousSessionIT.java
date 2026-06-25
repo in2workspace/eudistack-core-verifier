@@ -82,13 +82,14 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     @MockitoBean
     CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
     @MockitoBean AuthorizationResponseProcessorService authorizationResponseProcessorService;
+    @MockitoBean CacheStore<String> verifiedSubjectByState;
     @Autowired SsoSessionRepositoryPort sessionRepositoryPort;
 
     @BeforeEach
     void clean() {
         jdbcTemplate.execute("""
         CREATE TABLE IF NOT EXISTS sso_session (
-            id UUID PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             tenant TEXT NOT NULL,
             holder_hash TEXT NOT NULL,
             established_at TIMESTAMPTZ NOT NULL,
@@ -125,6 +126,9 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
         // -----------------------------
         when(hashingService.sha256(any()))
                 .thenReturn("hashed-user");
+
+        when(verifiedSubjectByState.get("test-state")).thenReturn("did:key:holder");
+        when(verifiedSubjectByState.get("test-state-2")).thenReturn("did:key:holder");
 
         // -----------------------------
         // 3. PRIMERA PETICIÓN

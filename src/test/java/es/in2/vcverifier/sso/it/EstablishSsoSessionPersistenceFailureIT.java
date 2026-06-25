@@ -68,14 +68,12 @@ class EstablishSsoSessionPersistenceFailureIT {
 
         when(hashingService.sha256(any())).thenReturn("hash-123");
 
-        // fallo SOLO en save (no en supersedeActive)
-        doNothing().when(repository).supersedeActive(any(), any());
+        // fallo en establishAtomically (atomically supersede+insert)
         doThrow(new RuntimeException("DB down"))
-                .when(repository).save(any());
+                .when(repository).establishAtomically(any());
 
         // WHEN
         var result = assertDoesNotThrow(() -> workflow.execute(command));
-
 
         // THEN
         assertNull(result, "No debe emitirse cookie en fallo de persistencia.");
@@ -85,13 +83,8 @@ class EstablishSsoSessionPersistenceFailureIT {
                         event.getTenant().equals("tenant-a")
         ));
 
-        verify(repository).supersedeActive(eq("tenant-a"), any());
+        verify(repository).establishAtomically(any());
 
         verifyNoMoreInteractions(repository);
-
-        verify(auditPort).publish(argThat(e ->
-                e.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR &&
-                        e.getTenant().equals("tenant-a")
-        ));
     }
 }

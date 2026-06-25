@@ -130,9 +130,11 @@ public class SsoDomainTests {
     }
 
     @Test
-    void SsoAuditAdapter_emit_structuresEventWithoutPlainSub() {
+    void SsoAuditAdapter_emit_structuresEventWithoutPlainSub() throws Exception {
 
-        SsoAuditPort adapter = new SsoAuditAdapter();
+        DataSource mockDataSource = mock(DataSource.class);
+        doThrow(new java.sql.SQLException("test-no-db")).when(mockDataSource).getConnection();
+        SsoAuditPort adapter = new SsoAuditAdapter(mockDataSource);
 
         SsoAuditEvent event =
                 new SsoAuditEvent(
@@ -142,7 +144,8 @@ public class SsoDomainTests {
                         "real-subject-value",
                         "SUCCESS",
                         "corr-123",
-                        Instant.now()
+                        Instant.now(),
+                        null
                 );
 
         /*

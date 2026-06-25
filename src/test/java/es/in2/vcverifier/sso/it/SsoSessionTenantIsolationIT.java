@@ -111,7 +111,8 @@ class SsoSessionTenantIsolationIT {
                                     null,
                                     "CROSS_TENANT",
                                     UUID.randomUUID().toString(),
-                                    java.time.Instant.now()
+                                    java.time.Instant.now(),
+                                    null
                             ));
 
                             return org.springframework.http.ResponseEntity

@@ -85,6 +85,9 @@ class AuthorizationResponseProcessorServiceImplTest {
     private CredentialSchemaDispatcher credentialSchemaDispatcher;
 
     @Mock
+    private CacheStore<String> verifiedSubjectByState;
+
+    @Mock
     private AuthorizationResponseProcessorServiceImpl authorizationResponseProcessorService;
 
     @BeforeEach
@@ -101,6 +104,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 backendConfig,
                 cacheForNonceByState,
                 cryptoComponent,
+                verifiedSubjectByState,
                 java.util.List.of(),
                 credentialSchemaDispatcher
         );
