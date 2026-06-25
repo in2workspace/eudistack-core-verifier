@@ -4,6 +4,7 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.exception.SsoSessionRepositoryException;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
@@ -53,7 +54,6 @@ public class EstablishSsoSessionWorkflow {
         var configOpt = tenantSsoConfigPort.getByTenant(command.tenant());
 
         if (configOpt.isEmpty() || !configOpt.get().ssoEnabled()) {
-
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT,
                     command.tenant(),
@@ -61,34 +61,21 @@ public class EstablishSsoSessionWorkflow {
                     null,
                     "SSO disabled",
                     command.correlationId(),
-                    Instant.now(clock)
+                    Instant.now(clock),
+                    null
             ));
-
-            log.info("TENANT CONFIG RAW = {}", configOpt);
-            log.info("AVAILABLE TENANTS = {}", configOpt.map(TenantSsoConfig::tenant));
-            throw new SsoSessionRepositoryException("SSO disabled for tenant " + command.tenant());
+            throw new SsoConfigInconsistentException("SSO not enabled for tenant " + command.tenant());
         }
 
         String holderHash = hashingService.sha256(command.sub());
-
         Instant now = Instant.now(clock);
         SsoSession session;
 
         try {
-            sessionRepositoryPort.supersedeActive(command.tenant(), holderHash);
-
-            session = SsoSession.establish(
-                    command.tenant(),
-                    holderHash,
-                    DEFAULT_SESSION_TTL
-            );
-
-            sessionRepositoryPort.save(session);
-
+            session = SsoSession.establish(command.tenant(), holderHash, DEFAULT_SESSION_TTL);
+            sessionRepositoryPort.establishAtomically(session);
         } catch (Exception ex) {
-
             log.error("Error persisting SSO session for tenant={}", command.tenant(), ex);
-
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_PERSIST_ERROR,
                     command.tenant(),
@@ -96,11 +83,13 @@ public class EstablishSsoSessionWorkflow {
                     holderHash,
                     "PERSIST_ERROR",
                     command.correlationId(),
-                    Instant.now(clock)
+                    Instant.now(clock),
+                    null
             ));
-
             return null; // fail-closed
         }
+
+        String sessionIdPrefix = session.getId().getValue().substring(0, 8);
 
         auditPort.publish(new SsoAuditEvent(
                 SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
@@ -109,12 +98,13 @@ public class EstablishSsoSessionWorkflow {
                 holderHash,
                 "SUCCESS",
                 command.correlationId(),
-                now
+                now,
+                sessionIdPrefix
         ));
 
         return new SsoSessionCookieDescriptor(
                 "SSO_SESSION",
-                session.getId().getValue().toString(),
+                session.getId().getValue(),
                 session.getExpiresAt()
         );
     }

@@ -36,7 +36,8 @@ public class SsoSessionAuthenticationFailureHandler implements AuthenticationFai
                 null,
                 "FAILURE",
                 correlationId,
-                Instant.now()
+                Instant.now(),
+                null
         ));
 
         response.sendError(HttpServletResponse.SC_UNAUTHORIZED);

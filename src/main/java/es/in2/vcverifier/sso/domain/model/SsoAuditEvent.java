@@ -24,5 +24,7 @@ public class SsoAuditEvent {
     private final String outcome;
     private final String correlationId;
     private final Instant occurredAt;
+    /** NFR-S-547-02: first 8 chars of the session id, null when session was not created. */
+    private final String sessionIdPrefix;
 
 }

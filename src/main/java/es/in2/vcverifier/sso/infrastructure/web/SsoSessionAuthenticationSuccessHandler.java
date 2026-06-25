@@ -87,7 +87,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     vpData.holderHash(),
                     "SUCCESS",
                     correlationId,
-                    java.time.Instant.now()
+                    java.time.Instant.now(),
+                    null
             ));
 
         } catch (SsoConfigInconsistentException e) {
@@ -99,7 +100,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     vpData.holderHash(),
                     "FAILURE",
                     correlationId,
-                    java.time.Instant.now()
+                    java.time.Instant.now(),
+                    null
             ));
 
             throw e;
@@ -113,7 +115,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     vpData.holderHash(),
                     "FAILURE",
                     correlationId,
-                    java.time.Instant.now()
+                    java.time.Instant.now(),
+                    null
             ));
 
             throw e;

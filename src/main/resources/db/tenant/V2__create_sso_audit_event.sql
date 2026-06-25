@@ -2,14 +2,15 @@
 -- Write-once behaviour enforced with trigger that prevents UPDATE/DELETE.
 
 CREATE TABLE IF NOT EXISTS sso_audit_event (
-                                               id UUID PRIMARY KEY,
+                                               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                                                tenant TEXT NOT NULL,
                                                event_type TEXT NOT NULL,
                                                client_id TEXT,
                                                holder_hash TEXT,
                                                message TEXT,
                                                correlation_id TEXT,
-                                               occurred_at TIMESTAMPTZ NOT NULL
+                                               occurred_at TIMESTAMPTZ NOT NULL,
+                                               session_id_prefix TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sso_audit_event_tenant_occurred
