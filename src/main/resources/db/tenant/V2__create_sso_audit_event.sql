@@ -20,9 +20,10 @@ CREATE INDEX IF NOT EXISTS idx_sso_audit_event_tenant_occurred
 DO $do$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1
-        FROM pg_proc
-        WHERE proname = 'sso_audit_prevent_mods'
+        SELECT 1 FROM pg_proc p
+        JOIN pg_namespace n ON p.pronamespace = n.oid
+        WHERE p.proname = 'sso_audit_prevent_mods'
+          AND n.nspname = current_schema()
     ) THEN
 
 CREATE FUNCTION sso_audit_prevent_mods()
@@ -37,9 +38,11 @@ END;
 END IF;
 
     IF NOT EXISTS (
-        SELECT 1
-        FROM pg_trigger
-        WHERE tgname = 'trg_sso_audit_prevent_mods'
+        SELECT 1 FROM pg_trigger t
+        JOIN pg_class c ON t.tgrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE t.tgname = 'trg_sso_audit_prevent_mods'
+          AND n.nspname = current_schema()
     ) THEN
 
 CREATE TRIGGER trg_sso_audit_prevent_mods

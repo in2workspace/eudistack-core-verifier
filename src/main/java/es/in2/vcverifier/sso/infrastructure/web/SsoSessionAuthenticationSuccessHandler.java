@@ -3,9 +3,6 @@ package es.in2.vcverifier.sso.infrastructure.web;
 
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
-import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
-import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
-import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -26,19 +23,16 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
     private final AuthenticationSuccessHandler oid4vpSuccessHandler;
     private final EstablishSsoSessionWorkflow establishSsoSessionWorkflow;
     private final SsoSessionCookieFactory cookieFactory;
-    private final SsoAuditPort auditPort;
 
 
     public SsoSessionAuthenticationSuccessHandler(
             @Lazy AuthenticationSuccessHandler oid4vpSuccessHandler,
             EstablishSsoSessionWorkflow establishSsoSessionWorkflow,
-            SsoSessionCookieFactory cookieFactory,
-            SsoAuditPort auditPort
+            SsoSessionCookieFactory cookieFactory
     ) {
         this.oid4vpSuccessHandler = oid4vpSuccessHandler;
         this.establishSsoSessionWorkflow = establishSsoSessionWorkflow;
         this.cookieFactory = cookieFactory;
-        this.auditPort = auditPort;
     }
 
     @Override
@@ -64,65 +58,20 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 correlationId
         );
 
-        try {
-            var sessionDescriptor = establishSsoSessionWorkflow.execute(command);
+        var sessionDescriptor = establishSsoSessionWorkflow.execute(command);
 
-            if (sessionDescriptor == null) {
-                throw new IllegalStateException("Session descriptor is null");
-            }
-
-            ResponseCookie cookie = cookieFactory.createCookie(
-                    vpData.tenantSlug(),
-                    vpData.tenantRootDomain(),
-                    Duration.between(java.time.Instant.now(), sessionDescriptor.expiresAt()),
-                    sessionDescriptor.value()
-            );
-
-            response.addHeader("Set-Cookie", cookie.toString());
-
-            auditPort.publish(new SsoAuditEvent(
-                    SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
-                    vpData.tenant(),
-                    vpData.clientId(),
-                    vpData.holderHash(),
-                    "SUCCESS",
-                    correlationId,
-                    java.time.Instant.now(),
-                    null
-            ));
-
-        } catch (SsoConfigInconsistentException e) {
-
-            auditPort.publish(new SsoAuditEvent(
-                    SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
-                    vpData.tenant(),
-                    vpData.clientId(),
-                    vpData.holderHash(),
-                    "FAILURE",
-                    correlationId,
-                    java.time.Instant.now(),
-                    null
-            ));
-
-            throw e;
-
-        } catch (Exception e) {
-
-            auditPort.publish(new SsoAuditEvent(
-                    SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
-                    vpData.tenant(),
-                    vpData.clientId(),
-                    vpData.holderHash(),
-                    "FAILURE",
-                    correlationId,
-                    java.time.Instant.now(),
-                    null
-            ));
-
-            throw e;
+        if (sessionDescriptor == null) {
+            throw new IllegalStateException("Session descriptor is null");
         }
 
+        ResponseCookie cookie = cookieFactory.createCookie(
+                vpData.tenantSlug(),
+                vpData.tenantRootDomain(),
+                Duration.between(java.time.Instant.now(), sessionDescriptor.expiresAt()),
+                sessionDescriptor.value()
+        );
 
+        response.addHeader("Set-Cookie", cookie.toString());
     }
 
     private VpData extractVpData(Authentication authentication) {
