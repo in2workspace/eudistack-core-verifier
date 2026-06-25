@@ -1,22 +1,29 @@
 package es.in2.vcverifier.sso.domain.model;
 
 import java.io.Serializable;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Objects;
-import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
- * Value Object que representa el identificador opaco de SsoSession
+ * Value Object que representa el identificador opaco de SsoSession.
+ * AD-2: 256 bits de entropía, base64url sin padding (43 chars).
  */
 public final class SsoSessionId implements Serializable {
 
-    private final UUID value;
+    // base64url charset: A-Z a-z 0-9 - _
+    private static final Pattern BASE64URL_PATTERN = Pattern.compile("^[A-Za-z0-9_-]+$");
+    private static final int EXPECTED_BYTE_LENGTH = 32; // 256 bits
+    private static final int EXPECTED_STRING_LENGTH = 43; // ceil(32 * 4 / 3)
 
-    // =========================
-    // CONSTRUCTOR PRIVADO
-    // =========================
-    private SsoSessionId(UUID value) {
-        if (value == null) {
-            throw new IllegalArgumentException("SsoSessionId cannot be null");
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    private final String value;
+
+    private SsoSessionId(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("SsoSessionId cannot be null or blank");
         }
         this.value = value;
     }
@@ -25,35 +32,25 @@ public final class SsoSessionId implements Serializable {
     // FACTORY METHODS
     // =========================
 
-    /**
-     * Genera un nuevo ID (caso creación de aggregate)
-     */
+    /** Genera un nuevo ID con 256 bits de entropía (AD-2). */
     public static SsoSessionId generate() {
-        return new SsoSessionId(UUID.randomUUID());
+        byte[] bytes = new byte[EXPECTED_BYTE_LENGTH];
+        SECURE_RANDOM.nextBytes(bytes);
+        return new SsoSessionId(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
     }
 
-    /**
-     * Reconstrucción desde persistencia (DB, JSON, etc.)
-     */
-    public static SsoSessionId of(UUID value) {
-        return new SsoSessionId(value);
-    }
-
-    /**
-     * Si te viene como String (por ejemplo de API o DB legacy)
-     */
+    /** Reconstrucción desde persistencia. */
     public static SsoSessionId of(String value) {
-        try {
-            return new SsoSessionId(UUID.fromString(value));
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid SsoSessionId format: " + value, e);
+        if (value == null || value.length() != EXPECTED_STRING_LENGTH || !BASE64URL_PATTERN.matcher(value).matches()) {
+            throw new IllegalArgumentException("Invalid SsoSessionId format: " + value);
         }
+        return new SsoSessionId(value);
     }
 
     // =========================
     // GETTER
     // =========================
-    public UUID getValue() {
+    public String getValue() {
         return value;
     }
 
@@ -74,6 +71,6 @@ public final class SsoSessionId implements Serializable {
 
     @Override
     public String toString() {
-        return value.toString();
+        return value;
     }
 }
