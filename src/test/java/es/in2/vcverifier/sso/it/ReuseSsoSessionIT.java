@@ -6,7 +6,9 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
+import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
+import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +22,7 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -35,13 +38,14 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(
-        properties = {
-                "spring.flyway.enabled=false",
-                "verifier.backend.url=https://localhost",
-                "verifier.frontend.portalUrl=https://localhost"
-        }
-)
+@SpringBootTest(properties = {
+        "spring.flyway.enabled=false",
+        "verifier.backend.url=https://localhost",
+        "verifier.frontend.portalUrl=https://localhost",
+
+        // 🔥 clave para tests
+        "spring.security.oauth2.authorizationserver.endpoint.authorization-uri-validation=false"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(TestClientConfig.class)
@@ -68,6 +72,9 @@ class ReuseSsoSessionIT {
     @MockitoBean
     private es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler customErrorResponseHandler;
 
+    @MockitoBean
+    ClientRegistryProvider clientRegistryProvider;
+
 
     @BeforeEach
     void setupRegisteredClient() {
@@ -76,8 +83,11 @@ class ReuseSsoSessionIT {
                 .clientSecret("{noop}secret")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .redirectUri("https://localhost/callback")   // <-- https
+                .redirectUri("https://localhost/callback")
                 .scope(OidcScopes.OPENID)
+                .clientSettings(ClientSettings.builder()
+                        .setting("tenant", "tenantA")
+                        .build())
                 .build();
 
         when(registeredClientRepository.findByClientId("clientA")).thenReturn(client);
@@ -93,15 +103,62 @@ class ReuseSsoSessionIT {
     void should_reuse_session_and_redirect_when_allowed() throws Exception {
 
         String tenant = "tenantA";
-        String sessionId = "12345678-SESSION";
+        String sessionId = UUID.randomUUID().toString();
+        String redirectUri = "https://localhost/callback";
 
-        when(tenantSsoConfigPort.getByTenant(tenant))
+        when(tenantSsoConfigPort.getByTenant(anyString()))
                 .thenReturn(Optional.of(defaultConfig()));
 
         SsoSession session = mockSession(tenant, Instant.now());
 
-        when(sessionRepositoryPort.findActiveById(any(SsoSessionId.class), eq(tenant)))
+        when(sessionRepositoryPort.findActiveById(any(SsoSessionId.class), anyString()))
                 .thenReturn(Optional.of(session));
+
+        RegisteredClient client = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("clientA")
+                .clientSecret("{noop}secret")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(redirectUri)
+                .scope(OidcScopes.OPENID)
+                .clientSettings(ClientSettings.builder().build())
+                .build();
+
+        when(registeredClientRepository.findByClientId("clientA"))
+                .thenReturn(client);
+
+        mockMvc.perform(get("/oidc/authorize")
+                        .header("X-TENANT-ID", tenant) // 🔥 CAMBIO CLAVE
+                        .cookie(new Cookie("__Secure-sso-" + tenant, sessionId))
+                        .param("client_id", "clientA")
+                        .param("scope", "openid")
+                        .param("state", "xyz")
+                        .param("redirect_uri", redirectUri)
+                        .param("prompt", "none"))
+                .andExpect(status().is3xxRedirection());
+
+        verify(sessionRepositoryPort, atLeastOnce())
+                .findActiveById(any(SsoSessionId.class), anyString());
+
+        verify(tenantSsoConfigPort, atLeastOnce())
+                .getByTenant(anyString());
+
+        verify(registeredClientRepository, atLeastOnce()).findByClientId("clientA");
+    }
+
+    // =========================================================
+    // AC-02 NO SESSION → LOGIN_REQUIRED
+    // =========================================================
+    @Test
+    void should_redirect_to_login_when_no_session() throws Exception {
+
+        String tenant = "tenantA";
+        String sessionId = UUID.randomUUID().toString();
+
+        when(tenantSsoConfigPort.getByTenant(tenant))
+                .thenReturn(Optional.of(defaultConfig()));
+
+        when(sessionRepositoryPort.findActiveById(any(SsoSessionId.class), eq(tenant)))
+                .thenReturn(Optional.empty());
 
         mockMvc.perform(get("/oidc/authorize")
                         .cookie(new Cookie("__Secure-sso-" + tenant, sessionId))
@@ -117,42 +174,22 @@ class ReuseSsoSessionIT {
     }
 
     // =========================================================
-    // AC-02 NO SESSION → LOGIN_REQUIRED
-    // =========================================================
-    @Test
-    void should_redirect_to_login_when_no_session() throws Exception {
-
-        String tenant = "tenantA";
-
-        when(tenantSsoConfigPort.getByTenant(tenant))
-                .thenReturn(Optional.of(defaultConfig()));
-
-        when(sessionRepositoryPort.findActiveById(any(SsoSessionId.class), eq(tenant)))
-                .thenReturn(Optional.empty());
-
-        mockMvc.perform(get("/oidc/authorize")
-                        .cookie(new Cookie("__Secure-sso-" + tenant, "missing"))
-                        .param("client_id", "clientA")
-                        .param("scope", "openid")
-                        .param("state", "xyz")
-                        .param("redirect_uri", "http://localhost/callback")
-                        .param("prompt", "none"))
-                .andExpect(status().is3xxRedirection());
-    }
-
-    // =========================================================
     // AC-03 CLIENT NOT ELIGIBLE → INTERACTION_REQUIRED
     // =========================================================
     @Test
     void should_return_interaction_required_when_client_not_eligible() throws Exception {
 
         String tenant = "tenantA";
+        String sessionId = UUID.randomUUID().toString();
 
         TenantSsoConfig config = new TenantSsoConfig(
                 tenant,
                 "domain",
                 true,
-                new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)),
+                new TenantSsoConfig.SsoTtlConfig(
+                        Duration.ofHours(1),
+                        Duration.ofMinutes(10)
+                ),
                 List.of("other-client")
         );
 
@@ -165,11 +202,11 @@ class ReuseSsoSessionIT {
                 .thenReturn(Optional.of(session));
 
         mockMvc.perform(get("/oidc/authorize")
-                        .cookie(new Cookie("__Secure-sso-" + tenant, "123"))
+                        .cookie(new Cookie("__Secure-sso-" + tenant, sessionId))
                         .param("client_id", "clientA")
                         .param("scope", "openid")
                         .param("state", "xyz")
-                        .param("redirect_uri", "http://localhost/callback")
+                        .param("redirect_uri", "https://localhost/callback")
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
     }
@@ -182,20 +219,35 @@ class ReuseSsoSessionIT {
 
         String tenant = "tenantA";
 
-        when(tenantSsoConfigPort.getByTenant(tenant))
+        String sessionId = UUID.randomUUID().toString();
+
+        when(tenantSsoConfigPort.getByTenant(anyString()))
                 .thenReturn(Optional.of(defaultConfig()));
 
-        SsoSession expired = mockSession(tenant, Instant.now().minus(Duration.ofHours(10)));
+        SsoSession expired = mockSession(
+                tenant,
+                Instant.now().minus(Duration.ofHours(10))
+        );
 
-        when(sessionRepositoryPort.findActiveById(any(SsoSessionId.class), eq(tenant)))
+        when(sessionRepositoryPort.findActiveById(any(SsoSessionId.class), anyString()))
                 .thenReturn(Optional.of(expired));
 
+        RegisteredClient client = RegisteredClient.withId("clientA-id")
+                .clientId("clientA")
+                .clientSecret("secret")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://localhost/callback")
+                .build();
+
+        when(registeredClientRepository.findByClientId("clientA"))
+                .thenReturn(client);
+
         mockMvc.perform(get("/oidc/authorize")
-                        .cookie(new Cookie("__Secure-sso-" + tenant, "123"))
+                        .cookie(new Cookie("__Secure-sso-" + tenant, sessionId))
                         .param("client_id", "clientA")
                         .param("scope", "openid")
                         .param("state", "xyz")
-                        .param("redirect_uri", "http://localhost/callback")
+                        .param("redirect_uri", "https://localhost/callback")
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
     }
@@ -207,6 +259,7 @@ class ReuseSsoSessionIT {
     void should_fall_back_when_session_superseded() throws Exception {
 
         String tenant = "tenantA";
+        String sessionId = UUID.randomUUID().toString();
 
         when(tenantSsoConfigPort.getByTenant(tenant))
                 .thenReturn(Optional.of(defaultConfig()));
@@ -217,11 +270,11 @@ class ReuseSsoSessionIT {
                 .thenReturn(Optional.of(superseded));
 
         mockMvc.perform(get("/oidc/authorize")
-                        .cookie(new Cookie("__Secure-sso-" + tenant, "123"))
+                        .cookie(new Cookie("__Secure-sso-" + tenant, sessionId))
                         .param("client_id", "clientA")
                         .param("scope", "openid")
                         .param("state", "xyz")
-                        .param("redirect_uri", "http://localhost/callback")
+                        .param("redirect_uri", "https://localhost/callback")
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
     }
@@ -233,6 +286,7 @@ class ReuseSsoSessionIT {
     void should_fail_closed_when_repository_throws_exception() throws Exception {
 
         String tenant = "tenantA";
+        String sessionId = UUID.randomUUID().toString();
 
         when(tenantSsoConfigPort.getByTenant(tenant))
                 .thenReturn(Optional.of(defaultConfig()));
@@ -241,13 +295,16 @@ class ReuseSsoSessionIT {
                 .thenThrow(new RuntimeException("DB down"));
 
         mockMvc.perform(get("/oidc/authorize")
-                        .cookie(new Cookie("__Secure-sso-" + tenant, "123"))
+                        .cookie(new Cookie("__Secure-sso-" + tenant, sessionId))
                         .param("client_id", "clientA")
                         .param("scope", "openid")
                         .param("state", "xyz")
-                        .param("redirect_uri", "http://localhost/callback")
+                        .param("redirect_uri", "https://localhost/callback")
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
+
+        verify(sessionRepositoryPort, atLeastOnce())
+                .findActiveById(any(SsoSessionId.class), eq(tenant));
     }
 
     // =========================================================
@@ -263,7 +320,7 @@ class ReuseSsoSessionIT {
                         .param("client_id", "clientA")
                         .param("scope", "openid")
                         .param("state", "xyz")
-                        .param("redirect_uri", "http://localhost/callback")
+                        .param("redirect_uri", "https://localhost/callback")
                         .param("prompt", "login"))
                 .andExpect(status().is3xxRedirection());
     }
