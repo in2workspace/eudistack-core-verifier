@@ -70,6 +70,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final BackendConfig backendConfig;
     private final CacheStore<String> cacheForNonceByState;
     private final CryptoComponent cryptoComponent;
+    private final CacheStore<String> verifiedSubjectByState;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
     private final CredentialSchemaDispatcher credentialSchemaDispatcher;
 
@@ -154,6 +155,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                      | UnknownCredentialFormatException e) {
                 sseEmitterStore.sendValidationFailed(state, "FORMAT_GATED", e.getMessage());
                 throw e;
+            }
+
+            // F5: cache verified holder subject by state — consumed once by SSO session establishment
+            String verifiedSub = extractHolderSubject(credentialJson, resolvedVpToken);
+            if (verifiedSub != null && !verifiedSub.isBlank()) {
+                verifiedSubjectByState.add(state, verifiedSub);
             }
 
             // Generate a code (code)
@@ -257,6 +264,29 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
     }
 
+
+    private String extractHolderSubject(JsonNode credentialJson, String resolvedVpToken) {
+        // SD-JWT VC: sub is the holder-bound credential subject
+        if (credentialJson != null) {
+            JsonNode subNode = credentialJson.get("sub");
+            if (subNode != null && !subNode.isNull() && !subNode.asText().isBlank()) {
+                return subNode.asText();
+            }
+        }
+        // JWT VP fallback: iss is the holder (presenter); signature already verified above
+        if (!isSdJwt(resolvedVpToken)) {
+            try {
+                SignedJWT jwt = SignedJWT.parse(resolvedVpToken);
+                String iss = jwt.getJWTClaimsSet().getIssuer();
+                if (iss != null && !iss.isBlank()) {
+                    return iss;
+                }
+            } catch (ParseException e) {
+                log.warn("Could not parse VP JWT to extract holder subject: {}", e.getMessage());
+            }
+        }
+        return null;
+    }
 
     private boolean isSdJwt(String token) {
         return token != null && token.contains("~");

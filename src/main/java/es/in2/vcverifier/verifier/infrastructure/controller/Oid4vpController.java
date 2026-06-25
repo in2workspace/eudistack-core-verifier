@@ -1,7 +1,5 @@
 package es.in2.vcverifier.verifier.infrastructure.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.exception.ResourceNotFoundException;
@@ -29,9 +27,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 
 @Slf4j
@@ -46,7 +44,7 @@ public class Oid4vpController {
     private final AuthorizationResponseProcessorService authorizationResponseProcessorService;
     private final SsoSessionAuthenticationSuccessHandler ssoSessionHandler;
     private final SsoAuditPort ssoAuditPort;
-    private final ObjectMapper objectMapper;
+    private final CacheStore<String> verifiedSubjectByState;
 
     @Operation(
             summary = "Retrieve authorization request JWT by nonce",
@@ -96,11 +94,20 @@ public class Oid4vpController {
 
         try {
             authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
+            String verifiedSub;
+            try {
+                verifiedSub = verifiedSubjectByState.get(state);
+                verifiedSubjectByState.delete(state);
+            } catch (NoSuchElementException ignored) {
+                verifiedSub = null;
+            }
+            if (verifiedSub == null || verifiedSub.isBlank()) {
+                log.warn("No verified subject for state={} — SSO session not established", state);
+                return;
+            }
             ssoSessionHandler.onAuthenticationSuccess(request, response,
-                    buildSsoAuthentication(vpToken, tenant));
+                    buildSsoAuthentication(verifiedSub, tenant));
         } catch (Exception ex) {
-            // ES-01: VP invalid or any processing failure → emit sso_establish_failed audit, then re-throw
-            // The existing OID4VP error handling produces the access_denied response.
             ssoAuditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                     tenant != null ? tenant : "",
@@ -108,49 +115,21 @@ public class Oid4vpController {
                     null,
                     ex.getMessage(),
                     correlationId,
-                    Instant.now()
+                    Instant.now(),
+                    null
             ));
             throw ex;
         }
     }
 
-    private Authentication buildSsoAuthentication(String vpToken, String tenant) {
-        String sub = extractSubFromVpToken(vpToken);
+    private Authentication buildSsoAuthentication(String verifiedSub, String tenant) {
         String safeTenant = tenant != null ? tenant : "";
-
         Map<String, Object> principal = new HashMap<>();
         principal.put("tenant", safeTenant);
-        principal.put("holderHash", sub);       // raw sub — workflow applies SHA-256(sub)
-        principal.put("clientId", safeTenant);  // fallback: tenant as clientId for audit
+        principal.put("holderHash", verifiedSub);
+        principal.put("clientId", safeTenant);
         principal.put("tenantSlug", safeTenant);
-
-        return new UsernamePasswordAuthenticationToken(principal, vpToken);
-    }
-
-    private String extractSubFromVpToken(String vpToken) {
-        try {
-            // SD-JWT format: header.payload.sig~disclosure~...  → take only the first JWT part
-            String jwt = vpToken.contains("~") ? vpToken.split("~")[0] : vpToken;
-            String[] parts = jwt.split("\\.");
-            if (parts.length >= 2) {
-                // Base64url may omit padding — add it before decoding
-                String padded = parts[1];
-                int mod = padded.length() % 4;
-                if (mod != 0) padded = padded + "=".repeat(4 - mod);
-                byte[] payloadBytes = Base64.getUrlDecoder().decode(padded);
-                JsonNode payload = objectMapper.readTree(payloadBytes);
-                // In a VP JWT, iss = holder (presenter); sub = credential subject (may also be holder)
-                if (payload.has("iss") && !payload.get("iss").isNull()) {
-                    return payload.get("iss").asText();
-                }
-                if (payload.has("sub") && !payload.get("sub").isNull()) {
-                    return payload.get("sub").asText();
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Could not extract subject from vpToken: {}", e.getMessage());
-        }
-        return "";
+        return new UsernamePasswordAuthenticationToken(principal, null);
     }
 
 }

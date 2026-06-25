@@ -59,6 +59,15 @@ public class CacheStoreConfig {
     public CacheStore<String> jtiCacheStore() {
         return new CacheStore<>(JTI_CACHE_TTL_SECONDS, TimeUnit.SECONDS);
     }
+
+    // F5: short-lived cache to pass the cryptographically verified holder subject from
+    // AuthorizationResponseProcessorService (where signature verification happens) to
+    // Oid4vpController (where the SSO session is established). Consumed once; TTL matches
+    // the login flow timeout.
+    @Bean
+    public CacheStore<String> verifiedSubjectByState() {
+        return new CacheStore<>(10, TimeUnit.MINUTES);
+    }
     
     @Bean
     public Set<String> allowedClientsOrigins() {
