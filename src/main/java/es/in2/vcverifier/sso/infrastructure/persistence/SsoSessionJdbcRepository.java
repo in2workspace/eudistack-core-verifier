@@ -17,7 +17,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -100,7 +99,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             }
 
             try (PreparedStatement ps = c.prepareStatement(insertSql)) {
-                ps.setObject(1, session.getId().getValue());
+                ps.setString(1, session.getId().getValue());
                 ps.setString(2, session.getTenant());
                 ps.setString(3, session.getHolderHash());
                 ps.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
@@ -123,7 +122,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
                     // retry insert once
                     try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
-                        ps2.setObject(1, session.getId().getValue());
+                        ps2.setString(1, session.getId().getValue());
                         ps2.setString(2, session.getTenant());
                         ps2.setString(3, session.getHolderHash());
                         ps2.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
@@ -149,6 +148,67 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     @Override
+    public SsoSession establishAtomically(SsoSession session) {
+        ensureTenantSafe(session.getTenant());
+        checkCircuit();
+
+        String supersedeSql = "UPDATE sso_session SET state = 'SUPERSEDED' WHERE tenant = ? AND holder_hash = ? AND state = 'ACTIVE'";
+        String insertSql = "INSERT INTO sso_session (id, tenant, holder_hash, established_at, expires_at, state) VALUES (?, ?, ?, ?, ?, ?)";
+
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement s = c.prepareStatement(
+                        "SET LOCAL search_path = \"" + session.getTenant() + "\", public")) {
+                    s.execute();
+                }
+                try (PreparedStatement s = c.prepareStatement(
+                        "SET LOCAL statement_timeout = " + statementTimeoutMs)) {
+                    s.execute();
+                }
+
+                try (PreparedStatement ps = c.prepareStatement(supersedeSql)) {
+                    ps.setString(1, session.getTenant());
+                    ps.setString(2, session.getHolderHash());
+                    int superseded = ps.executeUpdate();
+                    if (superseded > 0) {
+                        log.info("Superseded {} active session(s) for tenant={}", superseded, session.getTenant());
+                    }
+                }
+
+                try (PreparedStatement ps = c.prepareStatement(insertSql)) {
+                    ps.setString(1, session.getId().getValue());
+                    ps.setString(2, session.getTenant());
+                    ps.setString(3, session.getHolderHash());
+                    ps.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
+                    ps.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
+                    ps.setString(6, session.getState().name());
+                    ps.executeUpdate();
+                }
+
+                c.commit();
+                recordSuccess();
+                return session;
+
+            } catch (SQLException e) {
+                try { c.rollback(); } catch (SQLException rb) {
+                    log.warn("Rollback failed: {}", rb.getMessage());
+                }
+                if (isUniqueViolation(e)) {
+                    // EC-02: concurrent establishment for same holder — do NOT count as circuit-breaker failure
+                    log.info("Concurrent session conflict for tenant={}", session.getTenant());
+                    throw new SsoSessionRepositoryException("Concurrent session establishment conflict", e);
+                }
+                recordFailure();
+                throw new SsoSessionRepositoryException("Failed to establish SSO session atomically", e);
+            }
+        } catch (SQLException ex) {
+            recordFailure();
+            throw new SsoSessionRepositoryException("Connection error during establishAtomically", ex);
+        }
+    }
+
+    @Override
     public Optional<SsoSession> findActiveByTenantAndHolder(String tenant, String holderHash) {
         ensureTenantSafe(tenant);
         checkCircuit();
@@ -156,25 +216,37 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         String sql = "SELECT id, tenant, holder_hash, established_at, expires_at, state FROM sso_session WHERE tenant = ? AND holder_hash = ? AND state = 'ACTIVE' LIMIT 1";
 
         try (Connection c = dataSource.getConnection()) {
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL search_path = " + tenant + ", public")) { s.execute(); } catch (SQLException ignored) {}
-            try (PreparedStatement s = c.prepareStatement("SET LOCAL statement_timeout = " + statementTimeoutMs)) { s.execute(); } catch (SQLException ignored) {}
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement s = c.prepareStatement(
+                        "SET LOCAL search_path = \"" + tenant + "\", public")) { s.execute(); }
+                try (PreparedStatement s = c.prepareStatement(
+                        "SET LOCAL statement_timeout = " + statementTimeoutMs)) { s.execute(); }
 
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setString(1, tenant);
-                ps.setString(2, holderHash);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        SsoSession session = sessionFromResultSet(rs);
-                        recordSuccess();
-                        return Optional.of(session);
-                    } else {
-                        recordSuccess();
-                        return Optional.empty();
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setString(1, tenant);
+                    ps.setString(2, holderHash);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            SsoSession session = sessionFromResultSet(rs);
+                            c.commit();
+                            recordSuccess();
+                            return Optional.of(session);
+                        } else {
+                            c.commit();
+                            recordSuccess();
+                            return Optional.empty();
+                        }
                     }
                 }
+            } catch (SQLException e) {
+                try { c.rollback(); } catch (SQLException rb) { log.debug("Rollback failed: {}", rb.getMessage()); }
+                log.debug("findActiveByTenantAndHolder error: {}", e.getMessage());
+                recordFailure();
+                return Optional.empty();
             }
-        } catch (SQLException e) {
-            log.debug("findActiveByTenantAndHolder error: {}", e.getMessage());
+        } catch (SQLException ex) {
+            log.debug("findActiveByTenantAndHolder connection error: {}", ex.getMessage());
             recordFailure();
             return Optional.empty();
         }
@@ -214,7 +286,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     private SsoSession sessionFromResultSet(ResultSet rs) throws SQLException {
-        UUID id = (UUID) rs.getObject("id");
+        String id = rs.getString("id");
         String tenant = rs.getString("tenant");
         String holderHash = rs.getString("holder_hash");
         Instant established = rs.getObject("established_at", OffsetDateTime.class).toInstant();

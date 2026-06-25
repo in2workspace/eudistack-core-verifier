@@ -35,6 +35,12 @@ public interface SsoSessionRepositoryPort {
             String holderHash
     );
 
+    /**
+     * Supersede de sesión activa + insert de la nueva en una única transacción.
+     * F2/F3: garantiza atomicidad y aislamiento multi-tenant (search_path dentro de tx).
+     */
+    SsoSession establishAtomically(SsoSession session);
+
 
 
 }
