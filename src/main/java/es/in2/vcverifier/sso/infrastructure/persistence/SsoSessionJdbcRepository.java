@@ -17,7 +17,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -74,6 +73,12 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         }
     }
 
+    /** NFR-S-547-02: never log session id or holder hash in full — 8-char prefix only. */
+    private static String prefix8(String s) {
+        if (s == null) return "null";
+        return s.length() <= 8 ? s : s.substring(0, 8);
+    }
+
     /**
      * Sets search_path to the quoted tenant schema + public.
      * Fail-closed: if this fails, we must NOT continue with unqualified SQL
@@ -108,7 +113,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             setStatementTimeout(c);
 
             try (PreparedStatement ps = c.prepareStatement(insertSql)) {
-                ps.setObject(1, session.getId().getValue());
+                ps.setString(1, session.getId().getValue());
                 ps.setString(2, session.getTenant());
                 ps.setString(3, session.getHolderHash());
                 ps.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
@@ -118,10 +123,12 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 recordSuccess();
                 return session;
             } catch (SQLException e) {
-                log.warn("Insert failed for session {}: {}", session.getId(), e.getMessage());
+                // B6: NFR-S-547-02 — log only 8-char prefix of session id and holder hash
+                log.warn("Insert failed for session {}...: {}", prefix8(session.getId().getValue()), e.getMessage());
                 recordFailure();
                 if (isUniqueViolation(e)) {
-                    log.info("Unique active session exists for tenant={} holderHash={} - attempting supersede and retry", session.getTenant(), session.getHolderHash());
+                    log.info("Unique active session exists for tenant={} holderHash={}... - attempting supersede and retry",
+                            session.getTenant(), prefix8(session.getHolderHash()));
                     try {
                         supersedeActive(session.getTenant(), session.getHolderHash());
                     } catch (Exception supEx) {
@@ -130,7 +137,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
                     // retry insert once
                     try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
-                        ps2.setObject(1, session.getId().getValue());
+                        ps2.setString(1, session.getId().getValue());
                         ps2.setString(2, session.getTenant());
                         ps2.setString(3, session.getHolderHash());
                         ps2.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
@@ -204,7 +211,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 ps.setString(1, tenant);
                 ps.setString(2, holderHash);
                 int updated = ps.executeUpdate();
-                log.info("Superseded {} rows for tenant={} holderHash={}", updated, tenant, holderHash);
+                // B6: NFR-S-547-02 — 8-char prefix of holder hash only
+                log.info("Superseded {} rows for tenant={} holderHash={}...", updated, tenant, prefix8(holderHash));
                 recordSuccess();
             }
         } catch (SQLException e) {
@@ -220,7 +228,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     private SsoSession sessionFromResultSet(ResultSet rs) throws SQLException {
-        UUID id = (UUID) rs.getObject("id");
+        String id = rs.getString("id");
         String tenant = rs.getString("tenant");
         String holderHash = rs.getString("holder_hash");
         Instant established = rs.getObject("established_at", OffsetDateTime.class).toInstant();

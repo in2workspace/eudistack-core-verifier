@@ -139,18 +139,22 @@ public class Oid4vpController {
                 if (mod != 0) padded = padded + "=".repeat(4 - mod);
                 byte[] payloadBytes = Base64.getUrlDecoder().decode(padded);
                 JsonNode payload = objectMapper.readTree(payloadBytes);
-                // In a VP JWT, iss = holder (presenter); sub = credential subject (may also be holder)
-                if (payload.has("iss") && !payload.get("iss").isNull()) {
-                    return payload.get("iss").asText();
-                }
+                // AD-3: prefer 'sub' (credential subject) as holder identity per technical-design
                 if (payload.has("sub") && !payload.get("sub").isNull()) {
-                    return payload.get("sub").asText();
+                    String sub = payload.get("sub").asText();
+                    if (!sub.isBlank()) return sub;
+                }
+                // Fallback: in a VP JWT, iss = the presenter (holder DID)
+                if (payload.has("iss") && !payload.get("iss").isNull()) {
+                    String iss = payload.get("iss").asText();
+                    if (!iss.isBlank()) return iss;
                 }
             }
         } catch (Exception e) {
             log.warn("Could not extract subject from vpToken: {}", e.getMessage());
         }
-        return "";
+        // B5: reject — prevents SHA-256("") session collision from empty/missing subject
+        throw new IllegalStateException("VP token contains no usable subject for SSO session establishment");
     }
 
 }

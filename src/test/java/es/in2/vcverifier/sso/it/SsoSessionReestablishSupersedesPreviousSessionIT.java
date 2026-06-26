@@ -87,7 +87,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     void clean() {
         jdbcTemplate.execute("""
         CREATE TABLE IF NOT EXISTS sso_session (
-            id UUID PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             tenant TEXT NOT NULL,
             holder_hash TEXT NOT NULL,
             established_at TIMESTAMPTZ NOT NULL,
@@ -131,7 +131,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
         mockMvc.perform(post("/oid4vp/auth-response")
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state")
-                        .param("vp_token", "dummy-vp-token"))
+                        .param("vp_token", "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig"))
                 .andExpect(status().is3xxRedirection());
 
         Integer firstCount = jdbcTemplate.queryForObject(
@@ -147,7 +147,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
         mockMvc.perform(post("/oid4vp/auth-response")
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state-2")
-                        .param("vp_token", "dummy-vp-token"))
+                        .param("vp_token", "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().exists("Set-Cookie"));
 

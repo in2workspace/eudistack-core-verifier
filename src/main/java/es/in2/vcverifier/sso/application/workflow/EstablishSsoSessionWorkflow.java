@@ -100,11 +100,12 @@ public class EstablishSsoSessionWorkflow {
             return null; // fail-closed
         }
 
+        // B7: holderHash field in SsoAuditEvent always carries raw sub; SsoAuditAdapter applies SHA-256.
         auditPort.publish(new SsoAuditEvent(
                 SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
                 command.tenant(),
                 command.clientId(),
-                holderHash,
+                command.sub(),
                 "SUCCESS",
                 command.correlationId(),
                 now

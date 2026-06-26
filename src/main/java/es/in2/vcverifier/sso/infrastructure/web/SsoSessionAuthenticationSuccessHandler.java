@@ -98,16 +98,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
 
                 // Set-Cookie ANTES de delegar al handler que puede hacer commit del response.
                 response.addHeader("Set-Cookie", cookie.toString());
-
-                auditPort.publish(new SsoAuditEvent(
-                        SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
-                        vpData.tenant(),
-                        vpData.clientId(),
-                        vpData.holderHash(),
-                        "SUCCESS",
-                        correlationId,
-                        java.time.Instant.now()
-                ));
+                // B8: SSO_SESSION_ESTABLISHED is published by the workflow (canonical owner). No duplicate here.
             }
 
         } catch (SsoConfigInconsistentException e) {

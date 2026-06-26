@@ -193,7 +193,7 @@ class EstablishSsoSessionIT {
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .principal(auth)
                         .param("state", "test-state")
-                        .param("vp_token", "dummy-vp-token")
+                        .param("vp_token", "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig")
                         .contentType("application/json")
                         .content("""
                 {
@@ -223,7 +223,7 @@ class EstablishSsoSessionIT {
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "legacy-tenant")
                         .principal(() -> "legacy-tenant")
                         .param("state", "test-state")
-                        .param("vp_token", "dummy-vp-token"))
+                        .param("vp_token", "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().doesNotExist("Set-Cookie"));
 
@@ -254,7 +254,7 @@ class EstablishSsoSessionIT {
         mockMvc.perform(post("/oid4vp/auth-response")
                         .principal(() -> "tenant-a")
                         .param("state", "test-state")
-                        .param("vp_token", "dummy-vp-token"))
+                        .param("vp_token", "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.type").value("access_denied"))
                 .andExpect(jsonPath("$.detail").value("sso_establish_failed"));
