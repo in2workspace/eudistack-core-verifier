@@ -156,7 +156,7 @@ class ReuseSsoSessionIT {
         // Garantiza la tabla aunque Flyway no ejecute en algún escenario inesperado
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS sso_session (
-                    id            UUID        PRIMARY KEY,
+                    id            TEXT        PRIMARY KEY,
                     tenant        TEXT        NOT NULL,
                     holder_hash   TEXT        NOT NULL,
                     established_at TIMESTAMPTZ NOT NULL,
@@ -252,7 +252,7 @@ class ReuseSsoSessionIT {
 
         Integer activeCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sso_session WHERE id = ? AND expires_at > NOW()",
-                Integer.class, sessionId);
+                Integer.class, sessionId.toString());
         assertThat(activeCount).isZero();
     }
 
@@ -272,7 +272,7 @@ class ReuseSsoSessionIT {
                 .andExpect(status().is3xxRedirection());
 
         String state = jdbcTemplate.queryForObject(
-                "SELECT state FROM sso_session WHERE id = ?", String.class, sessionId);
+                "SELECT state FROM sso_session WHERE id = ?", String.class, sessionId.toString());
         assertThat(state).isEqualTo("SUPERSEDED");
     }
 

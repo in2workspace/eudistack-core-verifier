@@ -29,8 +29,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +48,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(addFilters = false)
 @Import(TimeConfig.class)
 class SsoSessionReestablishSupersedesPreviousSessionIT {
+
+    // vp_token arrives Base64-encoded at the controller (mirrors what a real wallet sends)
+    private static final String VP_TOKEN_B64 = Base64.getEncoder().encodeToString(
+            "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig"
+                    .getBytes(StandardCharsets.UTF_8));
 
     @Container
     static PostgreSQLContainer<?> postgres =
@@ -87,7 +94,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     void clean() {
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS sso_session (
-                 id UUID PRIMARY KEY,
+                 id TEXT PRIMARY KEY,
                  tenant TEXT NOT NULL,
                  holder_hash TEXT NOT NULL,
                  established_at TIMESTAMPTZ NOT NULL,
@@ -133,7 +140,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
         mockMvc.perform(post("/oid4vp/auth-response")
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state")
-                        .param("vp_token", "dummy-vp-token"))
+                        .param("vp_token", VP_TOKEN_B64))
                 .andExpect(status().is3xxRedirection());
 
         Integer firstCount = jdbcTemplate.queryForObject(
@@ -149,7 +156,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
         mockMvc.perform(post("/oid4vp/auth-response")
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state-2")
-                        .param("vp_token", "dummy-vp-token"))
+                        .param("vp_token", VP_TOKEN_B64))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().exists("Set-Cookie"));
 

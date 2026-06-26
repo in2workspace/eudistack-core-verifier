@@ -28,6 +28,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
@@ -129,8 +130,29 @@ public class Oid4vpController {
 
     private String extractSubFromVpToken(String vpToken) {
         try {
-            // SD-JWT format: header.payload.sig~disclosure~...  → take only the first JWT part
-            String jwt = vpToken.contains("~") ? vpToken.split("~")[0] : vpToken;
+            // vpToken arrives Base64-encoded from the HTTP request — decode first (mirrors service layer)
+            String decoded = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8).trim();
+
+            // Resolve DCQL wrapper: JSON object keyed by credential query IDs → extract first VP token
+            String resolved = decoded;
+            if (decoded.startsWith("{")) {
+                JsonNode dcql = objectMapper.readTree(decoded);
+                var fields = dcql.fields();
+                while (fields.hasNext()) {
+                    var entry = fields.next();
+                    JsonNode val = entry.getValue();
+                    if (val.isArray() && !val.isEmpty()) {
+                        resolved = val.get(0).asText();
+                        break;
+                    } else if (val.isTextual()) {
+                        resolved = val.asText();
+                        break;
+                    }
+                }
+            }
+
+            // SD-JWT format: header.payload.sig~disclosure~...~KB-JWT → issuer-signed part is first
+            String jwt = resolved.contains("~") ? resolved.split("~")[0] : resolved;
             String[] parts = jwt.split("\\.");
             if (parts.length >= 2) {
                 // Base64url may omit padding — add it before decoding
@@ -139,18 +161,41 @@ public class Oid4vpController {
                 if (mod != 0) padded = padded + "=".repeat(4 - mod);
                 byte[] payloadBytes = Base64.getUrlDecoder().decode(padded);
                 JsonNode payload = objectMapper.readTree(payloadBytes);
-                // In a VP JWT, iss = holder (presenter); sub = credential subject (may also be holder)
-                if (payload.has("iss") && !payload.get("iss").isNull()) {
-                    return payload.get("iss").asText();
-                }
+                // AD-3: prefer 'sub' (credential subject) as holder identity per technical-design
                 if (payload.has("sub") && !payload.get("sub").isNull()) {
-                    return payload.get("sub").asText();
+                    String sub = payload.get("sub").asText();
+                    if (!sub.isBlank()) return sub;
+                }
+                // Fallback: in a VP JWT, iss = the presenter (holder DID)
+                if (payload.has("iss") && !payload.get("iss").isNull()) {
+                    String iss = payload.get("iss").asText();
+                    if (!iss.isBlank()) return iss;
+                }
+            }
+
+            // SD-JWT only: KB-JWT iss = the holder (last non-empty segment after ~)
+            if (resolved.contains("~")) {
+                String[] sdParts = resolved.split("~");
+                String kbJwt = sdParts[sdParts.length - 1];
+                if (!kbJwt.isBlank()) {
+                    String[] kbParts = kbJwt.split("\\.");
+                    if (kbParts.length >= 2) {
+                        String padded = kbParts[1];
+                        int mod = padded.length() % 4;
+                        if (mod != 0) padded = padded + "=".repeat(4 - mod);
+                        JsonNode kbPayload = objectMapper.readTree(Base64.getUrlDecoder().decode(padded));
+                        if (kbPayload.has("iss") && !kbPayload.get("iss").isNull()) {
+                            String kbIss = kbPayload.get("iss").asText();
+                            if (!kbIss.isBlank()) return kbIss;
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
             log.warn("Could not extract subject from vpToken: {}", e.getMessage());
         }
-        return "";
+        // B5: reject — prevents SHA-256("") session collision from empty/missing subject
+        throw new IllegalStateException("VP token contains no usable subject for SSO session establishment");
     }
 
 }

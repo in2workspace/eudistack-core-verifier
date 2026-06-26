@@ -1,5 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.exception.ResourceNotFoundException;
@@ -13,7 +14,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,6 +41,9 @@ class Oid4vpControllerTest {
 
     @Mock
     private SsoAuditPort ssoAuditPort;
+
+    @Spy
+    ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
     private HttpServletRequest request;
@@ -79,7 +87,10 @@ class Oid4vpControllerTest {
     @Test
     void handleAuthResponse_validParameters_shouldInvokeService() throws Exception {
         String state = "validState";
-        String vpToken = "validVpToken";
+        // The controller receives the vp_token Base64-encoded (mirrors what a wallet sends)
+        String vpToken = Base64.getEncoder().encodeToString(
+                "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig"
+                        .getBytes(StandardCharsets.UTF_8));
 
         oid4vpController.handleAuthResponse(state, vpToken, request, response);
 

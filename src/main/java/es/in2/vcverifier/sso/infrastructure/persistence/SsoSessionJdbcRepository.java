@@ -67,10 +67,24 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         }
     }
 
+    /** NFR-S-547-02: never log session id or holder hash in full — 8-char prefix only. */
+    // =========================================================
+    private static String prefix8(String s) {
+        // DB CONFIG
+        if (s == null) return "null";
+        // =========================================================
+        return s.length() <= 8 ? s : s.substring(0, 8);
+    }
+
     // =========================================================
     // DB CONFIG
     // =========================================================
 
+    /**
+     * Sets search_path to the quoted tenant schema + public.
+     * Fail-closed: if this fails, we must NOT continue with unqualified SQL
+     * as queries could hit the wrong schema (cross-tenant data leak risk).
+     */
     private void setTenantSearchPath(Connection c, String tenant) throws SQLException {
         String sql = "SET LOCAL search_path = \"" + tenant + "\", public";
         try (PreparedStatement s = c.prepareStatement(sql)) {
@@ -119,11 +133,20 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 return session;
 
             } catch (SQLException e) {
+                // B6: NFR-S-547-02 — log only 8-char prefix of session id and holder hash
+                log.warn("Insert failed for session {}...: {}", prefix8(session.getId().getValue()), e.getMessage());
                 recordFailure();
 
                 if (isUniqueViolation(e)) {
+                    log.info("Unique active session exists for tenant={} holderHash={}... - attempting supersede and retry",
+                            session.getTenant(), prefix8(session.getHolderHash()));
+                    try {
                     supersedeActive(session.getTenant(), session.getHolderHash());
+                    } catch (Exception supEx) {
+                        log.warn("Supersede attempt failed: {}", supEx.getMessage());
+                    }
 
+                    // retry insert once
                     try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
                         ps2.setObject(1, session.getId().getValue());
                         ps2.setString(2, session.getTenant());
@@ -136,6 +159,11 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                         ps2.executeUpdate();
                         recordSuccess();
                         return session;
+
+                    } catch (SQLException e2) {
+                        log.error("Retry insert failed: {}", e2.getMessage());
+                        recordFailure();
+                        throw new SsoSessionRepositoryException("Failed to persist SSO session after retry", e2);
                     }
                 }
 
@@ -144,7 +172,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
         } catch (SQLException ex) {
             recordFailure();
-            throw new SsoSessionRepositoryException("DB error", ex);
+            throw new SsoSessionRepositoryException("Failed to persist SSO session (connection error)", ex);
         }
     }
 
@@ -175,13 +203,15 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                     if (rs.next()) {
                         recordSuccess();
                         return Optional.of(sessionFromResultSet(rs));
-                    }
+                    } else {
                     recordSuccess();
                     return Optional.empty();
+                    }
                 }
             }
 
         } catch (SQLException e) {
+            log.debug("findActiveByTenantAndHolder error: {}", e.getMessage());
             recordFailure();
             return Optional.empty();
         }
@@ -298,13 +328,16 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 ps.setString(1, tenant);
                 ps.setString(2, holderHash);
 
+                int updated = ps.executeUpdate();
                 ps.executeUpdate();
+                // B6: NFR-S-547-02 — 8-char prefix of holder hash only
+                log.info("Superseded {} rows for tenant={} holderHash={}...", updated, tenant, prefix8(holderHash));
                 recordSuccess();
             }
 
         } catch (SQLException e) {
             recordFailure();
-            throw new SsoSessionRepositoryException("Failed supersede", e);
+            throw new SsoSessionRepositoryException("Failed to supersede active SSO sessions", e);
         }
     }
 
@@ -313,11 +346,13 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     // =========================================================
 
     private boolean isUniqueViolation(SQLException e) {
-        return "23505".equals(e.getSQLState());
+        // PostgreSQL unique_violation SQL state = 23505
+        String sqlState = e.getSQLState();
+        return sqlState != null && sqlState.equals("23505");
     }
 
     private SsoSession sessionFromResultSet(ResultSet rs) throws SQLException {
-        UUID id = (UUID) rs.getObject("id");
+        String id = rs.getString("id");
         String tenant = rs.getString("tenant");
         String holderHash = rs.getString("holder_hash");
 
