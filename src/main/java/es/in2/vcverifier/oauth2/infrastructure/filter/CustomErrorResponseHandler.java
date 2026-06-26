@@ -51,6 +51,8 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
             String scheme = parsed.getScheme();
             String origin = scheme + "://" + parsed.getAuthority();
 
+            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, origin);
+
             if (!"https".equals(scheme)) {
                 return false;
             }

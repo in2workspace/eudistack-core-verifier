@@ -1,0 +1,17 @@
+{
+  "credential_configuration_id": "LEARCredentialEmployee.3",
+  "@context": ["https://www.w3.org/2018/credentials/v1"],
+  "type": ["VerifiableCredential", "LEARCredentialEmployee.3"],
+  "credentialSubject": {
+    "mandate": {
+      "mandator": {
+        "organizationIdentifier": "VATES-B12345678"
+      },
+      "mandatee": {
+        "firstName": "John",
+        "lastName": "Doe",
+        "email": "john.doe@example.com"
+      }
+    }
+  }
+}

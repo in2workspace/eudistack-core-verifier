@@ -12,11 +12,15 @@ import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
+import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
+import es.in2.vcverifier.verifier.domain.exception.LegacyFormatSunsetClosedException;
+import es.in2.vcverifier.verifier.domain.exception.UnknownCredentialFormatException;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
+import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
@@ -67,6 +71,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final CacheStore<String> cacheForNonceByState;
     private final CryptoComponent cryptoComponent;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
+    private final CredentialSchemaDispatcher credentialSchemaDispatcher;
 
     @Override
     public void handleAuthResponse(String state, String vpToken){
@@ -140,6 +145,14 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 throw e;
             } catch (Exception e) {
                 sseEmitterStore.sendValidationFailed(state, "VALIDATION_ERROR", "VP validation failed: " + e.getMessage());
+                throw e;
+            }
+
+            try {
+                credentialSchemaDispatcher.dispatch(credentialJson);
+            } catch (LegacyFormatSunsetClosedException | BumpedFormatTemporarilyDisabledException
+                     | UnknownCredentialFormatException e) {
+                sseEmitterStore.sendValidationFailed(state, "FORMAT_GATED", e.getMessage());
                 throw e;
             }
 
@@ -232,7 +245,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             log.error("Issuer not authorized: {}", e.getMessage());
             sseEmitterStore.sendValidationFailed(state, "ISSUER_NOT_TRUSTED", "The credential issuer is not trusted");
             throw e;
-        } catch (LoginTimeoutException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException e) {
+        } catch (LoginTimeoutException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException
+                 | LegacyFormatSunsetClosedException | BumpedFormatTemporarilyDisabledException | UnknownCredentialFormatException e) {
             // Already sent SSE event in inner catch blocks, just re-throw
             throw e;
         } catch (Exception e) {

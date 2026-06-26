@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class LocalTrustedIssuersProvider implements TrustedIssuersProvider {
 
     private static final String CLASSPATH_RESOURCE = "local/trusted-issuers.yaml";
+    private static final String DID_ELSI_PREFIX = "did:elsi:";
     private final AtomicReference<Map<String, List<IssuerCredentialsCapabilities>>> issuersMapRef = new AtomicReference<>(Collections.emptyMap());
     private final String externalPath;
 
@@ -75,11 +76,24 @@ public class LocalTrustedIssuersProvider implements TrustedIssuersProvider {
 
     @Override
     public List<IssuerCredentialsCapabilities> getIssuerCapabilities(String issuerId) {
-        List<IssuerCredentialsCapabilities> capabilities = issuersMapRef.get().get(issuerId);
+        Map<String, List<IssuerCredentialsCapabilities>> issuers = issuersMapRef.get();
+        List<IssuerCredentialsCapabilities> capabilities = issuers.get(issuerId);
+        if (capabilities == null || capabilities.isEmpty()) {
+            String normalized = stripDidElsiPrefix(issuerId);
+            if (normalized != null && !normalized.equals(issuerId)) {
+                capabilities = issuers.get(normalized);
+            }
+        }
         if (capabilities == null || capabilities.isEmpty()) {
             throw new IssuerNotAuthorizedException("Issuer with id: " + issuerId + " not found in local trusted issuers.");
         }
         return capabilities;
+    }
+
+    private static String stripDidElsiPrefix(String value) {
+        return value != null && value.startsWith(DID_ELSI_PREFIX)
+                ? value.substring(DID_ELSI_PREFIX.length())
+                : value;
     }
 
     private record TrustedIssuersYaml(Map<String, List<IssuerCredentialsCapabilities>> trustedIssuers) {}
