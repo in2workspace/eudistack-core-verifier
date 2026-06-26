@@ -39,3 +39,4 @@ out/
 
 ### Docker ###
 docker/.env
+/.claude/settings.json

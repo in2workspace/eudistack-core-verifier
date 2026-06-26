@@ -8,8 +8,11 @@ import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
+import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import io.micrometer.common.util.StringUtils;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +53,7 @@ import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParamet
 public class CustomAuthorizationRequestConverter implements AuthenticationConverter {
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final String SSO_COOKIE_PREFIX = "__Secure-sso-";
 
     private final DIDService didService;
     private final JWTService jwtService;
@@ -61,6 +65,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
     private final SafeUrlValidator safeUrlValidator;
+    private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -100,11 +105,42 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // Case 1: Standard OIDC authorization request without a signed JWT object
         if (requestUri == null && request.getParameter("request") == null) {
             log.info("Processing an authorization request without a signed JWT object.");
+            tryReuseSsoSession(request, authorizationContext, clientId);
             return handleOIDCStandardRequest(authorizationContext, registeredClient);
         }
 
         // Case 2: FAPI authorization request with a signed JWT object
         return handleFAPIRequest(authorizationContext, request, registeredClient);
+    }
+
+    /**
+     * When prompt=none is present, runs the SSO session reuse workflow.
+     * The workflow validates the session, touches last_used_at and emits audit events.
+     * The result is intentionally ignored here: all outcomes (ALLOWED, LOGIN_REQUIRED,
+     * INTERACTION_REQUIRED) fall through to the standard OID4VP authorization flow so
+     * the caller always gets a redirect response.
+     */
+    private void tryReuseSsoSession(HttpServletRequest request,
+                                    AuthorizationContext ctx,
+                                    String clientId) {
+        if (!"none".equals(request.getParameter("prompt"))) {
+            return;
+        }
+        String tenant = TenantDomainFilter.getCurrentTenant(request);
+        if (tenant == null || tenant.isBlank()) {
+            return;
+        }
+        String cookieValue = extractCookieValue(request, SSO_COOKIE_PREFIX + tenant);
+        reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+    }
+
+    private String extractCookieValue(HttpServletRequest request, String cookieName) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) return null;
+        for (Cookie c : cookies) {
+            if (cookieName.equals(c.getName())) return c.getValue();
+        }
+        return null;
     }
 
     private Authentication handleFAPIRequest(AuthorizationContext authorizationContext,

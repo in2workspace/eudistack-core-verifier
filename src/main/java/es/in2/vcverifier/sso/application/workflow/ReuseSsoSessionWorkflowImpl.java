@@ -8,7 +8,6 @@ import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
-import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import org.springframework.stereotype.Component;
 
@@ -26,20 +25,17 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
     private final SsoSessionRepositoryPort sessionRepository;
     private final Clock clock;
     private final SsoAuditPort auditPort;
-    private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
 
     public ReuseSsoSessionWorkflowImpl(
             TenantSsoConfigPort configPort,
             SsoSessionRepositoryPort sessionRepository,
             Clock clock,
-            SsoAuditPort auditPort,
-            AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow
+            SsoAuditPort auditPort
     ) {
         this.configPort = configPort;
         this.sessionRepository = sessionRepository;
         this.clock = clock;
         this.auditPort = auditPort;
-        this.authorizationRequestBuildWorkflow = authorizationRequestBuildWorkflow;
     }
 
     @Override
@@ -125,16 +121,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         }
 
         // -------------------------------
-        // 4. BUILD AUTH REQUEST
-        // -------------------------------
-        AuthorizationRequestBuildWorkflow.Result authResult =
-                authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                        null, // si necesitas RegisteredClient aquí, ajusta según tu diseño
-                        ctx.scope(),
-                        ctx.state()
-                );
-
-        // -------------------------------
         // 5. THROTTLE UPDATE
         // -------------------------------
         if (session.getLastUsedAt() == null ||
@@ -159,9 +145,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         // -------------------------------
         // 7. RETURN
         // -------------------------------
-        return new Result(
-                Result.Status.ALLOWED,
-                authResult
-        );
+        return new Result(Result.Status.ALLOWED, null);
     }
 }
