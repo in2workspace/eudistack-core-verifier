@@ -4,7 +4,6 @@ import java.util.Objects;
 
 /**
  * Resultado de la evaluación de reutilización de sesión SSO.
- *
  * Representa el outcome final del flujo de decisión:
  * - ALLOWED (con sesión)
  * - LOGIN_REQUIRED

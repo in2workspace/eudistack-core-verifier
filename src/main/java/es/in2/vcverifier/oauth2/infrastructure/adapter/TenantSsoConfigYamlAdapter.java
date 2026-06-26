@@ -63,7 +63,7 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
             Duration absoluteTtl = DEFAULT_ABSOLUTE_TTL;
             Duration idleTtl = DEFAULT_IDLE_TTL;
 
-            // ✅ NUEVO: eligible clients (si no existe -> lista vacía)
+            // lista de clientes elegibles para reutilización SSO si no existe -> lista vacía)
             List<String> eligibleClients =
                     t.eligibleClients() != null ? t.eligibleClients() : List.of();
 
@@ -81,7 +81,7 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                                 DEFAULT_ABSOLUTE_TTL,
                                 DEFAULT_IDLE_TTL
                         ),
-                        eligibleClients // ✅ NUEVO
+                        eligibleClients
                 ));
 
                 log.error("event=sso_config_inconsistent tenant={} host={} correlation_id={}",
@@ -98,7 +98,7 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                             absoluteTtl,
                             idleTtl
                     ),
-                    eligibleClients // ✅ NUEVO
+                    eligibleClients
             ));
         }
 

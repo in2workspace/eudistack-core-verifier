@@ -9,7 +9,7 @@ public record TenantSsoConfig(
         boolean ssoEnabled,
         SsoTtlConfig ttl,
 
-        // NUEVO: lista de clientes elegibles para reutilización SSO
+        // lista de clientes elegibles para reutilización SSO
         List<String> eligibleClientIds
 ) {
 
