@@ -17,6 +17,9 @@ import org.mockito.Mockito;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
@@ -84,7 +87,10 @@ class Oid4vpControllerTest {
     @Test
     void handleAuthResponse_validParameters_shouldInvokeService() throws Exception {
         String state = "validState";
-        String vpToken = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig";
+        // The controller receives the vp_token Base64-encoded (mirrors what a wallet sends)
+        String vpToken = Base64.getEncoder().encodeToString(
+                "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig"
+                        .getBytes(StandardCharsets.UTF_8));
 
         oid4vpController.handleAuthResponse(state, vpToken, request, response);
 
