@@ -1,0 +1,12 @@
+tenants:
+  - tenant: "sandbox"
+    rootDomain: "sandbox.example.com"
+    ssoEnabled: true
+
+  - tenant: "sandboxDos"
+    rootDomain: ""
+    ssoEnabled: true
+
+  - tenant: "sandboxTres"
+    rootDomain: ""
+    ssoEnabled: false

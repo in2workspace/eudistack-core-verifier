@@ -1,0 +1,60 @@
+package es.in2.vcverifier.sso.infrastructure.web;
+
+import org.springframework.http.ResponseCookie;
+import org.springframework.stereotype.Component;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.util.Base64;
+
+@Component
+public class SsoSessionCookieFactory {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /**
+     * Generates a cryptographically secure opaque session identifier.
+     * AD-2:
+     * - 256 bits entropy
+     * - URL-safe Base64
+     * - no padding
+     */
+    public String generateOpaqueSessionId() {
+
+        byte[] randomBytes = new byte[32]; // 256 bits
+
+        SECURE_RANDOM.nextBytes(randomBytes);
+
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(randomBytes);
+    }
+
+    /**
+     * Builds the SSO session cookie.
+     */
+    public ResponseCookie createCookie(
+            String tenantSlug,
+            String tenantRootDomain,
+            Duration ttl,
+            String sessionId
+    ) {
+        String cookieName = "__Secure-sso-" + tenantSlug;
+
+        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(cookieName, sessionId)
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(ttl);
+
+        // Solo se establece el dominio si tenantRootDomain no está vacío,
+        // ya que pasar un dominio en blanco produce una cookie inválida.
+        if (tenantRootDomain != null && !tenantRootDomain.isBlank()) {
+            builder = builder.domain(tenantRootDomain);
+        }
+
+        return builder.build();
+    }
+
+
+}

@@ -38,6 +38,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-authorization-server'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
 
     // --- Serialization ---
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
@@ -71,6 +72,20 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
     testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.84'
+
+    testImplementation platform("org.testcontainers:testcontainers-bom:1.20.4")
+
+    testImplementation "org.testcontainers:testcontainers"
+    testImplementation "org.testcontainers:junit-jupiter"
+    testImplementation "org.testcontainers:postgresql"
+
+    // --- PostgreSQL Driver ---
+    runtimeOnly 'org.postgresql:postgresql:42.7.3'
+
+    // --- Flyway ---
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
 }
 
 // --- Quality & CI ---

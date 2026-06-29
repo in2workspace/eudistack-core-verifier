@@ -62,7 +62,8 @@ public record BackendProperties(
     public record LocalFiles(
             String clientsPath,
             String trustedIssuersPath,
-            String schemasDir
+            String schemasDir,
+            String ssoConfigPath
     ) {}
 
     // TODO: this is temporary while VCVerifier can handle only one trustFramework

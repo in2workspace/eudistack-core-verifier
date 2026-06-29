@@ -53,17 +53,18 @@ No se usan perfiles de Spring (`application-prod.yaml`, etc.).
 
 #### Backend (`verifier.backend.*`)
 
-| Env var | Default | Descripcion |
-| --- | --- | --- |
+| Env var | Default | Descripcion                                                                                                                         |
+| --- | --- |-------------------------------------------------------------------------------------------------------------------------------------|
 | `VERIFIER_BACKEND_URL` | `http://localhost:8082` | URL publica del Verifier. Se usa como `iss` en los tokens emitidos y como base para endpoints OID4VP. **Obligatorio en produccion.** |
 | `VERIFIER_BACKEND_IDENTITY_PRIVATEKEY` | *(vacio)* | Clave privada EC P-256 en hexadecimal (con o sin prefijo `0x`). Si esta vacia, se genera un par efimero al arrancar (ver seccion 4). |
-| `VERIFIER_BACKEND_IDENTITY_DIDKEY` | *(vacio)* | `did:key` correspondiente a la clave privada. Si esta vacio pero `privateKey` tiene valor, se deriva automaticamente. |
-| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_NAME` | `DOME` | Nombre del trust framework. Actualmente solo se soporta `DOME`. |
-| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDISSUERSLISTURL` | *(vacio)* | URL de la API EBSI v4 de issuers de confianza. Si esta vacia, se usa la lista local embebida (ver seccion 5). |
-| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDSERVICESLISTURL` | *(vacio)* | URL del YAML remoto con la lista de OIDC clients. Si esta vacia, se usa la lista local embebida (ver seccion 6). |
-| `VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH` | *(vacio)* | Path filesystem al `clients.yaml` externo. Si esta vacio, se usa el embebido en la imagen (ver seccion 6). |
-| `VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH` | *(vacio)* | Path filesystem al `trusted-issuers.yaml` externo. Si esta vacio, se usa el embebido en la imagen (ver seccion 5). |
-| `VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR` | *(vacio)* | Directorio filesystem con JSON Schemas externos. Si esta vacio, se usan los embebidos en la imagen (ver seccion 7). |
+| `VERIFIER_BACKEND_IDENTITY_DIDKEY` | *(vacio)* | `did:key` correspondiente a la clave privada. Si esta vacio pero `privateKey` tiene valor, se deriva automaticamente.               |
+| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_NAME` | `DOME` | Nombre del trust framework. Actualmente solo se soporta `DOME`.                                                                     |
+| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDISSUERSLISTURL` | *(vacio)* | URL de la API EBSI v4 de issuers de confianza. Si esta vacia, se usa la lista local embebida (ver seccion 5).                       |
+| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDSERVICESLISTURL` | *(vacio)* | URL del YAML remoto con la lista de OIDC clients. Si esta vacia, se usa la lista local embebida (ver seccion 6).                    |
+| `VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH` | *(vacio)* | Path filesystem al `clients.yaml` externo. Si esta vacio, se usa el embebido en la imagen (ver seccion 6).                          |
+| `VERIFIER_BACKEND_SSO_CONFIG_PATH` | *(vacio)* | Path filesystem al `sso-config.yaml` externo.                 |
+| `VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH` | *(vacio)* | Path filesystem al `trusted-issuers.yaml` externo. Si esta vacio, se usa el embebido en la imagen (ver seccion 5).                  |
+| `VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR` | *(vacio)* | Directorio filesystem con JSON Schemas externos. Si esta vacio, se usan los embebidos en la imagen (ver seccion 7).                 |
 
 #### Frontend (`verifier.frontend.*`)
 
@@ -236,6 +237,18 @@ services:
       - ./config/clients.yaml:/config/clients.yaml:ro
     environment:
       VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH: /config/clients.yaml
+```
+
+Para inyectar un `sso-config.yaml` personalizado **sin rebuild**, montarlo como volumen:
+
+```yaml
+# docker-compose.yml
+services:
+  verifier:
+    volumes:
+      - ./config/sso-config.yaml:/config/sso-config.yaml:ro
+    environment:
+       VERIFIER_BACKEND_SSO_CONFIG_PATH: /config/sso-config.yaml
 ```
 
 El formato es identico al embebido. Si el fichero externo no existe, se usa el embebido como fallback.
@@ -449,6 +462,7 @@ VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDSERVICESLISTURL=https://raw.githubuser
 # --- Ficheros locales externos (alternativa a modo remoto y a rebuild) ---
 # Si se montan volumenes con config personalizada, indicar los paths:
 VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH=/config/clients.yaml
+VERIFIER_BACKEND_SSO_CONFIG_PATH=/config/sso-config.yaml
 VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH=/config/trusted-issuers.yaml
 VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR=/config/schemas
 
