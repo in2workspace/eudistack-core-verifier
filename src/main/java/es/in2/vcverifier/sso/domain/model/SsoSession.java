@@ -94,9 +94,8 @@ public class SsoSession {
      */
     public boolean isValid(Instant now, Duration idleTtl) {
 
-        if (idleTtl == null) {
-            throw new IllegalArgumentException("idleTtl cannot be null");
-        }
+        Objects.requireNonNull(now);
+        Objects.requireNonNull(idleTtl);
 
         boolean notExpired = now.isBefore(expiresAt);
 
@@ -143,4 +142,9 @@ public class SsoSession {
             throw new IllegalStateException("lastUsedAt must be initialized");
         }
     }
+
+
+
+
+
 }

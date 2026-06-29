@@ -6,9 +6,12 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -18,6 +21,7 @@ import java.time.Instant;
 @Component
 public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
 
+    private static final Logger log = LoggerFactory.getLogger(ReuseSsoSessionWorkflowImpl.class);
     private static final Duration THROTTLE_INTERVAL = Duration.ofMinutes(1);
 
     private final TenantSsoConfigPort configPort;
@@ -98,7 +102,12 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
-        if (session.isExpired()) {
+        // -------------------------------
+        // 3. VALIDITY (absolute + idle TTL)
+        // -------------------------------
+        SsoSessionTtl ttl = configPort.resolveTtl(tenantSlug);
+
+        if (!session.isValid(now, ttl.idle())) {
             return new Result(
                     Result.Status.LOGIN_REQUIRED,
                     null
@@ -106,7 +115,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         }
 
         // -------------------------------
-        // 3. CLIENT ELIGIBILITY
+        // 4. CLIENT ELIGIBILITY
         // -------------------------------
 
         boolean clientEligible = config.eligibleClientIds().isEmpty()
@@ -120,12 +129,15 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         }
 
         // -------------------------------
-        // 5. THROTTLE UPDATE
+        // 5. THROTTLED TOUCH (non-blocking — R-3 / NFR-P-549-01)
         // -------------------------------
         if (session.getLastUsedAt() == null ||
                 Duration.between(session.getLastUsedAt(), now).compareTo(THROTTLE_INTERVAL) >= 0) {
 
-            sessionRepository.updateLastUsedAt(sessionId, tenantSlug, now);
+            Thread.ofVirtual()
+                    .uncaughtExceptionHandler((t, ex) ->
+                            log.warn("Non-blocking touch failed for tenant={}: {}", tenantSlug, ex.getMessage()))
+                    .start(() -> sessionRepository.updateLastUsedAt(sessionId, tenantSlug, now));
         }
 
         // -------------------------------

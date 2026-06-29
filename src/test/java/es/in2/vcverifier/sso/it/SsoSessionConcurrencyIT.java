@@ -5,6 +5,7 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.*;
 
@@ -48,6 +50,10 @@ class SsoSessionConcurrencyIT {
 
             when(tenantSsoConfigPort.getByTenant(tenant))
                     .thenReturn(Optional.of(config));
+
+            // resolveTtl añadido en US-04: sin stub devuelve null → NPE en ttl.absolute()
+            when(tenantSsoConfigPort.resolveTtl(tenant))
+                    .thenReturn(SsoSessionTtl.of(Duration.ofHours(8), Duration.ofMinutes(30)));
 
             when(hashingService.sha256(anyString()))
                     .thenReturn("hashed-value");

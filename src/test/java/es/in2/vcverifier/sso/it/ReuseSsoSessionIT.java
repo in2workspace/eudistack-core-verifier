@@ -6,6 +6,7 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
@@ -171,6 +172,8 @@ class ReuseSsoSessionIT {
 
         when(tenantSsoConfigPort.getByTenant(anyString()))
                 .thenReturn(Optional.of(defaultConfig()));
+        when(tenantSsoConfigPort.resolveTtl(anyString()))
+                .thenReturn(SsoSessionTtl.of(Duration.ofHours(1), Duration.ofMinutes(10)));
         when(dcqlProfileResolver.resolve(anyString()))
                 .thenReturn(new DcqlQuery(List.of()));
         when(registeredClientRepository.findByClientId(CLIENT_ID))

@@ -12,6 +12,9 @@ public record TenantSsoEntry(
         String tenant,
         String rootDomain,
         boolean ssoEnabled,
-        List<String> eligibleClients
+        List<String> eligibleClients,
+        // ISO-8601 optionals — null means "use system default"
+        String ttlAbsolute,
+        String ttlIdle
 ) {}
 

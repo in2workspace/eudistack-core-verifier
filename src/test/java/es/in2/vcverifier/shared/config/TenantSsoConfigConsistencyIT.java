@@ -140,7 +140,7 @@ public class TenantSsoConfigConsistencyIT {
 
                         // Convert infrastructure model to domain model
                         var domainEntries = infraData.tenants().stream()
-                                .map(e -> new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled(), e.eligibleClients()))
+                                .map(e -> new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled(), e.eligibleClients(), e.ttlAbsolute(), e.ttlIdle()))
                                 .toList();
 
                         return new TenantSsoConfigYamlData(domainEntries);

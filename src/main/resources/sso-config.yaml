@@ -2,6 +2,8 @@ tenants:
   - tenant: "sandbox"
     rootDomain: "sandbox.example.com"
     ssoEnabled: true
+    ttlAbsolute: "PT8H"
+    ttlIdle: "PT30M"
     eligibleClients:
       - "verifier-client"
 

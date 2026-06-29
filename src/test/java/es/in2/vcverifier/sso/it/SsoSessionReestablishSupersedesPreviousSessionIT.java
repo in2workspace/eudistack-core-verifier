@@ -6,6 +6,7 @@ import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.config.TimeConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
@@ -106,6 +107,11 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
 
         jdbcTemplate.execute("DELETE FROM sso_session");
         reset(auditPort);
+
+        // resolveTtl añadido en US-04: sin stub devuelve null → NPE en ttl.absolute()
+        // dentro del try-catch de EstablishSsoSessionWorkflow, lo que distorsiona el flujo.
+        when(tenantSsoConfigPort.resolveTtl(any()))
+                .thenReturn(SsoSessionTtl.of(Duration.ofHours(8), Duration.ofHours(1)));
     }
 
     @Test

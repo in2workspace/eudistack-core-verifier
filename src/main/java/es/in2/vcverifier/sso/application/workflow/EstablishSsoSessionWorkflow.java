@@ -13,7 +13,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -23,7 +22,6 @@ public class EstablishSsoSessionWorkflow {
 
     private static final Logger log =
             LoggerFactory.getLogger(EstablishSsoSessionWorkflow.class);
-    private static final Duration DEFAULT_SESSION_TTL = Duration.ofHours(8);
 
     private final TenantSsoConfigPort tenantSsoConfigPort;
     private final SsoSessionRepositoryPort sessionRepositoryPort;
@@ -72,13 +70,15 @@ public class EstablishSsoSessionWorkflow {
         Instant now = Instant.now(clock);
         SsoSession session;
 
+        var ttl = tenantSsoConfigPort.resolveTtl(command.tenant());
+
         try {
             sessionRepositoryPort.supersedeActive(command.tenant(), holderHash);
 
             session = SsoSession.establish(
                     command.tenant(),
                     holderHash,
-                    DEFAULT_SESSION_TTL
+                    ttl.absolute()
             );
 
             sessionRepositoryPort.save(session);
