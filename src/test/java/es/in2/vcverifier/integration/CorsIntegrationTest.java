@@ -10,6 +10,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -40,6 +41,9 @@ class CorsIntegrationTest {
 
     @MockitoBean
     private RegisteredClientRepository registeredClientRepository;
+
+    @MockitoBean
+    private TenantConfigPort tenantConfigPort;
 
     // --- Public endpoints: wildcard CORS ---
 

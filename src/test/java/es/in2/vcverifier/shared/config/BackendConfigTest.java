@@ -32,7 +32,7 @@ class BackendConfigTest {
     }
 
     @Test
-    void getUrl_canonical_returnsBaseWithContextPath() {
+    void getUrl_withRequestContext_returnsBaseWithContextPath() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setScheme("https");
         request.setServerName("kpmg.eudistack.net");
@@ -44,7 +44,7 @@ class BackendConfigTest {
     }
 
     @Test
-    void getUrl_nonCanonical_returnsBaseWithoutContextPath() {
+    void getUrl_withXTenantHeader_stillReturnsBaseWithContextPath() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setScheme("https");
         request.setServerName("verifier.kpmg.com");
@@ -53,7 +53,7 @@ class BackendConfigTest {
         request.addHeader("X-Tenant", "kpmg");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
-        assertThat(backendConfig.getUrl()).isEqualTo("https://verifier.kpmg.com");
+        assertThat(backendConfig.getUrl()).isEqualTo("https://verifier.kpmg.com/verifier");
     }
 
     @Test

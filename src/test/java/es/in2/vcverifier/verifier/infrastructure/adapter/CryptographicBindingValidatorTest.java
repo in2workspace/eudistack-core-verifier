@@ -300,6 +300,8 @@ class CryptographicBindingValidatorTest {
         when(vcJwt.getJWTClaimsSet()).thenReturn(vcClaims);
         // no cnf at all
         when(vcClaims.getClaim("cnf")).thenReturn(null);
+        // no vc wrap (VCDM 2.0 — claims at root)
+        when(vcClaims.getClaim("vc")).thenReturn(null);
         // credentialSubject.mandate.mandatee.id present
         Map<String, Object> mandatee = Map.of("id", "did:key:zHolder");
         Map<String, Object> mandate = Map.of("mandatee", mandatee);
@@ -320,8 +322,9 @@ class CryptographicBindingValidatorTest {
         SignedJWT vcJwt = mock(SignedJWT.class);
         JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
         when(vcJwt.getJWTClaimsSet()).thenReturn(vcClaims);
-        // no cnf, no credentialSubject
+        // no cnf, no vc wrap, no credentialSubject
         when(vcClaims.getClaim("cnf")).thenReturn(null);
+        when(vcClaims.getClaim("vc")).thenReturn(null);
         when(vcClaims.getClaim("credentialSubject")).thenReturn(null);
         // top-level mandate.mandatee.id
         Map<String, Object> mandatee = Map.of("id", "did:key:zFlat");

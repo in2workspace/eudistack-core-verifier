@@ -5,8 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
+import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
+import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
+import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.service.AccessTokenBuilder;
 import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
+import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +43,8 @@ public class TokenGenerationWorkflow {
     private final BackendConfig backendConfig;
     private final ObjectMapper objectMapper;
     private final List<ClaimsExtractor> claimsExtractors;
+    private final AccessTokenBuilder accessTokenBuilder;
+    private final SchemaProfileRegistry schemaProfileRegistry;
 
     public record Result(
             String accessTokenJwt,
@@ -57,6 +66,19 @@ public class TokenGenerationWorkflow {
      * @return a Result with the JWT strings and metadata
      */
     public Result issueAccessToken(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken, String tenant) {
+        String credentialType = extractCredentialType(credentialJson);
+        SchemaProfile schemaProfile = schemaProfileRegistry.findByConfigId(credentialType).orElse(null);
+        DispatchDecision dispatchDecision = schemaProfile == null
+            ? DispatchDecision.permitted(credentialType, CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE)
+            : DispatchDecision.permitted(
+                credentialType,
+                schemaProfile.wrapVcInAccessToken() ? CredentialFormat.BUMPED_V2_0 : CredentialFormat.LEGACY_V1_1,
+                DispatchReason.BY_TYPE);
+
+        return issueAccessToken(credentialJson, dispatchDecision, audience, additionalParameters, generateIdToken, tenant);
+        }
+
+        public Result issueAccessToken(JsonNode credentialJson, DispatchDecision dispatchDecision, String audience, Map<String, Object> additionalParameters, boolean generateIdToken, String tenant) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 backendConfig.getAccessTokenExpirationSeconds(),
@@ -67,7 +89,19 @@ public class TokenGenerationWorkflow {
         ExtractedClaims extractedClaims = extractClaims(credentialType, credentialJson);
         String subject = extractedClaims.subject();
 
-        String accessTokenJwt = buildAccessToken(credentialJson, extractedClaims, issueTime, expirationTime, subject, audience, tenant);
+        BuildContext buildContext = new BuildContext(
+            credentialJson,
+            dispatchDecision,
+            extractedClaims,
+            issueTime,
+            expirationTime,
+            audience,
+            tenant,
+            additionalParameters,
+            generateIdToken
+        );
+
+        String accessTokenJwt = accessTokenBuilder.build(buildContext);
 
         String idTokenJwt = null;
         if (generateIdToken) {
@@ -111,44 +145,6 @@ public class TokenGenerationWorkflow {
                 OAuth2ErrorCodes.INVALID_REQUEST,
                 "No claims extractor found for credential type: " + credentialType,
                 null));
-    }
-
-    private String buildAccessToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
-                                     Instant issueTime, Instant expirationTime,
-                                     String subject, String audience, String tenant) {
-        log.info("Generating access token for credential_type: {}, tenant: {}", extractCredentialType(credentialJson), tenant);
-
-        JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
-                .issuer(backendConfig.getUrl())
-                .audience(audience)
-                .subject(subject)
-                .jwtID(UUID.randomUUID().toString())
-                .issueTime(Date.from(issueTime))
-                .expirationTime(Date.from(expirationTime))
-                .claim(OAuth2ParameterNames.SCOPE, extractedClaims.scope())
-                .claim("credential_type", extractCredentialType(credentialJson));
-
-        if (extractedClaims.accessTokenClaims() != null) {
-            extractedClaims.accessTokenClaims().forEach(payloadBuilder::claim);
-        }
-
-        if (extractedClaims.accessTokenEmbeds() != null) {
-            extractedClaims.accessTokenEmbeds().forEach(payloadBuilder::claim);
-        }
-
-        // Tenant from client registration is the authoritative source.
-        // If no tenant is configured for this client, explicitly remove any credential-extracted tenant
-        // to prevent attacker-controlled values from reaching the token (fail secure).
-        if (tenant != null && !tenant.isBlank()) {
-            payloadBuilder.claim("tenant", tenant);
-        } else {
-            // Remove any credential-extracted tenant claim — never fall through to attacker-controlled value
-            payloadBuilder.claim("tenant", null);
-            log.warn("Client has no tenant configured. Excluding tenant claim from access token.");
-        }
-
-        JWTClaimsSet payload = payloadBuilder.build();
-        return jwtService.issueJWT(payload.toString());
     }
 
     private String buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,

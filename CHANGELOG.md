@@ -10,6 +10,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EUDISTACK-546**: 
 - US-01: Custom domain operativo per tenant en el Verifier IdP
 - US-02: Sesión SSO establecida tras presentación OID4VP exitosa
+- US-03: Reutilización silenciosa de la sesión SSO en aplicativos adicionales
+
+### Added - 2026-06-22
+
+- **DOME legacy `PlainListEntity` revocation skip**: `VpServiceImpl.validateCredentialNotRevoked` short-circuits to `not revoked` (WARN log) when `credentialStatus.type == "PlainListEntity"`. Resolves the previous `Unsupported credentialStatus.type` exception that broke OID4VP login for DOME legacy credentials, whose revocation lists are plain JSON arrays of `{ "nonce": "<id>" }` (no JWT, no signature) and not exposed by any existing `CredentialStatusVerifier` strategy. Intentional during the DOME legacy sunset window; inline `TODO` captures the open decision (migrate legacy to `BitstringStatusListEntry` vs implement a real `PlainListEntityVerifier` adapter).
+
+### Changed - 2026-06-18
+- Upgraded `org.bouncycastle:bcprov-jdk18on` from `1.80` to `1.84`. 
+- Upgraded `org.bouncycastle:bcpkix-jdk18on` from `1.80` to `1.84`.
+- Removed explicit version pin from `jackson-dataformat-yaml` to use the Spring Boot managed BOM version.
+
+### Fixed - 2026-06-22
+
+- **SD-JWT credential types missing from dispatch catalogue**: `learcredential.employee.sd.1`, `learcredential.machine.sd.1` and `doctorid.sd.1` were absent from the `verifier.dispatch.rules` introduced in eba0126 (PR #31). Any wallet presenting an SD-JWT VC received `UnknownCredentialFormatException → HTTP 400` after full JWT + KB-JWT + status-list verification had already passed. Added the three SD-JWT config IDs to the `bumped` rule set. `FlagDefaultsTest` updated to assert the new catalogue sizes (6 legacy / 6 bumped / 12 total) and verify the SD-JWT entries explicitly.
+
+### Added - 2026-06-17
+
+- **Dual-format dispatcher (US-08 / EUDISTACK-145)**: new `CredentialSchemaDispatcher` port + `ContextAndTypeCredentialSchemaDispatcher` adapter that classifies every incoming credential as `LEGACY_V1_1` or `BUMPED_V2_0` from `type[]` + `@context`, deterministically and without try/catch fallback (AD-3). The decision drives a `LegacyCredentialReader` / `BumpedCredentialReader` SPI and an `AccessTokenBuilder` (`JwsAccessTokenBuilder`) that wraps the credential under `vc` only for VCDM v2.0 — preserving the legacy wrap for v1.1 (FR-06a). Domain ports: `CredentialReader`, `AccessTokenBuilder`, `CredentialSchemaDispatcher`, `TenantConfigPort`. Records: `DispatchDecision`, `DispatchRule`, `DispatchReason`, `CredentialFormat`, `BuildContext`, `ReaderResult`, `TenantDomeConfig`.
+- **Independent feature flags `verifier.dome.legacy-read-enabled` and `verifier.dome.bumped-read-enabled`** (`TenantDomeConfigProperties` + `PropertiesTenantConfigAdapter`): boolean toggles (default `true`) that gate legacy and bumped credential acceptance per tenant. Closing the legacy flag triggers `LegacyFormatSunsetClosedException → 410 Gone`; disabling the bumped flag triggers `BumpedFormatTemporarilyDisabledException → 503 Service Unavailable`. Source is currently `@ConfigurationProperties`; the spec target (DB-backed `tenant_dome_config` with TTL ≤ 60 s hot-reload, AC-07 / NFR-S-145-03) is documented as follow-up.
+- **Dispatcher catalogue in `application.yaml`** (`verifier.dispatch.rules.legacy/bumped`): `DispatchProperties` + `DispatchConfiguration` register a `List<DispatchRule>` of `credential-configuration-id → CredentialFormat` from configuration so adding new DOME or EUDIStack types is config-only, no recompile. Default catalogue covers `learcredential.{employee,machine}.w3c.{2,3,4}` and `gx.labelcredential.w3c.{1,2}` plus the raw DOME type aliases `LEARCredentialEmployee` and `LEARCredentialMachine`.
+- **RFC 9457 Problem+JSON error mapping** (`DomeDispatchExceptionHandler`): three new exceptions (`LegacyFormatSunsetClosedException`, `BumpedFormatTemporarilyDisabledException`, `UnknownCredentialFormatException`) mapped to `410` / `503` / `400` with a stable `properties.error` code (`legacy_format_sunset_closed`, `bumped_format_temporarily_disabled`, `unknown_credential_format`) so callers can branch on the machine-readable identifier instead of the human-readable `detail`.
+- **Micrometer instrumentation**: counter `dome_verifier_dispatcher_total{tenant, format, decision, reason}` and timer `dome_verifier_dispatcher_duration_ms{tenant}` in the dispatcher; counter `dome_verifier_legacy_replay_after_sunset_total{tenant}` in the exception handler. Drives the cutover dashboard / sunset-closure alerting (`architecture.md` §9.3).
+
+### Changed - 2026-06-17
+
+- **`AuthorizationResponseProcessorServiceImpl.handleAuthResponse`**: after JWT VP validation, the workflow now invokes `CredentialSchemaDispatcher.dispatch(credential)` so the OID4VP user-driven login path is subject to the same format gating as the M2M `client_credentials` grant (US-08 AC-07 / AC-10). The three dispatcher exceptions are added to the outer catch tree and trigger an SSE `FORMAT_GATED` event so the wallet can surface a specific message.
+- **`VerifyPresentationWorkflow`**: returns a `(credential, dispatchDecision)` record after dispatch so downstream workflows can read the resolved format and config-id without re-classifying.
+- **`TokenGenerationWorkflow`**: access-token construction delegated to the new `AccessTokenBuilder` port. The legacy/bumped distinction is honoured by the builder via `SchemaProfile.wrapVcInAccessToken`: VCDM v1.1 credentials pass through unmodified (their JWT already carries the `vc` wrap); VCDM v2.0 credentials are wrapped under `vc` exclusively at the verifier (FR-06a, FR-06b: issuers must not pre-wrap). `id_token` construction stays inside the workflow.
+- **`ClientCredentialsValidationWorkflow`**: invokes the dispatcher to enrich logs/metrics on M2M flows and gate access at the same point as OID4VP. `grantEligibility` lookup against `SchemaProfileRegistry` unchanged.
+- **`SchemaProfile`**: new boolean field `wrapVcInAccessToken` (default `false`, expected `true` for bumped profiles loaded from `eudistack-platform-assets`). Decouples format detection from access-token construction.
+- **`LocalSchemaProfileRegistry`**: now scans the `legacy/` subdirectory under the external schemas path, registers `type → profile` aliases via `registerCredentialTypeAliases` so credentials carrying bare semantic types in `type[]` (e.g. `LEARCredentialEmployee`) resolve to their versioned profile, and applies the canonical W3C VCDM default `issuer.id` to `issuerIdPath` when the schema does not declare `validation.issuer_id_path`. Sample profiles matching `*.sample*.json` are skipped.
+- **`LocalTrustedIssuersProvider`**: when a lookup by the credential's `issuer.id` misses (e.g. DOME credentials in full DID form `did:elsi:VATES-...`), the provider strips the `did:elsi:` prefix and retries once. A single `trusted-issuers.yaml` entry per organisation (plain identifier) now covers both EUDIStack-issued and DOME-issued credentials without duplication.
+- **`CertificateValidationServiceImpl.processCertificate`**: normalises the expected issuer id by stripping the `did:elsi:` prefix before matching the certificate's `organizationIdentifier` (OID `2.5.4.97`). Resolves `MismatchOrganizationIdentifierException` on DOME credentials whose JWT signs with a QTSP certificate whose DN carries only the bare VATES code.
+
+### Fixed - 2026-06-17
+
+- **OID4VP login bypassed the sunset flag (US-08 AC-07 / AC-10)**: prior to this branch the legacy/bumped feature flags only affected the M2M `client_credentials` grant; OID4VP user-driven logins through `/oid4vp/auth-response` skipped the dispatcher entirely and accepted any well-formed VP, so closing the legacy flag would still mint authorization codes for legacy credentials presented from a wallet. Both code paths now share the same gating point — closing `verifier.dome.legacy-read-enabled` returns `410 Gone` consistently across M2M and user-driven flows.
+
+### Changed - 2026-06-18
+- **Unified URL generation — canonical/non-canonical distinction removed**: all requests now arrive with the `/verifier` servlet context path, so `BackendConfig.getUrl()` always appends `request.getContextPath()` unconditionally. The `X-Tenant`-based branch that stripped the context path for non-canonical routes has been deleted, along with `IssuerOverrideFilter` and its test. `AuthorizationServerSettings` no longer needs a custom filter to override the issuer; Spring AS derives it correctly from the request URL. Stale test `getUrl_nonCanonical_returnsBaseWithoutContextPath` updated to reflect the new behavior.
+
+### Fixed 2026-06-18
+- **Discovery document URLs include `/verifier` for non-prefixed access**: Spring Authorization Server derives the issuer from `request.getRequestURI()`, which always includes the servlet context path (`/verifier`). For non-canonical deployments (where the external URL has no `/verifier` prefix), the discovery document URLs were incorrect. Added `IssuerOverrideFilter`, which runs after Spring AS's `AuthorizationServerContextFilter` and replaces the issuer in `AuthorizationServerContextHolder` with the value from `BackendConfig.getUrl()` — which already strips the context path when the `X-Tenant` header is present. Proxy must set `X-Tenant` for non-prefixed routes.
 
 ### Fixed - 2026-06-17
 - **CORS on public discovery endpoints**: `/.well-known/**` and `/oidc/jwks` were served by the Authorization Server filter chain (highest precedence), which applied the registered-clients CORS policy and blocked cross-origin requests from unregistered origins. These endpoints are public by spec (OpenID Connect Discovery 1.0, RFC 8414, RFC 7517) and now return a wildcard CORS configuration regardless of the requesting origin.
@@ -23,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tenant Resolution Header Support**: `TenantDomainFilter` now resolves the tenant from the `X-Tenant` request header first, validating and normalizing the value to lowercase before storing it as a request attribute and in the MDC. If the header is missing, blank, or invalid, tenant resolution falls back to the first valid hostname segment obtained from `request.getServerName()`. Added the `X_TENANT_HEADER` constant to `Constants`.
 - Build `allowedClientsOrigins` from registered redirect URIs to support multi-domain clients like DOME.
 - Validate certificate chain
+- Improved GDPR compliance by reducing PII logging.
 
 ## [3.1.7] - 2026-06-09
 
