@@ -78,8 +78,8 @@ class OidcMetadataPerTenantHostIT {
         try {
             ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
             try (InputStream is = getClass().getClassLoader().getResourceAsStream("sso-config.yaml")) {
-                es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData infraData =
-                        mapper.readValue(is, es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData.class);
+                TenantSsoConfigYamlData infraData =
+                        mapper.readValue(is, TenantSsoConfigYamlData.class);
 
                 // Convert infrastructure model to domain model
                 var domainEntries = infraData.tenants().stream()

@@ -3,8 +3,8 @@ package es.in2.vcverifier.oauth2.infrastructure.adapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.oauth2.domain.exception.SsoConfigLoadingException;
-import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
 import lombok.extern.slf4j.Slf4j;
@@ -64,7 +64,7 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
         }
     }
 
-    private es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData parseAndMap(InputStream is) throws Exception {
+    private TenantSsoConfigYamlData parseAndMap(InputStream is) throws Exception {
         TenantSsoConfigYamlData infraData = yamlMapper.readValue(is, TenantSsoConfigYamlData.class);
 
         log.info("ALL TENANTS LOADED = {}",

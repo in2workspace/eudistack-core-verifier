@@ -262,6 +262,44 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
+    // FIND BY ID (sin filtro tenant — solo para detección cross-tenant AC-04)
+    // =========================================================
+
+    @Override
+    public Optional<SsoSession> findById(SsoSessionId sessionId) {
+        checkCircuit();
+
+        String sql = """
+            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state
+            FROM sso_session
+            WHERE id = ?
+            LIMIT 1
+        """;
+
+        try (Connection c = dataSource.getConnection()) {
+
+            setStatementTimeout(c);
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setObject(1, sessionId.getValue());
+
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        recordSuccess();
+                        return Optional.of(sessionFromResultSet(rs));
+                    }
+                    recordSuccess();
+                    return Optional.empty();
+                }
+            }
+
+        } catch (SQLException e) {
+            recordFailure();
+            return Optional.empty();
+        }
+    }
+
+    // =========================================================
     // NEW: UPDATE LAST USED AT
     // =========================================================
 

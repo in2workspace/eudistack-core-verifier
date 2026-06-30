@@ -18,6 +18,7 @@ public class SsoAuditEvent {
         SSO_CONFIG_INCONSISTENT,
         SSO_CROSS_TENANT_ATTEMPT,
         SSO_SESSION_REUSED,
+        SSO_REUSE_DENIED,
     }
 
     private final EventType eventType;
