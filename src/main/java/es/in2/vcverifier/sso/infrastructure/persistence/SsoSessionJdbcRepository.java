@@ -329,7 +329,6 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 ps.setString(2, holderHash);
 
                 int updated = ps.executeUpdate();
-                ps.executeUpdate();
                 // B6: NFR-S-547-02 — 8-char prefix of holder hash only
                 log.info("Superseded {} rows for tenant={} holderHash={}...", updated, tenant, prefix8(holderHash));
                 recordSuccess();
@@ -360,35 +359,16 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         Instant expires = rs.getObject("expires_at", OffsetDateTime.class).toInstant();
         String state = rs.getString("state");
         OffsetDateTime lastUsedAtDb = rs.getObject("last_used_at", OffsetDateTime.class);
-        Instant lastUsedAt = (lastUsedAtDb != null)
-                ? lastUsedAtDb.toInstant()
-                : established;
+        Instant lastUsedAt = (lastUsedAtDb != null) ? lastUsedAtDb.toInstant() : established;
 
-        try {
-            Constructor<SsoSession> ctor = SsoSession.class.getDeclaredConstructor(
-                    SsoSessionId.class,
-                    String.class,
-                    String.class,
-                    Instant.class,
-                    Instant.class,
-                    Instant.class,
-                    SsoSessionState.class
-            );
-
-            ctor.setAccessible(true);
-
-            return ctor.newInstance(
-                    SsoSessionId.of(id),
-                    tenant,
-                    holderHash,
-                    established,
-                    expires,
-                    lastUsedAt,
-                    SsoSessionState.valueOf(state)
-            );
-
-        } catch (ReflectiveOperationException e) {
-            throw new SsoSessionRepositoryException("Mapping error", e);
-        }
+        return SsoSession.reconstitute(
+                SsoSessionId.of(id),
+                tenant,
+                holderHash,
+                established,
+                expires,
+                lastUsedAt,
+                SsoSessionState.valueOf(state)
+        );
     }
 }

@@ -58,9 +58,25 @@ public class SsoSession {
                 holderHash,
                 now,
                 now.plus(ttl),
-                now, // lastUsedAt inicial = creación
+                now,
                 SsoSessionState.ACTIVE
         );
+    }
+
+    /**
+     * Reconstruye una sesión desde persistencia. No valida que no haya expirado
+     * (el repositorio filtra por estado; el workflow comprueba isValid()).
+     */
+    public static SsoSession reconstitute(
+            SsoSessionId id,
+            String tenant,
+            String holderHash,
+            Instant establishedAt,
+            Instant expiresAt,
+            Instant lastUsedAt,
+            SsoSessionState state
+    ) {
+        return new SsoSession(id, tenant, holderHash, establishedAt, expiresAt, lastUsedAt, state);
     }
 
     /**
