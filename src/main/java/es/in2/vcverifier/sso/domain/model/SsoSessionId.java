@@ -1,5 +1,7 @@
 package es.in2.vcverifier.sso.domain.model;
 
+import lombok.Getter;
+
 import java.io.Serializable;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -9,6 +11,7 @@ import java.util.Objects;
  * Value Object that represents the opaque identifier of an SsoSession.
  * AD-2: generated with SecureRandom (256-bit) encoded as base64url without padding.
  */
+@Getter
 public final class SsoSessionId implements Serializable {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -32,10 +35,6 @@ public final class SsoSessionId implements Serializable {
     /** Reconstitutes from persistence (DB, JSON, etc.). */
     public static SsoSessionId of(String value) {
         return new SsoSessionId(value);
-    }
-
-    public String getValue() {
-        return value;
     }
 
     @Override

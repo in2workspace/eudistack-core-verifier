@@ -11,7 +11,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
 
 @SpringBootTest
 @Testcontainers
@@ -38,9 +37,6 @@ class VerifierApplicationTests {
 
     @MockitoBean
     private RegisteredClientRepository registeredClientRepository;
-
-    @MockitoBean
-    private TenantConfigPort tenantConfigPort;
 
     @Test
     void contextLoads() {

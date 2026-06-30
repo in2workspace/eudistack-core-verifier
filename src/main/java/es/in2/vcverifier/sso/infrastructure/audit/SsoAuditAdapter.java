@@ -12,11 +12,9 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
 
-
 @Component
 @Slf4j
 public class SsoAuditAdapter implements SsoAuditPort {
-
 
     @Override
     public void publish(SsoAuditEvent event) {
@@ -30,7 +28,7 @@ public class SsoAuditAdapter implements SsoAuditPort {
         logEvent.put("correlationId", event.getCorrelationId());
         logEvent.put("occurredAt", event.getOccurredAt());
 
-        // NFR-S-547-01: never log sub in clear — SHA-256 one-way hash, first 16 hex chars only
+        // NFR-S-547-01: never log sub in clear — SHA-256 one-way hash
         logEvent.put("sub", maskSubject(event.getHolderHash()));
 
         // NFR-S-547-02: holderHash prefix for traceability (not a session id)
@@ -41,8 +39,6 @@ public class SsoAuditAdapter implements SsoAuditPort {
 
     /**
      * Never expose subject (user identifier) in clear.
-     * SHA-256 is used as a one-way hash; only the first 16 hex chars are logged
-     * to limit exposure while retaining enough entropy for correlation.
      */
     private String maskSubject(String sub) {
         if (sub == null) return null;
@@ -52,7 +48,6 @@ public class SsoAuditAdapter implements SsoAuditPort {
             String hex = HexFormat.of().formatHex(hash);
             return hex.substring(0, 16);
         } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is guaranteed by the JVM spec — this branch is unreachable in practice
             return "unavailable";
         }
     }

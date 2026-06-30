@@ -8,6 +8,7 @@ import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
+import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,9 @@ class CustomAuthorizationRequestConverterTest {
     @Mock
     private SafeUrlValidator safeUrlValidator;
 
+    @Mock
+    private ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
+
     private boolean isNonceRequiredOnFapiProfile = true;
     private long loginTimeoutSeconds = 120L;
 
@@ -86,7 +90,8 @@ class CustomAuthorizationRequestConverterTest {
                 loginTimeoutSeconds,
                 httpClient,
                 authorizationRequestBuildWorkflow,
-                safeUrlValidator
+                safeUrlValidator,
+                reuseSsoSessionWorkflow
         );
     }
 

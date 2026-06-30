@@ -17,6 +17,7 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequest
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomTokenRequestConverter;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
+import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +65,7 @@ public class AuthorizationServerConfig {
     private final SafeUrlValidator safeUrlValidator;
     private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
     private final Set<String> allowedClientsOrigins;
+    private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -78,7 +80,7 @@ public class AuthorizationServerConfig {
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
-                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,safeUrlValidator))
+                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,safeUrlValidator,reuseSsoSessionWorkflow))
                                 .errorResponseHandler(new CustomErrorResponseHandler(allowedClientsOrigins, backendConfig))
                 )
                 .tokenEndpoint(tokenEndpoint ->

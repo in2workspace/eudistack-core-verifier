@@ -208,8 +208,11 @@ class EstablishSsoSessionIT {
                   "tenant": "tenant-a"
                 }
                 """))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/"))
+                // EUDISTACK-547 AC-01/AC-04: el POST /oid4vp/auth-response es un ACK 200; el
+                // redirect al redirect_uri se entrega por SSE, no como 302. La cookie SSO viaja
+                // en este 200. (Antes asertaba 3xx → "/" del SavedRequestAware: el bug que en
+                // runtime redirigía a /verifier/ y causaba 504/CORS en el wallet.)
+                .andExpect(status().isOk())
                 .andExpect(cookie().exists("__Secure-sso-tenant-a"));
 
         verify(establishSsoSessionWorkflow).execute(any());
@@ -231,7 +234,9 @@ class EstablishSsoSessionIT {
                         .principal(() -> "legacy-tenant")
                         .param("state", "test-state")
                         .param("vp_token", VP_TOKEN_B64))
-                .andExpect(status().is3xxRedirection())
+                // EUDISTACK-547 AC-04: tenant legacy → 200 ACK sin cookie SSO (el flujo OID4VP
+                // completa vía SSE, sin regresión). Antes asertaba 3xx (redirect del bug).
+                .andExpect(status().isOk())
                 .andExpect(header().doesNotExist("Set-Cookie"));
 
         Integer count = jdbcTemplate.queryForObject(

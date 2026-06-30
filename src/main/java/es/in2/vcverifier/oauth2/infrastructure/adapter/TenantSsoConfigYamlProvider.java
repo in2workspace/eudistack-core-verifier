@@ -3,8 +3,8 @@ package es.in2.vcverifier.oauth2.infrastructure.adapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.oauth2.domain.exception.SsoConfigLoadingException;
-import es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
 import lombok.extern.slf4j.Slf4j;
@@ -31,31 +31,29 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
     }
 
     @Override
-    public es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData retrieve() {
+    public TenantSsoConfigYamlData retrieve() {
 
         try {
             String path = backendProperties.localFiles() != null
                     ? backendProperties.localFiles().ssoConfigPath()
                     : null;
 
-            // Caso 1: ruta externa configurada → leer desde filesystem
             if (path != null && !path.isBlank()) {
                 try (InputStream is = Files.newInputStream(Path.of(path))) {
-                    return parseAndMap(is);
+                    return parseAndNormalize(is);
                 } catch (java.nio.file.NoSuchFileException e) {
                     log.warn("sso-config.yaml not found at path: {}. Falling back to classpath.", path);
                 }
             }
 
-            // Caso 2: sin ruta externa → intentar classpath
             InputStream is = getClass().getClassLoader().getResourceAsStream("sso-config.yaml");
             if (is == null) {
                 log.warn("sso-config.yaml not found in classpath. Returning empty SSO config.");
-                return new es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData(List.of());
+                return new TenantSsoConfigYamlData(List.of());
             }
 
             try (is) {
-                return parseAndMap(is);
+                return parseAndNormalize(is);
             }
 
         } catch (Exception e) {
@@ -64,25 +62,19 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
         }
     }
 
-    private es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData parseAndMap(InputStream is) throws Exception {
-        TenantSsoConfigYamlData infraData = yamlMapper.readValue(is, TenantSsoConfigYamlData.class);
+    private TenantSsoConfigYamlData parseAndNormalize(InputStream is) throws Exception {
+        TenantSsoConfigYamlData data = yamlMapper.readValue(is, TenantSsoConfigYamlData.class);
 
-        log.info("ALL TENANTS LOADED = {}",
-                infraData.tenants().stream().map(TenantSsoEntry::tenant).toList());
+        List<TenantSsoEntry> tenants = data.tenants() != null ? data.tenants() : List.of();
 
-        List<TenantSsoEntry> domainEntries = infraData.tenants()
-                .stream()
-                .map(e -> new TenantSsoEntry(
-                        e.tenant(),
-                        e.rootDomain(),
-                        e.ssoEnabled()
-                ))
+        List<TenantSsoEntry> normalized = tenants.stream()
+                .map(e -> e.eligibleClients() != null
+                        ? e
+                        : new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled(), List.of()))
                 .toList();
 
-        return new es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData(domainEntries);
+        log.info("ALL TENANTS LOADED = {}", normalized.stream().map(TenantSsoEntry::tenant).toList());
+
+        return new TenantSsoConfigYamlData(normalized);
     }
-
-
 }
-
-

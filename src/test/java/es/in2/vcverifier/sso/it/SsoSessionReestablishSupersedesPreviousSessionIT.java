@@ -93,14 +93,15 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     @BeforeEach
     void clean() {
         jdbcTemplate.execute("""
-        CREATE TABLE IF NOT EXISTS sso_session (
-            id TEXT PRIMARY KEY,
-            tenant TEXT NOT NULL,
-            holder_hash TEXT NOT NULL,
-            established_at TIMESTAMPTZ NOT NULL,
-            expires_at TIMESTAMPTZ NOT NULL,
-            state VARCHAR(32) NOT NULL
-        )
+            CREATE TABLE IF NOT EXISTS sso_session (
+                 id TEXT PRIMARY KEY,
+                 tenant TEXT NOT NULL,
+                 holder_hash TEXT NOT NULL,
+                 established_at TIMESTAMPTZ NOT NULL,
+                 expires_at TIMESTAMPTZ NOT NULL,
+                 last_used_at TIMESTAMPTZ NOT NULL,
+                 state VARCHAR(32) NOT NULL
+             )
         """);
 
         jdbcTemplate.execute("DELETE FROM sso_session");
@@ -122,7 +123,8 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                                 new es.in2.vcverifier.shared.domain.model.TenantSsoConfig.SsoTtlConfig(
                                         Duration.ofHours(8),
                                         Duration.ofHours(1)
-                                )
+                                ),
+                                java.util.List.of()
                         )
                 ));
 
@@ -139,7 +141,8 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state")
                         .param("vp_token", VP_TOKEN_B64))
-                .andExpect(status().is3xxRedirection());
+                // EUDISTACK-547: POST /oid4vp/auth-response = ACK 200 (redirect vía SSE), no 302.
+                .andExpect(status().isOk());
 
         Integer firstCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
@@ -155,7 +158,8 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state-2")
                         .param("vp_token", VP_TOKEN_B64))
-                .andExpect(status().is3xxRedirection())
+                // EUDISTACK-547: ACK 200 con cookie SSO regenerada (redirect vía SSE), no 302.
+                .andExpect(status().isOk())
                 .andExpect(header().exists("Set-Cookie"));
 
         Integer total = jdbcTemplate.queryForObject(

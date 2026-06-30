@@ -2,6 +2,8 @@ package es.in2.vcverifier.shared.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.List;
+
 /**
  * Domain model (port) for SSO tenant configuration entry.
  * Represents a single tenant's SSO settings from YAML.
@@ -9,7 +11,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record TenantSsoEntry(
         String tenant,
         String rootDomain,
-        //@JsonProperty("sso.enabled")
-        boolean ssoEnabled
+        boolean ssoEnabled,
+        List<String> eligibleClients
 ) {}
 

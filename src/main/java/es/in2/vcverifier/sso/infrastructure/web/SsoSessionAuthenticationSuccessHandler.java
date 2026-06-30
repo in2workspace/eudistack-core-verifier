@@ -10,7 +10,6 @@ import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
@@ -24,7 +23,6 @@ import java.util.UUID;
 @Component
 public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuccessHandler {
 
-    private final AuthenticationSuccessHandler oid4vpSuccessHandler;
     private final EstablishSsoSessionWorkflow establishSsoSessionWorkflow;
     private final SsoSessionCookieFactory cookieFactory;
     private final SsoAuditPort auditPort;
@@ -32,13 +30,11 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
 
 
     public SsoSessionAuthenticationSuccessHandler(
-            @Lazy AuthenticationSuccessHandler oid4vpSuccessHandler,
             EstablishSsoSessionWorkflow establishSsoSessionWorkflow,
             SsoSessionCookieFactory cookieFactory,
             SsoAuditPort auditPort,
             TenantSsoConfigPort tenantSsoConfigPort
     ) {
-        this.oid4vpSuccessHandler = oid4vpSuccessHandler;
         this.establishSsoSessionWorkflow = establishSsoSessionWorkflow;
         this.cookieFactory = cookieFactory;
         this.auditPort = auditPort;
@@ -98,7 +94,16 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
 
                 // Set-Cookie ANTES de delegar al handler que puede hacer commit del response.
                 response.addHeader("Set-Cookie", cookie.toString());
-                // B8: SSO_SESSION_ESTABLISHED is published by the workflow (canonical owner). No duplicate here.
+
+                auditPort.publish(new SsoAuditEvent(
+                        SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
+                        vpData.tenant(),
+                        vpData.clientId(),
+                        vpData.holderHash(),
+                        "SUCCESS",
+                        correlationId,
+                        java.time.Instant.now()
+                ));
             }
 
         } catch (SsoConfigInconsistentException e) {
@@ -127,9 +132,15 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             throw e;
         }
 
-        // 4. Siempre al final: puede hacer commit del response (redirect),
-        // por lo que ningún header debe añadirse después de esta llamada.
-        oid4vpSuccessHandler.onAuthenticationSuccess(request, response, authentication);
+        // 4. NO se delega en ningún AuthenticationSuccessHandler que haga commit del response.
+        //    El antiguo delegado (SavedRequestAwareAuthenticationSuccessHandler) redirigía a su
+        //    defaultTargetUrl "/" → con el context path = "/verifier/", un path que nadie sirve:
+        //    el wallet hace fetch(redirect:'follow'), sigue ese 302 y termina en 504/CORS,
+        //    incumpliendo EUDISTACK-547 AC-01 (la respuesta debe ir hacia el redirect_uri del
+        //    aplicativo) y AC-04 (sin regresión observable del flujo OID4VP).
+        //    El redirect al redirect_uri real lo entrega AuthorizationResponseProcessorService
+        //    vía SSE; aquí el POST /oid4vp/auth-response mantiene el 200 OK del controller
+        //    (@ResponseStatus(HttpStatus.OK)) con la cookie __Secure-sso-* ya añadida en el paso 3.
     }
 
     private VpData extractVpData(Authentication authentication) {
