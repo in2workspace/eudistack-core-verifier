@@ -98,7 +98,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
-        if (session.isExpired()) {
+        if (!session.isValid(now, config.ttl().idle())) {
             return new Result(
                     Result.Status.LOGIN_REQUIRED,
                     null
@@ -133,7 +133,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         // -------------------------------
         auditPort.publish(
                 SsoAuditEvent.builder()
-                        .eventType(SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED)
+                        .eventType(SsoAuditEvent.EventType.SSO_SESSION_REUSED)
                         .tenant(tenantSlug)
                         .clientId(clientId)
                         .outcome("REUSED")

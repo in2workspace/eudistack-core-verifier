@@ -58,9 +58,25 @@ public class SsoSession {
                 holderHash,
                 now,
                 now.plus(ttl),
-                now, // lastUsedAt inicial = creación
+                now,
                 SsoSessionState.ACTIVE
         );
+    }
+
+    /**
+     * Reconstruye una sesión desde persistencia. No valida que no haya expirado
+     * (el repositorio filtra por estado; el workflow comprueba isValid()).
+     */
+    public static SsoSession reconstitute(
+            SsoSessionId id,
+            String tenant,
+            String holderHash,
+            Instant establishedAt,
+            Instant expiresAt,
+            Instant lastUsedAt,
+            SsoSessionState state
+    ) {
+        return new SsoSession(id, tenant, holderHash, establishedAt, expiresAt, lastUsedAt, state);
     }
 
     /**
@@ -133,10 +149,6 @@ public class SsoSession {
 
         if (expiresAt.isBefore(establishedAt)) {
             throw new IllegalStateException("expiresAt cannot be before establishedAt");
-        }
-
-        if (Instant.now().isAfter(expiresAt)) {
-            throw new IllegalStateException("Session cannot be created already expired");
         }
 
         if (lastUsedAt == null) {
