@@ -7,8 +7,10 @@ import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
+import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,17 +30,20 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
     private final SsoSessionRepositoryPort sessionRepository;
     private final Clock clock;
     private final SsoAuditPort auditPort;
+    private final TenantSsoPolicy policy;
 
     public ReuseSsoSessionWorkflowImpl(
             TenantSsoConfigPort configPort,
             SsoSessionRepositoryPort sessionRepository,
             Clock clock,
-            SsoAuditPort auditPort
+            SsoAuditPort auditPort,
+            TenantSsoPolicy policy
     ) {
         this.configPort = configPort;
         this.sessionRepository = sessionRepository;
         this.clock = clock;
         this.auditPort = auditPort;
+        this.policy = policy;
     }
 
     @Override
@@ -103,29 +108,18 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         }
 
         // -------------------------------
-        // 3. VALIDITY (absolute + idle TTL)
+        // 3. POLICY: cliente registrado + sesión vigente + catálogo (US-03 + US-05)
         // -------------------------------
         SsoSessionTtl ttl = configPort.resolveTtl(tenantSlug);
+        TenantSsoCatalog catalog = configPort.resolveEligibleClients(tenantSlug);
 
-        if (!session.isValid(now, ttl.idle())) {
-            return new Result(
-                    Result.Status.LOGIN_REQUIRED,
-                    null
-            );
-        }
+        TenantSsoPolicy.Decision decision = policy.evaluate(clientId, session, ttl, catalog);
 
-        // -------------------------------
-        // 4. CLIENT ELIGIBILITY
-        // -------------------------------
-
-        boolean clientEligible = config.eligibleClientIds().isEmpty()
-                || config.eligibleClientIds().contains(clientId);
-
-        if (!clientEligible) {
-            return new Result(
-                    Result.Status.INTERACTION_REQUIRED,
-                    null
-            );
+        if (decision instanceof TenantSsoPolicy.Decision.Rejected rejected) {
+            return switch (rejected.reason()) {
+                case REJECT_SESSION -> new Result(Result.Status.LOGIN_REQUIRED, null);
+                case REJECT_CATALOG -> new Result(Result.Status.INTERACTION_REQUIRED, null);
+            };
         }
 
         // -------------------------------

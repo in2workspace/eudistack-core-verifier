@@ -7,15 +7,18 @@ import es.in2.vcverifier.sso.application.workflow.ReuseSsoSessionWorkflowImpl;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
+import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -26,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -47,13 +51,15 @@ class SsoSessionTtlValidityIT {
     private static final String CLIENT_ID   = "client-a";
     private static final String HOLDER_HASH = "holder-hash-001";
 
-    @Mock private TenantSsoConfigPort     configPort;
+    @Mock private TenantSsoConfigPort      configPort;
     @Mock private SsoSessionRepositoryPort sessionRepository;
-    @Mock private Clock                   clock;
-    @Mock private SsoAuditPort            auditPort;
-    @Mock private AuthorizationContext    ctx;
+    @Mock private Clock                    clock;
+    @Mock private SsoAuditPort             auditPort;
+    @Mock private AuthorizationContext     ctx;
+    @Mock private RegisteredClientRepository clientRepository;
 
-    @InjectMocks
+    // TenantSsoPolicy se construye manualmente para recibir el clock mockeado
+    // y que Instant.now(clock) sea el mismo en workflow y policy.
     private ReuseSsoSessionWorkflowImpl workflow;
 
     // ── Shared config stub: SSO enabled, eligible client ──────────────────────
@@ -61,12 +67,22 @@ class SsoSessionTtlValidityIT {
 
     @BeforeEach
     void setUp() {
+        // TenantSsoPolicy usa el mismo clock mock → comparte "now" con el workflow.
+        TenantSsoPolicy policy = new TenantSsoPolicy(clientRepository, clock);
+        workflow = new ReuseSsoSessionWorkflowImpl(configPort, sessionRepository, clock, auditPort, policy);
+
         ssoEnabledConfig = new TenantSsoConfig(
                 TENANT, "example.com", true,
                 new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(8), Duration.ofMinutes(30)),
                 List.of(CLIENT_ID)
         );
         when(configPort.getByTenant(anyString())).thenReturn(Optional.of(ssoEnabledConfig));
+        // Catálogo siempre contiene el cliente: la validez TTL es la única variable.
+        when(configPort.resolveEligibleClients(anyString()))
+                .thenReturn(TenantSsoCatalog.of(List.of(CLIENT_ID)));
+        // Cliente registrado en el AS: la condición (1) de TenantSsoPolicy siempre pasa.
+        when(clientRepository.findByClientId(CLIENT_ID))
+                .thenReturn(mock(RegisteredClient.class));
     }
 
     // =========================================================

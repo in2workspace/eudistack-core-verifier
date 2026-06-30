@@ -11,13 +11,24 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 @Slf4j
 public class SsoAuditAdapter implements SsoAuditPort {
 
+    private static final Set<SsoAuditEvent.EventType> CATALOG_EVENTS = Set.of(
+            SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_ADDED,
+            SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_REMOVED,
+            SsoAuditEvent.EventType.SSO_CATALOG_NO_OP
+    );
+
     @Override
     public void publish(SsoAuditEvent event) {
+        if (CATALOG_EVENTS.contains(event.getEventType())) {
+            logCatalogChange(event);
+            return;
+        }
 
         Map<String, Object> logEvent = new HashMap<>();
 
@@ -75,5 +86,31 @@ public class SsoAuditAdapter implements SsoAuditPort {
         return sessionId.length() <= 8
                 ? sessionId
                 : sessionId.substring(0, 8);
+    }
+
+    // =========================================================
+    // CATALOG CHANGE (NFR-O-01)
+    // =========================================================
+
+    /**
+     * Emite un evento estructurado de tipo CATALOG_CHANGE (NFR-O-01).
+     * No aplica masking de holderHash: los eventos de catálogo no contienen datos de usuario.
+     */
+    private void logCatalogChange(SsoAuditEvent event) {
+        Map<String, Object> logEvent = new HashMap<>();
+        logEvent.put("type", "CATALOG_CHANGE");
+        logEvent.put("tenant", event.getTenant());
+        logEvent.put("operation", toOperation(event.getEventType()));
+        logEvent.put("clientId", event.getClientId());
+        logEvent.put("timestamp", event.getOccurredAt());
+        log.info("SSO_AUDIT_EVENT {}", logEvent);
+    }
+
+    private String toOperation(SsoAuditEvent.EventType type) {
+        return switch (type) {
+            case SSO_CATALOG_CLIENT_ADDED   -> "ADD";
+            case SSO_CATALOG_CLIENT_REMOVED -> "REMOVE";
+            default                         -> "NO_OP";
+        };
     }
 }

@@ -105,7 +105,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // Case 1: Standard OIDC authorization request without a signed JWT object
         if (requestUri == null && request.getParameter("request") == null) {
             log.info("Processing an authorization request without a signed JWT object.");
-            tryReuseSsoSession(request, authorizationContext, clientId);
+            ReuseSsoSessionWorkflow.Result ssoResult =
+                    tryReuseSsoSession(request, authorizationContext, clientId);
+            if (ssoResult != null
+                    && ssoResult.status() != ReuseSsoSessionWorkflow.Result.Status.ALLOWED) {
+                throwSsoErrorRedirect(ssoResult.status(), authorizationContext, registeredClient);
+            }
             return handleOIDCStandardRequest(authorizationContext, registeredClient);
         }
 
@@ -115,23 +120,49 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     /**
      * When prompt=none is present, runs the SSO session reuse workflow.
-     * The workflow validates the session, touches last_used_at and emits audit events.
-     * The result is intentionally ignored here: all outcomes (ALLOWED, LOGIN_REQUIRED,
-     * INTERACTION_REQUIRED) fall through to the standard OID4VP authorization flow so
-     * the caller always gets a redirect response.
+     *
+     * @return the workflow result, or null when prompt≠none or tenant is unavailable
      */
-    private void tryReuseSsoSession(HttpServletRequest request,
-                                    AuthorizationContext ctx,
-                                    String clientId) {
+    private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
+                                                              AuthorizationContext ctx,
+                                                              String clientId) {
         if (!"none".equals(request.getParameter("prompt"))) {
-            return;
+            return null;
         }
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
-            return;
+            return null;
         }
         String cookieValue = extractCookieValue(request, SSO_COOKIE_PREFIX + tenant);
-        reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+    }
+
+    /**
+     * Builds an OIDC error redirect (login_required / interaction_required) and throws
+     * OAuth2AuthorizationCodeRequestAuthenticationException so CustomErrorResponseHandler
+     * redirects the RP to its redirect_uri with the error code.
+     */
+    private void throwSsoErrorRedirect(ReuseSsoSessionWorkflow.Result.Status status,
+                                       AuthorizationContext ctx,
+                                       RegisteredClient registeredClient) {
+        String errorCode = status == ReuseSsoSessionWorkflow.Result.Status.INTERACTION_REQUIRED
+                ? "interaction_required" : "login_required";
+
+        String redirectUri = ctx.redirectUri();
+        if (redirectUri == null || redirectUri.isBlank()
+                || !registeredClient.getRedirectUris().contains(redirectUri)) {
+            OAuth2Error error = new OAuth2Error(errorCode);
+            throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        }
+
+        String state = ctx.state();
+        String stateParam = (state != null && !state.isBlank())
+                ? "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
+                : "";
+        String redirectUrl = redirectUri + "?error=" + errorCode + stateParam;
+
+        OAuth2Error error = new OAuth2Error(REQUIRED_EXTERNAL_USER_AUTHENTICATION, errorCode, redirectUrl);
+        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {

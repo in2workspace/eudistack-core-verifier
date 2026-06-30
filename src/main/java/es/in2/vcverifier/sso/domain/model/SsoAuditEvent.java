@@ -18,6 +18,9 @@ public class SsoAuditEvent {
         SSO_CONFIG_INCONSISTENT,
         SSO_CROSS_TENANT_ATTEMPT,
         SSO_SESSION_REUSED,
+        SSO_CATALOG_CLIENT_ADDED,
+        SSO_CATALOG_CLIENT_REMOVED,
+        SSO_CATALOG_NO_OP,
     }
 
     private final EventType eventType;

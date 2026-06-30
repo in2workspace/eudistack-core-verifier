@@ -6,6 +6,7 @@ import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapte
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +50,9 @@ class OidcMetadataPerTenantHostIT {
 
     @MockitoBean
     private SsoSessionAuthenticationSuccessHandler successHandler;
+
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
 
     @BeforeEach
     void setup() {

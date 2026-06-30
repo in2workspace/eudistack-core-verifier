@@ -1,5 +1,6 @@
 package es.in2.vcverifier;
 
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,6 +38,9 @@ class VerifierApplicationTests {
 
     @MockitoBean
     private RegisteredClientRepository registeredClientRepository;
+
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
 
     @Test
     void contextLoads() {

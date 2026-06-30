@@ -7,6 +7,7 @@ import es.in2.vcverifier.sso.domain.model.ReuseResult;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -65,6 +66,9 @@ class ReuseSsoSessionStoreFailureIT {
 
     @MockitoBean
     private es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler customErrorResponseHandler;
+
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
 
     @MockitoSpyBean
     private SsoAuditPort auditPort;

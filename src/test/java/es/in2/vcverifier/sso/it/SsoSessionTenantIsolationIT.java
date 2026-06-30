@@ -2,6 +2,7 @@ package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -38,6 +39,9 @@ class SsoSessionTenantIsolationIT {
 
     @MockitoBean
     private SsoAuditPort auditPort;
+
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
 
     @Test
     void shouldRejectCookieFromTenantAWhenUsedOnTenantB_andEmitCrossTenantAuditEvent() throws Exception {

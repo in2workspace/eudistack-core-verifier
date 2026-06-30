@@ -1,5 +1,6 @@
 package es.in2.vcverifier.integration;
 
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,9 @@ class CorsIntegrationTest {
 
     @MockitoBean
     private RegisteredClientRepository registeredClientRepository;
+
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
 
     // --- Public endpoints: wildcard CORS ---
 

@@ -8,6 +8,7 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -89,6 +90,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     @MockitoBean
     CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
     @MockitoBean AuthorizationResponseProcessorService authorizationResponseProcessorService;
+    @MockitoBean SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
     @Autowired SsoSessionRepositoryPort sessionRepositoryPort;
 
     @BeforeEach

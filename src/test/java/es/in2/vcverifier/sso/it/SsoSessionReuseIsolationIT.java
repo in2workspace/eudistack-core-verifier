@@ -4,6 +4,7 @@ import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -66,6 +67,9 @@ class SsoSessionReuseIsolationIT {
     @MockitoBean
     private es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler customErrorResponseHandler;
 
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
+
     @BeforeEach
     void setup() {
         RegisteredClient client = RegisteredClient.withId(UUID.randomUUID().toString())
@@ -99,10 +103,12 @@ class SsoSessionReuseIsolationIT {
                 .thenReturn(Optional.empty());
 
         mockMvc.perform(get("/oidc/authorize")
-                        // cookie generada en tenant A
+                        // cookie generada en tenant A — no sirve para tenant B
                         .cookie(new Cookie("__Secure-sso-" + tenantA, "SESSION-123"))
-                        // request llega como tenant B (simulado por host/filter)
-                        .header("Host", tenantB + ".example.com")
+                        // tenant B explícito vía X-Tenant: TenantDomainFilter lo resuelve
+                        // correctamente y backendConfig.getUrl() devuelve https://localhost
+                        // (sin Host override), permitiendo el redirect de error al client.
+                        .header("X-Tenant", tenantB)
                         .header("X-Forwarded-Proto", "https")
                         .param("client_id", "client-b")
                         .param("scope", "openid")

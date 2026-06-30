@@ -4,7 +4,9 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
+import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.service.TenantSsoTtlPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,6 +73,18 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
         return SsoSessionTtl.of(config.ttl().absolute(), config.ttl().idle());
     }
 
+    @Override
+    public TenantSsoCatalog resolveEligibleClients(String tenant) {
+        if (tenant == null) {
+            return TenantSsoCatalog.empty();
+        }
+        TenantSsoConfig config = cache.get().get(tenant.toLowerCase());
+        if (config == null) {
+            return TenantSsoCatalog.empty();
+        }
+        return TenantSsoCatalog.of(config.eligibleClientIds());
+    }
+
     private Map<String, TenantSsoConfig> load() {
 
         TenantSsoConfigYamlData yaml = provider.retrieve();
@@ -90,8 +104,8 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
             // Delegar en TenantSsoTtlPolicy: null → default, fuera de rango → default + log
             SsoSessionTtl resolvedTtl = ttlPolicy.resolve(parsedAbsolute, parsedIdle);
 
-            List<String> eligibleClients =
-                    t.eligibleClients() != null ? t.eligibleClients() : List.of();
+            // ES-01: parseo aislado por entrada — clientId malformado descartado individualmente
+            List<String> eligibleClients = parseEligibleClients(t.eligibleClients(), tenant);
 
             if (enabled && (rootDomain == null || rootDomain.isBlank())) {
 
@@ -143,5 +157,28 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                     tenant, field, raw);
             return null;
         }
+    }
+
+    /**
+     * ES-01: parseo aislado por entrada — cada clientId se valida y normaliza
+     * de forma independiente vía SsoEligibleClient.of().
+     * Entrada nula / en blanco / malformada → descartada individualmente con log warn.
+     * No interrumpe el procesamiento del resto de entradas ni de otros tenants.
+     * Lista nula o vacía → catálogo vacío (fail-closed, AC-03).
+     */
+    private List<String> parseEligibleClients(List<String> raw, String tenant) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        List<String> valid = new ArrayList<>();
+        for (String entry : raw) {
+            try {
+                valid.add(SsoEligibleClient.of(entry).clientId());
+            } catch (Exception e) {
+                log.warn("event=sso_catalog_entry_discarded tenant={} entry={} reason={}",
+                        tenant, entry, e.getMessage());
+            }
+        }
+        return Collections.unmodifiableList(valid);
     }
 }
