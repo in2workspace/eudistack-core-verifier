@@ -141,7 +141,8 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state")
                         .param("vp_token", VP_TOKEN_B64))
-                .andExpect(status().is3xxRedirection());
+                // EUDISTACK-547: POST /oid4vp/auth-response = ACK 200 (redirect vía SSE), no 302.
+                .andExpect(status().isOk());
 
         Integer firstCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
@@ -157,7 +158,8 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state-2")
                         .param("vp_token", VP_TOKEN_B64))
-                .andExpect(status().is3xxRedirection())
+                // EUDISTACK-547: ACK 200 con cookie SSO regenerada (redirect vía SSE), no 302.
+                .andExpect(status().isOk())
                 .andExpect(header().exists("Set-Cookie"));
 
         Integer total = jdbcTemplate.queryForObject(

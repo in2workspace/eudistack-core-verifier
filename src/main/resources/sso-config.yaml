@@ -1,16 +1,43 @@
+# Default SSO tenant configuration (classpath fallback / template).
+# Real deployments OVERRIDE this by mounting a sso-config.yaml at the path given by
+# VERIFIER_BACKEND_LOCALFILES_SSOCONFIGPATH (e.g. /etc/eudistack/verifier/sso-config.yaml).
+#
+# Fields per tenant:
+#   tenant          - tenant id (lowercased on load)
+#   rootDomain      - domain the SSO session cookie is scoped to. REQUIRED when
+#                     ssoEnabled=true (blank + enabled -> SSO fails closed and logs
+#                     event=sso_config_inconsistent). Scope it to the shared parent
+#                     domain across the tenant's applications to enable SSO reuse.
+#   ssoEnabled      - whether SSO session reuse is active for the tenant
+#   eligibleClients - client_ids eligible for SSO reuse (empty = none)
 tenants:
   - tenant: "sandbox"
     rootDomain: "sandbox.example.com"
     ssoEnabled: true
     eligibleClients:
-      - "verifier-client"
+      - "vc-auth-client-sandbox"
 
-  - tenant: "sandboxDos"
-    rootDomain: ""
+  - tenant: "cgcom"
+    rootDomain: "cgcom.example.com"
     ssoEnabled: true
-    eligibleClients: []
+    eligibleClients:
+      - "vc-auth-client-cgcom"
 
-  - tenant: "sandboxTres"
-    rootDomain: ""
-    ssoEnabled: false
-    eligibleClients: []
+  - tenant: "kpmg"
+    rootDomain: "kpmg.example.com"
+    ssoEnabled: true
+    eligibleClients:
+      - "vc-auth-client-kpmg"
+
+  - tenant: "dome"
+    rootDomain: "dome.example.com"
+    ssoEnabled: true
+    eligibleClients:
+      - "vc-auth-client-dome"
+      - "vc-auth-client-dome-custom"
+
+  - tenant: "platform"
+    rootDomain: "platform.example.com"
+    ssoEnabled: true
+    eligibleClients:
+      - "vc-auth-client-platform"
