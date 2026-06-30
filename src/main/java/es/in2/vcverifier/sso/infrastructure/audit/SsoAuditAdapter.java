@@ -62,18 +62,4 @@ public class SsoAuditAdapter implements SsoAuditPort {
                 : holderHash.substring(0, 8);
     }
 
-    // =========================================================
-    // NEW METHOD
-    // =========================================================
-
-    /**
-     * NFR: Never expose full sessionId in logs.
-     * Only prefix allowed for traceability.
-     */
-    private String prefixSessionId(String sessionId) {
-        if (sessionId == null) return null;
-        return sessionId.length() <= 8
-                ? sessionId
-                : sessionId.substring(0, 8);
-    }
 }

@@ -3,7 +3,7 @@
 -- Idempotent so it is safe to run manually; Flyway will run once.
 
 CREATE TABLE IF NOT EXISTS sso_session (
-               id UUID PRIMARY KEY,
+               id TEXT PRIMARY KEY,
                tenant TEXT NOT NULL,
                holder_hash TEXT NOT NULL,
                established_at TIMESTAMPTZ NOT NULL,

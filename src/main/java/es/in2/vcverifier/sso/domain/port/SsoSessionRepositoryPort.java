@@ -55,5 +55,10 @@ public interface SsoSessionRepositoryPort {
             Instant now
     );
 
+    /**
+     * Busca una sesión por ID sin filtro de tenant.
+     * Usado exclusivamente para detectar intentos de acceso cross-tenant (AC-04).
+     */
+    Optional<SsoSession> findById(SsoSessionId sessionId);
 
 }

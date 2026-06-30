@@ -8,7 +8,6 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
-import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -135,15 +134,7 @@ public class TenantSsoConfigConsistencyIT {
                     try (InputStream is =
                                  getClass().getClassLoader().getResourceAsStream("sso-config.yaml")) {
 
-                        es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData infraData =
-                                mapper.readValue(is, es.in2.vcverifier.oauth2.infrastructure.config.TenantSsoConfigYamlData.class);
-
-                        // Convert infrastructure model to domain model
-                        var domainEntries = infraData.tenants().stream()
-                                .map(e -> new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled(), e.eligibleClients()))
-                                .toList();
-
-                        return new TenantSsoConfigYamlData(domainEntries);
+                        return mapper.readValue(is, TenantSsoConfigYamlData.class);
 
                     } catch (IOException e) {
                         throw new RuntimeException(e);
