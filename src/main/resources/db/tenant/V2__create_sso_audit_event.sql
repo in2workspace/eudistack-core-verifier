@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS sso_audit_event (
                                                tenant TEXT NOT NULL,
                                                event_type TEXT NOT NULL,
                                                client_id TEXT,
-                                               holder_hash TEXT NOT NULL,
+                                               holder_hash TEXT,
                                                message TEXT,
                                                correlation_id TEXT,
                                                occurred_at TIMESTAMPTZ NOT NULL
