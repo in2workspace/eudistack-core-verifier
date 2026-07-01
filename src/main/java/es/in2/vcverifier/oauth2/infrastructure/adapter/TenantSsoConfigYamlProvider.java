@@ -70,7 +70,8 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
         List<TenantSsoEntry> normalized = tenants.stream()
                 .map(e -> e.eligibleClients() != null
                         ? e
-                        : new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled(), List.of()))
+                        : new TenantSsoEntry(e.tenant(), e.rootDomain(), e.ssoEnabled(),
+                                List.of(), e.ttlAbsolute(), e.ttlIdle()))
                 .toList();
 
         log.info("ALL TENANTS LOADED = {}", normalized.stream().map(TenantSsoEntry::tenant).toList());
