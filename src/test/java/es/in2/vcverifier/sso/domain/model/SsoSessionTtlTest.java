@@ -51,9 +51,9 @@ class SsoSessionTtlTest {
 
     @Test
     void of_shouldThrowIllegalArgumentException_whenAbsoluteBelowMinimum() {
-        // MIN_ABSOLUTE = 5 min; 4 min está fuera de rango
+        // MIN_ABSOLUTE = 1h; 59 min está fuera de rango
         assertThrows(IllegalArgumentException.class,
-                () -> SsoSessionTtl.of(Duration.ofMinutes(4), Duration.ofMinutes(1)));
+                () -> SsoSessionTtl.of(Duration.ofMinutes(59), Duration.ofMinutes(30)));
     }
 
     @Test
@@ -65,33 +65,26 @@ class SsoSessionTtlTest {
 
     @Test
     void of_shouldThrowIllegalArgumentException_whenIdleBelowMinimum() {
-        // MIN_IDLE = 1 min; 59s está fuera de rango
+        // MIN_IDLE = 5 min; 4 min está fuera de rango
         assertThrows(IllegalArgumentException.class,
-                () -> SsoSessionTtl.of(Duration.ofHours(8), Duration.ofSeconds(59)));
+                () -> SsoSessionTtl.of(Duration.ofHours(8), Duration.ofMinutes(4)));
     }
 
     @Test
     void of_shouldThrowIllegalArgumentException_whenIdleAboveMaximum() {
-        // MAX_IDLE = 8h; 9h está fuera de rango
+        // MAX_IDLE = 60 min; 90 min está fuera de rango
         assertThrows(IllegalArgumentException.class,
-                () -> SsoSessionTtl.of(Duration.ofHours(10), Duration.ofHours(9)));
-    }
-
-    @Test
-    void of_shouldThrowIllegalArgumentException_whenIdleExceedsAbsolute() {
-        // absolute=1H (válido), idle=2H (válido en su rango), pero idle > absolute
-        assertThrows(IllegalArgumentException.class,
-                () -> SsoSessionTtl.of(Duration.ofHours(1), Duration.ofHours(2)));
+                () -> SsoSessionTtl.of(Duration.ofHours(2), Duration.ofMinutes(90)));
     }
 
     // ─── SsoTtlRange — constantes ADR-106 ────────────────────────────────────
 
     @Test
     void ssoTtlRange_constants_shouldMatchAdr106CanonicalValues() {
-        assertEquals(Duration.ofMinutes(5),  SsoTtlRange.MIN_ABSOLUTE);
+        assertEquals(Duration.ofHours(1),    SsoTtlRange.MIN_ABSOLUTE);
         assertEquals(Duration.ofHours(24),   SsoTtlRange.MAX_ABSOLUTE);
-        assertEquals(Duration.ofMinutes(1),  SsoTtlRange.MIN_IDLE);
-        assertEquals(Duration.ofHours(8),    SsoTtlRange.MAX_IDLE);
+        assertEquals(Duration.ofMinutes(5),  SsoTtlRange.MIN_IDLE);
+        assertEquals(Duration.ofMinutes(60), SsoTtlRange.MAX_IDLE);
         assertEquals(Duration.ofHours(8),    SsoTtlRange.DEFAULT_ABSOLUTE);
         assertEquals(Duration.ofMinutes(30), SsoTtlRange.DEFAULT_IDLE);
     }

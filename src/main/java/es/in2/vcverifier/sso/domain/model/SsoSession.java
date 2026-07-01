@@ -1,12 +1,14 @@
 package es.in2.vcverifier.sso.domain.model;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.ToString;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
-@Data
+@Getter
+@ToString
 public class SsoSession {
 
     private final SsoSessionId id;

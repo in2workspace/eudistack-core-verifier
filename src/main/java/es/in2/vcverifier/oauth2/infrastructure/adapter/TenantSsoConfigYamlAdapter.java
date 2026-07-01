@@ -50,6 +50,14 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
     }
 
     @Override
+    public SsoSessionTtl resolveTtl(String tenant) {
+        return getByTenant(tenant)
+                .filter(config -> config.ttl() != null)
+                .map(config -> TTL_POLICY.resolve(config.ttl().absolute(), config.ttl().idle()))
+                .orElseGet(SsoSessionTtl::systemDefault);
+    }
+
+    @Override
     public Optional<TenantSsoConfig> getByTenant(String tenant) {
         if (tenant == null) return Optional.empty();
         return Optional.ofNullable(cache.get().get(tenant.toLowerCase()));

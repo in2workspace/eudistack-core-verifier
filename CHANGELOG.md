@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - US-01: Custom domain operativo per tenant en el Verifier IdP
 - US-02: Sesión SSO establecida tras presentación OID4VP exitosa
 - US-03: Reutilización silenciosa de la sesión SSO en aplicativos adicionales
+- US-04: TTL de sesión SSO configurable per tenant
 
 ### Added - 2026-06-22
 

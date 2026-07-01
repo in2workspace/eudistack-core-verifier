@@ -9,20 +9,20 @@ import java.time.Duration;
  */
 public final class SsoTtlRange {
 
-    /** Mínimo TTL absoluto: 5 minutos (seguridad mínima operativa). */
-    public static final Duration MIN_ABSOLUTE = Duration.ofMinutes(5);
+    /** Mínimo TTL absoluto: 1 hora (límite operativo mínimo per ADR-106). */
+    public static final Duration MIN_ABSOLUTE = Duration.ofHours(1);
 
     /** Máximo TTL absoluto: 24 horas (límite de cumplimiento GDPR/eIDAS). */
     public static final Duration MAX_ABSOLUTE = Duration.ofHours(24);
 
-    /** Mínimo TTL idle: 1 minuto. */
-    public static final Duration MIN_IDLE = Duration.ofMinutes(1);
+    /** Mínimo TTL idle: 5 minutos (per ADR-106). */
+    public static final Duration MIN_IDLE = Duration.ofMinutes(5);
 
     /**
-     * Máximo TTL idle: 8 horas (jornada laboral completa; no puede exceder
-     * MAX_ABSOLUTE, y SsoSessionTtl refuerza idle ≤ absolute).
+     * Máximo TTL idle: 60 minutos (per ADR-106). La relación MAX_IDLE ≤ MIN_ABSOLUTE
+     * garantiza formalmente que todo par válido cumple idle ≤ absolute sin cap explícito.
      */
-    public static final Duration MAX_IDLE = Duration.ofHours(8);
+    public static final Duration MAX_IDLE = Duration.ofMinutes(60);
 
     /** TTL absoluto por defecto del sistema: jornada laboral completa. */
     public static final Duration DEFAULT_ABSOLUTE = Duration.ofHours(8);

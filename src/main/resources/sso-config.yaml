@@ -11,10 +11,10 @@
 #   ssoEnabled      - whether SSO session reuse is active for the tenant
 #   eligibleClients - client_ids eligible for SSO reuse (empty = all clients eligible)
 #   ttlAbsolute     - (optional) ISO-8601 duration for the absolute session TTL.
-#                     Valid range: PT5M–PT24H. Absent or malformed → PT8H (system default).
+#                     Valid range: PT1H–PT24H. Absent or malformed → PT8H (system default).
 #                     Example: "PT4H"
 #   ttlIdle         - (optional) ISO-8601 duration for the idle session TTL.
-#                     Valid range: PT1M–PT8H; must not exceed ttlAbsolute.
+#                     Valid range: PT5M–PT1H; must not exceed ttlAbsolute.
 #                     Absent or malformed → PT30M (system default).
 #                     Example: "PT15M"
 tenants:
