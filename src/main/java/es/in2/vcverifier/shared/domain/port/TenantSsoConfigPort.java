@@ -21,6 +21,7 @@ public interface TenantSsoConfigPort {
     default SsoSessionTtl resolveTtl(String tenant) {
         TenantSsoTtlPolicy policy = new TenantSsoTtlPolicy();
         return getByTenant(tenant)
+                .filter(config -> config.ttl() != null)
                 .map(config -> policy.resolve(config.ttl().absolute(), config.ttl().idle()))
                 .orElseGet(SsoSessionTtl::systemDefault);
     }
