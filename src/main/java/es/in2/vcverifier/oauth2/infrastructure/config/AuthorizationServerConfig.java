@@ -12,6 +12,7 @@ import es.in2.vcverifier.oauth2.application.workflow.ClientCredentialsValidation
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
+import es.in2.vcverifier.oauth2.domain.port.OAuth2M2MAuditPort;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthenticationProvider;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
@@ -66,6 +67,7 @@ public class AuthorizationServerConfig {
     private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
     private final Set<String> allowedClientsOrigins;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
+    private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -85,8 +87,8 @@ public class AuthorizationServerConfig {
                 )
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
-                                .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore))
-                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry))
+                                .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore, oAuth2M2MAuditPort))
+                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry, oAuth2M2MAuditPort))
                 )
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
 
