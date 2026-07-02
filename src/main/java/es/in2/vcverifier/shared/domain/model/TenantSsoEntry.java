@@ -1,7 +1,5 @@
 package es.in2.vcverifier.shared.domain.model;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 import java.util.List;
 
 /**
@@ -10,6 +8,8 @@ import java.util.List;
  * {@code ttlAbsolute} y {@code ttlIdle} se expresan en formato ISO-8601
  * (p. ej. {@code "PT8H"}, {@code "PT30M"}); un valor ausente o mal formado
  * se trata como ausente y el adaptador aplica el default del sistema.
+ * {@code eligibleClients} ausente en YAML desserializa a null; el constructor
+ * compacto lo normaliza a lista vacía (lista nunca null, US-05).
  */
 public record TenantSsoEntry(
         String tenant,
@@ -18,5 +18,9 @@ public record TenantSsoEntry(
         List<String> eligibleClients,
         String ttlAbsolute,
         String ttlIdle
-) {}
+) {
+    public TenantSsoEntry {
+        eligibleClients = eligibleClients != null ? eligibleClients : List.of();
+    }
+}
 
