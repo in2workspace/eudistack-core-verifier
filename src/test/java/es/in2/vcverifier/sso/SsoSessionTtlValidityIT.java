@@ -5,8 +5,10 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
+import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -39,6 +41,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -149,6 +152,8 @@ class SsoSessionTtlValidityIT {
                 .thenReturn(Optional.of(defaultConfig()));
         when(tenantSsoConfigPort.resolveTtl(anyString()))
                 .thenReturn(SsoSessionTtl.of(Duration.ofHours(8), IDLE_TTL));
+        when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
+                .thenReturn(TenantSsoCatalog.of(Set.of(SsoEligibleClient.of(CLIENT_ID))));
         when(dcqlProfileResolver.resolve(anyString()))
                 .thenReturn(new DcqlQuery(List.of()));
         when(registeredClientRepository.findByClientId(CLIENT_ID))
