@@ -4,7 +4,9 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
+import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.service.TenantSsoTtlPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +63,19 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
     public Optional<TenantSsoConfig> getByTenant(String tenant) {
         if (tenant == null) return Optional.empty();
         return Optional.ofNullable(cache.get().get(tenant.toLowerCase()));
+    }
+
+    @Override
+    public TenantSsoCatalog resolveEligibleClients(String tenant) {
+        return getByTenant(tenant)
+                .map(config -> {
+                    List<SsoEligibleClient> clients = config.eligibleClientIds().stream()
+                            .filter(id -> id != null && !id.isBlank())
+                            .map(SsoEligibleClient::of)
+                            .toList();
+                    return TenantSsoCatalog.of(clients);
+                })
+                .orElseGet(TenantSsoCatalog::empty);
     }
 
     private Map<String, TenantSsoConfig> load() {
