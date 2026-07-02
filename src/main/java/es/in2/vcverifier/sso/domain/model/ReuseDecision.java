@@ -28,5 +28,17 @@ public enum ReuseDecision {
     /**
      * Se detecta cambio de tenant entre sesión y solicitud actual.
      */
-    CROSS_TENANT
+    CROSS_TENANT,
+
+    /**
+     * EC-01: sesión inexistente, expirada o cliente no registrado en el servidor OAuth.
+     * El workflow lo mapea a error OIDC {@code login_required}.
+     */
+    REJECT_SESSION,
+
+    /**
+     * EC-01: sesión válida pero el cliente no figura en el catálogo SSO del tenant.
+     * El workflow lo mapea a error OIDC {@code interaction_required}.
+     */
+    REJECT_CATALOG
 }
