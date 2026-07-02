@@ -298,7 +298,19 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
-    // NEW: UPDATE LAST USED AT
+    // UPDATE LAST USED AT — touch idle (introducido en US-02/03)
+    // NFR-P-549-01 / R-3: llamado de forma no bloqueante desde ReuseSsoSessionWorkflowImpl
+    // (CompletableFuture.runAsync) con throttle 1 update/min en el workflow.
+    //
+    // Índice de soporte verificado: idx_sso_session_tenant_expires (tenant, expires_at)
+    // creado en V3__create_sso_session.sql — cubre los scans de expiración por tenant.
+    // El UPDATE se resuelve por PK (id) + filtro safety (tenant, state='ACTIVE'):
+    // sin índice adicional necesario para esta operación.
+    //
+    // Diseño de circuit breaker: checkCircuit() se consulta (si el CB está abierto
+    // por fallos críticos, no tiene sentido intentar el touch), pero los fallos de
+    // esta operación NO abren el CB (no se llama recordFailure()) porque es best-effort:
+    // un fallo de touch no debe bloquear save() ni findActiveById().
     // =========================================================
 
     @Override
@@ -326,14 +338,17 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
                 int updated = ps.executeUpdate();
                 if (updated == 0) {
-                    log.debug("updateLastUsedAt no-op (session GCed or missing)");
+                    log.debug("sso_touch_noop session={}... tenant={} — session GCed or missing",
+                            prefix8(sessionId.getValue()), tenant);
                 }
 
                 recordSuccess();
             }
 
         } catch (SQLException e) {
-            recordFailure();
+            // Best-effort: no registrar como fallo de CB para no afectar operaciones críticas.
+            log.warn("sso_touch_db_error session={}... tenant={} error={}",
+                    prefix8(sessionId.getValue()), tenant, e.getMessage());
             throw new SsoSessionRepositoryException("Failed update last_used_at", e);
         }
     }

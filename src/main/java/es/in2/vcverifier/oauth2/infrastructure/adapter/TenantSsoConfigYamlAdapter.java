@@ -4,6 +4,8 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
+import es.in2.vcverifier.sso.domain.service.TenantSsoTtlPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 
 import java.time.Duration;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -24,8 +27,7 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
     private final AtomicReference<Map<String, TenantSsoConfig>> cache =
             new AtomicReference<>(new HashMap<>());
 
-    private static final Duration DEFAULT_ABSOLUTE_TTL = Duration.ofHours(8);
-    private static final Duration DEFAULT_IDLE_TTL = Duration.ofMinutes(30);
+    private static final TenantSsoTtlPolicy TTL_POLICY = new TenantSsoTtlPolicy();
 
     @PostConstruct
     public void init() {
@@ -33,13 +35,26 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
         log.info("Tenant SSO config initialized on startup");
     }
 
+    /**
+     * ES-02 — fail-safe a última config válida:
+     * si {@code load()} lanza, la excepción se captura y {@code cache} no se actualiza,
+     * preservando la última configuración cargada correctamente.
+     */
     @Scheduled(cron = "${verifier.sso.configRefreshCron:0 */5 * * * ?}")
     public void refresh() {
         try {
             cache.set(load());
         } catch (Exception e) {
-            log.error("Failed to refresh tenant SSO config", e);
+            log.error("event=sso_config_refresh_failed — retaining last valid config", e);
         }
+    }
+
+    @Override
+    public SsoSessionTtl resolveTtl(String tenant) {
+        return getByTenant(tenant)
+                .filter(config -> config.ttl() != null)
+                .map(config -> TTL_POLICY.resolve(config.ttl().absolute(), config.ttl().idle()))
+                .orElseGet(SsoSessionTtl::systemDefault);
     }
 
     @Override
@@ -60,27 +75,24 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
             String rootDomain = t.rootDomain();
             boolean enabled = t.ssoEnabled();
 
-            Duration absoluteTtl = DEFAULT_ABSOLUTE_TTL;
-            Duration idleTtl = DEFAULT_IDLE_TTL;
+            // ES-01 — valor mal formado tratado como ausente: log estructurado por dimensión
+            Duration parsedAbsolute = parseDuration(t.ttlAbsolute(), tenant, "ttlAbsolute");
+            Duration parsedIdle     = parseDuration(t.ttlIdle(),     tenant, "ttlIdle");
 
-            // lista de clientes elegibles para reutilización SSO si no existe -> lista vacía)
+            // Delegamos al servicio de dominio: override-si-válido-else-default por dimensión
+            SsoSessionTtl ttl = TTL_POLICY.resolve(parsedAbsolute, parsedIdle);
+
             List<String> eligibleClients =
                     t.eligibleClients() != null ? t.eligibleClients() : List.of();
 
-            /**
-             * FAIL-CLOSED:
-             * si ssoEnabled=true pero rootDomain está vacío → se desactiva SSO
-             */
+            // FAIL-CLOSED: ssoEnabled=true pero rootDomain ausente → SSO desactivado
             if (enabled && (rootDomain == null || rootDomain.isBlank())) {
 
                 result.put(tenant, new TenantSsoConfig(
                         tenant,
                         rootDomain,
                         false,
-                        new TenantSsoConfig.SsoTtlConfig(
-                                DEFAULT_ABSOLUTE_TTL,
-                                DEFAULT_IDLE_TTL
-                        ),
+                        new TenantSsoConfig.SsoTtlConfig(ttl.absolute(), ttl.idle()),
                         eligibleClients
                 ));
 
@@ -94,14 +106,28 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                     tenant,
                     rootDomain,
                     enabled,
-                    new TenantSsoConfig.SsoTtlConfig(
-                            absoluteTtl,
-                            idleTtl
-                    ),
+                    new TenantSsoConfig.SsoTtlConfig(ttl.absolute(), ttl.idle()),
                     eligibleClients
             ));
         }
 
         return result;
+    }
+
+    /**
+     * ES-01 — parseo defensivo de duración ISO-8601.
+     * Un valor ausente ({@code null}/blank) o mal formado se trata como ausente:
+     * se registra un aviso estructurado y se devuelve {@code null} para que el
+     * servicio de dominio aplique el default de sistema.
+     */
+    private static Duration parseDuration(String value, String tenant, String field) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Duration.parse(value);
+        } catch (DateTimeParseException ex) {
+            log.warn("event=sso_ttl_malformed tenant={} field={} value={} — treating as absent",
+                    tenant, field, value);
+            return null;
+        }
     }
 }

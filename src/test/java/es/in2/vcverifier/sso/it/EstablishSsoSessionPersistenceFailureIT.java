@@ -8,6 +8,7 @@ import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
@@ -65,6 +66,8 @@ class EstablishSsoSessionPersistenceFailureIT {
 
         when(tenantSsoConfigPort.getByTenant("tenant-a"))
                 .thenReturn(Optional.of(config));
+        when(tenantSsoConfigPort.resolveTtl(anyString()))
+                .thenReturn(SsoSessionTtl.systemDefault());
 
         when(hashingService.sha256(any())).thenReturn("hash-123");
 

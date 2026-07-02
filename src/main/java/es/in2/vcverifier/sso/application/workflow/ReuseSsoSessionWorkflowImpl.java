@@ -7,17 +7,21 @@ import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoPolicy;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
+@Slf4j
 @Component
 public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
 
@@ -58,6 +62,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         if (!config.ssoEnabled()) {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
+
+        SsoSessionTtl ttl = configPort.resolveTtl(tenantSlug);
 
         // 2. SESSION ID FROM COOKIE
         if (ssoCookieValue == null || ssoCookieValue.isBlank()) {
@@ -102,7 +108,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         SsoSession session = maybeSession.get();
 
         // 4. IDLE TTL — comprobación combinada (abs TTL ya filtrada en SQL)
-        if (!session.isValid(now, config.ttl().idle())) {
+        if (!session.isValid(now, ttl.idle())) {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
@@ -110,7 +116,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         boolean clientEligible = config.eligibleClientIds().isEmpty()
                 || config.eligibleClientIds().contains(clientId);
 
-        TenantSsoPolicy policy = new TenantSsoPolicy(clock, config.ttl().absolute().toSeconds());
+        TenantSsoPolicy policy = new TenantSsoPolicy(clock, ttl.absolute().toSeconds());
         ReuseDecision decision = policy.evaluate(
                 session.getTenant(), tenantSlug, session.getEstablishedAt(), clientEligible
         );
@@ -129,9 +135,16 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             return new Result(Result.Status.INTERACTION_REQUIRED, null);
         }
 
-        // 6. THROTTLE UPDATE
+        // 6. THROTTLE UPDATE — non-blocking (R-3 / NFR-P-549-01): la respuesta al cliente
+        // no espera el UPDATE; el fallo se registra pero no afecta al resultado de reuse.
         if (Duration.between(session.getLastUsedAt(), now).compareTo(THROTTLE_INTERVAL) >= 0) {
-            sessionRepository.updateLastUsedAt(sessionId, tenantSlug, now);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    sessionRepository.updateLastUsedAt(sessionId, tenantSlug, now);
+                } catch (Exception ex) {
+                    log.warn("sso_touch_failed session={} tenant={}", sessionId, tenantSlug, ex);
+                }
+            });
         }
 
         // 7. AUDIT
