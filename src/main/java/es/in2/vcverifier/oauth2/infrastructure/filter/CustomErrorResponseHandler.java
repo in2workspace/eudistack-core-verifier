@@ -14,7 +14,9 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.INVALID_CLIENT_AUTHENTICATION;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
 
 @Slf4j
@@ -29,8 +31,11 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
                                         AuthenticationException exception) throws IOException {
         if (exception instanceof OAuth2AuthorizationCodeRequestAuthenticationException oAuth2Exception) {
             OAuth2Error error = oAuth2Exception.getError();
-            // Redirect to the URI contained, if the error code is required_external_user_authentication or invalid_client_authentication
-            if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION) || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)) {
+            // Redirect to the URI in the error for codes that carry a client-facing redirect destination.
+            if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION)
+                    || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)
+                    || error.getErrorCode().equals(LOGIN_REQUIRED)
+                    || error.getErrorCode().equals(INTERACTION_REQUIRED)) {
                 String redirectUri = error.getUri();
                 // SEC-S7: Validate redirect URI belongs to a registered client origin to prevent open redirect.
                 if (redirectUri != null && isAllowedRedirectUri(redirectUri)) {

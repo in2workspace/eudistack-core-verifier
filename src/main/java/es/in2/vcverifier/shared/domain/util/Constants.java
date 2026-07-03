@@ -15,6 +15,8 @@ public class Constants {
     public static final String MINUTES = "MINUTES";
     public static final String REQUIRED_EXTERNAL_USER_AUTHENTICATION = "required_external_user_authentication";
     public static final String INVALID_CLIENT_AUTHENTICATION = "invalid_client_authentication";
+    public static final String LOGIN_REQUIRED = "login_required";
+    public static final String INTERACTION_REQUIRED = "interaction_required";
     public static final String LOG_ERROR_FORMAT = "{} - {}";
     public static final String OID4VP_TYPE = "oauth-authz-req+jwt";
     public static final long MSB = 0x80L;

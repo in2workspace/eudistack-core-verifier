@@ -43,6 +43,8 @@ import java.util.*;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
+import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRED;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
@@ -105,7 +107,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // Case 1: Standard OIDC authorization request without a signed JWT object
         if (requestUri == null && request.getParameter("request") == null) {
             log.info("Processing an authorization request without a signed JWT object.");
-            tryReuseSsoSession(request, authorizationContext, clientId);
+            ReuseSsoSessionWorkflow.Result ssoResult = tryReuseSsoSession(request, authorizationContext, clientId);
+            if (ssoResult != null) {
+                handlePromptNoneResult(ssoResult.status(), authorizationContext);
+            }
             return handleOIDCStandardRequest(authorizationContext, registeredClient);
         }
 
@@ -114,24 +119,45 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     }
 
     /**
-     * When prompt=none is present, runs the SSO session reuse workflow.
-     * The workflow validates the session, touches last_used_at and emits audit events.
-     * The result is intentionally ignored here: all outcomes (ALLOWED, LOGIN_REQUIRED,
-     * INTERACTION_REQUIRED) fall through to the standard OID4VP authorization flow so
-     * the caller always gets a redirect response.
+     * When prompt=none is present, runs the SSO session reuse workflow and returns its result.
+     * Returns null when prompt != none so the caller skips OIDC error handling entirely.
      */
-    private void tryReuseSsoSession(HttpServletRequest request,
-                                    AuthorizationContext ctx,
-                                    String clientId) {
+    private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
+                                                              AuthorizationContext ctx,
+                                                              String clientId) {
         if (!"none".equals(request.getParameter("prompt"))) {
-            return;
+            return null;
         }
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
-            return;
+            return null;
         }
         String cookieValue = extractCookieValue(request, SSO_COOKIE_PREFIX + tenant);
-        reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+    }
+
+    /**
+     * Handles the result of the SSO session reuse workflow for prompt=none requests.
+     * LOGIN_REQUIRED and INTERACTION_REQUIRED redirect to the client's redirect_uri with the
+     * corresponding OIDC error code as required by the spec (RFC 6749 §4.1.2.1 / OIDC Core §3.1.2.6).
+     * ALLOWED falls through so the caller continues; direct code issuance is a separate story.
+     */
+    private void handlePromptNoneResult(ReuseSsoSessionWorkflow.Result.Status status,
+                                        AuthorizationContext ctx) {
+        switch (status) {
+            case LOGIN_REQUIRED -> throwPromptNoneOidcError(LOGIN_REQUIRED, ctx);
+            case INTERACTION_REQUIRED -> throwPromptNoneOidcError(INTERACTION_REQUIRED, ctx);
+            default -> { /* ALLOWED: fall through to standard flow */ }
+        }
+    }
+
+    private void throwPromptNoneOidcError(String errorCode, AuthorizationContext ctx) {
+        String location = ctx.redirectUri() + "?error=" + errorCode
+                + (ctx.state() != null && !ctx.state().isBlank()
+                   ? "&state=" + URLEncoder.encode(ctx.state(), StandardCharsets.UTF_8)
+                   : "");
+        OAuth2Error error = new OAuth2Error(errorCode, null, location);
+        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {
