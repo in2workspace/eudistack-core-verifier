@@ -10,6 +10,7 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -111,6 +112,9 @@ class SsoSessionTtlValidityIT {
 
     @MockitoBean
     private SsoAuditPort auditPort;
+
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
 
     @MockitoBean
     private ClientLoaderConfig clientLoaderConfig;

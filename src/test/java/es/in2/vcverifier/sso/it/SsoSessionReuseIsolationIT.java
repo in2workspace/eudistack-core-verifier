@@ -4,6 +4,7 @@ import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -53,6 +54,9 @@ class SsoSessionReuseIsolationIT {
 
     @MockitoBean
     private SsoSessionRepositoryPort sessionRepositoryPort;
+
+    @MockitoBean
+    private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
 
     @MockitoBean
     ClientLoaderConfig clientLoaderConfig;

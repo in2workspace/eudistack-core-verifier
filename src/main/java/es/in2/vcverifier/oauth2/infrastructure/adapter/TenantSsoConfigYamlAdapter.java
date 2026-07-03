@@ -7,6 +7,7 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
 import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.domain.service.TenantSsoTtlPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
+public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort, SsoCatalogRepositoryPort {
 
     private final TenantSsoConfigProvider provider;
 
@@ -147,6 +148,32 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                     tenant, field, value);
             return null;
         }
+    }
+
+    // =========================================================
+    // SsoCatalogRepositoryPort — AD-1: escritura sobre YAML/EFS
+    // =========================================================
+
+    /**
+     * AC-04: alta idempotente de un cliente en el catálogo del tenant.
+     * Delega la escritura al provider (YAML/EFS) y refresca el caché en memoria.
+     */
+    @Override
+    public boolean addClient(String tenant, SsoEligibleClient client) {
+        boolean added = provider.addEligibleClient(tenant, client.clientId());
+        cache.set(load());
+        return added;
+    }
+
+    /**
+     * AC-04: baja idempotente de un cliente del catálogo del tenant.
+     * Delega la escritura al provider (YAML/EFS) y refresca el caché en memoria.
+     */
+    @Override
+    public boolean removeClient(String tenant, SsoEligibleClient client) {
+        boolean removed = provider.removeEligibleClient(tenant, client.clientId());
+        cache.set(load());
+        return removed;
     }
 
     /**

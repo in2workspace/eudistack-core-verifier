@@ -20,19 +20,19 @@
 tenants:
   - tenant: "sandbox"
     rootDomain: "sandbox.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-sandbox"
 
   - tenant: "cgcom"
     rootDomain: "cgcom.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-cgcom"
 
   - tenant: "kpmg"
     rootDomain: "kpmg.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-kpmg"
 
@@ -45,6 +45,6 @@ tenants:
 
   - tenant: "platform"
     rootDomain: "platform.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-platform"

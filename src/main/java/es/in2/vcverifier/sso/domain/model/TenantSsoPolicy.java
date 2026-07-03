@@ -24,49 +24,6 @@ public final class TenantSsoPolicy {
     }
 
     /**
-     * Evalúa si una sesión SSO puede reutilizarse.
-     *
-     * @param sessionTenant tenant de la sesión activa
-     * @param requestTenant tenant del nuevo aplicativo
-     * @param sessionEstablishedAt instante de creación de la sesión
-     * @param clientEligible si el cliente permite reutilización SSO
-     */
-    public ReuseDecision evaluate(
-            String sessionTenant,
-            String requestTenant,
-            Instant sessionEstablishedAt,
-            boolean clientEligible
-    ) {
-
-        // 1. Validación tenant cruzado
-        if (sessionTenant != null && requestTenant != null
-                && !sessionTenant.equals(requestTenant)) {
-            return ReuseDecision.CROSS_TENANT;
-        }
-
-        // 2. Cliente no elegible
-        if (!clientEligible) {
-            return ReuseDecision.CLIENT_NOT_ELIGIBLE;
-        }
-
-        // 3. No existe sesión
-        if (sessionEstablishedAt == null) {
-            return ReuseDecision.NO_SESSION;
-        }
-
-        // 4. Sesión expirada
-        Instant now = Instant.now(clock);
-        Instant expiry = sessionEstablishedAt.plusSeconds(sessionTtlSeconds);
-
-        if (now.isAfter(expiry)) {
-            return ReuseDecision.SESSION_EXPIRED;
-        }
-
-        // 5. Caso válido
-        return ReuseDecision.ALLOWED;
-    }
-
-    /**
      * AD-2: Evaluación de reutilización con 3 condiciones AND en orden estricto.
      * <ol>
      *   <li>clientRegistered — {@link ReuseDecision#REJECT_SESSION} si falla (login_required)</li>
