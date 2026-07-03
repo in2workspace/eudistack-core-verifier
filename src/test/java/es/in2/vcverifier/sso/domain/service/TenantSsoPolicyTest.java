@@ -3,7 +3,7 @@ package es.in2.vcverifier.sso.domain.service;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
-import es.in2.vcverifier.sso.domain.model.TenantSsoPolicy;
+import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -87,10 +87,12 @@ class TenantSsoPolicyTest {
         assertEquals(ReuseDecision.REJECT_CATALOG, result);
     }
 
-    // ─── AC-05: cliente no registrado en OAuth server → login_required ────────
+    // ─── AC-05: cliente no registrado en OAuth server → login_required ──────────
+    // [W1]: la política devuelve REJECT_UNREGISTERED_CLIENT (distinto de REJECT_SESSION)
+    // para distinguir "cliente desconocido" de "sesión inexistente/expirada".
 
     @Test
-    void evaluate_shouldReturnREJECT_SESSION_whenClientNotRegistered() {
+    void evaluate_shouldReturnREJECT_UNREGISTERED_CLIENT_whenClientNotRegistered() {
         ReuseDecision result = policy.evaluate(
                 "tenant-a", "tenant-a",
                 SESSION_VALID,
@@ -99,7 +101,7 @@ class TenantSsoPolicyTest {
                 "client-a"
         );
 
-        assertEquals(ReuseDecision.REJECT_SESSION, result);
+        assertEquals(ReuseDecision.REJECT_UNREGISTERED_CLIENT, result);
     }
 
     // ─── EC-01: sesión expirada → login_required, aunque el cliente esté en catálogo ──
@@ -148,7 +150,7 @@ class TenantSsoPolicyTest {
     // ─── Orden AD-2: condición (1) evaluada antes que condición (3) ──────────
 
     @Test
-    void evaluate_shouldReturnREJECT_SESSION_notREJECT_CATALOG_whenClientNotRegisteredAndNotInCatalog() {
+    void evaluate_shouldReturnREJECT_UNREGISTERED_CLIENT_notREJECT_CATALOG_whenClientNotRegisteredAndNotInCatalog() {
         // AD-2: la condición (1) clientRegistered se evalúa antes que (3) catalog.contains
         ReuseDecision result = policy.evaluate(
                 "tenant-a", "tenant-a",
@@ -158,7 +160,7 @@ class TenantSsoPolicyTest {
                 "client-a"
         );
 
-        assertEquals(ReuseDecision.REJECT_SESSION, result);
+        assertEquals(ReuseDecision.REJECT_UNREGISTERED_CLIENT, result);
     }
 
     // ─── NFR-S-550-01: catalog null → excepción explícita ────────────────────

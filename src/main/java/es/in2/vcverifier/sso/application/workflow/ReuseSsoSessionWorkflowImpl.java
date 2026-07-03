@@ -9,7 +9,7 @@ import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
-import es.in2.vcverifier.sso.domain.model.TenantSsoPolicy;
+import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
@@ -143,7 +143,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         }
 
         if (decision != ReuseDecision.ALLOWED) {
-            // REJECT_SESSION, CROSS_TENANT u otro motivo → login_required
+            // REJECT_SESSION, REJECT_UNREGISTERED_CLIENT, CROSS_TENANT u otro motivo → login_required
             auditPort.publish(
                     SsoAuditEvent.builder()
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)

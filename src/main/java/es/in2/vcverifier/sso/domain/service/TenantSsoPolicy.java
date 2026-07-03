@@ -1,4 +1,7 @@
-package es.in2.vcverifier.sso.domain.model;
+package es.in2.vcverifier.sso.domain.service;
+
+import es.in2.vcverifier.sso.domain.model.ReuseDecision;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -6,6 +9,7 @@ import java.util.Objects;
 
 import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_CATALOG;
 import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_SESSION;
+import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_UNREGISTERED_CLIENT;
 
 /**
  * Política pura de dominio para decidir si una sesión SSO puede reutilizarse
@@ -26,7 +30,10 @@ public final class TenantSsoPolicy {
     /**
      * AD-2: Evaluación de reutilización con 3 condiciones AND en orden estricto.
      * <ol>
-     *   <li>clientRegistered — {@link ReuseDecision#REJECT_SESSION} si falla (login_required)</li>
+     *   <li>clientRegistered — {@link ReuseDecision#REJECT_UNREGISTERED_CLIENT} si falla (login_required).
+     *       Nota: este gate también se aplica upstream en {@code CustomAuthorizationRequestConverter}
+     *       (defensa en profundidad); las rutas de producción no alcanzan esta condición si el
+     *       cliente no está registrado.</li>
      *   <li>sesión vigente   — {@link ReuseDecision#REJECT_SESSION} si falla (login_required)</li>
      *   <li>catalog.contains — {@link ReuseDecision#REJECT_CATALOG} si falla (interaction_required)</li>
      * </ol>
@@ -55,7 +62,7 @@ public final class TenantSsoPolicy {
 
         // AD-2 condición (1): cliente registrado en el servidor OAuth
         if (!clientRegistered) {
-            return REJECT_SESSION;
+            return REJECT_UNREGISTERED_CLIENT;
         }
 
         // AD-2 condición (2): sesión existente y dentro del TTL absoluto

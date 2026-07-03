@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
@@ -86,9 +87,11 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
      * Requiere que {@code verifier.backend.local-files.sso-config-path} esté configurado.
      * Escritura atómica (fichero temporal + rename) para proteger lecturas concurrentes.
      * Lock intra-JVM para serializar escrituras en el mismo proceso.
+     * [F3]: normaliza el tenant a lowercase antes de comparar para evitar no-ops silenciosos.
      */
     private boolean modifyEligibleClients(String tenant, String clientId, boolean add) {
         String configPath = resolveWritablePath();
+        String normalizedTenant = tenant != null ? tenant.toLowerCase(Locale.ROOT) : null;
         writeLock.lock();
         try {
             Path file = Path.of(configPath);
@@ -98,13 +101,17 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
                 current = yamlMapper.readValue(is, TenantSsoConfigYamlData.class);
             }
 
+            boolean tenantFound = false;
             boolean changed = false;
             List<TenantSsoEntry> updatedTenants = new ArrayList<>(current.tenants().size());
             for (TenantSsoEntry entry : current.tenants()) {
-                if (!tenant.equals(entry.tenant())) {
+                String entryTenant = entry.tenant() != null
+                        ? entry.tenant().toLowerCase(Locale.ROOT) : null;
+                if (!normalizedTenant.equals(entryTenant)) {
                     updatedTenants.add(entry);
                     continue;
                 }
+                tenantFound = true;
                 List<String> clients = new ArrayList<>(entry.eligibleClients());
                 if (add) {
                     if (!clients.contains(clientId)) {
@@ -120,6 +127,11 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
                 ));
             }
 
+            if (!tenantFound) {
+                log.warn("event=sso_catalog_tenant_not_found tenant={} operation={}",
+                        tenant, add ? "ADD" : "REMOVE");
+                return false;
+            }
             if (!changed) return false;
 
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");

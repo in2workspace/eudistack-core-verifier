@@ -30,9 +30,9 @@ import java.util.Map;
 
 /**
  * Endpoints de administración del catálogo SSO de un tenant.
- * AD-3: protegidos por el SecurityFilterChain de sesión existente (anyRequest().authenticated()).
- * ES-03 / NFR-S-02: el tenant se deriva del contexto de la petición (hostname o cabecera
- * X-Tenant-Id), nunca de un parámetro libre del cuerpo de la petición.
+ * AD-3 / [F2]: protegidos por @PreAuthorize(hasRole('ADMIN')) y anyRequest().authenticated().
+ * ES-03 / NFR-S-02 / [F1]: el tenant se deriva EXCLUSIVAMENTE del contexto de autenticación;
+ * si el Authentication no transporta tenant el acceso se deniega (fail-closed).
  */
 @Slf4j
 @Validated
@@ -86,26 +86,31 @@ public class TenantSsoCatalogAdminController {
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     /**
-     * ES-03: resuelve el tenant desde el atributo de request (hostname / X-Tenant-Id header)
-     * y verifica que no haya intento cross-tenant cuando el Authentication transporta tenant.
+     * ES-03 / NFR-S-02 / [F1]: el tenant efectivo se deriva EXCLUSIVAMENTE del Authentication.
+     * Si el Authentication no transporta tenant (authTenant == null) la operación se deniega
+     * con 403 (fail-closed); nunca se cae al X-Tenant-Id ni al hostname.
+     * La cabecera X-Tenant-Id (requestTenant) se usa solo para detección adicional cross-tenant.
      *
-     * @throws ResponseStatusException 401 si no hay contexto de tenant
-     * @throws ResponseStatusException 403 si el tenant del Authentication difiere del request
+     * @throws ResponseStatusException 403 si el Authentication no transporta tenant
+     * @throws ResponseStatusException 403 si el tenant del Authentication difiere del header X-Tenant-Id
      */
     private String resolveAndValidateTenant(HttpServletRequest request, Authentication authentication) {
-        String requestTenant = TenantDomainFilter.getCurrentTenant(request);
-        if (requestTenant == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No tenant context resolved");
+        String authTenant = extractAuthenticatedTenant(authentication);
+        if (authTenant == null) {
+            log.warn("event=sso_catalog_tenant_missing_in_auth principal={}",
+                    authentication != null ? authentication.getClass().getSimpleName() : "null");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Tenant context not available in authentication");
         }
 
-        String authTenant = extractAuthenticatedTenant(authentication);
-        if (authTenant != null && !authTenant.equalsIgnoreCase(requestTenant)) {
+        String requestTenant = TenantDomainFilter.getCurrentTenant(request);
+        if (requestTenant != null && !authTenant.equalsIgnoreCase(requestTenant)) {
             log.warn("event=sso_catalog_cross_tenant_blocked authTenant={} requestTenant={}",
                     authTenant, requestTenant);
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cross-tenant access denied");
         }
 
-        return requestTenant;
+        return authTenant;
     }
 
     /**
