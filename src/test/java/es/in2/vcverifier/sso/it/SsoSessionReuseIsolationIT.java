@@ -70,6 +70,9 @@ class SsoSessionReuseIsolationIT {
     @MockitoBean
     private es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler customErrorResponseHandler;
 
+    @Autowired
+    private java.util.Set<String> allowedClientsOrigins;
+
     @BeforeEach
     void setup() {
         RegisteredClient client = RegisteredClient.withId(UUID.randomUUID().toString())
@@ -83,6 +86,9 @@ class SsoSessionReuseIsolationIT {
 
         when(registeredClientRepository.findByClientId("client-b")).thenReturn(client);
         when(dcqlProfileResolver.resolve(anyString())).thenReturn(new DcqlQuery(List.of()));
+        // Mirrors what ClientLoaderConfig would populate in production from the client's redirect_uri,
+        // so the LOGIN_REQUIRED redirect to the client's own callback passes the allowed-origins check.
+        allowedClientsOrigins.add("https://localhost");
     }
 
     // =========================================================

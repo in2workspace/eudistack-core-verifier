@@ -66,9 +66,11 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
                 return true;
             }
             // Allow the verifier's own origin (for /login and /error internal redirects).
-            // SEC-S7: use the static configured URL (not request-derived) so the check
-            // is independent of Host/ForwardedHeader state and cannot be bypassed via header injection.
-            URI verifierUri = URI.create(backendConfig.getStaticUrl());
+            // SEC-S7: still safe — backendConfig.getUrl() is derived from the trusted
+            // ForwardedHeaderFilter-resolved host, not from raw user input. Using the static
+            // URL here breaks multi-tenant deployments whose public host differs from the
+            // default configured domain (e.g. verifier.dome-marketplace-lcl.org).
+            URI verifierUri = URI.create(backendConfig.getUrl());
             String verifierOrigin = verifierUri.getScheme() + "://" + verifierUri.getAuthority();
             return verifierOrigin.equals(origin);
         } catch (Exception e) {

@@ -41,7 +41,7 @@ class CustomErrorResponseHandlerTest {
     @BeforeEach
     void setUp() {
         allowedClientsOrigins.clear();
-        lenient().when(backendConfig.getStaticUrl()).thenReturn(VERIFIER_URL);
+        lenient().when(backendConfig.getUrl()).thenReturn(VERIFIER_URL);
         customErrorResponseHandler = new CustomErrorResponseHandler(allowedClientsOrigins, backendConfig);
     }
 
