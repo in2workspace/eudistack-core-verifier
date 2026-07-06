@@ -128,7 +128,7 @@ verifier:
       sso-config-path: ${VERIFIER_BACKEND_SSO_CONFIG_PATH:}
 
   dome:
-    legacy-read-enabled: ${VERIFIER_DOME_LEGACY_READ_ENABLED:true}
+    legacy-read-enabled: ${VERIFIER_DOME_LEGACY_READ_ENABLED:false}
     bumped-read-enabled: ${VERIFIER_DOME_BUMPED_READ_ENABLED:true}
 
   dispatch:
