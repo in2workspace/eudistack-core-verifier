@@ -1,4 +1,4 @@
-package es.in2.vcverifier.sso.it;
+package es.in2.vcverifier.sso.acceptance;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
