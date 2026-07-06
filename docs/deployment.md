@@ -55,7 +55,7 @@ No se usan perfiles de Spring (`application-prod.yaml`, etc.).
 
 | Env var | Default | Descripcion                                                                                                                         |
 | --- | --- |-------------------------------------------------------------------------------------------------------------------------------------|
-| `VERIFIER_BACKEND_URL` | `http://localhost:8082` | URL publica del Verifier. Se usa como `iss` en los tokens emitidos y como base para endpoints OID4VP. **Obligatorio en produccion.** |
+| `VERIFIER_BACKEND_URL` | `http://localhost:8082` | URL publica del Verifier. Admite un valor unico o varios dominios alias separados por coma (ej. `https://a.com,https://b.com`) cuando el Verifier es accesible bajo varios hostnames (SSO multi-tenant/multi-app). El primero es el canonico: se usa como `iss`/audiencia y base para endpoints OID4VP. Todos los valores son origenes confiables para las redirecciones propias del Verifier (`/login`, `/error`). **Obligatorio en produccion.** |
 | `VERIFIER_BACKEND_IDENTITY_PRIVATEKEY` | *(vacio)* | Clave privada EC P-256 en hexadecimal (con o sin prefijo `0x`). Si esta vacia, se genera un par efimero al arrancar (ver seccion 4). |
 | `VERIFIER_BACKEND_IDENTITY_DIDKEY` | *(vacio)* | `did:key` correspondiente a la clave privada. Si esta vacio pero `privateKey` tiene valor, se deriva automaticamente.               |
 | `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_NAME` | `DOME` | Nombre del trust framework. Actualmente solo se soporta `DOME`.                                                                     |

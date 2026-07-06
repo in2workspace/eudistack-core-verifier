@@ -91,21 +91,30 @@ class BackendConfigTest {
     }
 
     @Test
-    void getTrustedVerifierOrigins_noConfiguredList_fallsBackToStaticUrl() {
+    void getTrustedVerifierOrigins_singleConfiguredUrl_returnsThatOrigin() {
         assertThat(backendConfig.getTrustedVerifierOrigins())
                 .containsExactly("https://raw.githubusercontent.com");
     }
 
     @Test
-    void getTrustedVerifierOrigins_withConfiguredList_returnsNormalizedOrigins() {
+    void getTrustedVerifierOrigins_multipleConfiguredUrls_returnsNormalizedOrigins() {
         BackendProperties properties = new BackendProperties(
-                "https://fallback.example.com",
                 List.of("https://Verifier.Example.com:443", "https://kpmg.eudistack.net"),
                 null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getTrustedVerifierOrigins())
                 .containsExactlyInAnyOrder("https://verifier.example.com", "https://kpmg.eudistack.net");
+    }
+
+    @Test
+    void getStaticUrl_multipleConfiguredUrls_returnsFirstAsCanonical() {
+        BackendProperties properties = new BackendProperties(
+                List.of("https://verifier.example.com", "https://kpmg.eudistack.net"),
+                null, null, null, null, null, null, null);
+        BackendConfig config = new BackendConfig(properties);
+
+        assertThat(config.getStaticUrl()).isEqualTo("https://verifier.example.com");
     }
 
     @Configuration

@@ -24,6 +24,11 @@ public class BackendConfig {
      * with forwarded headers (e.g. behind nginx), derives the URL from the original
      * request (scheme + host + port). Falls back to the static configuration value
      * when no request context is available (e.g. during bean initialization).
+     *
+     * <p>{@code verifier.backend.url} may list several alias domains (SSO
+     * multi-tenant/multi-app); the first entry is the canonical one used here and by
+     * {@link #getStaticUrl()} as issuer/audience/response_uri. See
+     * {@link #getTrustedVerifierOrigins()} for the full set.
      */
     public String getUrl() {
         try {
@@ -42,14 +47,15 @@ public class BackendConfig {
         } catch (Exception ignored) {
             // No request context (startup, async, etc.) — use static config
         }
-        return properties.url();
+        return properties.url().get(0);
     }
 
     /**
-     * Returns the static configured URL, ignoring the request context.
+     * Returns the static configured canonical URL (first entry of {@code verifier.backend.url}),
+     * ignoring the request context.
      */
     public String getStaticUrl() {
-        return properties.url();
+        return properties.url().get(0);
     }
 
     /**
@@ -59,16 +65,11 @@ public class BackendConfig {
      * <p>Deliberately static and configuration-driven — never derived from the current
      * request's Host, even one resolved via a trusted reverse proxy, so a single
      * misconfigured or compromised hop in front of the verifier cannot widen the set of
-     * trusted redirect targets. Supports multiple alias domains (SSO multi-tenant/multi-app)
-     * via {@code verifier.backend.trusted-verifier-origins}; falls back to the static
-     * {@code url} when unset.
+     * trusted redirect targets. Reuses every entry configured in {@code verifier.backend.url}
+     * (a list — one value per alias domain, e.g. SSO multi-tenant/multi-app deployments).
      */
     public Set<String> getTrustedVerifierOrigins() {
-        List<String> configured = properties.trustedVerifierOrigins();
-        List<String> origins = (configured != null && !configured.isEmpty())
-                ? configured
-                : List.of(properties.url());
-        return origins.stream()
+        return properties.url().stream()
                 .map(OriginNormalizer::normalizeOrigin)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toUnmodifiableSet());
