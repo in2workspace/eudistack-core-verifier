@@ -4,6 +4,7 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -336,7 +337,13 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 ? jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI)
                 : redirectUri;
 
-        if (!registeredClient.getRedirectUris().contains(jwtRedirectUri)) {
+        // Compare with scheme/host normalized (case-insensitive per RFC 3986, default port
+        // dropped) — path/query/fragment stay untouched and must still match exactly.
+        String normalizedJwtRedirectUri = OriginNormalizer.normalizeUri(jwtRedirectUri);
+        boolean matches = normalizedJwtRedirectUri != null && registeredClient.getRedirectUris().stream()
+                .anyMatch(registered -> normalizedJwtRedirectUri.equals(OriginNormalizer.normalizeUri(registered)));
+
+        if (!matches) {
             throwInvalidClientAuthenticationException("The redirect_uri does not match any of the registered client's redirect_uris.",
                     registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }

@@ -319,6 +319,74 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
+    void convert_fapiRequestWithRedirectUriDifferentCaseAndDefaultPort_shouldStillMatch() throws Exception {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String state = "test-state";
+        String scope = "learcredential";
+        String registeredRedirectUri = "https://client.example.com/callback";
+        String requestRedirectUri = "https://client.example.com/callback";
+        String jwtRedirectUri = "HTTPS://Client.Example.com:443/callback";
+        String requestUri = "https://client.example.com/request.jwt";
+        String jwt = "mock-jwt-token";
+        String clientName = "Test Client";
+        String clientNonce = "test-nonce";
+        List<String> authorizationGrantTypes = List.of("authorization_code");
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(requestRedirectUri);
+        when(request.getParameter(NONCE)).thenReturn(clientNonce);
+        when(request.getParameter(REQUEST_URI)).thenReturn(requestUri);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName(clientName)
+                .authorizationGrantTypes(grantTypes -> authorizationGrantTypes.forEach(grantType -> grantTypes.add(new AuthorizationGrantType(grantType))))
+                .redirectUris(uris -> uris.add(registeredRedirectUri))
+                .build();
+
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+
+        HttpResponse<String> mockHttpResponse = mock(HttpResponse.class);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(mockHttpResponse);
+        when(mockHttpResponse.statusCode()).thenReturn(200);
+        when(mockHttpResponse.body()).thenReturn(jwt);
+
+        SignedJWT signedJWT = mock(SignedJWT.class);
+        Payload payload = mock(Payload.class);
+        when(signedJWT.getPayload()).thenReturn(payload);
+        when(jwtService.parseJWT(jwt)).thenReturn(signedJWT);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(jwtRedirectUri);
+
+        PublicKey publicKey = mock(PublicKey.class);
+        when(didService.resolvePublicKeyFromDid(clientId)).thenReturn(publicKey);
+        when(signedJWT.serialize()).thenReturn("serialized-jwt");
+        doNothing().when(jwtService).verifyJWTWithECKey(anyString(), eq(publicKey));
+
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+        AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
+                "signed-auth-jwt", "openid4vp://...", "nonce-456", clientName);
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
+
+        OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> converter.convert(request)
+        );
+
+        // "required_external_user_authentication" means validateRedirectUri matched
+        // (case/default-port differences must not cause an "invalid_client_authentication" rejection).
+        OAuth2Error error = exception.getError();
+        assertEquals("required_external_user_authentication", error.getErrorCode());
+    }
+
+    @Test
     void convert_standardRequest_missingRedirectUri_shouldThrowException() {
         HttpServletRequest request = mock(HttpServletRequest.class);
         String clientId = "test-client-id";

@@ -95,6 +95,13 @@ verifier:
     portalUrl: http://localhost:4200
   backend:
     url: http://localhost:8082
+    # Optional: alias domains the verifier itself is allowed to redirect to (e.g. its own
+    # /login and /error pages) when it is reachable under several public hostnames
+    # (SSO multi-tenant/multi-app). Deliberately static — never derived from the request
+    # Host. Leave unset to fall back to just `url` above.
+    # trusted-verifier-origins:
+    #   - https://verifier.dome-marketplace.org
+    #   - https://kpmg.eudistack.net
     identity:
       # Leave empty to auto-generate ephemeral P-256 key + did:key at startup (dev only).
       # For production, configure privateKey + certificate for x509_hash client_id_scheme.

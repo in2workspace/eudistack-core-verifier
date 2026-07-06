@@ -1,6 +1,7 @@
 package es.in2.vcverifier.shared.config;
 
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
@@ -8,6 +9,9 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Configuration
 @RequiredArgsConstructor
@@ -46,6 +50,28 @@ public class BackendConfig {
      */
     public String getStaticUrl() {
         return properties.url();
+    }
+
+    /**
+     * Returns the set of origins the verifier is allowed to redirect to for its own
+     * internal pages (e.g. /login, /error), normalized for case and default ports.
+     *
+     * <p>Deliberately static and configuration-driven — never derived from the current
+     * request's Host, even one resolved via a trusted reverse proxy, so a single
+     * misconfigured or compromised hop in front of the verifier cannot widen the set of
+     * trusted redirect targets. Supports multiple alias domains (SSO multi-tenant/multi-app)
+     * via {@code verifier.backend.trusted-verifier-origins}; falls back to the static
+     * {@code url} when unset.
+     */
+    public Set<String> getTrustedVerifierOrigins() {
+        List<String> configured = properties.trustedVerifierOrigins();
+        List<String> origins = (configured != null && !configured.isEmpty())
+                ? configured
+                : List.of(properties.url());
+        return origins.stream()
+                .map(OriginNormalizer::normalizeOrigin)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     public String getPrivateKey() {

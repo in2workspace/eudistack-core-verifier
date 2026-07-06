@@ -1,6 +1,7 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -52,27 +53,28 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
 
     private boolean isAllowedRedirectUri(String uri) {
         try {
-            URI parsed = URI.create(uri);
-            String scheme = parsed.getScheme();
-            String origin = scheme + "://" + parsed.getAuthority();
-
-            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, origin);
-
+            String scheme = URI.create(uri).getScheme();
             if (!"https".equals(scheme)) {
                 return false;
             }
+
+            String origin = OriginNormalizer.normalizeOrigin(uri);
+            if (origin == null) {
+                return false;
+            }
+
+            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, origin);
+
             // Allow registered client origins (includes loginPageUri origins) — enforce HTTPS
             if (allowedClientsOrigins.contains(origin)) {
                 return true;
             }
-            // Allow the verifier's own origin (for /login and /error internal redirects).
-            // SEC-S7: still safe — backendConfig.getUrl() is derived from the trusted
-            // ForwardedHeaderFilter-resolved host, not from raw user input. Using the static
-            // URL here breaks multi-tenant deployments whose public host differs from the
-            // default configured domain (e.g. verifier.dome-marketplace-lcl.org).
-            URI verifierUri = URI.create(backendConfig.getUrl());
-            String verifierOrigin = verifierUri.getScheme() + "://" + verifierUri.getAuthority();
-            return verifierOrigin.equals(origin);
+            // Allow the verifier's own origin(s), for /login and /error internal redirects.
+            // SEC-S7: deliberately static and configuration-driven (BackendConfig#getTrustedVerifierOrigins)
+            // — never derived from the request Host, so a single misconfigured or compromised
+            // proxy hop cannot widen the set of trusted redirect targets. Supports multiple
+            // alias domains for multi-tenant/multi-app SSO deployments.
+            return backendConfig.getTrustedVerifierOrigins().contains(origin);
         } catch (Exception e) {
             return false;
         }

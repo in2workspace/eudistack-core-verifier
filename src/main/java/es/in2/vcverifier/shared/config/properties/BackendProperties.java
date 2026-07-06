@@ -13,6 +13,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "verifier.backend")
 public record BackendProperties(
         @NotBlank @URL String url,
+        List<@URL String> trustedVerifierOrigins,
         Identity identity,
         @Valid List<TrustFramework> trustFrameworks,
         LocalFiles localFiles,

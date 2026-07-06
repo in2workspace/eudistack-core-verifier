@@ -2,6 +2,7 @@ package es.in2.vcverifier.oauth2.infrastructure.config;
 
 import es.in2.vcverifier.oauth2.domain.exception.ClientLoadingException;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.DelegatingRegisteredClientRepository;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -113,23 +114,28 @@ public class ClientLoaderConfig {
                                 + clientData.clientId() + "': " + clientData.loginPageUri());
                     }
                     clientSettingsBuilder.setting(CLIENT_SETTING_LOGIN_PAGE_URI, clientData.loginPageUri());
-                    String origin = loginUri.getScheme() + "://" + loginUri.getAuthority();
-                    freshOrigins.add(origin);
+                    String origin = OriginNormalizer.normalizeOrigin(clientData.loginPageUri());
+                    if (origin != null) {
+                        freshOrigins.add(origin);
+                    }
                 }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());
 
                 if (clientData.url() != null && !clientData.url().isBlank()) {
-                    URI clientUri = URI.create(clientData.url());
-                    String clientOrigin = clientUri.getScheme() + "://" + clientUri.getAuthority();
-                    freshOrigins.add(clientOrigin);
+                    String clientOrigin = OriginNormalizer.normalizeOrigin(clientData.url());
+                    if (clientOrigin != null) {
+                        freshOrigins.add(clientOrigin);
+                    }
                 }
                 if (clientData.redirectUris() != null) {
                     for (String redirectUri : clientData.redirectUris()) {
-                        URI redirectUriParsed = URI.create(redirectUri);
-                        String scheme = redirectUriParsed.getScheme();
+                        String scheme = URI.create(redirectUri).getScheme();
                         if ("http".equals(scheme) || "https".equals(scheme)) {
-                            freshOrigins.add(scheme + "://" + redirectUriParsed.getAuthority());
+                            String redirectOrigin = OriginNormalizer.normalizeOrigin(redirectUri);
+                            if (redirectOrigin != null) {
+                                freshOrigins.add(redirectOrigin);
+                            }
                         }
                     }
                 }

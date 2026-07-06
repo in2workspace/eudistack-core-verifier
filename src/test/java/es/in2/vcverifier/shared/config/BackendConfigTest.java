@@ -15,6 +15,8 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(classes = {BackendConfig.class, BackendConfigTest.TestConfig.class})
@@ -86,6 +88,24 @@ class BackendConfigTest {
         assertThat(backendConfig.isFapiNonceRequired())
                 .as("FAPI nonce required should match configured value")
                 .isTrue();
+    }
+
+    @Test
+    void getTrustedVerifierOrigins_noConfiguredList_fallsBackToStaticUrl() {
+        assertThat(backendConfig.getTrustedVerifierOrigins())
+                .containsExactly("https://raw.githubusercontent.com");
+    }
+
+    @Test
+    void getTrustedVerifierOrigins_withConfiguredList_returnsNormalizedOrigins() {
+        BackendProperties properties = new BackendProperties(
+                "https://fallback.example.com",
+                List.of("https://Verifier.Example.com:443", "https://kpmg.eudistack.net"),
+                null, null, null, null, null, null, null);
+        BackendConfig config = new BackendConfig(properties);
+
+        assertThat(config.getTrustedVerifierOrigins())
+                .containsExactlyInAnyOrder("https://verifier.example.com", "https://kpmg.eudistack.net");
     }
 
     @Configuration

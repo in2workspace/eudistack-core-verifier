@@ -256,4 +256,32 @@ class ClientLoaderConfigTest {
 
         assertThrows(ClientLoadingException.class, config::getRegisteredClientRepository);
     }
+
+    @Test
+    void retrieveClients_withMixedCaseAndDefaultPortUrl_normalizesAndDoesNotDuplicate() {
+        ClientData clientData = new ClientData(
+                null, "https://App.Example.com:443",
+                "vc-auth-client-mixed-case", null,
+                List.of("https://app.example.com/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://app.example.com"),
+                true, null, null,
+                null, null, null
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        config.getRegisteredClientRepository();
+
+        assertEquals(1, allowedOrigins.size(), "mixed-case/default-port origin must normalize to the same entry");
+        assertTrue(allowedOrigins.contains("https://app.example.com"));
+    }
 }
