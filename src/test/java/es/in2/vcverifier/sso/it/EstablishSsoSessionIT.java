@@ -11,6 +11,7 @@ import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -94,6 +95,7 @@ class EstablishSsoSessionIT {
     SsoSessionAuthenticationSuccessHandler handler;
 
     @MockitoBean private SsoAuditPort auditPort;
+    @MockitoBean private SsoCatalogRepositoryPort ssoCatalogRepositoryPort;
     @MockitoBean private TenantSsoConfigPort tenantSsoConfigPort;
     @MockitoBean private HashingService hashingService;
     // Clock eliminado: @Import(TimeConfig.class) ya provee un Clock real.

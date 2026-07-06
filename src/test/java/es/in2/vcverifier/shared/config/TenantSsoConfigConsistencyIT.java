@@ -140,6 +140,16 @@ public class TenantSsoConfigConsistencyIT {
                         throw new RuntimeException(e);
                     }
                 }
+
+                @Override
+                public boolean addEligibleClient(String tenant, String clientId) {
+                    return false;
+                }
+
+                @Override
+                public boolean removeEligibleClient(String tenant, String clientId) {
+                    return false;
+                }
             };
         }
     }

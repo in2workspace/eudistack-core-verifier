@@ -11,22 +11,25 @@ public enum ReuseDecision {
     ALLOWED,
 
     /**
-     * No existe sesión activa para el holder en el tenant.
-     */
-    NO_SESSION,
-
-    /**
-     * La sesión existe pero ha expirado.
-     */
-    SESSION_EXPIRED,
-
-    /**
-     * El cliente (aplicativo) no está habilitado para reutilización SSO.
-     */
-    CLIENT_NOT_ELIGIBLE,
-
-    /**
      * Se detecta cambio de tenant entre sesión y solicitud actual.
      */
-    CROSS_TENANT
+    CROSS_TENANT,
+
+    /**
+     * EC-01: el client_id no existe en el servidor OAuth (RegisteredClientRepository).
+     * Gate evaluado en AD-2 condición (1). El workflow lo mapea a {@code login_required}.
+     */
+    REJECT_UNREGISTERED_CLIENT,
+
+    /**
+     * EC-01: sesión inexistente o expirada.
+     * El workflow lo mapea a error OIDC {@code login_required}.
+     */
+    REJECT_SESSION,
+
+    /**
+     * EC-01: sesión válida pero el cliente no figura en el catálogo SSO del tenant.
+     * El workflow lo mapea a error OIDC {@code interaction_required}.
+     */
+    REJECT_CATALOG
 }
