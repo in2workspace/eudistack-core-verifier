@@ -345,6 +345,7 @@ class CryptographicBindingValidatorTest {
         JWTClaimsSet vcClaims = mock(JWTClaimsSet.class);
         when(vcJwt.getJWTClaimsSet()).thenReturn(vcClaims);
         when(vcClaims.getClaim("cnf")).thenReturn(null);
+        when(vcClaims.getClaim("vc")).thenReturn(null);
         when(vcClaims.getClaim("credentialSubject")).thenReturn(null);
         when(vcClaims.getClaim("mandate")).thenReturn(null);
 
