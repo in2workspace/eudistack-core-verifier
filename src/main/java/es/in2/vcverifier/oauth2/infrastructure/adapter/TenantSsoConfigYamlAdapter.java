@@ -4,7 +4,10 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
+import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
+import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.domain.service.TenantSsoTtlPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
+public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort, SsoCatalogRepositoryPort {
 
     private final TenantSsoConfigProvider provider;
 
@@ -63,6 +66,19 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
         return Optional.ofNullable(cache.get().get(tenant.toLowerCase()));
     }
 
+    @Override
+    public TenantSsoCatalog resolveEligibleClients(String tenant) {
+        return getByTenant(tenant)
+                .map(config -> {
+                    List<SsoEligibleClient> clients = config.eligibleClientIds().stream()
+                            .filter(id -> id != null && !id.isBlank())
+                            .map(SsoEligibleClient::of)
+                            .toList();
+                    return TenantSsoCatalog.of(clients);
+                })
+                .orElseGet(TenantSsoCatalog::empty);
+    }
+
     private Map<String, TenantSsoConfig> load() {
 
         TenantSsoConfigYamlData yaml = provider.retrieve();
@@ -82,8 +98,11 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
             // Delegamos al servicio de dominio: override-si-válido-else-default por dimensión
             SsoSessionTtl ttl = TTL_POLICY.resolve(parsedAbsolute, parsedIdle);
 
-            List<String> eligibleClients =
-                    t.eligibleClients() != null ? t.eligibleClients() : List.of();
+            // ES-01 — parseo defensivo por entrada: mal-formadas descartadas individualmente,
+            // no todo el catálogo; aislamiento per-tenant (fallo de un tenant no aborta otros).
+            // ES-02 — el AtomicReference + @Scheduled preserva última config válida si load() lanza;
+            // resolveEligibleClients() devuelve TenantSsoCatalog.empty() si el tenant no tiene config.
+            List<String> eligibleClients = parseEligibleClients(tenant, t.eligibleClients());
 
             // FAIL-CLOSED: ssoEnabled=true pero rootDomain ausente → SSO desactivado
             if (enabled && (rootDomain == null || rootDomain.isBlank())) {
@@ -129,5 +148,58 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort {
                     tenant, field, value);
             return null;
         }
+    }
+
+    // =========================================================
+    // SsoCatalogRepositoryPort — AD-1: escritura sobre YAML/EFS
+    // =========================================================
+
+    /**
+     * AC-04: alta idempotente de un cliente en el catálogo del tenant.
+     * Delega la escritura al provider (YAML/EFS) y refresca el caché en memoria.
+     */
+    @Override
+    public boolean addClient(String tenant, SsoEligibleClient client) {
+        boolean added = provider.addEligibleClient(tenant, client.clientId());
+        cache.set(load());
+        return added;
+    }
+
+    /**
+     * AC-04: baja idempotente de un cliente del catálogo del tenant.
+     * Delega la escritura al provider (YAML/EFS) y refresca el caché en memoria.
+     */
+    @Override
+    public boolean removeClient(String tenant, SsoEligibleClient client) {
+        boolean removed = provider.removeEligibleClient(tenant, client.clientId());
+        cache.set(load());
+        return removed;
+    }
+
+    /**
+     * ES-01 — parseo defensivo de la lista de {@code eligibleClients}.
+     * Cada entrada se evalúa de forma independiente: una entrada nula, en blanco o que
+     * lance al construir {@link SsoEligibleClient} se descarta con log estructurado,
+     * sin afectar al resto de entradas del tenant ni al refresco de otros tenants.
+     * Si la lista de entrada es {@code null} se devuelve catálogo vacío (fail-closed ES-02).
+     */
+    private static List<String> parseEligibleClients(String tenant, List<String> raw) {
+        if (raw == null) return List.of();
+        List<String> valid = new ArrayList<>(raw.size());
+        for (String entry : raw) {
+            if (entry == null || entry.isBlank()) {
+                log.warn("event=sso_catalog_entry_malformed tenant={} entry=null_or_blank — discarding",
+                        tenant);
+                continue;
+            }
+            try {
+                // SsoEligibleClient.of aplica trim y valida; su valor normalizado es el canónico.
+                valid.add(SsoEligibleClient.of(entry).clientId());
+            } catch (IllegalArgumentException ex) {
+                log.warn("event=sso_catalog_entry_malformed tenant={} entry=\"{}\" — discarding: {}",
+                        tenant, entry, ex.getMessage());
+            }
+        }
+        return List.copyOf(valid);
     }
 }

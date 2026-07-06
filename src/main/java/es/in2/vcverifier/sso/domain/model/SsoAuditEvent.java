@@ -19,6 +19,8 @@ public class SsoAuditEvent {
         SSO_CROSS_TENANT_ATTEMPT,
         SSO_SESSION_REUSED,
         SSO_REUSE_DENIED,
+        SSO_CATALOG_CLIENT_ADDED,
+        SSO_CATALOG_CLIENT_REMOVED,
     }
 
     private final EventType eventType;

@@ -9,7 +9,7 @@
 #                     event=sso_config_inconsistent). Scope it to the shared parent
 #                     domain across the tenant's applications to enable SSO reuse.
 #   ssoEnabled      - whether SSO session reuse is active for the tenant
-#   eligibleClients - client_ids eligible for SSO reuse (empty = all clients eligible)
+#   eligibleClients - client_ids eligible for SSO reuse (empty = fail-closed, no client can reuse the session)
 #   ttlAbsolute     - (optional) ISO-8601 duration for the absolute session TTL.
 #                     Valid range: PT1H–PT24H. Absent or malformed → PT8H (system default).
 #                     Example: "PT4H"
@@ -20,19 +20,19 @@
 tenants:
   - tenant: "sandbox"
     rootDomain: "sandbox.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-sandbox"
 
   - tenant: "cgcom"
     rootDomain: "cgcom.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-cgcom"
 
   - tenant: "kpmg"
     rootDomain: "kpmg.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-kpmg"
 
@@ -45,6 +45,6 @@ tenants:
 
   - tenant: "platform"
     rootDomain: "platform.example.com"
-    ssoEnabled: true
+    ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-platform"

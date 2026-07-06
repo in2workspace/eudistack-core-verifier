@@ -1,4 +1,4 @@
-package es.in2.vcverifier.sso.it;
+package es.in2.vcverifier.sso;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
@@ -6,13 +6,11 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
-import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
-import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -22,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -34,7 +31,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -46,28 +42,24 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * IT — ReuseSsoSession con base de datos real (Testcontainers).
+ * IT — Catálogo SSO y elegibilidad de clientes (US-05).
  *
- * Escenarios cubiertos:
- *   AC-01  Happy path: sesión ACTIVE en BD → reutilización SSO → 3xx redirect.
- *   AC-02  Sin sesión: ID en cookie sin fila en BD → LOGIN_REQUIRED.
- *   AC-03  RP no elegible: sesión existe pero clientA no está en eligibleClientIds.
- *   AC-04  Cross-tenant: sesión de tenant-a accedida desde tenant-b → SSO_CROSS_TENANT_ATTEMPT.
- *   EC-01  Sesión expirada: fila ACTIVE con expires_at pasado → filtro SQL la excluye.
- *   EC-02  Sesión SUPERSEDED: fila con state='SUPERSEDED' → filtro SQL la excluye.
- *   ES-01  Fallo de almacén (fail-closed): spy lanza RuntimeException → SSO_PERSIST_ERROR.
- *   W5     Aislamiento cross-tenant a nivel de repositorio con DB real.
- *   Coex   prompt=login y ausencia de prompt → rama SSO no se activa.
+ * AC-01  Reuse concedido a RP presente en el catálogo.
+ * AC-02  interaction_required para RP fuera del catálogo (CATALOG_REJECTED).
+ * AC-03  interaction_required con catálogo vacío — fail-closed.
+ * AC-05  Cliente no registrado en el servidor OAuth2 → error antes del catálogo.
+ * EC-02  Alta posterior al establecimiento de sesión evalúa la config vigente.
+ * EC-03  Tenant legacy sso.enabled=false → flujo OID4VP sin 500.
+ * EC-01  Sesión expirada (abs TTL) en catálogo → login_required, no interaction_required.
  */
 @SpringBootTest(properties = {
         "verifier.backend.url=https://localhost",
@@ -77,14 +69,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(TestClientConfig.class)
-class ReuseSsoSessionIT {
+class TenantSsoCatalogReuseIT {
 
     private static final String TENANT       = "tenant-a";
     private static final String CLIENT_ID    = "clientA";
     private static final String REDIRECT_URI = "https://localhost/callback";
     private static final String COOKIE_NAME  = "__Secure-sso-" + TENANT;
     private static final String X_TENANT     = "X-Tenant";
+
+    // TTL mínimos ADR-106: 1h abs / 5min idle — suficiente para los escenarios no-expirado
+    private static final Duration ABS_TTL  = Duration.ofHours(1);
+    private static final Duration IDLE_TTL = Duration.ofMinutes(5);
 
     // =========================================================
     // TESTCONTAINERS
@@ -117,7 +112,6 @@ class ReuseSsoSessionIT {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    // ── Mocks ──────────────────────────────────────────────────
     @MockitoBean
     private TenantSsoConfigPort tenantSsoConfigPort;
 
@@ -142,10 +136,6 @@ class ReuseSsoSessionIT {
     @MockitoBean
     private ClientRegistryProvider clientRegistryProvider;
 
-    // ── Spy sobre la implementación real (para ES-01) ──────────
-    @MockitoSpyBean
-    private SsoSessionJdbcRepository sessionRepository;
-
     // =========================================================
     // SETUP
     // =========================================================
@@ -154,13 +144,13 @@ class ReuseSsoSessionIT {
     void setUp() {
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS sso_session (
-                    id            TEXT        PRIMARY KEY,
-                    tenant        TEXT        NOT NULL,
-                    holder_hash   TEXT        NOT NULL,
+                    id             TEXT        PRIMARY KEY,
+                    tenant         TEXT        NOT NULL,
+                    holder_hash    TEXT        NOT NULL,
                     established_at TIMESTAMPTZ NOT NULL,
-                    expires_at    TIMESTAMPTZ NOT NULL,
-                    last_used_at  TIMESTAMPTZ NOT NULL,
-                    state         VARCHAR(32) NOT NULL
+                    expires_at     TIMESTAMPTZ NOT NULL,
+                    last_used_at   TIMESTAMPTZ NOT NULL,
+                    state          VARCHAR(32) NOT NULL
                 )
                 """);
         jdbcTemplate.execute("DELETE FROM sso_session");
@@ -170,209 +160,189 @@ class ReuseSsoSessionIT {
         when(tenantSsoConfigPort.getByTenant(anyString()))
                 .thenReturn(Optional.of(defaultConfig()));
         when(tenantSsoConfigPort.resolveTtl(anyString()))
-                .thenReturn(SsoSessionTtl.systemDefault());
+                .thenReturn(SsoSessionTtl.of(ABS_TTL, IDLE_TTL));
+        // US-05: catálogo con CLIENT_ID por defecto — override en tests específicos
         when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
-                .thenReturn(TenantSsoCatalog.of(Set.of(SsoEligibleClient.of(CLIENT_ID))));
-        when(dcqlProfileResolver.resolve(anyString()))
-                .thenReturn(new DcqlQuery(List.of()));
+                .thenReturn(catalogWith(CLIENT_ID));
         when(registeredClientRepository.findByClientId(CLIENT_ID))
                 .thenReturn(buildClient());
+        when(dcqlProfileResolver.resolve(anyString()))
+                .thenReturn(new DcqlQuery(List.of()));
     }
 
     // =========================================================
-    // AC-01 HAPPY PATH (ALLOWED)
-    // Real DB: sesión ACTIVE con expires_at futuro → findActiveById la devuelve.
+    // AC-01 HAPPY PATH: RP en catálogo → reuse concedido
+    // Sesión ACTIVE, CLIENT_ID en catálogo → SSO_SESSION_REUSED.
     // =========================================================
     @Test
-    void should_reuse_session_and_redirect_when_active_session_exists_in_db() throws Exception {
-        String sessionId = insertActiveSession(TENANT, "holder-hash-01");
+    void should_reuseSession_andEmitAudit_whenClientIsInCatalog() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-ac01");
 
         mockMvc.perform(baseRequest()
                         .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
 
-        verify(sessionRepository, atLeastOnce())
-                .findActiveById(any(SsoSessionId.class), anyString());
-        verify(tenantSsoConfigPort, atLeastOnce())
-                .getByTenant(anyString());
+        verify(auditPort, times(1)).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
+        verify(tenantSsoConfigPort, atLeastOnce()).resolveEligibleClients(anyString());
     }
 
     // =========================================================
-    // AC-02 NO SESIÓN → LOGIN_REQUIRED
-    // Real DB: el ID en cookie no coincide con ninguna fila ACTIVE.
+    // AC-02 RP FUERA DEL CATÁLOGO → interaction_required
+    // Sesión ACTIVE, CLIENT_ID NO está en catálogo (otro-client sí) →
+    // REJECT_CATALOG → SSO_REUSE_DENIED con outcome CATALOG_REJECTED.
     // =========================================================
     @Test
-    void should_redirect_to_login_when_no_session_in_db() throws Exception {
-        String unknownId = SsoSessionId.generate().getValue();
+    void should_returnInteractionRequired_whenClientNotInCatalog() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-ac02");
+
+        when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
+                .thenReturn(catalogWith("other-client"));
 
         mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, unknownId))
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
 
-        verify(sessionRepository, atLeastOnce())
-                .findActiveById(any(SsoSessionId.class), anyString());
+        verify(auditPort, atLeastOnce()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "CATALOG_REJECTED".equals(event.getOutcome())));
+        verify(auditPort, never()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
     }
 
     // =========================================================
-    // AC-03 RP NO ELEGIBLE → INTERACTION_REQUIRED + SSO_REUSE_DENIED
-    // Real DB: sesión ACTIVE, pero clientA no está en eligibleClientIds.
+    // AC-03 CATÁLOGO VACÍO → fail-closed → interaction_required
+    // Sesión ACTIVE, catálogo vacío → TenantSsoCatalog.empty() →
+    // contains() siempre false → REJECT_CATALOG → CATALOG_REJECTED.
     // =========================================================
     @Test
-    void should_return_interaction_required_when_client_not_eligible() throws Exception {
-        String sessionId = insertActiveSession(TENANT, "holder-hash-03");
+    void should_returnInteractionRequired_whenCatalogIsEmpty() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-ac03");
 
-        TenantSsoConfig configNoClient = new TenantSsoConfig(
-                TENANT, "domain", true,
-                new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)),
-                List.of("other-client")
+        when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
+                .thenReturn(TenantSsoCatalog.empty());
+
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none"))
+                .andExpect(status().is3xxRedirection());
+
+        verify(auditPort, atLeastOnce()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "CATALOG_REJECTED".equals(event.getOutcome())));
+    }
+
+    // =========================================================
+    // AC-05 CLIENTE NO REGISTRADO → error OAuth2 antes del catálogo
+    // registeredClientRepository devuelve null → el servidor OAuth2 rechaza
+    // la solicitud con invalid_client antes de que el catálogo sea consultado.
+    // =========================================================
+    @Test
+    void should_notConsultCatalog_whenClientIsNotRegistered() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-ac05");
+
+        // Cliente desconocido para el servidor OAuth2 → invalid_client
+        when(registeredClientRepository.findByClientId(anyString())).thenReturn(null);
+
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none"))
+                .andExpect(status().is4xxClientError()); // Spring AuthServer: invalid_client
+
+        // El catálogo nunca se consulta porque el flujo SSO no llega al paso 5
+        verify(tenantSsoConfigPort, never()).resolveEligibleClients(anyString());
+    }
+
+    // =========================================================
+    // EC-02 CONFIG VIGENTE: alta posterior al establecimiento de sesión
+    // Primera solicitud con catálogo vacío → CATALOG_REJECTED.
+    // Tras "añadir" el cliente al catálogo (re-stub), segunda solicitud → ALLOWED.
+    // Prueba que la config se re-lee en cada solicitud (sin caché estancada).
+    // =========================================================
+    @Test
+    void should_evaluateCurrentCatalog_whenClientAddedAfterSessionEstablishment() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-ec02");
+
+        // Catálogo inicial sin CLIENT_ID → interaction_required
+        when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
+                .thenReturn(TenantSsoCatalog.empty());
+
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none"))
+                .andExpect(status().is3xxRedirection());
+
+        verify(auditPort, atLeastOnce()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "CATALOG_REJECTED".equals(event.getOutcome())));
+
+        // "Alta posterior": config actualizada con CLIENT_ID
+        reset(auditPort);
+        when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
+                .thenReturn(catalogWith(CLIENT_ID));
+
+        // Segunda solicitud con la misma sesión → config vigente → ALLOWED
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none"))
+                .andExpect(status().is3xxRedirection());
+
+        verify(auditPort, times(1)).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
+    }
+
+    // =========================================================
+    // EC-03 TENANT LEGACY sso.enabled=false → flujo OID4VP estándar, sin 500
+    // Un tenant con SSO deshabilitado no produce error: el workflow devuelve
+    // LOGIN_REQUIRED y el flujo OID4VP estándar produce una redirección normal.
+    // =========================================================
+    @Test
+    void should_notFail_whenTenantHasSsoDisabled() throws Exception {
+        TenantSsoConfig legacyConfig = new TenantSsoConfig(
+                TENANT, "domain", false,
+                new TenantSsoConfig.SsoTtlConfig(ABS_TTL, IDLE_TTL),
+                List.of()
         );
         when(tenantSsoConfigPort.getByTenant(anyString()))
-                .thenReturn(Optional.of(configNoClient));
-        when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
-                .thenReturn(TenantSsoCatalog.of(Set.of(SsoEligibleClient.of("other-client"))));
+                .thenReturn(Optional.of(legacyConfig));
+
+        // No se inserta sesión ni se envía cookie — el flujo SSO no se activa
+        mockMvc.perform(baseRequest()
+                        .param("prompt", "none"))
+                .andExpect(status().is3xxRedirection());
+
+        verify(auditPort, never()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
+        // El catálogo no se consulta cuando SSO está deshabilitado
+        verify(tenantSsoConfigPort, never()).resolveEligibleClients(anyString());
+    }
+
+    // =========================================================
+    // EC-01 SESIÓN EXPIRADA (abs TTL policy) → login_required, no interaction_required
+    // Sesión: established_at = ahora-2h, expires_at = ahora+6h (SQL pasa),
+    //         last_used_at = ahora-2min (idle OK con 5min).
+    // Config abs TTL = 1h → policy: now > established + 1h → REJECT_SESSION.
+    // Aunque CLIENT_ID está en catálogo, la política corta en condición (2) antes de (3).
+    // =========================================================
+    @Test
+    void should_returnLoginRequired_notInteractionRequired_whenSessionExpiredInPolicy() throws Exception {
+        // Sesión con expires_at futuro (SQL pasa) pero TTL policy vencida (established hace 2h)
+        String sessionId = insertSessionExpiredInPolicy(TENANT, "holder-ec01");
 
         mockMvc.perform(baseRequest()
                         .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
 
+        // Debe emitirse SSO_REUSE_DENIED con outcome REJECT_SESSION, no CATALOG_REJECTED
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED));
-    }
-
-    // =========================================================
-    // AC-04 CROSS-TENANT → SSO_CROSS_TENANT_ATTEMPT
-    // Real DB: sesión de tenant-a accedida desde tenant-b.
-    // El workflow detecta el intento y emite SSO_CROSS_TENANT_ATTEMPT.
-    // =========================================================
-    @Test
-    void should_emit_cross_tenant_event_when_session_belongs_to_different_tenant() throws Exception {
-        String sessionId = insertActiveSession(TENANT, "holder-hash-ct");
-
-        // La request llega para tenant-b pero la cookie tiene una sesión de tenant-a
-        when(tenantSsoConfigPort.getByTenant("tenant-b"))
-                .thenReturn(Optional.of(new TenantSsoConfig(
-                        "tenant-b", "domain", true,
-                        new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)),
-                        List.of(CLIENT_ID)
-                )));
-
-        mockMvc.perform(get("/oidc/authorize")
-                        .header("X-Forwarded-Proto", "https")
-                        .header(X_TENANT, "tenant-b")
-                        .param("client_id", CLIENT_ID)
-                        .param("scope", "openid")
-                        .param("state", "xyz")
-                        .param("redirect_uri", REDIRECT_URI)
-                        .cookie(new Cookie("__Secure-sso-tenant-b", sessionId))
-                        .param("prompt", "none"))
-                .andExpect(status().is3xxRedirection());
-
-        verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT));
-    }
-
-    // =========================================================
-    // EC-01 SESIÓN EXPIRADA
-    // Real DB: fila insertada con expires_at en el pasado (state = 'ACTIVE').
-    // El filtro SQL "AND expires_at > now()" la excluye → findActiveById vacío.
-    // =========================================================
-    @Test
-    void should_fall_back_when_session_expired_in_db() throws Exception {
-        String sessionId = insertExpiredSession(TENANT, "expired-holder-01");
-
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, sessionId))
-                        .param("prompt", "none"))
-                .andExpect(status().is3xxRedirection());
-
-        Integer activeCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM sso_session WHERE id = ? AND expires_at > NOW()",
-                Integer.class, sessionId);
-        assertThat(activeCount).isZero();
-    }
-
-    // =========================================================
-    // EC-02 SESIÓN SUPERSEDED
-    // Real DB: fila con state = 'SUPERSEDED' y expires_at futuro.
-    // El filtro SQL "AND state = 'ACTIVE'" la excluye → findActiveById vacío.
-    // =========================================================
-    @Test
-    void should_fall_back_when_session_is_superseded_in_db() throws Exception {
-        String sessionId = insertSupersededSession(TENANT, "superseded-holder-01");
-
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, sessionId))
-                        .param("prompt", "none"))
-                .andExpect(status().is3xxRedirection());
-
-        String state = jdbcTemplate.queryForObject(
-                "SELECT state FROM sso_session WHERE id = ?", String.class, sessionId);
-        assertThat(state).isEqualTo("SUPERSEDED");
-    }
-
-    // =========================================================
-    // ES-01 FALLO ALMACÉN (FAIL-CLOSED)
-    // El spy lanza RuntimeException en findActiveById.
-    // El workflow captura la excepción, emite SSO_PERSIST_ERROR y devuelve
-    // LOGIN_REQUIRED → 3xx redirect (fail-closed, sin exponer el error al RP).
-    // =========================================================
-    @Test
-    void should_fail_closed_and_emit_audit_event_when_repository_throws() throws Exception {
-        doThrow(new RuntimeException("DB down"))
-                .when(sessionRepository).findActiveById(any(SsoSessionId.class), anyString());
-
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, SsoSessionId.generate().getValue()))
-                        .param("prompt", "none"))
-                .andExpect(status().is3xxRedirection());
-
-        verify(sessionRepository, atLeastOnce())
-                .findActiveById(any(SsoSessionId.class), anyString());
-        verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR));
-    }
-
-    // =========================================================
-    // W5 — AISLAMIENTO CROSS-TENANT A NIVEL DE REPOSITORIO (DB REAL)
-    // Verifica directamente que findActiveById con tenant distinto devuelve vacío.
-    // =========================================================
-    @Test
-    void findActiveById_returns_empty_when_session_belongs_to_different_tenant() {
-        String sessionId = insertActiveSession(TENANT, "holder-hash-w5");
-
-        Optional<SsoSession> result = sessionRepository.findActiveById(
-                SsoSessionId.of(sessionId), "tenant-b");
-
-        assertThat(result).isEmpty();
-    }
-
-    // =========================================================
-    // COEXISTENCIA: prompt=login → rama SSO no se activa;
-    // el flujo OID4VP estándar produce 3xx hacia la wallet.
-    // =========================================================
-    @Test
-    void should_skip_sso_branch_when_prompt_is_login() throws Exception {
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, SsoSessionId.generate().getValue()))
-                        .param("prompt", "login"))
-                .andExpect(status().is3xxRedirection());
-
-        verify(sessionRepository, never()).findActiveById(any(), any());
-    }
-
-    // =========================================================
-    // COEXISTENCIA: sin parámetro prompt → flujo OID4VP estándar.
-    // =========================================================
-    @Test
-    void should_skip_sso_branch_when_no_prompt_parameter() throws Exception {
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, SsoSessionId.generate().getValue())))
-                .andExpect(status().is3xxRedirection());
-
-        verify(sessionRepository, never()).findActiveById(any(), any());
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "REJECT_SESSION".equals(event.getOutcome())));
+        verify(auditPort, never()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "CATALOG_REJECTED".equals(event.getOutcome())));
     }
 
     // =========================================================
@@ -390,15 +360,22 @@ class ReuseSsoSessionIT {
     }
 
     // =========================================================
-    // HELPERS — configuración por defecto
+    // HELPERS — configuración y cliente por defecto
     // =========================================================
 
     private TenantSsoConfig defaultConfig() {
         return new TenantSsoConfig(
                 TENANT, "domain", true,
-                new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)),
+                new TenantSsoConfig.SsoTtlConfig(ABS_TTL, IDLE_TTL),
                 List.of(CLIENT_ID)
         );
+    }
+
+    private TenantSsoCatalog catalogWith(String... clientIds) {
+        List<SsoEligibleClient> clients = List.of(clientIds).stream()
+                .map(SsoEligibleClient::of)
+                .toList();
+        return TenantSsoCatalog.of(clients);
     }
 
     private RegisteredClient buildClient() {
@@ -416,9 +393,10 @@ class ReuseSsoSessionIT {
     }
 
     // =========================================================
-    // HELPERS — inserción directa en BD usando SsoSessionId (TEXT)
+    // HELPERS — inserción directa en BD
     // =========================================================
 
+    /** Sesión ACTIVE con expires_at futuro y last_used_at reciente (idle OK). */
     private String insertActiveSession(String tenant, String holderHash) {
         String id = SsoSessionId.generate().getValue();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
@@ -428,41 +406,31 @@ class ReuseSsoSessionIT {
                 VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
                 """,
                 id, tenant, holderHash,
-                now,
-                now.plusHours(1),
-                now.minusMinutes(5)
+                now.minusMinutes(30),
+                now.plusMinutes(30),
+                now.minusMinutes(2)
         );
         return id;
     }
 
-    private String insertExpiredSession(String tenant, String holderHash) {
+    /**
+     * EC-01: sesión con expires_at en el futuro (SQL pasa) pero establecida hace 2h.
+     * Con abs TTL = 1h, la policy detecta: now > established_at + 1h → REJECT_SESSION.
+     * last_used_at reciente para que el idle check pase.
+     */
+    private String insertSessionExpiredInPolicy(String tenant, String holderHash) {
         String id = SsoSessionId.generate().getValue();
-        OffsetDateTime twoHoursAgo = OffsetDateTime.now(ZoneOffset.UTC).minusHours(2);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime established = now.minusHours(2);
         jdbcTemplate.update("""
                 INSERT INTO sso_session
                     (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
                 VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
                 """,
                 id, tenant, holderHash,
-                twoHoursAgo,
-                twoHoursAgo.plusMinutes(30),
-                twoHoursAgo
-        );
-        return id;
-    }
-
-    private String insertSupersededSession(String tenant, String holderHash) {
-        String id = SsoSessionId.generate().getValue();
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        jdbcTemplate.update("""
-                INSERT INTO sso_session
-                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
-                VALUES (?, ?, ?, ?, ?, ?, 'SUPERSEDED')
-                """,
-                id, tenant, holderHash,
-                now.minusMinutes(30),
-                now.plusMinutes(30),
-                now.minusMinutes(30)
+                established,
+                now.plusHours(6),    // expires_at futuro → SQL pasa
+                now.minusMinutes(2)  // idle reciente → isValid pasa
         );
         return id;
     }

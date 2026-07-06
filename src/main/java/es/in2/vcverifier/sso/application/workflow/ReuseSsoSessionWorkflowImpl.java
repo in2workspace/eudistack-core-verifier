@@ -8,11 +8,13 @@ import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
-import es.in2.vcverifier.sso.domain.model.TenantSsoPolicy;
+import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
+import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -31,17 +33,20 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
     private final SsoSessionRepositoryPort sessionRepository;
     private final Clock clock;
     private final SsoAuditPort auditPort;
+    private final RegisteredClientRepository registeredClientRepository;
 
     public ReuseSsoSessionWorkflowImpl(
             TenantSsoConfigPort configPort,
             SsoSessionRepositoryPort sessionRepository,
             Clock clock,
-            SsoAuditPort auditPort
+            SsoAuditPort auditPort,
+            RegisteredClientRepository registeredClientRepository
     ) {
         this.configPort = configPort;
         this.sessionRepository = sessionRepository;
         this.clock = clock;
         this.auditPort = auditPort;
+        this.registeredClientRepository = registeredClientRepository;
     }
 
     @Override
@@ -112,27 +117,43 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
-        // 5. CLIENT ELIGIBILITY — usa TenantSsoPolicy para evaluar elegibilidad
-        boolean clientEligible = config.eligibleClientIds().isEmpty()
-                || config.eligibleClientIds().contains(clientId);
+        // 5. POLICY AD-2: (1) cliente registrado en OAuth server, (2) sesión vigente (abs TTL),
+        //                  (3) cliente en catálogo SSO del tenant — EC-01
+        boolean clientRegistered = registeredClientRepository.findByClientId(clientId) != null;
+        TenantSsoCatalog catalog = configPort.resolveEligibleClients(tenantSlug);
 
         TenantSsoPolicy policy = new TenantSsoPolicy(clock, ttl.absolute().toSeconds());
         ReuseDecision decision = policy.evaluate(
-                session.getTenant(), tenantSlug, session.getEstablishedAt(), clientEligible
+                session.getTenant(), tenantSlug, session.getEstablishedAt(),
+                clientRegistered, catalog, clientId
         );
 
-        if (decision == ReuseDecision.CLIENT_NOT_ELIGIBLE) {
-            // AC-03: auditar denegación por cliente no elegible
+        if (decision == ReuseDecision.REJECT_CATALOG) {
+            // AC-03 / US-05: cliente no figura en catálogo SSO → interaction_required
             auditPort.publish(
                     SsoAuditEvent.builder()
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
-                            .outcome("CLIENT_NOT_ELIGIBLE")
+                            .outcome("CATALOG_REJECTED")
                             .occurredAt(now)
                             .build()
             );
             return new Result(Result.Status.INTERACTION_REQUIRED, null);
+        }
+
+        if (decision != ReuseDecision.ALLOWED) {
+            // REJECT_SESSION, REJECT_UNREGISTERED_CLIENT, CROSS_TENANT u otro motivo → login_required
+            auditPort.publish(
+                    SsoAuditEvent.builder()
+                            .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
+                            .tenant(tenantSlug)
+                            .clientId(clientId)
+                            .outcome(decision.name())
+                            .occurredAt(now)
+                            .build()
+            );
+            return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
         // 6. THROTTLE UPDATE — non-blocking (R-3 / NFR-P-549-01): la respuesta al cliente
