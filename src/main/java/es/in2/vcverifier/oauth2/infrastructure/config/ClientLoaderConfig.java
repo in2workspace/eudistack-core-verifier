@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIENT_METADATA;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI;
 
 @Slf4j
 @Configuration
@@ -105,6 +106,9 @@ public class ClientLoaderConfig {
                 }
                 if (clientData.clientMetadata() != null) {
                     clientSettingsBuilder.setting(CLIENT_SETTING_CLIENT_METADATA, clientData.clientMetadata());
+                }
+                if (clientData.backchannelLogoutUri() != null && !clientData.backchannelLogoutUri().isBlank()) {
+                    clientSettingsBuilder.setting(CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI, clientData.backchannelLogoutUri());
                 }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
                     URI loginUri = URI.create(clientData.loginPageUri());

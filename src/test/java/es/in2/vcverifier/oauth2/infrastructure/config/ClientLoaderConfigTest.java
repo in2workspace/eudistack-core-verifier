@@ -36,7 +36,7 @@ class ClientLoaderConfigTest {
                 List.of("https://app.dome.example.com"),
                 true, null, null,
                 "dome", null,
-                null
+                null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -65,7 +65,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null
+                null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -94,7 +94,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "INVALID TENANT WITH SPACES!", null, null
+                "INVALID TENANT WITH SPACES!", null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -119,7 +119,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "my-tenant-123", null, null
+                "my-tenant-123", null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -149,7 +149,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, loginPageUri, null
+                null, loginPageUri, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -184,7 +184,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://main-app.example.com"),
                 true, null, null,
-                null, null, null
+                null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -216,7 +216,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null
+                null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -244,7 +244,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, "http://insecure.example.com/login", null
+                null, "http://insecure.example.com/login", null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);

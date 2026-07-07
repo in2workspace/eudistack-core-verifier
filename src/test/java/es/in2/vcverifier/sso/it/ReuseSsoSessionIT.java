@@ -2,6 +2,7 @@ package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
@@ -226,7 +227,7 @@ class ReuseSsoSessionIT {
         TenantSsoConfig configNoClient = new TenantSsoConfig(
                 TENANT, "domain", true,
                 new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)),
-                List.of("other-client")
+                List.of(EligibleClientConfig.of("other-client"))
         );
         when(tenantSsoConfigPort.getByTenant(anyString()))
                 .thenReturn(Optional.of(configNoClient));
@@ -256,7 +257,7 @@ class ReuseSsoSessionIT {
                 .thenReturn(Optional.of(new TenantSsoConfig(
                         "tenant-b", "domain", true,
                         new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)),
-                        List.of(CLIENT_ID)
+                        List.of(EligibleClientConfig.of(CLIENT_ID))
                 )));
 
         mockMvc.perform(get("/oidc/authorize")
@@ -397,7 +398,7 @@ class ReuseSsoSessionIT {
         return new TenantSsoConfig(
                 TENANT, "domain", true,
                 new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)),
-                List.of(CLIENT_ID)
+                List.of(EligibleClientConfig.of(CLIENT_ID))
         );
     }
 

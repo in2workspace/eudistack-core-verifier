@@ -1,6 +1,7 @@
 package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
@@ -137,7 +138,7 @@ class SsoSessionReuseIsolationIT {
                         Duration.ofHours(1),
                         Duration.ofMinutes(10)
                 ),
-                List.of("client-b")
+                List.of(EligibleClientConfig.of("client-b"))
         );
     }
 }

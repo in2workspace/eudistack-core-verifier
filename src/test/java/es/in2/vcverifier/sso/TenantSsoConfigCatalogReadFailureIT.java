@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -93,7 +94,7 @@ class TenantSsoConfigCatalogReadFailureIT {
     void resolveEligibleClients_shouldRetainLastValidCatalog_whenRefreshFails() {
         TenantSsoConfigYamlData validData = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        List.of("client-x", "client-y"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("client-x"), EligibleClientConfig.of("client-y")), "PT2H", "PT10M")
         ));
         when(provider.retrieve()).thenReturn(validData);
 
@@ -154,7 +155,7 @@ class TenantSsoConfigCatalogReadFailureIT {
     void resolveEligibleClients_shouldPreserveCatalog_afterMultipleConsecutiveRefreshFailures() {
         TenantSsoConfigYamlData validData = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-b", "b.example.com", true,
-                        List.of("client-1", "client-2", "client-3"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("client-1"), EligibleClientConfig.of("client-2"), EligibleClientConfig.of("client-3")), "PT2H", "PT10M")
         ));
         when(provider.retrieve())
                 .thenReturn(validData)
@@ -189,11 +190,11 @@ class TenantSsoConfigCatalogReadFailureIT {
     void resolveEligibleClients_shouldApplyNewCatalog_whenRefreshSucceedsAfterFailure() {
         TenantSsoConfigYamlData initialData = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        List.of("old-client"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("old-client")), "PT2H", "PT10M")
         ));
         TenantSsoConfigYamlData recoveredData = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        List.of("new-client-1", "new-client-2"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("new-client-1"), EligibleClientConfig.of("new-client-2")), "PT2H", "PT10M")
         ));
 
         when(provider.retrieve())
@@ -264,9 +265,9 @@ class TenantSsoConfigCatalogReadFailureIT {
     void resolveEligibleClients_shouldPreserveAllTenants_whenRefreshFails() {
         TenantSsoConfigYamlData validData = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        List.of("client-a"), "PT2H", "PT10M"),
+                        List.of(EligibleClientConfig.of("client-a")), "PT2H", "PT10M"),
                 new TenantSsoEntry("tenant-b", "b.example.com", true,
-                        List.of("client-b"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("client-b")), "PT2H", "PT10M")
         ));
         when(provider.retrieve()).thenReturn(validData);
 

@@ -26,6 +26,9 @@ public class Constants {
     public static final String CLIENT_SETTING_TENANT = "settings.tenant";
     public static final String CLIENT_SETTING_LOGIN_PAGE_URI = "settings.login_page_uri";
     public static final String CLIENT_SETTING_CLIENT_METADATA = "settings.clientMetadata";
+    // US-06 Single Logout (AD-4/DELTA-01): backchannel_logout_uri declarado por el RP,
+    // fuente primaria del BackchannelLogoutUriPort.
+    public static final String CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI = "settings.backchannelLogoutUri";
     // JTI cache TTL: 2x access token lifetime (900s) to ensure replay window coverage
     public static final long JTI_CACHE_TTL_SECONDS = 1800L;
     public static final String X_TENANT_HEADER = "X-Tenant";

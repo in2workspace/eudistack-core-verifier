@@ -9,7 +9,12 @@
 #                     event=sso_config_inconsistent). Scope it to the shared parent
 #                     domain across the tenant's applications to enable SSO reuse.
 #   ssoEnabled      - whether SSO session reuse is active for the tenant
-#   eligibleClients - client_ids eligible for SSO reuse (empty = fail-closed, no client can reuse the session)
+#   eligibleClients - apps eligible for SSO reuse (empty = fail-closed, no client can reuse
+#                     the session). US-06 (AD-4/DELTA-01): each entry is an object
+#                     { clientId, backchannelLogoutUri } — backchannelLogoutUri is optional;
+#                     when absent, the primary source (ClientSettings on the RegisteredClient)
+#                     is tried first, then this fallback. If neither declares a URI, the app
+#                     is skipped from Back-Channel Logout dispatch (backchannel_skipped, AC-04).
 #   ttlAbsolute     - (optional) ISO-8601 duration for the absolute session TTL.
 #                     Valid range: PT1H–PT24H. Absent or malformed → PT8H (system default).
 #                     Example: "PT4H"
@@ -22,29 +27,31 @@ tenants:
     rootDomain: "sandbox.example.com"
     ssoEnabled: false
     eligibleClients:
-      - "vc-auth-client-sandbox"
+      - clientId: "vc-auth-client-sandbox"
 
   - tenant: "cgcom"
     rootDomain: "cgcom.example.com"
     ssoEnabled: false
     eligibleClients:
-      - "vc-auth-client-cgcom"
+      - clientId: "vc-auth-client-cgcom"
 
   - tenant: "kpmg"
     rootDomain: "kpmg.example.com"
     ssoEnabled: false
     eligibleClients:
-      - "vc-auth-client-kpmg"
+      - clientId: "vc-auth-client-kpmg"
 
   - tenant: "dome"
     rootDomain: "dome.example.com"
     ssoEnabled: true
     eligibleClients:
-      - "vc-auth-client-dome"
-      - "vc-auth-client-dome-custom"
+      - clientId: "vc-auth-client-dome"
+        backchannelLogoutUri: "https://app.dome.example.com/backchannel-logout"
+      - clientId: "vc-auth-client-dome-custom"
+        backchannelLogoutUri: "https://custom.dome.example.com/backchannel-logout"
 
   - tenant: "platform"
     rootDomain: "platform.example.com"
     ssoEnabled: false
     eligibleClients:
-      - "vc-auth-client-platform"
+      - clientId: "vc-auth-client-platform"
