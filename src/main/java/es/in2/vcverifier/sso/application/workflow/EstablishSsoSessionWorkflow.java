@@ -4,6 +4,7 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
+import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
@@ -51,19 +52,25 @@ public class EstablishSsoSessionWorkflow {
 
         var configOpt = tenantSsoConfigPort.getByTenant(command.tenant());
 
-        if (configOpt.isEmpty() || !configOpt.get().ssoEnabled()) {
-
+        if (configOpt.isEmpty()) {
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT,
                     command.tenant(),
                     command.clientId(),
                     null,
-                    "SSO disabled",
+                    "CONFIG_ABSENT",
                     command.correlationId(),
                     Instant.now(clock)
             ));
 
-            throw new SsoConfigInconsistentException("SSO disabled for tenant " + command.tenant());
+            throw new SsoConfigInconsistentException("Missing SSO config for tenant " + command.tenant());
+        }
+
+        if (!configOpt.get().ssoEnabled()) {
+            log.debug("event=sso_legacy_tenant tenant={} correlation_id={}",
+                    command.tenant(), command.correlationId());
+
+            throw new SsoDisabledForTenantException("SSO disabled for tenant " + command.tenant());
         }
 
         SsoSessionTtl ttl = tenantSsoConfigPort.resolveTtl(command.tenant());

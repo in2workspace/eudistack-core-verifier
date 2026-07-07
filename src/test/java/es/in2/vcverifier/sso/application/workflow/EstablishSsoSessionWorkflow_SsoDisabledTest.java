@@ -4,8 +4,7 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
-import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
-import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
+import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.junit.jupiter.api.DisplayName;
@@ -55,8 +54,9 @@ class EstablishSsoSessionWorkflow_SsoDisabledTest {
         when(tenantSsoConfigPort.getByTenant("legacy-tenant"))
                 .thenReturn(Optional.of(config));
 
+        // Legacy intencional → excepción benigna (no SsoConfigInconsistentException).
         assertThrows(
-                SsoConfigInconsistentException.class,
+                SsoDisabledForTenantException.class,
                 () -> workflow.execute(command)
         );
 
@@ -66,8 +66,6 @@ class EstablishSsoSessionWorkflow_SsoDisabledTest {
         verify(tenantSsoConfigPort, never()).resolveTtl(anyString());
         verify(hashingService, never()).sha256(any());
 
-        verify(auditPort, times(1)).publish(org.mockito.ArgumentMatchers.argThat(e ->
-                e.getEventType() == SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT
-                        && "legacy-tenant".equals(e.getTenant())));
+        verifyNoInteractions(auditPort);
     }
 }

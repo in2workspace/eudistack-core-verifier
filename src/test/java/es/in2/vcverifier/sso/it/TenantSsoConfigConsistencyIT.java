@@ -6,6 +6,7 @@ import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
+import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
@@ -22,15 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 /**
- * Caso:
- * Verifica que, cuando la configuración SSO está ausente o deshabilitada, el workflow lanza una excepción
- * y publica un evento de auditoría de configuración inconsistente sin crear sesión ni persistir datos.
+ * Caso (US-08 B2 — semántica de eventos del guard de establecimiento):
+ * El guard distingue "config ausente/incoherente inesperada" de "tenant legacy intencional".
  *
  * Esperado:
- * - Se lanza SsoConfigInconsistentException
- * - Se emite evento SSO_CONFIG_INCONSISTENT
- * - NO se crea ni persiste sesión SSO
- * - NO se ejecuta persistencia en el repositorio de sesiones
+ * - Config AUSENTE (sin entrada) → lanza SsoConfigInconsistentException + emite SSO_CONFIG_INCONSISTENT.
+ * - SSO DESHABILITADO (config coherente, sso.enabled=false) → lanza la excepción benigna
+ *   SsoDisabledForTenantException y NO emite ningún evento de auditoría (ES-01, NFR-S-553-01).
+ * - En ambos casos NO se crea ni persiste sesión SSO.
  */
 @ExtendWith(MockitoExtension.class)
 class TenantSsoConfigConsistencyIT {
@@ -58,7 +58,7 @@ class TenantSsoConfigConsistencyIT {
         when(tenantSsoConfigPort.getByTenant("tenant-a"))
                 .thenReturn(Optional.empty());
 
-        // WHEN — el workflow lanza SsoConfigInconsistentException cuando no hay config
+        // WHEN — Config ausente = recurso inesperado → SsoConfigInconsistentException + evento.
         assertThrows(
                 SsoConfigInconsistentException.class,
                 () -> workflow.execute(command)
@@ -67,14 +67,13 @@ class TenantSsoConfigConsistencyIT {
         // THEN - audit MUST be called
         verify(auditPort, times(1)).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT &&
-                        "tenant-a".equals(event.getTenant())
-        ));
+                        "tenant-a".equals(event.getTenant())));
 
         verifyNoInteractions(sessionRepositoryPort);
     }
 
     @Test
-    void shouldPublishAuditAndThrow_whenSsoDisabled() {
+    void shouldThrowBenignAndNotAudit_whenSsoDisabled() {
 
         var command = new SsoSessionCommand(
                 "tenant-b",
@@ -89,17 +88,12 @@ class TenantSsoConfigConsistencyIT {
         when(tenantSsoConfigPort.getByTenant("tenant-b"))
                 .thenReturn(Optional.of(config));
 
-        // WHEN — el workflow lanza SsoConfigInconsistentException cuando SSO está deshabilitado
         assertThrows(
-                SsoConfigInconsistentException.class,
+                SsoDisabledForTenantException.class,
                 () -> workflow.execute(command)
         );
 
-        verify(auditPort, times(1)).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT &&
-                        "tenant-b".equals(event.getTenant())
-        ));
-
+        verifyNoInteractions(auditPort);
         verifyNoInteractions(sessionRepositoryPort);
     }
 }

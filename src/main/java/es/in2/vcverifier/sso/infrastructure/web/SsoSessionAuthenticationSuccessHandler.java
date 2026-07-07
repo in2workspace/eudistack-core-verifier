@@ -5,11 +5,13 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
+import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
@@ -20,6 +22,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Component
 public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuccessHandler {
 
@@ -106,8 +109,12 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 ));
             }
 
+        } catch (SsoDisabledForTenantException e) {
+            // Tenant legacy intencional (sso.enabled=false): sin cookie y SIN evento de fallo.
+            log.debug("event=sso_establish_skipped_legacy tenant={} correlation_id={}",
+                    vpData.tenant(), correlationId);
         } catch (SsoConfigInconsistentException e) {
-            // Tenant legacy o SSO deshabilitado: auditamos pero NO re-lanzamos.
+            // Config ausente/incoherente inesperada: auditamos como fallo pero NO re-lanzamos.
             // El flujo OID4VP debe completar con redirect aunque no haya cookie SSO.
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
