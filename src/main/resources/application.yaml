@@ -94,14 +94,14 @@ verifier:
   frontend:
     portalUrl: http://localhost:4200
   backend:
-    # Public URL(s) of the verifier. Accepts a single value or a comma-separated / YAML
-    # list of alias domains when the verifier is reachable under several public hostnames
-    # (SSO multi-tenant/multi-app). The first entry is canonical: used as `iss`/audience
-    # in issued tokens and as the base for OID4VP endpoints. Every entry is also a trusted
-    # origin for the verifier's own /login and /error redirects — deliberately static,
-    # never derived from the request Host.
+    # Canonical public URL of the verifier. Used as `iss`/audience in issued tokens and as
+    # the base for OID4VP endpoints.
     url: http://localhost:8082
-    # url:
+    # Optional: alias domains the verifier itself is allowed to redirect to (e.g. its own
+    # /login and /error pages) when it is reachable under several public hostnames
+    # (SSO multi-tenant/multi-app). Deliberately static — never derived from the request
+    # Host. Does not affect `iss`/audience, which always come from `url` above.
+    # additional-urls:
     #   - https://verifier.dome-marketplace.org
     #   - https://kpmg.eudistack.net
     identity:

@@ -35,7 +35,7 @@ class BackendPropertiesTest {
 
         assertThat(backendProperties.url())
                 .as("Backend URL should match")
-                .containsExactly("https://raw.githubusercontent.com");
+                .isEqualTo("https://raw.githubusercontent.com");
 
         assertThat(backendProperties.identity())
                 .as("Identity should match the provided private key")
@@ -109,16 +109,17 @@ class BackendPropertiesTest {
     }
 
     @Test
-    void testUrlAcceptsCommaSeparatedListOfAliasDomains() {
+    void testAdditionalUrlsIsOptionalAndAcceptsCommaSeparatedList() {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
-                        "verifier.backend.url=https://a.example.com,https://b.example.com",
+                        "verifier.backend.url=https://raw.githubusercontent.com",
+                        "verifier.backend.additionalUrls=https://a.example.com,https://b.example.com",
                         "verifier.backend.trustFrameworks[0].name=DOME"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context.getBean(BackendProperties.class).url())
+                    assertThat(context.getBean(BackendProperties.class).additionalUrls())
                             .containsExactly("https://a.example.com", "https://b.example.com");
                 });
     }

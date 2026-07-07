@@ -2,7 +2,6 @@ package es.in2.vcverifier.shared.config.properties;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 
 import org.hibernate.validator.constraints.URL;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -13,7 +12,8 @@ import java.util.List;
 @Validated
 @ConfigurationProperties(prefix = "verifier.backend")
 public record BackendProperties(
-        @NotEmpty List<@URL String> url,
+        @NotBlank @URL String url,
+        List<@URL String> additionalUrls,
         Identity identity,
         @Valid List<TrustFramework> trustFrameworks,
         LocalFiles localFiles,
