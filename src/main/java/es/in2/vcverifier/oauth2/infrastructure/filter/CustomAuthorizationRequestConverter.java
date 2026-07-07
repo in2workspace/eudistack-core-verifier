@@ -119,10 +119,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         return handleFAPIRequest(authorizationContext, request, registeredClient);
     }
 
-    /**
-     * When prompt=none is present, runs the SSO session reuse workflow and returns its result.
-     * Returns null when prompt != none so the caller skips OIDC error handling entirely.
-     */
     private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
                                                               AuthorizationContext ctx,
                                                               String clientId) {
@@ -137,12 +133,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
     }
 
-    /**
-     * Handles the result of the SSO session reuse workflow for prompt=none requests.
-     * LOGIN_REQUIRED and INTERACTION_REQUIRED redirect to the client's redirect_uri with the
-     * corresponding OIDC error code as required by the spec (RFC 6749 §4.1.2.1 / OIDC Core §3.1.2.6).
-     * ALLOWED falls through so the caller continues; direct code issuance is a separate story.
-     */
     private void handlePromptNoneResult(ReuseSsoSessionWorkflow.Result.Status status,
                                         AuthorizationContext ctx) {
         switch (status) {
@@ -226,11 +216,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
-    /**
-     * Throws the redirect exception that Spring Authorization Server uses to redirect the user
-     * to the login/QR page with the openid4vp URL.
-     * If the client has a custom loginPageUri, redirect there instead of the default MFE Login.
-     */
     private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,
                                                        RegisteredClient registeredClient, String portalUrl,
                                                        String contextPath) {

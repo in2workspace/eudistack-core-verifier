@@ -97,13 +97,6 @@ verifier:
     # Canonical public URL of the verifier. Used as `iss`/audience in issued tokens and as
     # the base for OID4VP endpoints.
     url: http://localhost:8082
-    # Optional: alias domains the verifier itself is allowed to redirect to (e.g. its own
-    # /login and /error pages) when it is reachable under several public hostnames
-    # (SSO multi-tenant/multi-app). Deliberately static — never derived from the request
-    # Host. Does not affect `iss`/audience, which always come from `url` above.
-    # additional-urls:
-    #   - https://verifier.dome-marketplace.org
-    #   - https://kpmg.eudistack.net
     identity:
       # Leave empty to auto-generate ephemeral P-256 key + did:key at startup (dev only).
       # For production, configure privateKey + certificate for x509_hash client_id_scheme.

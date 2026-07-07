@@ -20,17 +20,6 @@ public class BackendConfig {
 
     private final BackendProperties properties;
 
-    /**
-     * Returns the verifier's external URL. When called during HTTP request processing
-     * with forwarded headers (e.g. behind nginx), derives the URL from the original
-     * request (scheme + host + port). Falls back to the static configuration value
-     * when no request context is available (e.g. during bean initialization).
-     *
-     * <p>{@code verifier.backend.url} is the canonical URL, used as issuer/audience/
-     * response_uri. Additional alias domains (SSO multi-tenant/multi-app) are configured
-     * separately via {@code verifier.backend.additional-urls} — see {@link #getAllUrls()}
-     * and {@link #getTrustedVerifierOrigins()} for the full set.
-     */
     public String getUrl() {
         try {
             ServletRequestAttributes attrs =
@@ -51,18 +40,10 @@ public class BackendConfig {
         return properties.url();
     }
 
-    /**
-     * Returns the static configured canonical URL ({@code verifier.backend.url}),
-     * ignoring the request context.
-     */
     public String getStaticUrl() {
         return properties.url();
     }
 
-    /**
-     * Returns the canonical {@code url} followed by every configured {@code additionalUrls}
-     * entry (alias domains for SSO multi-tenant/multi-app deployments), in that order.
-     */
     public List<String> getAllUrls() {
         List<String> additional = properties.additionalUrls();
         if (additional == null || additional.isEmpty()) {
@@ -74,16 +55,6 @@ public class BackendConfig {
         return List.copyOf(all);
     }
 
-    /**
-     * Returns the set of origins the verifier is allowed to redirect to for its own
-     * internal pages (e.g. /login, /error), normalized for case and default ports.
-     *
-     * <p>Deliberately static and configuration-driven — never derived from the current
-     * request's Host, even one resolved via a trusted reverse proxy, so a single
-     * misconfigured or compromised hop in front of the verifier cannot widen the set of
-     * trusted redirect targets. Derived from {@link #getAllUrls()} (canonical {@code url}
-     * plus {@code additionalUrls}).
-     */
     public Set<String> getTrustedVerifierOrigins() {
         return getAllUrls().stream()
                 .map(OriginNormalizer::normalizeOrigin)
@@ -125,7 +96,6 @@ public class BackendConfig {
         return getSelectedTrustFramework().trustedServicesListUrl();
     }
 
-    // todo currently unused, will be used when Verifier can manage multiple trustframeworks
     public List<BackendProperties.TrustFramework> getAllTrustFrameworks() {
         return properties.trustFrameworks();
     }
@@ -150,19 +120,11 @@ public class BackendConfig {
         return properties.fapiNonceRequired() != null ? properties.fapiNonceRequired() : true;
     }
 
-    /**
-     * Returns true only when the operator has explicitly opted out of x5c chain validation.
-     * Null or false (the default) means chain validation is active (secure-by-default).
-     */
     public boolean isX5cChainValidationBypassed() {
         return properties.x5cChainValidation() != null
                 && Boolean.TRUE.equals(properties.x5cChainValidation().bypass());
     }
 
-    /**
-     * Returns true unless the operator has explicitly set aia-chasing.enabled=false.
-     * Enabled by default so QTSP tokens with leaf-only x5c are handled automatically.
-     */
     public boolean isAiaChasingEnabled() {
         return properties.x5cChainValidation() == null
                 || properties.x5cChainValidation().aiaChasing() == null

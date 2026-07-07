@@ -6,12 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Normalizes URI origins (scheme + host + port) for comparison purposes.
- * Scheme and host are case-insensitive per RFC 3986 3.1/3.2.2, so comparing raw
- * strings rejects otherwise-identical origins that differ only in case or in an
- * explicit vs. implicit default port.
- */
+
 public final class OriginNormalizer {
 
     private static final Map<String, Integer> DEFAULT_PORTS = Map.of("http", 80, "https", 443);
@@ -19,10 +14,6 @@ public final class OriginNormalizer {
     private OriginNormalizer() {
     }
 
-    /**
-     * Returns the normalized {@code scheme://host[:port]} origin of the given URI,
-     * or {@code null} if the URI is malformed or has no scheme/host.
-     */
     public static String normalizeOrigin(String uri) {
         return parseUri(uri)
                 .map(parsed -> {
@@ -33,12 +24,6 @@ public final class OriginNormalizer {
                 .orElse(null);
     }
 
-    /**
-     * Returns the given URI with its scheme and host normalized (lower-cased, default
-     * port dropped), leaving path/query/fragment untouched — those remain
-     * case-sensitive and must match exactly for redirect_uri comparisons.
-     * Returns {@code null} if the URI is malformed or has no scheme/host.
-     */
     public static String normalizeUri(String uri) {
         return parseUri(uri).map(OriginNormalizer::buildNormalizedUri).orElse(null);
     }
