@@ -59,14 +59,11 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         Instant now = Instant.now(clock);
 
         // 1. CONFIG
-        TenantSsoConfig config = configPort.getByTenant(tenantSlug)
-                .orElseThrow(() -> new IllegalStateException(
-                        "ES-02: Missing tenant SSO config (fail-closed)"
-                ));
-
-        if (!config.ssoEnabled()) {
+        Optional<TenantSsoConfig> configOpt = configPort.getByTenant(tenantSlug);
+        if (configOpt.isEmpty() || !configOpt.get().ssoEnabled()) {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
+        TenantSsoConfig config = configOpt.get();
 
         SsoSessionTtl ttl = configPort.resolveTtl(tenantSlug);
 

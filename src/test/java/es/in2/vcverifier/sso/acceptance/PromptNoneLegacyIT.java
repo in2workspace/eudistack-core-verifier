@@ -187,6 +187,25 @@ class PromptNoneLegacyIT {
     }
 
     // =========================================================
+    // AC-03 (config ausente / B1): tenant SIN entrada tenant_sso — el default de todo tenant no
+    // migrado — con prompt=none → 302 a redirect_uri?error=login_required, SIN HTTP 500.
+    // Regresión: reuse() hacía orElseThrow(IllegalStateException) desde el filtro de seguridad
+    // (no interceptable por @RestControllerAdvice); ahora hace fail-closed a login_required.
+    // =========================================================
+    @Test
+    void should_redirectWithLoginRequired_whenLegacyTenantConfigAbsentAndPromptNone() throws Exception {
+        when(tenantSsoConfigPort.getByTenant(anyString()))
+                .thenReturn(Optional.empty());
+
+        mockMvc.perform(baseRequest().param("prompt", "none"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", containsString("error=login_required")));
+
+        verify(auditPort, never()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
+    }
+
+    // =========================================================
     // ES-02 COOKIE IGNORADA: sesión activa en BD para el tenant legacy +
     // cookie presente → cookie ignorada; ssoEnabled=false cortocircuita antes
     // de cualquier acceso a la sesión. Respuesta: 302 a redirect_uri?error=login_required.
