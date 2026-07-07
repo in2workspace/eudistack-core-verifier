@@ -11,6 +11,8 @@ import es.in2.vcverifier.sso.domain.port.BackchannelLogoutUriPort;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -30,16 +32,13 @@ import java.util.concurrent.Executor;
  * asíncrono. El workflow no conoce reintentos ni circuit breaker (SRP): esa responsabilidad
  * vive en {@code BackChannelLogoutDispatcher} (infraestructura).
  * <p>
- * <b>Nota de wiring (Task 5 → Task 7):</b> deliberadamente NO es {@code @Service} todavía.
- * {@link BackChannelLogoutNotifierPort} (Task 3) no tiene implementación hasta que
- * {@code BackChannelLogoutDispatcher} (Task 7) la provea; registrar este workflow como bean
- * ahora rompería el arranque de CUALQUIER {@code @SpringBootTest} del proyecto (Spring
- * intentaría construirlo vía component-scan y fallaría con
- * {@code NoSuchBeanDefinitionException}). Los unit tests de Task 12 lo instancian directamente
- * con puertos mockeados (no requieren contexto Spring). {@code @Service} se añade en Task 7,
- * cuando el puerto tiene implementación real.
+ * <b>Nota de wiring (Task 7):</b> {@code @Service} se activa en esta task porque
+ * {@link BackChannelLogoutNotifierPort} (Task 3) ya tiene implementación real
+ * ({@code BackChannelLogoutDispatcher}). El executor pasa del bean genérico por defecto
+ * (placeholder de Task 5) al {@code backChannelLogoutExecutor} dedicado (AD-2).
  */
 @Slf4j
+@Service
 public class TerminateSsoSessionWorkflow {
 
     private final SsoSessionRepositoryPort sessionRepositoryPort;
@@ -57,7 +56,7 @@ public class TerminateSsoSessionWorkflow {
             SsoAuditPort auditPort,
             BackendConfig backendConfig,
             Clock clock,
-            Executor executor
+            @Qualifier("backChannelLogoutExecutor") Executor executor
     ) {
         this.sessionRepositoryPort = sessionRepositoryPort;
         this.backchannelLogoutUriPort = backchannelLogoutUriPort;
