@@ -10,9 +10,12 @@ import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
 import java.sql.*;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,6 +26,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     private static final String TENANT_PATTERN = "^[a-z0-9-]{1,64}$";
 
     private final DataSource dataSource;
+    private final Clock clock;
 
     private final int statementTimeoutMs = 5_000;
 
@@ -31,8 +35,9 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     private final AtomicInteger failureCounter = new AtomicInteger(0);
     private volatile long openUntil = 0L;
 
-    public SsoSessionJdbcRepository(DataSource dataSource) {
+    public SsoSessionJdbcRepository(DataSource dataSource, Clock clock) {
         this.dataSource = dataSource;
+        this.clock = clock;
     }
 
     // =========================================================
@@ -388,6 +393,135 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         } catch (SQLException e) {
             recordFailure();
             throw new SsoSessionRepositoryException("Failed to supersede active SSO sessions", e);
+        }
+    }
+
+    // =========================================================
+    // TERMINATE ACTIVE — US-06 Single Logout (AC-01/AC-02/EC-01)
+    // Idempotencia por rows-affected: 0 = ya TERMINATED/ausente (EC-01, no-op de dominio).
+    // =========================================================
+
+    @Override
+    public int terminateActive(SsoSessionId sessionId, String tenant) {
+        ensureTenantSafe(tenant);
+        checkCircuit();
+
+        String sql = """
+            UPDATE sso_session
+            SET state = 'TERMINATED', terminated_at = ?
+            WHERE id = ?
+              AND tenant = ?
+              AND state = 'ACTIVE'
+        """;
+
+        try (Connection c = dataSource.getConnection()) {
+
+            setTenantSearchPath(c, tenant);
+            setStatementTimeout(c);
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setObject(1, OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC));
+                ps.setObject(2, sessionId.getValue());
+                ps.setString(3, tenant);
+
+                int updated = ps.executeUpdate();
+                recordSuccess();
+                return updated;
+            }
+
+        } catch (SQLException e) {
+            recordFailure();
+            throw new SsoSessionRepositoryException("Failed to terminate SSO session", e);
+        }
+    }
+
+    // =========================================================
+    // FIND CLIENTS BY SESSION — US-06 Single Logout (AD-5/ADR-108)
+    // Callees a notificar por Back-Channel Logout; clavado por session_id (no por holder_hash).
+    // Fail-open en lectura (mismo patrón que findActiveByTenantAndHolder/findActiveById):
+    // un fallo de lectura de callees no debe impedir que la sesión ya invalidada complete
+    // la redirección al iniciador.
+    // =========================================================
+
+    @Override
+    public List<String> findClientsBySession(SsoSessionId sessionId, String tenant) {
+        ensureTenantSafe(tenant);
+        checkCircuit();
+
+        String sql = """
+            SELECT DISTINCT client_id
+            FROM sso_session_client
+            WHERE session_id = ?
+              AND tenant = ?
+        """;
+
+        try (Connection c = dataSource.getConnection()) {
+
+            setTenantSearchPath(c, tenant);
+            setStatementTimeout(c);
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setObject(1, sessionId.getValue());
+                ps.setString(2, tenant);
+
+                try (ResultSet rs = ps.executeQuery()) {
+                    List<String> clientIds = new ArrayList<>();
+                    while (rs.next()) {
+                        clientIds.add(rs.getString("client_id"));
+                    }
+                    recordSuccess();
+                    return List.copyOf(clientIds);
+                }
+            }
+
+        } catch (SQLException e) {
+            log.warn("findClientsBySession error session={}... tenant={}: {}",
+                    prefix8(sessionId.getValue()), tenant, e.getMessage());
+            recordFailure();
+            return List.of();
+        }
+    }
+
+    // =========================================================
+    // RECORD CLIENT ACTIVITY — US-06 (AD-5/ADR-108)
+    // Upsert idempotente poblado por EstablishSsoSessionWorkflow (US-02) y
+    // ReuseSsoSessionWorkflowImpl (US-03). Best-effort: nunca lanza — un fallo de tracking
+    // no debe bloquear el establecimiento/reutilización de sesión (retrofit aditivo).
+    // =========================================================
+
+    @Override
+    public void recordClientActivity(SsoSessionId sessionId, String tenant, String clientId) {
+        ensureTenantSafe(tenant);
+        checkCircuit();
+
+        String sql = """
+            INSERT INTO sso_session_client (session_id, tenant, client_id, first_seen_at, last_used_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (session_id, client_id)
+            DO UPDATE SET last_used_at = EXCLUDED.last_used_at
+        """;
+
+        try (Connection c = dataSource.getConnection()) {
+
+            setTenantSearchPath(c, tenant);
+            setStatementTimeout(c);
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                OffsetDateTime now = OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC);
+                ps.setObject(1, sessionId.getValue());
+                ps.setString(2, tenant);
+                ps.setString(3, clientId);
+                ps.setObject(4, now);
+                ps.setObject(5, now);
+
+                ps.executeUpdate();
+                recordSuccess();
+            }
+
+        } catch (SQLException e) {
+            // Best-effort (ADR-108): no propagar — no debe romper establish/reuse.
+            log.warn("sso_session_client_record_failed session={}... tenant={} error={}",
+                    prefix8(sessionId.getValue()), tenant, e.getMessage());
         }
     }
 
