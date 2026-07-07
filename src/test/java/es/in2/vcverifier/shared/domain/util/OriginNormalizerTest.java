@@ -2,45 +2,58 @@ package es.in2.vcverifier.shared.domain.util;
 
 import org.junit.jupiter.api.Test;
 
+import java.net.URI;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class OriginNormalizerTest {
 
     @Test
-    void normalizeOrigin_mixedCaseSchemeAndHost_lowercases() {
-        assertEquals("https://example.com", OriginNormalizer.normalizeOrigin("HTTPS://Example.Com/path"));
+    void normalize_mixedCaseSchemeAndHost_lowercases() {
+        assertEquals(URI.create("https://example.com"), OriginNormalizer.normalize("HTTPS://Example.Com/path"));
     }
 
     @Test
-    void normalizeOrigin_explicitDefaultHttpsPort_dropsPort() {
-        assertEquals("https://example.com", OriginNormalizer.normalizeOrigin("https://example.com:443/path"));
+    void normalize_explicitDefaultHttpsPort_dropsPort() {
+        assertEquals(URI.create("https://example.com"), OriginNormalizer.normalize("https://example.com:443/path"));
     }
 
     @Test
-    void normalizeOrigin_explicitDefaultHttpPort_dropsPort() {
-        assertEquals("http://example.com", OriginNormalizer.normalizeOrigin("http://example.com:80/path"));
+    void normalize_explicitDefaultHttpPort_dropsPort() {
+        assertEquals(URI.create("http://example.com"), OriginNormalizer.normalize("http://example.com:80/path"));
     }
 
     @Test
-    void normalizeOrigin_nonDefaultPort_keepsPort() {
-        assertEquals("https://example.com:8443", OriginNormalizer.normalizeOrigin("https://example.com:8443/path"));
+    void normalize_nonDefaultPort_keepsPort() {
+        assertEquals(URI.create("https://example.com:8443"), OriginNormalizer.normalize("https://example.com:8443/path"));
     }
 
     @Test
-    void normalizeOrigin_malformedUri_returnsNull() {
-        assertNull(OriginNormalizer.normalizeOrigin("not a uri"));
+    void normalize_malformedUri_returnsNull() {
+        assertNull(OriginNormalizer.normalize("not a uri"));
     }
 
     @Test
-    void normalizeOrigin_blankOrNull_returnsNull() {
-        assertNull(OriginNormalizer.normalizeOrigin(""));
-        assertNull(OriginNormalizer.normalizeOrigin(null));
+    void normalize_blankOrNull_returnsNull() {
+        assertNull(OriginNormalizer.normalize(""));
+        assertNull(OriginNormalizer.normalize((String) null));
     }
 
     @Test
-    void normalizeOrigin_missingHost_returnsNull() {
-        assertNull(OriginNormalizer.normalizeOrigin("mailto:test@example.com"));
+    void normalize_missingHost_returnsNull() {
+        assertNull(OriginNormalizer.normalize("mailto:test@example.com"));
+    }
+
+    @Test
+    void normalize_uriOverload_producesSameResultAsStringOverload() {
+        assertEquals(OriginNormalizer.normalize("HTTPS://Example.Com:443/path"),
+                OriginNormalizer.normalize(URI.create("HTTPS://Example.Com:443/path")));
+    }
+
+    @Test
+    void normalize_nullUri_returnsNull() {
+        assertNull(OriginNormalizer.normalize((URI) null));
     }
 
     @Test

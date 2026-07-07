@@ -37,6 +37,8 @@ import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIE
 public class ClientLoaderConfig {
 
     private static final Pattern TENANT_PATTERN = Pattern.compile("^[a-z0-9-]{1,64}$");
+    private static final String HTTPS_SCHEME = "https";
+    private static final String HTTP_SCHEME = "http";
 
     private final ClientRegistryProvider clientRegistryProvider;
     private final Set<String> allowedClientsOrigins;
@@ -109,12 +111,12 @@ public class ClientLoaderConfig {
                 }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
                     URI loginUri = URI.create(clientData.loginPageUri());
-                    if (!"https".equalsIgnoreCase(loginUri.getScheme())) {
+                    if (!HTTPS_SCHEME.equalsIgnoreCase(loginUri.getScheme())) {
                         throw new ClientLoadingException("loginPageUri must use HTTPS scheme for client '"
                                 + clientData.clientId() + "': " + clientData.loginPageUri());
                     }
                     clientSettingsBuilder.setting(CLIENT_SETTING_LOGIN_PAGE_URI, clientData.loginPageUri());
-                    addNormalizedOrigin(freshOrigins, clientData.loginPageUri());
+                    addNormalizedOrigin(freshOrigins, loginUri);
                 }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());
@@ -124,9 +126,10 @@ public class ClientLoaderConfig {
                 }
                 if (clientData.redirectUris() != null) {
                     for (String redirectUri : clientData.redirectUris()) {
-                        String scheme = URI.create(redirectUri).getScheme();
-                        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-                            addNormalizedOrigin(freshOrigins, redirectUri);
+                        URI redirectUriParsed = URI.create(redirectUri);
+                        String scheme = redirectUriParsed.getScheme();
+                        if (HTTP_SCHEME.equalsIgnoreCase(scheme) || HTTPS_SCHEME.equalsIgnoreCase(scheme)) {
+                            addNormalizedOrigin(freshOrigins, redirectUriParsed);
                         }
                     }
                 }
@@ -141,9 +144,16 @@ public class ClientLoaderConfig {
     }
 
     private void addNormalizedOrigin(Set<String> origins, String uri) {
-        String origin = OriginNormalizer.normalizeOrigin(uri);
-        if (origin != null) {
-            origins.add(origin);
+        addOrigin(origins, OriginNormalizer.normalize(uri));
+    }
+
+    private void addNormalizedOrigin(Set<String> origins, URI uri) {
+        addOrigin(origins, OriginNormalizer.normalize(uri));
+    }
+
+    private void addOrigin(Set<String> origins, URI normalizedOrigin) {
+        if (normalizedOrigin != null) {
+            origins.add(normalizedOrigin.toString());
         }
     }
 }

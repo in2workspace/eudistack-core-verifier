@@ -1,6 +1,7 @@
 package es.in2.vcverifier.shared.domain.util;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -14,14 +15,30 @@ public final class OriginNormalizer {
     private OriginNormalizer() {
     }
 
-    public static String normalizeOrigin(String uri) {
-        return parseUri(uri)
-                .map(parsed -> {
-                    SchemeHost schemeHost = normalizeSchemeHost(parsed);
-                    int normalizedPort = normalizePort(schemeHost.scheme(), parsed.getPort());
-                    return schemeHost.scheme() + "://" + schemeHost.host() + portSuffix(normalizedPort);
-                })
-                .orElse(null);
+    /**
+     * Parses the given URI and returns its normalized {@code scheme://host[:port]}
+     * origin, or {@code null} if it is malformed or has no scheme/host.
+     */
+    public static URI normalize(String uri) {
+        return parseUri(uri).map(OriginNormalizer::normalize).orElse(null);
+    }
+
+    /**
+     * Returns the normalized {@code scheme://host[:port]} origin of the given URI
+     * (lower-cased scheme/host, default port dropped), or {@code null} if it has
+     * no scheme/host.
+     */
+    public static URI normalize(URI uri) {
+        if (uri == null || !hasOrigin(uri)) {
+            return null;
+        }
+        SchemeHost schemeHost = normalizeSchemeHost(uri);
+        int normalizedPort = normalizePort(schemeHost.scheme(), uri.getPort());
+        try {
+            return new URI(schemeHost.scheme(), null, schemeHost.host(), normalizedPort, null, null, null);
+        } catch (URISyntaxException e) {
+            return null;
+        }
     }
 
     public static String normalizeUri(String uri) {

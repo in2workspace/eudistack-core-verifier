@@ -323,10 +323,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 : redirectUri;
 
         String normalizedJwtRedirectUri = OriginNormalizer.normalizeUri(jwtRedirectUri);
-        boolean matches = normalizedJwtRedirectUri != null && registeredClient.getRedirectUris().stream()
+        boolean isRedirectUriRegistered = normalizedJwtRedirectUri != null && registeredClient.getRedirectUris().stream()
                 .anyMatch(registered -> normalizedJwtRedirectUri.equals(OriginNormalizer.normalizeUri(registered)));
 
-        if (!matches) {
+        if (!isRedirectUriRegistered) {
             throwInvalidClientAuthenticationException("The redirect_uri does not match any of the registered client's redirect_uris.",
                     registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }

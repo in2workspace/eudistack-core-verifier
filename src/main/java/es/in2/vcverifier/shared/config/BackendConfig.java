@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -49,7 +50,7 @@ public class BackendConfig {
         if (additional == null || additional.isEmpty()) {
             return List.of(properties.url());
         }
-        List<String> all = new ArrayList<>();
+        List<String> all = new ArrayList<>(additional.size() + 1);
         all.add(properties.url());
         all.addAll(additional);
         return List.copyOf(all);
@@ -57,8 +58,9 @@ public class BackendConfig {
 
     public Set<String> getTrustedVerifierOrigins() {
         return getAllUrls().stream()
-                .map(OriginNormalizer::normalizeOrigin)
+                .map(OriginNormalizer::normalize)
                 .filter(Objects::nonNull)
+                .map(URI::toString)
                 .collect(Collectors.toUnmodifiableSet());
     }
 

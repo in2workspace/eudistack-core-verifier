@@ -53,23 +53,24 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
 
     private boolean isAllowedRedirectUri(String uri) {
         try {
-            String scheme = URI.create(uri).getScheme();
-            if (!"https".equalsIgnoreCase(scheme)) {
+            URI parsed = URI.create(uri);
+            if (!"https".equalsIgnoreCase(parsed.getScheme())) {
                 return false;
             }
 
-            String origin = OriginNormalizer.normalizeOrigin(uri);
+            URI origin = OriginNormalizer.normalize(parsed);
             if (origin == null) {
                 return false;
             }
+            String originString = origin.toString();
 
-            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, origin);
+            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, originString);
 
             // Allow registered client origins (includes loginPageUri origins) — enforce HTTPS
-            if (allowedClientsOrigins.contains(origin)) {
+            if (allowedClientsOrigins.contains(originString)) {
                 return true;
             }
-            return backendConfig.getTrustedVerifierOrigins().contains(origin);
+            return backendConfig.getTrustedVerifierOrigins().contains(originString);
         } catch (Exception e) {
             return false;
         }
