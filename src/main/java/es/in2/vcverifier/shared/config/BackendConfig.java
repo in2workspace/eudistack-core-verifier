@@ -1,13 +1,19 @@
 package es.in2.vcverifier.shared.config;
 
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Configuration
 @RequiredArgsConstructor
@@ -15,12 +21,6 @@ public class BackendConfig {
 
     private final BackendProperties properties;
 
-    /**
-     * Returns the verifier's external URL. When called during HTTP request processing
-     * with forwarded headers (e.g. behind nginx), derives the URL from the original
-     * request (scheme + host + port). Falls back to the static configuration value
-     * when no request context is available (e.g. during bean initialization).
-     */
     public String getUrl() {
         try {
             ServletRequestAttributes attrs =
@@ -41,11 +41,27 @@ public class BackendConfig {
         return properties.url();
     }
 
-    /**
-     * Returns the static configured URL, ignoring the request context.
-     */
     public String getStaticUrl() {
         return properties.url();
+    }
+
+    public List<String> getAllUrls() {
+        List<String> additional = properties.additionalUrls();
+        if (additional == null || additional.isEmpty()) {
+            return List.of(properties.url());
+        }
+        List<String> all = new ArrayList<>(additional.size() + 1);
+        all.add(properties.url());
+        all.addAll(additional);
+        return List.copyOf(all);
+    }
+
+    public Set<String> getTrustedVerifierOrigins() {
+        return getAllUrls().stream()
+                .map(OriginNormalizer::normalize)
+                .filter(Objects::nonNull)
+                .map(URI::toString)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     public String getPrivateKey() {
@@ -82,7 +98,6 @@ public class BackendConfig {
         return getSelectedTrustFramework().trustedServicesListUrl();
     }
 
-    // todo currently unused, will be used when Verifier can manage multiple trustframeworks
     public List<BackendProperties.TrustFramework> getAllTrustFrameworks() {
         return properties.trustFrameworks();
     }
@@ -107,19 +122,11 @@ public class BackendConfig {
         return properties.fapiNonceRequired() != null ? properties.fapiNonceRequired() : true;
     }
 
-    /**
-     * Returns true only when the operator has explicitly opted out of x5c chain validation.
-     * Null or false (the default) means chain validation is active (secure-by-default).
-     */
     public boolean isX5cChainValidationBypassed() {
         return properties.x5cChainValidation() != null
                 && Boolean.TRUE.equals(properties.x5cChainValidation().bypass());
     }
 
-    /**
-     * Returns true unless the operator has explicitly set aia-chasing.enabled=false.
-     * Enabled by default so QTSP tokens with leaf-only x5c are handled automatically.
-     */
     public boolean isAiaChasingEnabled() {
         return properties.x5cChainValidation() == null
                 || properties.x5cChainValidation().aiaChasing() == null

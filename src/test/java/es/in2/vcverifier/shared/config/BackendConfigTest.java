@@ -15,6 +15,8 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(classes = {BackendConfig.class, BackendConfigTest.TestConfig.class})
@@ -86,6 +88,52 @@ class BackendConfigTest {
         assertThat(backendConfig.isFapiNonceRequired())
                 .as("FAPI nonce required should match configured value")
                 .isTrue();
+    }
+
+    @Test
+    void getTrustedVerifierOrigins_noAdditionalUrls_returnsOnlyCanonicalUrl() {
+        assertThat(backendConfig.getTrustedVerifierOrigins())
+                .containsExactly("https://raw.githubusercontent.com");
+    }
+
+    @Test
+    void getTrustedVerifierOrigins_withAdditionalUrls_returnsNormalizedOrigins() {
+        BackendProperties properties = new BackendProperties(
+                "https://Verifier.Example.com:443",
+                List.of("https://kpmg.eudistack.net"),
+                null, null, null, null, null, null, null);
+        BackendConfig config = new BackendConfig(properties);
+
+        assertThat(config.getTrustedVerifierOrigins())
+                .containsExactlyInAnyOrder("https://verifier.example.com", "https://kpmg.eudistack.net");
+    }
+
+    @Test
+    void getStaticUrl_withAdditionalUrls_returnsCanonicalUrlOnly() {
+        BackendProperties properties = new BackendProperties(
+                "https://verifier.example.com",
+                List.of("https://kpmg.eudistack.net"),
+                null, null, null, null, null, null, null);
+        BackendConfig config = new BackendConfig(properties);
+
+        assertThat(config.getStaticUrl()).isEqualTo("https://verifier.example.com");
+    }
+
+    @Test
+    void getAllUrls_withAdditionalUrls_returnsCanonicalFirstThenAdditional() {
+        BackendProperties properties = new BackendProperties(
+                "https://verifier.example.com",
+                List.of("https://kpmg.eudistack.net", "https://dome.example.com"),
+                null, null, null, null, null, null, null);
+        BackendConfig config = new BackendConfig(properties);
+
+        assertThat(config.getAllUrls())
+                .containsExactly("https://verifier.example.com", "https://kpmg.eudistack.net", "https://dome.example.com");
+    }
+
+    @Test
+    void getAllUrls_noAdditionalUrls_returnsOnlyCanonicalUrl() {
+        assertThat(backendConfig.getAllUrls()).containsExactly("https://raw.githubusercontent.com");
     }
 
     @Configuration
