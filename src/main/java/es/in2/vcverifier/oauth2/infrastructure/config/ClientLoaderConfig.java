@@ -109,7 +109,7 @@ public class ClientLoaderConfig {
                 }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
                     URI loginUri = URI.create(clientData.loginPageUri());
-                    if (!"https".equals(loginUri.getScheme())) {
+                    if (!"https".equalsIgnoreCase(loginUri.getScheme())) {
                         throw new ClientLoadingException("loginPageUri must use HTTPS scheme for client '"
                                 + clientData.clientId() + "': " + clientData.loginPageUri());
                     }
@@ -131,7 +131,7 @@ public class ClientLoaderConfig {
                 if (clientData.redirectUris() != null) {
                     for (String redirectUri : clientData.redirectUris()) {
                         String scheme = URI.create(redirectUri).getScheme();
-                        if ("http".equals(scheme) || "https".equals(scheme)) {
+                        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
                             String redirectOrigin = OriginNormalizer.normalizeOrigin(redirectUri);
                             if (redirectOrigin != null) {
                                 freshOrigins.add(redirectOrigin);

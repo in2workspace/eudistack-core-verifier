@@ -54,7 +54,7 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
     private boolean isAllowedRedirectUri(String uri) {
         try {
             String scheme = URI.create(uri).getScheme();
-            if (!"https".equals(scheme)) {
+            if (!"https".equalsIgnoreCase(scheme)) {
                 return false;
             }
 

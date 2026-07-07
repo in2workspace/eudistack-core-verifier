@@ -284,4 +284,60 @@ class ClientLoaderConfigTest {
         assertEquals(1, allowedOrigins.size(), "mixed-case/default-port origin must normalize to the same entry");
         assertTrue(allowedOrigins.contains("https://app.example.com"));
     }
+
+    @Test
+    void retrieveClients_withUppercaseSchemeRedirectUri_stillAddsOrigin() {
+        ClientData clientData = new ClientData(
+                null, "https://main-app.example.com",
+                "vc-auth-client-uppercase-scheme", null,
+                List.of("HTTPS://app.example.com/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://main-app.example.com"),
+                true, null, null,
+                null, null, null
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        config.getRegisteredClientRepository();
+
+        assertTrue(allowedOrigins.contains("https://app.example.com"),
+                "redirect URI scheme comparison must be case-insensitive (RFC 3986 3.1)");
+    }
+
+    @Test
+    void retrieveClients_withUppercaseSchemeLoginPageUri_doesNotThrowAndAddsOrigin() {
+        ClientData clientData = new ClientData(
+                null, "https://app.example.com",
+                "vc-auth-client-uppercase-login", null,
+                List.of("https://app.example.com/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://app.example.com"),
+                true, null, null,
+                null, "HTTPS://custom-login.example.com/auth", null
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        config.getRegisteredClientRepository();
+
+        assertTrue(allowedOrigins.contains("https://custom-login.example.com"),
+                "loginPageUri scheme comparison must be case-insensitive (RFC 3986 3.1)");
+    }
 }

@@ -259,4 +259,21 @@ class CustomErrorResponseHandlerTest {
         verify(response).sendRedirect(redirectUri);
         verify(response, never()).sendError(anyInt(), anyString());
     }
+
+    @Test
+    void testOnAuthenticationFailure_WithUppercaseHttpsScheme_ShouldRedirect() throws IOException {
+        String redirectUri = "HTTPS://verifier.example.com/login?state=abc";
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
+    }
 }
