@@ -114,28 +114,19 @@ public class ClientLoaderConfig {
                                 + clientData.clientId() + "': " + clientData.loginPageUri());
                     }
                     clientSettingsBuilder.setting(CLIENT_SETTING_LOGIN_PAGE_URI, clientData.loginPageUri());
-                    String origin = OriginNormalizer.normalizeOrigin(clientData.loginPageUri());
-                    if (origin != null) {
-                        freshOrigins.add(origin);
-                    }
+                    addNormalizedOrigin(freshOrigins, clientData.loginPageUri());
                 }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());
 
                 if (clientData.url() != null && !clientData.url().isBlank()) {
-                    String clientOrigin = OriginNormalizer.normalizeOrigin(clientData.url());
-                    if (clientOrigin != null) {
-                        freshOrigins.add(clientOrigin);
-                    }
+                    addNormalizedOrigin(freshOrigins, clientData.url());
                 }
                 if (clientData.redirectUris() != null) {
                     for (String redirectUri : clientData.redirectUris()) {
                         String scheme = URI.create(redirectUri).getScheme();
                         if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-                            String redirectOrigin = OriginNormalizer.normalizeOrigin(redirectUri);
-                            if (redirectOrigin != null) {
-                                freshOrigins.add(redirectOrigin);
-                            }
+                            addNormalizedOrigin(freshOrigins, redirectUri);
                         }
                     }
                 }
@@ -146,6 +137,13 @@ public class ClientLoaderConfig {
             return registeredClients;
         } catch (Exception e) {
             throw new ClientLoadingException("Error loading clients from Yaml", e);
+        }
+    }
+
+    private void addNormalizedOrigin(Set<String> origins, String uri) {
+        String origin = OriginNormalizer.normalizeOrigin(uri);
+        if (origin != null) {
+            origins.add(origin);
         }
     }
 }

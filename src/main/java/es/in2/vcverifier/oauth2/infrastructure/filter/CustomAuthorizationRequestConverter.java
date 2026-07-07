@@ -337,8 +337,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 ? jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI)
                 : redirectUri;
 
-        // Compare with scheme/host normalized (case-insensitive per RFC 3986, default port
-        // dropped) — path/query/fragment stay untouched and must still match exactly.
         String normalizedJwtRedirectUri = OriginNormalizer.normalizeUri(jwtRedirectUri);
         boolean matches = normalizedJwtRedirectUri != null && registeredClient.getRedirectUris().stream()
                 .anyMatch(registered -> normalizedJwtRedirectUri.equals(OriginNormalizer.normalizeUri(registered)));

@@ -2,6 +2,9 @@ package es.in2.vcverifier.shared.domain.util;
 
 import java.net.URI;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Normalizes URI origins (scheme + host + port) for comparison purposes.
@@ -11,6 +14,8 @@ import java.util.Locale;
  */
 public final class OriginNormalizer {
 
+    private static final Map<String, Integer> DEFAULT_PORTS = Map.of("http", 80, "https", 443);
+
     private OriginNormalizer() {
     }
 
@@ -19,13 +24,13 @@ public final class OriginNormalizer {
      * or {@code null} if the URI is malformed or has no scheme/host.
      */
     public static String normalizeOrigin(String uri) {
-        URI parsed = parse(uri);
-        if (parsed == null) {
-            return null;
-        }
-        String normalizedScheme = parsed.getScheme().toLowerCase(Locale.ROOT);
-        String normalizedHost = parsed.getHost().toLowerCase(Locale.ROOT);
-        return normalizedScheme + "://" + normalizedHost + portSuffix(normalizedScheme, parsed.getPort());
+        return parseUri(uri)
+                .map(parsed -> {
+                    SchemeHost schemeHost = normalizeSchemeHost(parsed);
+                    int normalizedPort = normalizePort(schemeHost.scheme(), parsed.getPort());
+                    return schemeHost.scheme() + "://" + schemeHost.host() + portSuffix(normalizedPort);
+                })
+                .orElse(null);
     }
 
     /**
@@ -35,19 +40,19 @@ public final class OriginNormalizer {
      * Returns {@code null} if the URI is malformed or has no scheme/host.
      */
     public static String normalizeUri(String uri) {
-        URI parsed = parse(uri);
-        if (parsed == null) {
-            return null;
-        }
-        String normalizedScheme = parsed.getScheme().toLowerCase(Locale.ROOT);
-        String normalizedHost = parsed.getHost().toLowerCase(Locale.ROOT);
+        return parseUri(uri).map(OriginNormalizer::buildNormalizedUri).orElse(null);
+    }
+
+    private static String buildNormalizedUri(URI parsed) {
+        SchemeHost schemeHost = normalizeSchemeHost(parsed);
 
         StringBuilder sb = new StringBuilder();
-        sb.append(normalizedScheme).append("://");
+        sb.append(schemeHost.scheme()).append("://");
         if (parsed.getRawUserInfo() != null) {
             sb.append(parsed.getRawUserInfo()).append('@');
         }
-        sb.append(normalizedHost).append(portSuffix(normalizedScheme, parsed.getPort()));
+        int normalizedPort = normalizePort(schemeHost.scheme(), parsed.getPort());
+        sb.append(schemeHost.host()).append(portSuffix(normalizedPort));
         if (parsed.getRawPath() != null) {
             sb.append(parsed.getRawPath());
         }
@@ -60,25 +65,40 @@ public final class OriginNormalizer {
         return sb.toString();
     }
 
-    private static URI parse(String uri) {
-        if (uri == null || uri.isBlank()) {
-            return null;
+    private static Optional<URI> parseUri(String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
         }
         try {
-            URI parsed = URI.create(uri);
-            if (parsed.getScheme() == null || parsed.getHost() == null) {
-                return null;
-            }
-            return parsed;
+            URI parsed = URI.create(value);
+            return hasOrigin(parsed) ? Optional.of(parsed) : Optional.empty();
         } catch (IllegalArgumentException e) {
-            return null;
+            return Optional.empty();
         }
     }
 
-    private static String portSuffix(String normalizedScheme, int port) {
-        boolean defaultPort = port == -1
-                || ("https".equals(normalizedScheme) && port == 443)
-                || ("http".equals(normalizedScheme) && port == 80);
-        return defaultPort ? "" : ":" + port;
+    private static boolean hasOrigin(URI uri) {
+        return uri.getScheme() != null && uri.getHost() != null;
+    }
+
+    private static SchemeHost normalizeSchemeHost(URI parsed) {
+        return new SchemeHost(
+                parsed.getScheme().toLowerCase(Locale.ROOT),
+                parsed.getHost().toLowerCase(Locale.ROOT));
+    }
+
+    private static String portSuffix(int normalizedPort) {
+        return normalizedPort == -1 ? "" : ":" + normalizedPort;
+    }
+
+    private static int normalizePort(String normalizedScheme, int port) {
+        if (port == -1) {
+            return -1;
+        }
+        Integer defaultPort = DEFAULT_PORTS.get(normalizedScheme);
+        return Objects.equals(defaultPort, port) ? -1 : port;
+    }
+
+    private record SchemeHost(String scheme, String host) {
     }
 }

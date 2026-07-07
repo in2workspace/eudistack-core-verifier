@@ -380,8 +380,6 @@ class CustomAuthorizationRequestConverterTest {
                 () -> converter.convert(request)
         );
 
-        // "required_external_user_authentication" means validateRedirectUri matched
-        // (case/default-port differences must not cause an "invalid_client_authentication" rejection).
         OAuth2Error error = exception.getError();
         assertEquals("required_external_user_authentication", error.getErrorCode());
     }

@@ -17,7 +17,8 @@ import es.in2.vcverifier.oauth2.domain.exception.ClientLoadingException;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -25,6 +26,7 @@ class ClientLoaderConfigTest {
 
     @Test
     void retrieveClients_withTenant_storesTenantInClientSettings() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://app.dome.example.com",
                 "vc-auth-client-dome", null,
@@ -46,15 +48,18 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         RegisteredClientRepository repo = config.getRegisteredClientRepository();
         RegisteredClient registered = repo.findByClientId("vc-auth-client-dome");
 
-        assertNotNull(registered);
-        assertEquals("dome", registered.getClientSettings().getSetting(CLIENT_SETTING_TENANT));
+        // Assert
+        assertThat(registered).isNotNull();
+        assertThat((String) registered.getClientSettings().getSetting(CLIENT_SETTING_TENANT)).isEqualTo("dome");
     }
 
     @Test
     void retrieveClients_withNullTenant_doesNotSetTenantSetting() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",
                 "vc-auth-client-no-tenant", null,
@@ -75,15 +80,18 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         RegisteredClientRepository repo = config.getRegisteredClientRepository();
         RegisteredClient registered = repo.findByClientId("vc-auth-client-no-tenant");
 
-        assertNotNull(registered);
-        assertFalse(registered.getClientSettings().getSettings().containsKey(CLIENT_SETTING_TENANT));
+        // Assert
+        assertThat(registered).isNotNull();
+        assertThat(registered.getClientSettings().getSettings()).doesNotContainKey(CLIENT_SETTING_TENANT);
     }
 
     @Test
     void retrieveClients_withInvalidTenant_throwsException() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",
                 "vc-auth-client-bad", null,
@@ -104,11 +112,14 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
-        assertThrows(ClientLoadingException.class, config::getRegisteredClientRepository);
+        // Act & Assert
+        assertThatThrownBy(config::getRegisteredClientRepository)
+                .isInstanceOf(ClientLoadingException.class);
     }
 
     @Test
     void retrieveClients_withValidTenantFormats_succeeds() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",
                 "vc-auth-client-hyphen", null,
@@ -129,15 +140,18 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         RegisteredClientRepository repo = config.getRegisteredClientRepository();
         RegisteredClient registered = repo.findByClientId("vc-auth-client-hyphen");
 
-        assertNotNull(registered);
-        assertEquals("my-tenant-123", registered.getClientSettings().getSetting(CLIENT_SETTING_TENANT));
+        // Assert
+        assertThat(registered).isNotNull();
+        assertThat((String) registered.getClientSettings().getSetting(CLIENT_SETTING_TENANT)).isEqualTo("my-tenant-123");
     }
 
     @Test
     void retrieveClients_withLoginPageUri_storesLoginPageUriInClientSettings() {
+        // Arrange
         String loginPageUri = "https://custom-login.example.com/auth";
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",
@@ -159,17 +173,21 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         RegisteredClientRepository repo = config.getRegisteredClientRepository();
         RegisteredClient registered = repo.findByClientId("vc-auth-client-login");
 
-        assertNotNull(registered);
-        assertEquals(loginPageUri, registered.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_PAGE_URI));
-        assertTrue(allowedOrigins.contains("https://custom-login.example.com"),
-                "loginPageUri origin should be added to allowedClientsOrigins");
+        // Assert
+        assertThat(registered).isNotNull();
+        assertThat((String) registered.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_PAGE_URI)).isEqualTo(loginPageUri);
+        assertThat(allowedOrigins)
+                .as("loginPageUri origin should be added to allowedClientsOrigins")
+                .contains("https://custom-login.example.com");
     }
 
     @Test
     void retrieveClients_withMultipleRedirectUris_addsAllHttpOriginsToAllowedOrigins() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://main-app.example.com",
                 "vc-auth-client-multi", null,
@@ -194,18 +212,24 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         config.getRegisteredClientRepository();
 
-        assertTrue(allowedOrigins.contains("https://main-app.example.com"),
-                "url origin must be present");
-        assertTrue(allowedOrigins.contains("https://admin.example.com"),
-                "secondary redirect URI origin must be present");
-        assertFalse(allowedOrigins.stream().anyMatch(o -> o.startsWith("myapp")),
-                "custom-scheme redirect URI must not be added");
+        // Assert
+        assertThat(allowedOrigins)
+                .as("url origin must be present")
+                .contains("https://main-app.example.com");
+        assertThat(allowedOrigins)
+                .as("secondary redirect URI origin must be present")
+                .contains("https://admin.example.com");
+        assertThat(allowedOrigins)
+                .as("custom-scheme redirect URI must not be added")
+                .noneMatch(o -> o.startsWith("myapp"));
     }
 
     @Test
     void retrieveClients_withRedirectUriSameOriginAsUrl_doesNotDuplicate() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",
                 "vc-auth-client-same-origin", null,
@@ -226,14 +250,19 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         config.getRegisteredClientRepository();
 
-        assertEquals(1, allowedOrigins.size(), "same origin must not be duplicated");
-        assertTrue(allowedOrigins.contains("https://app.example.com"));
+        // Assert
+        assertThat(allowedOrigins)
+                .as("same origin must not be duplicated")
+                .hasSize(1)
+                .contains("https://app.example.com");
     }
 
     @Test
     void retrieveClients_withNonHttpsLoginPageUri_throwsException() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",
                 "vc-auth-client-bad-login", null,
@@ -254,11 +283,14 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
-        assertThrows(ClientLoadingException.class, config::getRegisteredClientRepository);
+        // Act & Assert
+        assertThatThrownBy(config::getRegisteredClientRepository)
+                .isInstanceOf(ClientLoadingException.class);
     }
 
     @Test
     void retrieveClients_withMixedCaseAndDefaultPortUrl_normalizesAndDoesNotDuplicate() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://App.Example.com:443",
                 "vc-auth-client-mixed-case", null,
@@ -279,14 +311,19 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         config.getRegisteredClientRepository();
 
-        assertEquals(1, allowedOrigins.size(), "mixed-case/default-port origin must normalize to the same entry");
-        assertTrue(allowedOrigins.contains("https://app.example.com"));
+        // Assert
+        assertThat(allowedOrigins)
+                .as("mixed-case/default-port origin must normalize to the same entry")
+                .hasSize(1)
+                .contains("https://app.example.com");
     }
 
     @Test
     void retrieveClients_withUppercaseSchemeRedirectUri_stillAddsOrigin() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://main-app.example.com",
                 "vc-auth-client-uppercase-scheme", null,
@@ -307,14 +344,18 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         config.getRegisteredClientRepository();
 
-        assertTrue(allowedOrigins.contains("https://app.example.com"),
-                "redirect URI scheme comparison must be case-insensitive (RFC 3986 3.1)");
+        // Assert
+        assertThat(allowedOrigins)
+                .as("redirect URI scheme comparison must be case-insensitive (RFC 3986 3.1)")
+                .contains("https://app.example.com");
     }
 
     @Test
     void retrieveClients_withUppercaseSchemeLoginPageUri_doesNotThrowAndAddsOrigin() {
+        // Arrange
         ClientData clientData = new ClientData(
                 null, "https://app.example.com",
                 "vc-auth-client-uppercase-login", null,
@@ -335,9 +376,12 @@ class ClientLoaderConfigTest {
         Set<String> allowedOrigins = new HashSet<>();
         ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
 
+        // Act
         config.getRegisteredClientRepository();
 
-        assertTrue(allowedOrigins.contains("https://custom-login.example.com"),
-                "loginPageUri scheme comparison must be case-insensitive (RFC 3986 3.1)");
+        // Assert
+        assertThat(allowedOrigins)
+                .as("loginPageUri scheme comparison must be case-insensitive (RFC 3986 3.1)")
+                .contains("https://custom-login.example.com");
     }
 }

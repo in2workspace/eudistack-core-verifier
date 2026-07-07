@@ -69,11 +69,6 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
             if (allowedClientsOrigins.contains(origin)) {
                 return true;
             }
-            // Allow the verifier's own origin(s), for /login and /error internal redirects.
-            // SEC-S7: deliberately static and configuration-driven (BackendConfig#getTrustedVerifierOrigins)
-            // — never derived from the request Host, so a single misconfigured or compromised
-            // proxy hop cannot widen the set of trusted redirect targets. Supports multiple
-            // alias domains for multi-tenant/multi-app SSO deployments.
             return backendConfig.getTrustedVerifierOrigins().contains(origin);
         } catch (Exception e) {
             return false;
