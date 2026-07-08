@@ -50,28 +50,7 @@ public class EstablishSsoSessionWorkflow {
 
         Objects.requireNonNull(command);
 
-        var configOpt = tenantSsoConfigPort.getByTenant(command.tenant());
-
-        if (configOpt.isEmpty()) {
-            auditPort.publish(new SsoAuditEvent(
-                    SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT,
-                    command.tenant(),
-                    command.clientId(),
-                    null,
-                    "CONFIG_ABSENT",
-                    command.correlationId(),
-                    Instant.now(clock)
-            ));
-
-            throw new SsoConfigInconsistentException("Missing SSO config for tenant " + command.tenant());
-        }
-
-        if (!configOpt.get().ssoEnabled()) {
-            log.debug("event=sso_legacy_tenant tenant={} correlation_id={}",
-                    command.tenant(), command.correlationId());
-
-            throw new SsoDisabledForTenantException("SSO disabled for tenant " + command.tenant());
-        }
+        validateTenantSsoConfiguration(command);
 
         SsoSessionTtl ttl = tenantSsoConfigPort.resolveTtl(command.tenant());
 
@@ -124,6 +103,36 @@ public class EstablishSsoSessionWorkflow {
                 session.getId().getValue().toString(),
                 session.getExpiresAt()
         );
+    }
+
+    private void validateTenantSsoConfiguration(SsoSessionCommand command) {
+        var config = tenantSsoConfigPort.getByTenant(command.tenant())
+                .orElseThrow(() -> {
+                    publishMissingConfigAudit(command);
+                    return new SsoConfigInconsistentException(
+                            "Missing SSO config for tenant " + command.tenant());
+                });
+
+        if (!config.ssoEnabled()) {
+            log.debug(
+                    "event=sso_legacy_tenant tenant={} correlation_id={}",
+                    command.tenant(),
+                    command.correlationId());
+
+            throw new SsoDisabledForTenantException(
+                    "SSO disabled for tenant " + command.tenant());
+        }
+    }
+    private void publishMissingConfigAudit(SsoSessionCommand command) {
+        auditPort.publish(new SsoAuditEvent(
+                SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT,
+                command.tenant(),
+                command.clientId(),
+                null,
+                "CONFIG_ABSENT",
+               command.correlationId(),
+                Instant.now(clock)
+        ));
     }
 
     public record SsoSessionCookieDescriptor(
