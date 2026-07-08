@@ -51,19 +51,14 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             Authentication authentication
     ) throws IOException, ServletException {
 
-        // 1. Extrae los datos del usuario autenticado (tenant, holderHash, clientId, ...)
         VpData vpData = extractVpData(authentication);
 
         String correlationId = UUID.randomUUID().toString();
 
-        // 2. Resuelve rootDomain desde TenantSsoConfigPort en lugar de depender
-        // de los detalles de autenticación, que pueden no estar populados
-        // (e.g. Oid4vpController.buildSsoAuthentication() no incluye tenantRootDomain).
         String rootDomain = tenantSsoConfigPort.getByTenant(vpData.tenant())
                 .map(config -> config.rootDomain() != null ? config.rootDomain() : "")
                 .orElse("");
 
-        // 3. Crea sesión interna, valida el tenant, persiste en BD, define tiempo de expiración.
         var command = new SsoSessionCommand(
                 vpData.tenant(),
                 vpData.holderHash(),
@@ -110,12 +105,12 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             }
 
         } catch (SsoDisabledForTenantException e) {
-            // Tenant legacy intencional (sso.enabled=false): sin cookie y SIN evento de fallo.
+            // Intentional legacy tenant (sso.enabled=false): no cookie and NO failure event.
             log.debug("event=sso_establish_skipped_legacy tenant={} correlation_id={}",
                     vpData.tenant(), correlationId);
         } catch (SsoConfigInconsistentException e) {
-            // Config ausente/incoherente inesperada: auditamos como fallo pero NO re-lanzamos.
-            // El flujo OID4VP debe completar con redirect aunque no haya cookie SSO.
+            // Unexpected absent/incoherent config: audited as a failure but NOT re-thrown.
+            // The OID4VP flow must still complete with its redirect even without an SSO cookie.
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                     vpData.tenant(),
@@ -138,16 +133,6 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             ));
             throw e;
         }
-
-        // 4. NO se delega en ningún AuthenticationSuccessHandler que haga commit del response.
-        //    El antiguo delegado (SavedRequestAwareAuthenticationSuccessHandler) redirigía a su
-        //    defaultTargetUrl "/" → con el context path = "/verifier/", un path que nadie sirve:
-        //    el wallet hace fetch(redirect:'follow'), sigue ese 302 y termina en 504/CORS,
-        //    incumpliendo EUDISTACK-547 AC-01 (la respuesta debe ir hacia el redirect_uri del
-        //    aplicativo) y AC-04 (sin regresión observable del flujo OID4VP).
-        //    El redirect al redirect_uri real lo entrega AuthorizationResponseProcessorService
-        //    vía SSE; aquí el POST /oid4vp/auth-response mantiene el 200 OK del controller
-        //    (@ResponseStatus(HttpStatus.OK)) con la cookie __Secure-sso-* ya añadida en el paso 3.
     }
 
     private VpData extractVpData(Authentication authentication) {
