@@ -63,7 +63,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         if (configOpt.isEmpty() || !configOpt.get().ssoEnabled()) {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
-        TenantSsoConfig config = configOpt.get();
 
         SsoSessionTtl ttl = configPort.resolveTtl(tenantSlug);
 
