@@ -61,4 +61,13 @@ public interface SsoSessionRepositoryPort {
      */
     Optional<SsoSession> findById(SsoSessionId sessionId);
 
+    /**
+     * Corte de emergencia: elimina en una única operación atómica todas las
+     * sesiones SSO del tenant indicado (EUDISTACK-554 / US-09).
+     *
+     * @param tenantId tenant cuyas sesiones se revocan (derivado del contexto admin autenticado)
+     * @return número de sesiones eliminadas ({@code count_revoked})
+     */
+    int revokeAllByTenant(String tenantId);
+
 }
