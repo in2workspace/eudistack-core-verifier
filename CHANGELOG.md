@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - 2026-07-08
+
+- **`sso-config.yaml`: `rootDomain` de ejemplo reemplazados por dominios reales**: los valores placeholder (`*.example.com`) de los tenants `sandbox`, `cgcom`, `kpmg`, `dome` y `platform` se sustituyen por los dominios raíz reales (`*.stg.eudistack.net` y, para `dome`, `dome-marketplace-lcl.org`) usados por el catálogo SSO per tenant (EUDISTACK-550 US-05).
+
 ### Added
 - **EUDISTACK-546**: 
 - US-01: Custom domain operativo per tenant en el Verifier IdP
