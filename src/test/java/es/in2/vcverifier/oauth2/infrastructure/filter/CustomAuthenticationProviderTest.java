@@ -329,6 +329,41 @@ class CustomAuthenticationProviderTest {
     }
 
     @Test
+    @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMatchesRequestCaseInsensitively_success")
+    void authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMatchesRequestCaseInsensitively_success() {
+        // TenantDomainFilter always normalizes the request tenant to lowercase, but the mandator's
+        // organizationIdentifier in the credential is not under our control and may carry any case.
+        setCurrentRequestTenant("dome");
+
+        JsonNode vcJson = buildMachineCredentialWithMandator("DOME");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+
+        TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
+                "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
+                null, "machine learcredential", "did:key:zDnaeMachine123");
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("DOME")))
+                .thenReturn(tokenResult);
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "unregistered-machine-client");
+        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+
+        OAuth2ClientCredentialsAuthenticationToken authToken = new OAuth2ClientCredentialsAuthenticationToken(
+                mock(Authentication.class), null, additionalParams);
+
+        Authentication result = provider.authenticate(authToken);
+
+        assertNotNull(result);
+        assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
+
+        ArgumentCaptor<OAuth2M2MAuditEvent> auditCaptor = ArgumentCaptor.forClass(OAuth2M2MAuditEvent.class);
+        verify(oAuth2M2MAuditPort).publish(auditCaptor.capture());
+        OAuth2M2MAuditEvent auditEvent = auditCaptor.getValue();
+        assertEquals("DOME", auditEvent.getTenant());
+        assertEquals("ACCEPT", auditEvent.getOutcome());
+    }
+
+    @Test
     @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMismatch_throwsInvalidClient")
     void authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMismatch_throwsInvalidClient() {
         // Client is NOT pre-registered: repository only knows "test-client" (from setUp())
@@ -386,6 +421,38 @@ class CustomAuthenticationProviderTest {
         assertNull(auditEvent.getTenant());
         assertEquals("REJECT", auditEvent.getOutcome());
         assertEquals("tenant_not_derivable", auditEvent.getReason());
+    }
+
+    @Test
+    @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_requestTenantUnresolvable_throwsInvalidClient")
+    void authenticate_clientCredentialsGrantWithoutPreRegistration_requestTenantUnresolvable_throwsInvalidClient() {
+        // AD-2 fail-closed, symmetric case: when TenantDomainFilter cannot resolve a tenant for the
+        // request (e.g. no X-Tenant-Id header and a dotless hostname such as "localhost"),
+        // resolveCurrentTenant() returns null. The credential-derived tenant must NOT be trusted
+        // unconditionally in that case — it must be rejected, same as an undeterminable credential
+        // tenant. No request tenant is set up here on purpose (RequestContextHolder left empty).
+        JsonNode vcJson = buildMachineCredentialWithMandator("dome");
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "unregistered-machine-client");
+        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+
+        OAuth2ClientCredentialsAuthenticationToken authToken = new OAuth2ClientCredentialsAuthenticationToken(
+                mock(Authentication.class), null, additionalParams);
+
+        OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                () -> provider.authenticate(authToken));
+        assertEquals(OAuth2ErrorCodes.INVALID_CLIENT, exception.getError().getErrorCode());
+
+        verify(tokenGenerationWorkflow, never()).issueAccessToken(any(), any(), any(), anyBoolean(), any());
+
+        ArgumentCaptor<OAuth2M2MAuditEvent> auditCaptor = ArgumentCaptor.forClass(OAuth2M2MAuditEvent.class);
+        verify(oAuth2M2MAuditPort).publish(auditCaptor.capture());
+        OAuth2M2MAuditEvent auditEvent = auditCaptor.getValue();
+        assertEquals("unregistered-machine-client", auditEvent.getClientId());
+        assertEquals("dome", auditEvent.getTenant());
+        assertEquals("REJECT", auditEvent.getOutcome());
+        assertEquals("request_tenant_not_derivable", auditEvent.getReason());
     }
 
     // --- Helper methods ---

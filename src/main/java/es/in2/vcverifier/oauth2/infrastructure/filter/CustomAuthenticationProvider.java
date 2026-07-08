@@ -47,6 +47,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private static final String AUDIT_OUTCOME_REJECT = "REJECT";
     private static final String AUDIT_REASON_TENANT_MISMATCH = "tenant_mismatch";
     private static final String AUDIT_REASON_TENANT_NOT_DERIVABLE = "tenant_not_derivable";
+    private static final String AUDIT_REASON_REQUEST_TENANT_NOT_DERIVABLE = "request_tenant_not_derivable";
 
     private final RegisteredClientRepository registeredClientRepository;
     private final BackendConfig backendConfig;
@@ -273,8 +274,16 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                     "Cannot determine credential tenant: missing mandator.organizationIdentifier");
         }
 
+        // AD-2 fail-closed, symmetric case: a request whose tenant cannot be resolved cannot be
+        // trusted to isolate anything either, so it is rejected rather than trusting the
+        // credential's self-declared tenant unconditionally.
         String requestTenant = resolveCurrentTenant();
-        if (requestTenant != null && !tenant.equalsIgnoreCase(requestTenant)) {
+        if (requestTenant == null) {
+            publishM2MAudit(clientId, tenant, AUDIT_OUTCOME_REJECT, AUDIT_REASON_REQUEST_TENANT_NOT_DERIVABLE);
+            throw new TenantMismatchException(
+                    "Cannot determine request tenant: unable to resolve tenant from request context");
+        }
+        if (!tenant.equalsIgnoreCase(requestTenant)) {
             publishM2MAudit(clientId, tenant, AUDIT_OUTCOME_REJECT, AUDIT_REASON_TENANT_MISMATCH);
             throw new TenantMismatchException(
                     "Credential tenant '" + tenant + "' does not match request tenant '" + requestTenant + "'");
