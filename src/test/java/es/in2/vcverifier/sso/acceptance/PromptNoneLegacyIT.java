@@ -176,11 +176,16 @@ class PromptNoneLegacyIT {
     // =========================================================
     @Test
     void should_redirectWithLoginRequired_noCookie_whenLegacyTenantAndPromptNone() throws Exception {
+        // Given: a legacy tenant (sso.enabled=false, stubbed in setUp) and a prompt=none request without SSO cookie
+
+        // When
         mockMvc.perform(baseRequest().param("prompt", "none"))
+                // Then: 302 to redirect_uri with error=login_required
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("error=login_required")))
                 .andExpect(header().string("Location", containsString("state=xyz")));
 
+        // And: the catalog is not consulted and no SSO session reuse is audited
         verify(tenantSsoConfigPort, never()).resolveEligibleClients(anyString());
         verify(auditPort, never()).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
@@ -194,13 +199,17 @@ class PromptNoneLegacyIT {
     // =========================================================
     @Test
     void should_redirectWithLoginRequired_whenLegacyTenantConfigAbsentAndPromptNone() throws Exception {
+        // Given: a legacy tenant with no config entry (getByTenant empty) and a prompt=none request
         when(tenantSsoConfigPort.getByTenant(anyString()))
                 .thenReturn(Optional.empty());
 
+        // When
         mockMvc.perform(baseRequest().param("prompt", "none"))
+                // Then: 302 to redirect_uri with error=login_required (no HTTP 500)
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("error=login_required")));
 
+        // And: no SSO session reuse is audited
         verify(auditPort, never()).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
     }
@@ -213,15 +222,18 @@ class PromptNoneLegacyIT {
     @Test
     void should_ignoreCookieAndReturnLoginRequired_whenLegacyTenantWithActiveCookieAndPromptNone()
             throws Exception {
+        // Given: a legacy tenant with an active SSO session in DB and a residual SSO cookie
         String sessionId = insertActiveSession(LEGACY_TENANT, "holder-es02");
 
+        // When: prompt=none carrying the cookie
         mockMvc.perform(baseRequest()
                         .cookie(new Cookie(COOKIE_PREFIX + LEGACY_TENANT, sessionId))
                         .param("prompt", "none"))
+                // Then: cookie ignored → 302 to redirect_uri with error=login_required
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("error=login_required")));
 
-        // ssoEnabled=false → cortocircuito antes de consultar catálogo ni BD de sesiones
+        // And: ssoEnabled=false short-circuits before touching the catalog or the session store; no reuse
         verify(tenantSsoConfigPort, never()).resolveEligibleClients(anyString());
         verify(auditPort, never()).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
@@ -236,11 +248,14 @@ class PromptNoneLegacyIT {
     @Test
     void should_notEmitCodeOrToken_whenLegacyTenantWithActiveCookieAndPromptNone()
             throws Exception {
+        // Given: a legacy tenant with an active SSO session in DB and a residual SSO cookie
         String sessionId = insertActiveSession(LEGACY_TENANT, "holder-es02-token");
 
+        // When: prompt=none carrying the cookie
         mockMvc.perform(baseRequest()
                         .cookie(new Cookie(COOKIE_PREFIX + LEGACY_TENANT, sessionId))
                         .param("prompt", "none"))
+                // Then: 302 with error=login_required and neither code nor id_token issued
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("error=login_required")))
                 .andExpect(header().string("Location", not(containsString("code="))))
@@ -259,14 +274,18 @@ class PromptNoneLegacyIT {
     @Test
     void should_notLeakCrossTenantSession_whenCookieFromSsoTenantSentToLegacyTenant()
             throws Exception {
+        // Given: an active session for an SSO tenant, whose cookie is sent to a legacy-tenant request
         String ssoSessionId = insertActiveSession(SSO_TENANT, "holder-sso");
 
+        // When: prompt=none for the legacy tenant carrying the other tenant's cookie
         mockMvc.perform(baseRequest()
                         .cookie(new Cookie(COOKIE_PREFIX + SSO_TENANT, ssoSessionId))
                         .param("prompt", "none"))
+                // Then: cookie name doesn't match → ignored → 302 with error=login_required
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("error=login_required")));
 
+        // And: no cross-tenant attempt nor session reuse is audited
         verify(auditPort, never()).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT));
         verify(auditPort, never()).publish(argThat(event ->

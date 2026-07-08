@@ -162,34 +162,39 @@ class LegacyConvivenciaIT {
     @Test
     @DisplayName("AC-01: tenant legacy completa OID4VP sin fila sso_session ni cookie SSO")
     void legacyTenant_completesWithoutSsoSessionOrCookie() throws Exception {
+        // Given: a legacy tenant (sso.enabled=false)
         when(tenantSsoConfigPort.getByTenant(TENANT_LEGACY))
                 .thenReturn(Optional.of(legacyConfig(TENANT_LEGACY)));
 
+        // When: it completes an OID4VP authentication
         authResponse(TENANT_LEGACY, false);
 
+        // Then: no sso_session row (and no SSO cookie, asserted in authResponse)
         assertThat(rows(TENANT_LEGACY)).isZero();
     }
 
     @Test
     @DisplayName("AC-02: SSO y legacy coexisten sin interferencia (independiente del orden)")
     void ssoAndLegacyTenants_coexistWithoutInterference() throws Exception {
+        // Given: an SSO tenant (enabled) and a legacy tenant coexisting in the same IdP
         when(tenantSsoConfigPort.getByTenant(TENANT_SSO))
                 .thenReturn(Optional.of(enabledConfig(TENANT_SSO)));
         when(tenantSsoConfigPort.getByTenant(TENANT_LEGACY))
                 .thenReturn(Optional.of(legacyConfig(TENANT_LEGACY)));
 
-        // Orden legacy → SSO para probar que el resultado no depende del orden.
+        // When: both authenticate in legacy → SSO order (to prove order independence)
         authResponse(TENANT_LEGACY, false);
         authResponse(TENANT_SSO, true);
 
-        // El tenant SSO tiene su sesión; el legacy no. La actividad SSO no crea filas legacy.
+        // Then: the SSO tenant has its session; the legacy one does not. SSO activity creates no legacy rows.
         assertThat(rows(TENANT_SSO)).isEqualTo(1);
         assertThat(rows(TENANT_LEGACY)).isZero();
 
-        // Orden inverso SSO → legacy: el legacy sigue sin fila y el SSO no se ve alterado.
+        // When: reverse order SSO → legacy
         authResponse(TENANT_SSO, true);
         authResponse(TENANT_LEGACY, false);
 
+        // Then: the legacy tenant still has no row and the SSO one is unaffected
         assertThat(rows(TENANT_LEGACY)).isZero();
         assertThat(rows(TENANT_SSO)).isGreaterThanOrEqualTo(1);
     }
@@ -197,30 +202,38 @@ class LegacyConvivenciaIT {
     @Test
     @DisplayName("EC-01: flip de flag en caliente — sólo crea sesión tras habilitar SSO")
     void flagFlip_createsSessionOnlyAfterEnable() throws Exception {
-        // Fase legacy: sin fila.
+        // Given: the tenant initially operates as legacy (sso.enabled=false)
         when(tenantSsoConfigPort.getByTenant(TENANT_SSO))
                 .thenReturn(Optional.of(legacyConfig(TENANT_SSO)));
+
+        // When: it authenticates in the legacy phase
         authResponse(TENANT_SSO, false);
+
+        // Then: no row
         assertThat(rows(TENANT_SSO)).isZero();
 
-        // Refresh de config → SSO habilitado; la petición posterior sí crea sesión.
+        // Given: hot config refresh → SSO enabled
         when(tenantSsoConfigPort.getByTenant(TENANT_SSO))
                 .thenReturn(Optional.of(enabledConfig(TENANT_SSO)));
+
+        // When: the request after the flip
         authResponse(TENANT_SSO, true);
 
-        // Sin creación retroactiva: exactamente 1 fila (la posterior al flip).
+        // Then: no retroactive creation — exactly 1 row (the one after the flip)
         assertThat(rows(TENANT_SSO)).isEqualTo(1);
     }
 
     @Test
     @DisplayName("ES-01: config del tenant ausente → fallback legacy sin error 500 ni sesión")
     void configAbsent_failsClosedWithoutError() throws Exception {
+        // Given: a tenant with no config entry (getByTenant empty)
         when(tenantSsoConfigPort.getByTenant(TENANT_LEGACY))
                 .thenReturn(Optional.empty());
 
-        // No 500: el flujo OID4VP legacy completa con 200 y sin cookie.
+        // When: it authenticates (fail-closed) — the legacy OID4VP flow completes with 200 and no cookie
         authResponse(TENANT_LEGACY, false);
 
+        // Then: no 500 and no sso_session row
         assertThat(rows(TENANT_LEGACY)).isZero();
     }
 }

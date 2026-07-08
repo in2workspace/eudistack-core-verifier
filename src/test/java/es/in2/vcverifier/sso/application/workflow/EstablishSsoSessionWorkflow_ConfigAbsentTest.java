@@ -43,6 +43,7 @@ class EstablishSsoSessionWorkflow_ConfigAbsentTest {
     @DisplayName("Config ausente: fail-closed como legacy, sin sesión ni 500 (ES-01)")
     void execute_whenConfigAbsent_failsClosedAsLegacy() {
 
+        // Arrange
         var command = new SsoSessionCommand(
                 "unknown-tenant",
                 "holder-sub",
@@ -53,11 +54,13 @@ class EstablishSsoSessionWorkflow_ConfigAbsentTest {
         when(tenantSsoConfigPort.getByTenant("unknown-tenant"))
                 .thenReturn(Optional.empty());
 
+        // Act
         assertThrows(
                 SsoConfigInconsistentException.class,
                 () -> workflow.execute(command)
         );
 
+        // Assert
         verifyNoInteractions(sessionRepositoryPort);
 
         verify(tenantSsoConfigPort, times(1)).getByTenant("unknown-tenant");

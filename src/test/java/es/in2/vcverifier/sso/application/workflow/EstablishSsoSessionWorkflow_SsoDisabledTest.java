@@ -42,6 +42,7 @@ class EstablishSsoSessionWorkflow_SsoDisabledTest {
     @DisplayName("SSO deshabilitado (legacy): no persiste sesión ni genera cookie (AC-01, NFR-S-553-02)")
     void execute_whenSsoDisabled_doesNotPersistSession() {
 
+        // Given: a tenant with coherent config but SSO disabled (intentional legacy)
         var command = new SsoSessionCommand(
                 "legacy-tenant",
                 "holder-sub",
@@ -54,12 +55,14 @@ class EstablishSsoSessionWorkflow_SsoDisabledTest {
         when(tenantSsoConfigPort.getByTenant("legacy-tenant"))
                 .thenReturn(Optional.of(config));
 
-        // Legacy intencional → excepción benigna (no SsoConfigInconsistentException).
+        // When (+ assert on the thrown exception): intentional legacy fails closed with the benign
+        // exception, not SsoConfigInconsistentException
         assertThrows(
                 SsoDisabledForTenantException.class,
                 () -> workflow.execute(command)
         );
 
+        // Then: no session persisted, no extra IO, and NO audit event (no error-flavored events)
         verifyNoInteractions(sessionRepositoryPort);
 
         verify(tenantSsoConfigPort, times(1)).getByTenant("legacy-tenant");
