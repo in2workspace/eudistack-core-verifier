@@ -392,6 +392,41 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
+    // REVOKE ALL BY TENANT — corte de emergencia (EUDISTACK-554 / US-09)
+    // =========================================================
+
+    @Override
+    public int revokeAllByTenant(String tenantId) {
+        ensureTenantSafe(tenantId);
+        checkCircuit();
+
+        String sql = """
+            DELETE FROM sso_session
+            WHERE tenant = ?
+        """;
+
+        try (Connection c = dataSource.getConnection()) {
+
+            setTenantSearchPath(c, tenantId);
+            setStatementTimeout(c);
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setString(1, tenantId);
+
+                int revoked = ps.executeUpdate();
+                log.info("event=sso_emergency_revoke_db tenant={} count_revoked={}", tenantId, revoked);
+                recordSuccess();
+                return revoked;
+            }
+
+        } catch (SQLException e) {
+            recordFailure();
+            throw new SsoSessionRepositoryException(
+                    "Failed to revoke SSO sessions for tenant " + tenantId, e);
+        }
+    }
+
+    // =========================================================
     // HELPERS
     // =========================================================
 
