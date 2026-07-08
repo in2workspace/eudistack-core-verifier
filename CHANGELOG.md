@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **US-08 — Convivencia con aplicativos legacy del Verifier IdP (EUDISTACK-553)**: 0 regresiones para tenants/aplicativos no migrados durante la transición al SSO (FR-14, NFR-M-01). Tenant legacy (`sso.enabled=false` o sin entrada `tenant_sso`) → fail-closed sin crear sesión ni cookie; `prompt=none` en tenant legacy → `error=login_required` al `redirect_uri` (sin render de QR, cookie SSO residual ignorada, sin `code`/`id_token`). Suite de verificación de convivencia: `EstablishSsoSessionWorkflow_SsoDisabledTest`/`_ConfigAbsentTest` (unit del guard), `LegacyConvivenciaIT` (coexistencia SSO+legacy y flip de flag) y `PromptNoneLegacyIT` (AC-03/ES-02). ACs cubiertos: AC-01..AC-03, EC-01..EC-02, ES-01..ES-02, NFR-S-553-01, NFR-S-553-02.
 
+### Changed - 2026-07-08
+
+- **`sso-config.yaml`: `rootDomain` de ejemplo reemplazados por dominios reales**: los valores placeholder (`*.example.com`) de los tenants `sandbox`, `cgcom`, `kpmg`, `dome` y `platform` se sustituyen por los dominios raíz reales (`*.stg.eudistack.net` y, para `dome`, `dome-marketplace-lcl.org`) usados por el catálogo SSO per tenant (EUDISTACK-550 US-05).
+
 ### Added
 - **EUDISTACK-546**: 
 - US-01: Custom domain operativo per tenant en el Verifier IdP
