@@ -20,6 +20,8 @@ import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuild
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.sso.infrastructure.web.SsoSessionLogoutFailureHandler;
+import es.in2.vcverifier.sso.infrastructure.web.SsoSessionLogoutHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 
@@ -66,6 +68,8 @@ public class AuthorizationServerConfig {
     private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
     private final Set<String> allowedClientsOrigins;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
+    private final SsoSessionLogoutHandler ssoSessionLogoutHandler;
+    private final SsoSessionLogoutFailureHandler ssoSessionLogoutFailureHandler;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -88,7 +92,15 @@ public class AuthorizationServerConfig {
                                 .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore))
                                 .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry))
                 )
-                .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
+                .oidc(oidc -> oidc
+                        // US-06 (AD-1): enganche del Single Logout tras la validación estándar
+                        // RP-Initiated Logout (id_token_hint / post_logout_redirect_uri) — no
+                        // reimplementa esa validación, solo decora el resultado (éxito/fallo).
+                        .logoutEndpoint(logoutEndpoint -> logoutEndpoint
+                                .logoutResponseHandler(ssoSessionLogoutHandler)
+                                .errorResponseHandler(ssoSessionLogoutFailureHandler)
+                        )
+                );
 
         return http.build();
     }
