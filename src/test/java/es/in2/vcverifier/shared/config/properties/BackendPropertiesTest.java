@@ -108,6 +108,22 @@ class BackendPropertiesTest {
                 });
     }
 
+    @Test
+    void testAdditionalUrlsIsOptionalAndAcceptsCommaSeparatedList() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(TestConfig.class)
+                .withPropertyValues(
+                        "verifier.backend.url=https://raw.githubusercontent.com",
+                        "verifier.backend.additionalUrls=https://a.example.com,https://b.example.com",
+                        "verifier.backend.trustFrameworks[0].name=DOME"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(BackendProperties.class).additionalUrls())
+                            .containsExactly("https://a.example.com", "https://b.example.com");
+                });
+    }
+
     @EnableConfigurationProperties(BackendProperties.class)
     static class TestConfig {
     }

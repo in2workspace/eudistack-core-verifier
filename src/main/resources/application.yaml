@@ -94,6 +94,8 @@ verifier:
   frontend:
     portalUrl: http://localhost:4200
   backend:
+    # Canonical public URL of the verifier. Used as `iss`/audience in issued tokens and as
+    # the base for OID4VP endpoints.
     url: http://localhost:8082
     identity:
       # Leave empty to auto-generate ephemeral P-256 key + did:key at startup (dev only).
