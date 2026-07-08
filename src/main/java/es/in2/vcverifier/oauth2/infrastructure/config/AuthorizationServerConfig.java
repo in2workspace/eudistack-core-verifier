@@ -100,6 +100,18 @@ public class AuthorizationServerConfig {
                                 .logoutResponseHandler(ssoSessionLogoutHandler)
                                 .errorResponseHandler(ssoSessionLogoutFailureHandler)
                         )
+                        // US-06 (ADR-107): refleja soporte de Back-Channel Logout 1.0 en la
+                        // metadata OIDC. No hay setter tipado en OidcProviderConfiguration.Builder
+                        // para estos claims (verificado contra Spring AS 1.5.6) — se añaden vía
+                        // .claim(...) genérico, aditivo sobre los defaults del framework
+                        // (issuer, endpoints, algoritmos), sin sobrescribirlos.
+                        .providerConfigurationEndpoint(providerConfigurationEndpoint ->
+                                providerConfigurationEndpoint.providerConfigurationCustomizer(builder -> builder
+                                        .claim("backchannel_logout_supported", true)
+                                        .claim("backchannel_logout_session_supported", true)
+                                        .claim("frontchannel_logout_supported", false)
+                                )
+                        )
                 );
 
         return http.build();
