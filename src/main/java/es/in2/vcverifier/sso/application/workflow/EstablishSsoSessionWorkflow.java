@@ -119,8 +119,7 @@ public class EstablishSsoSessionWorkflow {
                     command.tenant(),
                     command.correlationId());
 
-            throw new SsoDisabledForTenantException(
-                    "SSO disabled for tenant " + command.tenant());
+            throw new SsoDisabledForTenantException(command.tenant());
         }
     }
     private void publishMissingConfigAudit(SsoSessionCommand command) {
