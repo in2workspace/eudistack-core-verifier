@@ -26,6 +26,11 @@ public class SsoAuditAdapter implements SsoAuditPort {
             return;
         }
 
+        if (event.getEventType() == SsoAuditEvent.EventType.EMERGENCY_REVOKE) {
+            emitEmergencyRevokeEvent(event);
+            return;
+        }
+
         Map<String, Object> logEvent = new HashMap<>();
 
         logEvent.put("eventType", event.getEventType().name());
@@ -59,6 +64,22 @@ public class SsoAuditAdapter implements SsoAuditPort {
         logEvent.put("operation", operation);
         logEvent.put("clientId",  event.getClientId());
         logEvent.put("timestamp", event.getOccurredAt());
+
+        log.info("SSO_AUDIT_EVENT {}", logEvent);
+    }
+
+    /**
+     * No incluye cookie SSO, sub ni holderHash: el corte es masivo por tenant y no referencia
+     * a ningún Holder concreto (solo identificadores opacos, architecture.md §6.1).
+     */
+    private void emitEmergencyRevokeEvent(SsoAuditEvent event) {
+        Map<String, Object> logEvent = new LinkedHashMap<>();
+        logEvent.put("eventType",      "sso_emergency_revoke");
+        logEvent.put("tenant",         event.getTenant());
+        logEvent.put("count_revoked",  event.getCountRevoked());
+        logEvent.put("correlation_id", event.getCorrelationId());
+        logEvent.put("outcome",        event.getOutcome());
+        logEvent.put("timestamp",      event.getOccurredAt());
 
         log.info("SSO_AUDIT_EVENT {}", logEvent);
     }
