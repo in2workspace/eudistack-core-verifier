@@ -76,10 +76,10 @@ public class SsoAuditAdapter implements SsoAuditPort {
         Map<String, Object> logEvent = new LinkedHashMap<>();
         logEvent.put("eventType",      "sso_emergency_revoke");
         logEvent.put("tenant",         event.getTenant());
-        logEvent.put("count_revoked",  event.getCountRevoked());
-        logEvent.put("correlation_id", event.getCorrelationId());
+        logEvent.put("countRevoked",   event.getCountRevoked());
+        logEvent.put("correlationId",  event.getCorrelationId());
         logEvent.put("outcome",        event.getOutcome());
-        logEvent.put("timestamp",      event.getOccurredAt());
+        logEvent.put("occurredAt",     event.getOccurredAt());
 
         log.info("SSO_AUDIT_EVENT {}", logEvent);
     }
