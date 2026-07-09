@@ -1,6 +1,7 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -53,24 +54,23 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
     private boolean isAllowedRedirectUri(String uri) {
         try {
             URI parsed = URI.create(uri);
-            String scheme = parsed.getScheme();
-            String origin = scheme + "://" + parsed.getAuthority();
-
-            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, origin);
-
-            if (!"https".equals(scheme)) {
+            if (!"https".equalsIgnoreCase(parsed.getScheme())) {
                 return false;
             }
+
+            URI origin = OriginNormalizer.normalize(parsed);
+            if (origin == null) {
+                return false;
+            }
+            String originString = origin.toString();
+
+            log.debug("Validating redirect URI. allowedClientsOrigins={}, origin={}", allowedClientsOrigins, originString);
+
             // Allow registered client origins (includes loginPageUri origins) — enforce HTTPS
-            if (allowedClientsOrigins.contains(origin)) {
+            if (allowedClientsOrigins.contains(originString)) {
                 return true;
             }
-            // Allow the verifier's own origin (for /login and /error internal redirects).
-            // SEC-S7: use the static configured URL (not request-derived) so the check
-            // is independent of Host/ForwardedHeader state and cannot be bypassed via header injection.
-            URI verifierUri = URI.create(backendConfig.getStaticUrl());
-            String verifierOrigin = verifierUri.getScheme() + "://" + verifierUri.getAuthority();
-            return verifierOrigin.equals(origin);
+            return backendConfig.getTrustedVerifierOrigins().contains(originString);
         } catch (Exception e) {
             return false;
         }

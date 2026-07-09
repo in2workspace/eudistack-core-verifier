@@ -71,6 +71,9 @@ class SsoSessionReuseIsolationIT {
     @MockitoBean
     private es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler customErrorResponseHandler;
 
+    @Autowired
+    private java.util.Set<String> allowedClientsOrigins;
+
     @BeforeEach
     void setup() {
         RegisteredClient client = RegisteredClient.withId(UUID.randomUUID().toString())
@@ -84,6 +87,7 @@ class SsoSessionReuseIsolationIT {
 
         when(registeredClientRepository.findByClientId("client-b")).thenReturn(client);
         when(dcqlProfileResolver.resolve(anyString())).thenReturn(new DcqlQuery(List.of()));
+        allowedClientsOrigins.add("https://localhost");
     }
 
     // =========================================================

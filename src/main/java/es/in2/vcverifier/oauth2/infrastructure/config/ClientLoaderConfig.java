@@ -2,6 +2,7 @@ package es.in2.vcverifier.oauth2.infrastructure.config;
 
 import es.in2.vcverifier.oauth2.domain.exception.ClientLoadingException;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.DelegatingRegisteredClientRepository;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -37,6 +38,8 @@ import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_BACK
 public class ClientLoaderConfig {
 
     private static final Pattern TENANT_PATTERN = Pattern.compile("^[a-z0-9-]{1,64}$");
+    private static final String HTTPS_SCHEME = "https";
+    private static final String HTTP_SCHEME = "http";
 
     private final ClientRegistryProvider clientRegistryProvider;
     private final Set<String> allowedClientsOrigins;
@@ -112,28 +115,25 @@ public class ClientLoaderConfig {
                 }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
                     URI loginUri = URI.create(clientData.loginPageUri());
-                    if (!"https".equals(loginUri.getScheme())) {
+                    if (!HTTPS_SCHEME.equalsIgnoreCase(loginUri.getScheme())) {
                         throw new ClientLoadingException("loginPageUri must use HTTPS scheme for client '"
                                 + clientData.clientId() + "': " + clientData.loginPageUri());
                     }
                     clientSettingsBuilder.setting(CLIENT_SETTING_LOGIN_PAGE_URI, clientData.loginPageUri());
-                    String origin = loginUri.getScheme() + "://" + loginUri.getAuthority();
-                    freshOrigins.add(origin);
+                    addNormalizedOrigin(freshOrigins, loginUri);
                 }
                 registeredClientBuilder.clientSettings(clientSettingsBuilder.build());
                 registeredClients.add(registeredClientBuilder.build());
 
                 if (clientData.url() != null && !clientData.url().isBlank()) {
-                    URI clientUri = URI.create(clientData.url());
-                    String clientOrigin = clientUri.getScheme() + "://" + clientUri.getAuthority();
-                    freshOrigins.add(clientOrigin);
+                    addNormalizedOrigin(freshOrigins, clientData.url());
                 }
                 if (clientData.redirectUris() != null) {
                     for (String redirectUri : clientData.redirectUris()) {
                         URI redirectUriParsed = URI.create(redirectUri);
                         String scheme = redirectUriParsed.getScheme();
-                        if ("http".equals(scheme) || "https".equals(scheme)) {
-                            freshOrigins.add(scheme + "://" + redirectUriParsed.getAuthority());
+                        if (HTTP_SCHEME.equalsIgnoreCase(scheme) || HTTPS_SCHEME.equalsIgnoreCase(scheme)) {
+                            addNormalizedOrigin(freshOrigins, redirectUriParsed);
                         }
                     }
                 }
@@ -144,6 +144,20 @@ public class ClientLoaderConfig {
             return registeredClients;
         } catch (Exception e) {
             throw new ClientLoadingException("Error loading clients from Yaml", e);
+        }
+    }
+
+    private void addNormalizedOrigin(Set<String> origins, String uri) {
+        addOrigin(origins, OriginNormalizer.normalize(uri));
+    }
+
+    private void addNormalizedOrigin(Set<String> origins, URI uri) {
+        addOrigin(origins, OriginNormalizer.normalize(uri));
+    }
+
+    private void addOrigin(Set<String> origins, URI normalizedOrigin) {
+        if (normalizedOrigin != null) {
+            origins.add(normalizedOrigin.toString());
         }
     }
 }
