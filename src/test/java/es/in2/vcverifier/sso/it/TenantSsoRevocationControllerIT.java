@@ -76,7 +76,7 @@ class TenantSsoRevocationControllerIT {
     }
 
     @Test
-    void shouldrReturn200WithCountAndAuditSuccess_whenSessionsExist() throws Exception {
+    void shouldReturn200WithCountAndAuditSuccess_whenSessionsExist() throws Exception {
         // Given
         when(ssoSessionRepositoryPort.revokeAllByTenant(TENANT)).thenReturn(5);
 
