@@ -53,6 +53,14 @@ public class TenantSsoRevocationController {
                         HttpStatus.INTERNAL_SERVER_ERROR, "SSO emergency revoke failed"));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidTenant(IllegalArgumentException ex) {
+        log.warn("event=sso_emergency_revoke_bad_request reason={}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ProblemDetail.forStatusAndDetail(
+                        HttpStatus.BAD_REQUEST, "Invalid tenant identifier"));
+    }
+
     // ─── helpers ──────────
 
     /**
