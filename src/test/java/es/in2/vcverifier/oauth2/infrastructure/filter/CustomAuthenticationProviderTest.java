@@ -341,7 +341,8 @@ class CustomAuthenticationProviderTest {
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
                 null, "machine learcredential", "did:key:zDnaeMachine123");
-        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("DOME")))
+        // Canonicalized to the request-resolved tenant ("dome"), not the credential's original casing.
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);
 
         Map<String, Object> additionalParams = new HashMap<>();
@@ -359,7 +360,7 @@ class CustomAuthenticationProviderTest {
         ArgumentCaptor<OAuth2M2MAuditEvent> auditCaptor = ArgumentCaptor.forClass(OAuth2M2MAuditEvent.class);
         verify(oAuth2M2MAuditPort).publish(auditCaptor.capture());
         OAuth2M2MAuditEvent auditEvent = auditCaptor.getValue();
-        assertEquals("DOME", auditEvent.getTenant());
+        assertEquals("dome", auditEvent.getTenant());
         assertEquals("ACCEPT", auditEvent.getOutcome());
     }
 

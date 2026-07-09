@@ -288,6 +288,10 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             throw new TenantMismatchException(
                     "Credential tenant '" + tenant + "' does not match request tenant '" + requestTenant + "'");
         }
+        // Canonicalize to the request-resolved tenant (already normalized to lowercase by
+        // TenantDomainFilter) so client settings, token claims, and audit logs stay consistent
+        // regardless of how the credential itself capitalized organizationIdentifier.
+        tenant = requestTenant;
 
         RegisteredClient syntheticClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId(clientId)
