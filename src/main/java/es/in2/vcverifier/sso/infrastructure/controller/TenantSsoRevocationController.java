@@ -67,7 +67,7 @@ public class TenantSsoRevocationController {
      * If the Authentication does not carry a tenant, access is denied with 403 (fail-closed).
      *
      * @throws ResponseStatusException 403 if the Authentication carries no tenant
-     * @throws ResponseStatusException 403 if the Authentication tenant differs from the X-Tenant-Id header
+     * @throws ResponseStatusException 403 if the Authentication tenant differs from the X-Tenant header
      */
     private String resolveAndValidateTenant(HttpServletRequest request, Authentication authentication) {
         String authTenant = extractAuthenticatedTenant(authentication);
