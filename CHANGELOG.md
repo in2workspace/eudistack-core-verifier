@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Fixed - 2026-07-09
+- **`client_assertion` `aud` rejected during `private_key_jwt` client authentication (authorization_code / refresh_token flows)**: after
+  `server.servlet.context-path=/verifier` was introduced (3.1.0), the issuer the Authorization Server derives dynamically from the request (issuer  
+  not pinned, to support multi-tenant subdomains) started including the `/verifier` prefix. Spring's default `JwtClientAssertionDecoderFactory` only
+  accepts `aud` values derived from that issuer (`https://host/verifier[/oidc/token]`), but legacy clients still point at the clean public URL      
+  (without `/verifier`) and sign the `client_assertion` with that audience — causing `invalid_client: The aud claim is not valid` when exchanging   
+  the code at `POST /oidc/token`. A custom `JwtClientAssertionDecoderFactory` is now registered via
+  `OAuth2AuthorizationServerConfigurer.clientAuthentication(...)` on the `JwtClientAssertionAuthenticationProvider`, with a
+  `ClientAssertionJwtValidatorFactory` that mirrors Spring's default validation (`iss`/`sub`/`exp`/signature unchanged) and replaces only the `aud`
+  check with `ClientAssertionAudienceValidator`: it accepts the audience **with and without** the servlet context-path (derived dynamically from the
+  request, `/verifier` not hardcoded), preserving per-host isolation (multi-tenant) and still rejecting foreign hosts. Adds a `received` vs
+  `expected` log (DEBUG on success, WARN on failure) that did not exist before. Legacy clients no longer need to change their URL.
+- **Same `aud` tolerance extended to the M2M (`client_credentials`) flow**: `ClientAssertionValidationServiceImpl.validateAudience` validated     
+  `aud` with an exact `equals` against `backendConfig.getUrl()` (which now includes `/verifier`), so a legacy M2M client sending the clean URL would
+  have failed too. It is replaced by a set of accepted audiences (canonical URL with and without the context-path, derived from the request),       
+  consistent with the authorization_code validator. Foreign-host rejection and the strict `iss`/`sub`/`jti`/`exp` validation are preserved.
+
 ### Added 2026-07-06
 
 - **US-08 — Legacy application coexistence on the Verifier IdP (EUDISTACK-553)**: 0 regressions for non-migrated tenants/applications during the transition to SSO (FR-14, NFR-M-01). Legacy tenant (`sso.enabled=false` or no `tenant_sso` entry) → fail-closed without creating a session or cookie; `prompt=none` on a legacy tenant → `error=login_required` to the `redirect_uri` (no QR render, residual SSO cookie ignored, no `code`/`id_token`). Coexistence verification suite: `EstablishSsoSessionWorkflow_SsoDisabledTest`/`_ConfigAbsentTest` (guard unit tests), `LegacyConvivenciaIT` (SSO+legacy coexistence and flag flip) and `PromptNoneLegacyIT` (AC-03/ES-02). ACs covered: AC-01..AC-03, EC-01..EC-02, ES-01..ES-02, NFR-S-553-01, NFR-S-553-02.
