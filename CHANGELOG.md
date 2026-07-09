@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-07-09
+
+### Added
+- **EUD-155 — M2M authentication without pre-registration hardened**: the existing but undocumented `client_credentials` fallback (`CustomAuthenticationProvider.getOrBuildRegisteredClient`, introduced in EUDISTACK-164) is now security-hardened and reachable end-to-end. Added: tenant isolation check between the credential-derived tenant and the request tenant, fail-closed on both sides (undeterminable credential tenant, undeterminable request tenant); structured audit trail (`OAuth2M2MAuditPort`/`OAuth2M2MAuditAdapter`) for every accept/reject; OAuth2-compliant error mapping for all credential validation failures with no internal detail leaked to the client (`OAuth2ErrorTranslator`); and a new Spring Security client-authentication step (`UnregisteredM2MClientAuthenticationConverter`/`Provider`) that lets an unregistered machine client reach the grant-validation pipeline at all — previously any such request was rejected with a bare 401 before the credential was ever inspected. Pre-registered clients are unaffected.
+
 ### Added
 - **EUDISTACK-546**: 
 - US-01: Custom domain operativo per tenant en el Verifier IdP
