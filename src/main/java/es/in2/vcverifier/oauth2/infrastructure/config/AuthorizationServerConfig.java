@@ -17,6 +17,8 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthenticationProvid
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomTokenRequestConverter;
+import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationConverter;
+import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationProvider;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -77,6 +79,15 @@ public class AuthorizationServerConfig {
         http
                 .cors(cors -> cors.configurationSource(registeredClientsCorsConfig.registeredClientsCorsConfigurationSource()))
                 .getConfigurer(OAuth2AuthorizationServerConfigurer.class)
+                .clientAuthentication(clientAuthentication ->
+                        clientAuthentication
+                                // Lets an unregistered M2M client through this step so the token-endpoint
+                                // pipeline (CustomTokenRequestConverter / CustomAuthenticationProvider) can
+                                // validate its credential and derive its real identity/tenant. Pre-registered
+                                // clients are untouched — Spring's built-in converters/providers still handle them.
+                                .authenticationConverter(new UnregisteredM2MClientAuthenticationConverter(registeredClientRepository))
+                                .authenticationProvider(new UnregisteredM2MClientAuthenticationProvider())
+                )
                 .authorizationEndpoint(authorizationEndpoint ->
                         authorizationEndpoint
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
