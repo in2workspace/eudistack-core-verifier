@@ -4,7 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.2.1] - 2026-07-09
+
+### Changed
+**EUD-155 — Hardened M2M without pre-registration**: The client_credentials fallback for non-pre-registered machines (CustomAuthenticationProvider) is now secure and reachable end-to-end. 
+- Fail-closed tenant isolation in both directions (credential and request).
+- Structured auditing for every attempt, whether accepted or rejected.
+- Standard OAuth2 errors, avoiding internal information leakage.
+- New client authentication step in Spring Security: requests without pre-registration are now successfully validated (previously, they were rejected with an empty 401).
+- Zero impact on already pre-registered clients.
+
+## [3.2.0] - 2026-07-08
 
 ### Changed - 2026-07-08
 
