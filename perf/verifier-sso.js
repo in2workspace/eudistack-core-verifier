@@ -10,6 +10,7 @@ import { Trend, Counter } from 'k6/metrics';
  * NFR-P-550-01  verifier_sso_catalog_hit_duration_ms         p95 < 1000 ms
  *               verifier_sso_catalog_miss_duration_ms        p95 < 1000 ms
  *               verifier_sso_catalog_check_overhead_ms       p95 < 20 ms
+ * NFR-P-551-01  verifier_sso_logout_response_ms              p95 < 300 ms
  *
  * R-1 §3.7.2 — El UPDATE de last_used_at NO debe afectar la latencia p95 del
  * flujo de reutilización SSO (prompt=none). El throttle de 1 update/min
@@ -30,6 +31,23 @@ import { Trend, Counter } from 'k6/metrics';
  *     Si p95(hit) ≈ p95(miss) y p95(delta) < 20 ms → overhead despreciable (NFR-P-550-01).
  *     Ambos caminos deben respetar el presupuesto total NFR-P-01 < 1 s p95.
  *
+ * NFR-P-551-01 — La respuesta al iniciador de POST /oidc/logout (hasta la
+ * redirección de post-logout) debe cumplir p95 < 300 ms, INDEPENDIENTEMENTE del
+ * número de callees M a notificar (AD-2/AC-03): el dispatch de Back-Channel
+ * Logout es asíncrono respecto a esta respuesta (ver BackChannelLogoutAsyncIT,
+ * Task 17, para la prueba funcional equivalente).
+ *   · Escenario logout (5): mide únicamente el tiempo hasta que Spring AS responde
+ *     con el 3xx/redirect (o el 400 de rechazo estándar) — nunca espera al
+ *     dispatch de backchannel, que ocurre en un executor dedicado tras la
+ *     respuesta HTTP.
+ *   · Sin LOGOUT_ID_TOKEN_HINT real (mismo patrón que SSO_SESSION_ID en los
+ *     escenarios de reuse), el flujo termina en el rechazo estándar ES-01
+ *     (400, id_token_hint no resuelto por OAuth2AuthorizationService) — mide el
+ *     overhead del pipeline de validación de Spring AS, no el camino completo
+ *     de invalidación + dispatch. Para medir NFR-P-551-01 de extremo a extremo
+ *     contra un entorno real, hay que proporcionar un id_token_hint/sesión SSO
+ *     genuinamente establecidos (p.ej. en `sandbox`).
+ *
  * Variables de entorno:
  *   BASE_URL              URL raíz del verifier          (default: http://localhost:8082/verifier)
  *   TENANT                Slug del tenant SSO             (default: sandbox)
@@ -48,6 +66,19 @@ import { Trend, Counter } from 'k6/metrics';
  *                         (default: igual que CLIENT_ID)
  *   NON_CATALOG_CLIENT_ID client_id ausente del catálogo SSO del tenant.
  *                         (default: non-eligible-client)
+ *   LOGOUT_ID_TOKEN_HINT  id_token_hint real para POST /oidc/logout (NFR-P-551-01).
+ *                         Sin él, Spring AS rechaza en ES-01 (400) antes de
+ *                         alcanzar la invalidación — mide solo el overhead de
+ *                         validación, no el camino completo.
+ *                         (default: 'stub-id-token-hint')
+ *   LOGOUT_POST_LOGOUT_REDIRECT_URI  post_logout_redirect_uri registrada para el
+ *                         cliente de logout.
+ *                         (default: igual que REDIRECT_URI)
+ *   LOGOUT_CLIENT_ID      client_id que envía la solicitud de logout.
+ *                         (default: igual que CLIENT_ID)
+ *   LOGOUT_SESSION_ID     ID de sesión SSO pre-establecida para la cookie
+ *                         __Secure-sso-<TENANT> en el escenario de logout.
+ *                         (default: igual que SSO_SESSION_ID, o un stub)
  */
 
 // ── Métricas ───────────────────────────────────────────────────────────────
@@ -76,6 +107,10 @@ const ssoCatalogMissDuration = new Trend('verifier_sso_catalog_miss_duration_ms'
 // p95 < 20 ms confirma que el overhead del catálogo es despreciable.
 const ssoCatalogCheckOverhead = new Trend('verifier_sso_catalog_check_overhead_ms');
 
+// NFR-P-551-01: latencia de POST /oidc/logout hasta la redirección al iniciador,
+// independiente del número de callees M a notificar (dispatch asíncrono, AD-2).
+const ssoLogoutResponse = new Trend('verifier_sso_logout_response_ms');
+
 const ssoErrors = new Counter('verifier_sso_errors');
 
 // ── Configuración de entorno ───────────────────────────────────────────────
@@ -91,6 +126,11 @@ const REDIRECT_URI         = __ENV.REDIRECT_URI         || 'https://localhost/ca
 // forzar el camino REJECT_CATALOG y medir el delta de latencia respecto al camino ALLOWED.
 const CATALOG_CLIENT_ID     = __ENV.CATALOG_CLIENT_ID     || CLIENT_ID;
 const NON_CATALOG_CLIENT_ID = __ENV.NON_CATALOG_CLIENT_ID || 'non-eligible-client';
+
+// NFR-P-551-01: parámetros del escenario de logout (US-06 Single Logout).
+const LOGOUT_ID_TOKEN_HINT             = __ENV.LOGOUT_ID_TOKEN_HINT             || 'stub-id-token-hint';
+const LOGOUT_POST_LOGOUT_REDIRECT_URI  = __ENV.LOGOUT_POST_LOGOUT_REDIRECT_URI  || REDIRECT_URI;
+const LOGOUT_CLIENT_ID                 = __ENV.LOGOUT_CLIENT_ID                 || CLIENT_ID;
 
 // Nombre de la cookie SSO: espejo de SsoSessionAuthenticationSuccessHandler
 const SSO_COOKIE_NAME = `__Secure-sso-${TENANT}`;
@@ -174,6 +214,20 @@ export const options = {
             startTime: '2m',       // comparte ventana de medición con (2) y (3)
             exec:      'reuseCatalogCheckScenario',
         },
+
+        // ── (5) Single Logout — NFR-P-551-01 ────────────────────────────
+        // Mide únicamente el tiempo hasta la respuesta al iniciador de
+        // POST /oidc/logout (redirección o rechazo estándar): el dispatch de
+        // Back-Channel Logout a los callees es asíncrono (AD-2/AC-03) y nunca
+        // debe formar parte de esta latencia — ver BackChannelLogoutAsyncIT
+        // (Task 17) para la prueba funcional de esa propiedad.
+        logout: {
+            executor:  'constant-vus',
+            vus:       10,
+            duration:  '2m',
+            startTime: '2m',       // comparte ventana de medición con (2)-(4)
+            exec:      'logoutScenario',
+        },
     },
 
     thresholds: {
@@ -196,6 +250,10 @@ export const options = {
         verifier_sso_catalog_hit_duration_ms:   ['p(95)<1000'],
         verifier_sso_catalog_miss_duration_ms:  ['p(95)<1000'],
         verifier_sso_catalog_check_overhead_ms: ['p(95)<20'],
+
+        // NFR-P-551-01: respuesta al iniciador de POST /oidc/logout, independiente
+        // del número de callees M (dispatch asíncrono al executor dedicado).
+        verifier_sso_logout_response_ms: ['p(95)<300'],
 
         http_req_failed: ['rate<0.01'],
     },
@@ -423,6 +481,47 @@ export function reuseCatalogCheckScenario() {
 
     // Pacing moderado: evita saturar el servidor durante el escenario compartido
     sleep(0.5);
+}
+
+/**
+ * (5) logoutScenario — NFR-P-551-01
+ *
+ * POST /oidc/logout con la cookie SSO del jar del VU. Mide únicamente el tiempo
+ * hasta que Spring Authorization Server responde (redirección al
+ * post_logout_redirect_uri, o el rechazo estándar ES-01 si LOGOUT_ID_TOKEN_HINT
+ * no se proporcionó): en ambos casos, cualquier dispatch de Back-Channel Logout
+ * ya se disparó a un executor dedicado (backChannelLogoutExecutor, AD-2) ANTES
+ * de que este t0/t1 se cierre — la respuesta HTTP nunca espera al dispatch.
+ */
+export function logoutScenario() {
+
+    const jar          = http.cookieJar();
+    const sessionValue = __ENV.LOGOUT_SESSION_ID || __ENV.SSO_SESSION_ID || `stub-logout-${__VU}`;
+    jar.set(BASE_URL, SSO_COOKIE_NAME, sessionValue);
+
+    const t0  = Date.now();
+    const res = http.post(`${BASE_URL}/oidc/logout`, null, {
+        params: {
+            id_token_hint:            LOGOUT_ID_TOKEN_HINT,
+            post_logout_redirect_uri: LOGOUT_POST_LOGOUT_REDIRECT_URI,
+            client_id:                LOGOUT_CLIENT_ID,
+        },
+        redirects: 0,
+        jar:       jar,
+        headers:   { 'X-Tenant': TENANT, 'X-Forwarded-Proto': 'https' },
+    });
+    const ms = Date.now() - t0;
+
+    ssoLogoutResponse.add(ms);
+
+    // 3xx (invalidación completada) o 400 (rechazo estándar ES-01 sin
+    // id_token_hint real) son ambos resultados válidos para esta medición de
+    // latencia — solo un 5xx indica un fallo real del pipeline.
+    const ok = res.status < 500;
+    check(res, { 'logout: no 5xx': () => ok });
+    if (!ok) ssoErrors.add(1);
+
+    sleep(0.3);
 }
 
 // ── Compatibilidad con ejecución directa ───────────────────────────────────
