@@ -4,6 +4,7 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -43,6 +44,8 @@ import java.util.*;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
+import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRED;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
@@ -105,7 +108,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // Case 1: Standard OIDC authorization request without a signed JWT object
         if (requestUri == null && request.getParameter("request") == null) {
             log.info("Processing an authorization request without a signed JWT object.");
-            tryReuseSsoSession(request, authorizationContext, clientId);
+            ReuseSsoSessionWorkflow.Result ssoResult = tryReuseSsoSession(request, authorizationContext, clientId);
+            if (ssoResult != null) {
+                handlePromptNoneResult(ssoResult.status(), authorizationContext);
+            }
             return handleOIDCStandardRequest(authorizationContext, registeredClient);
         }
 
@@ -113,25 +119,36 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         return handleFAPIRequest(authorizationContext, request, registeredClient);
     }
 
-    /**
-     * When prompt=none is present, runs the SSO session reuse workflow.
-     * The workflow validates the session, touches last_used_at and emits audit events.
-     * The result is intentionally ignored here: all outcomes (ALLOWED, LOGIN_REQUIRED,
-     * INTERACTION_REQUIRED) fall through to the standard OID4VP authorization flow so
-     * the caller always gets a redirect response.
-     */
-    private void tryReuseSsoSession(HttpServletRequest request,
-                                    AuthorizationContext ctx,
-                                    String clientId) {
+    private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
+                                                              AuthorizationContext ctx,
+                                                              String clientId) {
         if (!"none".equals(request.getParameter("prompt"))) {
-            return;
+            return null;
         }
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
-            return;
+            return null;
         }
         String cookieValue = extractCookieValue(request, SSO_COOKIE_PREFIX + tenant);
-        reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+    }
+
+    private void handlePromptNoneResult(ReuseSsoSessionWorkflow.Result.Status status,
+                                        AuthorizationContext ctx) {
+        switch (status) {
+            case LOGIN_REQUIRED -> throwPromptNoneOidcError(LOGIN_REQUIRED, ctx);
+            case INTERACTION_REQUIRED -> throwPromptNoneOidcError(INTERACTION_REQUIRED, ctx);
+            default -> { /* ALLOWED: fall through to standard flow */ }
+        }
+    }
+
+    private void throwPromptNoneOidcError(String errorCode, AuthorizationContext ctx) {
+        String location = ctx.redirectUri() + "?error=" + errorCode
+                + (ctx.state() != null && !ctx.state().isBlank()
+                   ? "&state=" + URLEncoder.encode(ctx.state(), StandardCharsets.UTF_8)
+                   : "");
+        OAuth2Error error = new OAuth2Error(errorCode, null, location);
+        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {
@@ -199,11 +216,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
-    /**
-     * Throws the redirect exception that Spring Authorization Server uses to redirect the user
-     * to the login/QR page with the openid4vp URL.
-     * If the client has a custom loginPageUri, redirect there instead of the default MFE Login.
-     */
     private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,
                                                        RegisteredClient registeredClient, String portalUrl,
                                                        String contextPath) {
@@ -310,7 +322,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 ? jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI)
                 : redirectUri;
 
-        if (!registeredClient.getRedirectUris().contains(jwtRedirectUri)) {
+        String normalizedJwtRedirectUri = OriginNormalizer.normalizeUri(jwtRedirectUri);
+        boolean isRedirectUriRegistered = normalizedJwtRedirectUri != null && registeredClient.getRedirectUris().stream()
+                .anyMatch(registered -> normalizedJwtRedirectUri.equals(OriginNormalizer.normalizeUri(registered)));
+
+        if (!isRedirectUriRegistered) {
             throwInvalidClientAuthenticationException("The redirect_uri does not match any of the registered client's redirect_uris.",
                     registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }

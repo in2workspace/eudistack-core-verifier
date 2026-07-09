@@ -6,6 +6,7 @@ import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.slf4j.Logger;
@@ -13,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -23,7 +23,6 @@ public class EstablishSsoSessionWorkflow {
 
     private static final Logger log =
             LoggerFactory.getLogger(EstablishSsoSessionWorkflow.class);
-    private static final Duration DEFAULT_SESSION_TTL = Duration.ofHours(8);
 
     private final TenantSsoConfigPort tenantSsoConfigPort;
     private final SsoSessionRepositoryPort sessionRepositoryPort;
@@ -67,6 +66,8 @@ public class EstablishSsoSessionWorkflow {
             throw new SsoConfigInconsistentException("SSO disabled for tenant " + command.tenant());
         }
 
+        SsoSessionTtl ttl = tenantSsoConfigPort.resolveTtl(command.tenant());
+
         String holderHash = hashingService.sha256(command.sub());
 
         Instant now = Instant.now(clock);
@@ -78,7 +79,7 @@ public class EstablishSsoSessionWorkflow {
             session = SsoSession.establish(
                     command.tenant(),
                     holderHash,
-                    DEFAULT_SESSION_TTL
+                    ttl.absolute()
             );
 
             sessionRepositoryPort.save(session);

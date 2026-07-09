@@ -31,6 +31,8 @@ public class SecurityConfig {
                         .requestMatchers("/oid4vp/auth-response").permitAll()
                         .requestMatchers("/oidc/did/*").permitAll()
                         .requestMatchers("/api/login/**").permitAll()
+                        // AD-3 / [F2]: solo ROLE_ADMIN puede gestionar el catálogo SSO por tenant
+                        .requestMatchers("/tenant/sso/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .csrf(csrf -> csrf

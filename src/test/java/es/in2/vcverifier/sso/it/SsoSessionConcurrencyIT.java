@@ -2,6 +2,7 @@ package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
@@ -48,6 +49,8 @@ class SsoSessionConcurrencyIT {
 
             when(tenantSsoConfigPort.getByTenant(tenant))
                     .thenReturn(Optional.of(config));
+            when(tenantSsoConfigPort.resolveTtl(anyString()))
+                    .thenReturn(SsoSessionTtl.systemDefault());
 
             when(hashingService.sha256(anyString()))
                     .thenReturn("hashed-value");

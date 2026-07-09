@@ -1,12 +1,14 @@
 package es.in2.vcverifier.sso.domain.model;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.ToString;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
-@Data
+@Getter
+@ToString
 public class SsoSession {
 
     private final SsoSessionId id;
@@ -104,20 +106,20 @@ public class SsoSession {
     }
 
     /**
-     * Regla combinada de validez SSO:
-     * - no expirado por tiempo absoluto
-     * - no excedido idle TTL
+     * Criterio combinado de validez SSO:
+     * {@code now < expiresAt  AND  now − lastUsedAt ≤ idleTtl}
+     * <p>
+     * {@code expiresAt} y {@code lastUsedAt} son invariantes del aggregate (introducidos en US-02):
+     * {@code expiresAt} nunca es null ni anterior a {@code establishedAt};
+     * {@code lastUsedAt} nunca es null (se inicializa en {@code establish()} y se actualiza con {@code touch()}).
      */
     public boolean isValid(Instant now, Duration idleTtl) {
 
-        if (idleTtl == null) {
-            throw new IllegalArgumentException("idleTtl cannot be null");
-        }
+        Objects.requireNonNull(now,     "now cannot be null");
+        Objects.requireNonNull(idleTtl, "idleTtl cannot be null");
 
         boolean notExpired = now.isBefore(expiresAt);
-
-        boolean idleValid = lastUsedAt != null &&
-                Duration.between(lastUsedAt, now).compareTo(idleTtl) <= 0;
+        boolean idleValid  = Duration.between(lastUsedAt, now).compareTo(idleTtl) <= 0;
 
         return notExpired && idleValid;
     }

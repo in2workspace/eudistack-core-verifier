@@ -10,6 +10,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
@@ -18,6 +19,12 @@ public class SsoAuditAdapter implements SsoAuditPort {
 
     @Override
     public void publish(SsoAuditEvent event) {
+        // NFR-O-01: eventos de catálogo emiten formato CATALOG_CHANGE con campo operation
+        if (event.getEventType() == SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_ADDED
+                || event.getEventType() == SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_REMOVED) {
+            emitCatalogChangeEvent(event);
+            return;
+        }
 
         Map<String, Object> logEvent = new HashMap<>();
 
@@ -33,6 +40,25 @@ public class SsoAuditAdapter implements SsoAuditPort {
 
         // NFR-S-547-02: holderHash prefix for traceability (not a session id)
         logEvent.put("holderHashPrefix", prefix(event.getHolderHash()));
+
+        log.info("SSO_AUDIT_EVENT {}", logEvent);
+    }
+
+    /**
+     * NFR-O-01: formato estructurado para cambios de catálogo SSO.
+     * eventType=CATALOG_CHANGE, operation=ADD|REMOVE, tenant, clientId, timestamp.
+     */
+    private void emitCatalogChangeEvent(SsoAuditEvent event) {
+        String operation = event.getEventType() == SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_ADDED
+                ? "ADD"
+                : "REMOVE";
+
+        Map<String, Object> logEvent = new LinkedHashMap<>();
+        logEvent.put("eventType", "CATALOG_CHANGE");
+        logEvent.put("tenant",    event.getTenant());
+        logEvent.put("operation", operation);
+        logEvent.put("clientId",  event.getClientId());
+        logEvent.put("timestamp", event.getOccurredAt());
 
         log.info("SSO_AUDIT_EVENT {}", logEvent);
     }

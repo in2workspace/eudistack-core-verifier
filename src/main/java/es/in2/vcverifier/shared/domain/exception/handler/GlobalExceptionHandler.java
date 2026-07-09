@@ -11,10 +11,12 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.NoSuchElementException;
 
@@ -224,6 +226,20 @@ public class GlobalExceptionHandler {
                 "Validation error",
                 HttpStatus.BAD_REQUEST,
                 "Request validation failed");
+    }
+
+    // Propagates the HTTP status declared in ResponseStatusException (e.g., 401, 403)
+    // so the catch-all below does not swallow it as 500.
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<GlobalErrorMessage> handleResponseStatusException(
+            ResponseStatusException ex, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+        GlobalErrorMessage body = errors.handleSafe(ex, request,
+                "access_error",
+                status.getReasonPhrase(),
+                status,
+                ex.getReason() != null ? ex.getReason() : "Access error");
+        return ResponseEntity.status(status).body(body);
     }
 
     // SEC-13: Catch-all handler — never leaks internal details

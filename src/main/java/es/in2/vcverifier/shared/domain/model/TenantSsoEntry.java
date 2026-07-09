@@ -1,17 +1,26 @@
 package es.in2.vcverifier.shared.domain.model;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 import java.util.List;
 
 /**
- * Domain model (port) for SSO tenant configuration entry.
- * Represents a single tenant's SSO settings from YAML.
+ * DTO de deserialización YAML para la configuración SSO de un tenant.
+ * Todos los campos son opcionales en YAML excepto {@code tenant}.
+ * {@code ttlAbsolute} y {@code ttlIdle} se expresan en formato ISO-8601
+ * (p. ej. {@code "PT8H"}, {@code "PT30M"}); un valor ausente o mal formado
+ * se trata como ausente y el adaptador aplica el default del sistema.
+ * {@code eligibleClients} ausente en YAML desserializa a null; el constructor
+ * compacto lo normaliza a lista vacía (lista nunca null, US-05).
  */
 public record TenantSsoEntry(
         String tenant,
         String rootDomain,
         boolean ssoEnabled,
-        List<String> eligibleClients
-) {}
+        List<String> eligibleClients,
+        String ttlAbsolute,
+        String ttlIdle
+) {
+    public TenantSsoEntry {
+        eligibleClients = eligibleClients != null ? eligibleClients : List.of();
+    }
+}
 

@@ -23,8 +23,6 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class CustomErrorResponseHandlerTest {
 
-    private static final String VERIFIER_URL = "https://verifier.example.com/verifier";
-
     @Mock
     private HttpServletRequest request;
 
@@ -41,7 +39,7 @@ class CustomErrorResponseHandlerTest {
     @BeforeEach
     void setUp() {
         allowedClientsOrigins.clear();
-        lenient().when(backendConfig.getUrl()).thenReturn(VERIFIER_URL);
+        lenient().when(backendConfig.getTrustedVerifierOrigins()).thenReturn(Set.of("https://verifier.example.com"));
         customErrorResponseHandler = new CustomErrorResponseHandler(allowedClientsOrigins, backendConfig);
     }
 
@@ -206,5 +204,76 @@ class CustomErrorResponseHandlerTest {
 
         verify(response, never()).sendRedirect(anyString());
         verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Authentication failed");
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithMultipleTrustedVerifierOrigins_ShouldRedirect() throws IOException {
+        when(backendConfig.getTrustedVerifierOrigins())
+                .thenReturn(Set.of("https://verifier.example.com", "https://kpmg.eudistack.net"));
+        String redirectUri = "https://kpmg.eudistack.net/login?state=abc";
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithVerifierOriginDifferentCaseAndDefaultPort_ShouldRedirect() throws IOException {
+        String redirectUri = "https://Verifier.Example.com:443/login?state=abc";
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithAllowedClientOriginDifferentCase_ShouldRedirect() throws IOException {
+        allowedClientsOrigins.add("https://external-rp.example.com");
+        String redirectUri = "https://External-RP.Example.com/login";
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
+    }
+
+    @Test
+    void testOnAuthenticationFailure_WithUppercaseHttpsScheme_ShouldRedirect() throws IOException {
+        String redirectUri = "HTTPS://verifier.example.com/login?state=abc";
+
+        OAuth2Error oauth2Error = new OAuth2Error(
+                "required_external_user_authentication",
+                "Redirection required",
+                redirectUri
+        );
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        verify(response).sendRedirect(redirectUri);
+        verify(response, never()).sendError(anyInt(), anyString());
     }
 }
