@@ -301,7 +301,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null
+                null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -334,7 +334,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://main-app.example.com"),
                 true, null, null,
-                null, null, null
+                null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -366,7 +366,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, "HTTPS://custom-login.example.com/auth", null
+                null, "HTTPS://custom-login.example.com/auth", null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
