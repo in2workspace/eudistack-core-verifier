@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
@@ -25,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +49,9 @@ class TokenGenerationWorkflowTest {
     @Mock private ClaimsExtractor claimsExtractor;
     @Mock private AccessTokenBuilder accessTokenBuilder;
     @Mock private SchemaProfileRegistry schemaProfileRegistry;
+    @Mock private SsoSessionRepositoryPort ssoSessionRepositoryPort;
+    @Mock private TenantSsoConfigPort tenantSsoConfigPort;
+    @Mock private HashingService hashingService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private TokenGenerationWorkflow workflow;
@@ -55,7 +64,10 @@ class TokenGenerationWorkflowTest {
                 objectMapper,
                 List.of(claimsExtractor),
                 accessTokenBuilder,
-                schemaProfileRegistry);
+                schemaProfileRegistry,
+                ssoSessionRepositoryPort,
+                tenantSsoConfigPort,
+                hashingService);
     }
 
     private ObjectNode buildW3cCredential(String credentialType) {
@@ -229,6 +241,102 @@ class TokenGenerationWorkflowTest {
             assertThatThrownBy(() -> workflow.issueAccessToken(credential, "aud", Map.of(), false, "altia"))
                     .isInstanceOf(OAuth2AuthenticationException.class);
             verifyNoInteractions(accessTokenBuilder);
+        }
+    }
+
+    @Nested
+    @DisplayName("buildIdToken() — sid claim stamping (US-06 AD-6 / ADR-109)")
+    class SidStampingTests {
+
+        private static final String TENANT = "altia";
+        private static final String SUBJECT = "did:key:z6MkSubject";
+        private static final String HOLDER_HASH = "hash-of-subject";
+
+        private ExtractedClaims baseClaims() {
+            return ExtractedClaims.builder()
+                    .subject(SUBJECT)
+                    .scope("openid learcredential")
+                    .idTokenClaims(Map.of())
+                    .accessTokenClaims(Map.of())
+                    .build();
+        }
+
+        private void stubHappyPathUpTo(ObjectNode credential, ExtractedClaims claims, String credentialType) {
+            when(claimsExtractor.supports(credentialType)).thenReturn(true);
+            when(claimsExtractor.extract(credential)).thenReturn(claims);
+            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(schemaProfileRegistry.findByConfigId(credentialType)).thenReturn(Optional.of(
+                    schemaProfile(credentialType, true, "authorization_code")));
+            when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt");
+        }
+
+        /** Captura el payload JSON (sin firmar) pasado a jwtService.issueJWT(...) y lo parsea. */
+        private com.fasterxml.jackson.databind.JsonNode capturedIdTokenPayload() {
+            ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+            verify(jwtService).issueJWT(payloadCaptor.capture());
+            try {
+                return objectMapper.readTree(payloadCaptor.getValue());
+            } catch (Exception e) {
+                throw new AssertionError("id_token payload no es JSON válido", e);
+            }
+        }
+
+        @Test
+        @DisplayName("stamps sid when tenant SSO enabled and session active")
+        void buildIdToken_stampsSidWhenTenantSsoEnabledAndSessionActive() {
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
+            stubHappyPathUpTo(credential, baseClaims(), "learcredential.employee.w3c.4");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
+
+            TenantSsoConfig config = mock(TenantSsoConfig.class);
+            when(config.ssoEnabled()).thenReturn(true);
+            when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config));
+            when(hashingService.sha256(SUBJECT)).thenReturn(HOLDER_HASH);
+
+            SsoSession session = SsoSession.establish(TENANT, HOLDER_HASH, Duration.ofHours(1));
+            when(ssoSessionRepositoryPort.findActiveByTenantAndHolder(TENANT, HOLDER_HASH))
+                    .thenReturn(Optional.of(session));
+
+            workflow.issueAccessToken(credential, "did:key:client", Map.of(), true, TENANT);
+
+            assertThat(capturedIdTokenPayload().get("sid").asText())
+                    .isEqualTo(session.getId().getValue());
+        }
+
+        @Test
+        @DisplayName("omits sid when no active SSO session exists")
+        void buildIdToken_omitsSidWhenNoActiveSession() {
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
+            stubHappyPathUpTo(credential, baseClaims(), "learcredential.employee.w3c.4");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
+
+            TenantSsoConfig config = mock(TenantSsoConfig.class);
+            when(config.ssoEnabled()).thenReturn(true);
+            when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config));
+            when(hashingService.sha256(SUBJECT)).thenReturn(HOLDER_HASH);
+            when(ssoSessionRepositoryPort.findActiveByTenantAndHolder(TENANT, HOLDER_HASH))
+                    .thenReturn(Optional.empty());
+
+            workflow.issueAccessToken(credential, "did:key:client", Map.of(), true, TENANT);
+
+            assertThat(capturedIdTokenPayload().has("sid")).isFalse();
+        }
+
+        @Test
+        @DisplayName("omits sid when SSO is disabled for the tenant")
+        void buildIdToken_omitsSidWhenSsoDisabledForTenant() {
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
+            stubHappyPathUpTo(credential, baseClaims(), "learcredential.employee.w3c.4");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
+
+            TenantSsoConfig config = mock(TenantSsoConfig.class);
+            when(config.ssoEnabled()).thenReturn(false);
+            when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config));
+
+            workflow.issueAccessToken(credential, "did:key:client", Map.of(), true, TENANT);
+
+            assertThat(capturedIdTokenPayload().has("sid")).isFalse();
+            verifyNoInteractions(ssoSessionRepositoryPort, hashingService);
         }
     }
 }
