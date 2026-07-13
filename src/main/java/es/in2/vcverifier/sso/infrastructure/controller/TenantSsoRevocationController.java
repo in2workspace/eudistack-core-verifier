@@ -47,10 +47,15 @@ public class TenantSsoRevocationController {
 
     @ExceptionHandler(TenantRevocationException.class)
     public ResponseEntity<ProblemDetail> handleRevocationFailure(TenantRevocationException ex) {
-        log.error("event=sso_emergency_revoke_failed correlation_id={}", ex.getCorrelationId());
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ProblemDetail.forStatusAndDetail(
-                        HttpStatus.INTERNAL_SERVER_ERROR, "SSO emergency revoke failed"));
+        log.error("event=sso_emergency_revoke_failed correlation_id={}", ex.getCorrelationId(), ex);
+
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR, "SSO emergency revoke failed");
+        if (ex.getCorrelationId() != null) {
+            pd.setProperty("correlation_id", ex.getCorrelationId());
+        }
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(pd);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
