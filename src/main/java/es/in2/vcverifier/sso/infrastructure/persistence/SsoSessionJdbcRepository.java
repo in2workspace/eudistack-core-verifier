@@ -396,8 +396,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     // =========================================================
 
     @Override
-    public int revokeAllByTenant(String tenantId) {
-        ensureTenantSafe(tenantId);
+    public int revokeAllByTenant(String tenant) {
+        ensureTenantSafe(tenant);
         checkCircuit();
 
         String sql = """
@@ -406,23 +406,29 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try (Connection c = dataSource.getConnection()) {
-
-            setTenantSearchPath(c, tenantId);
+            c.setAutoCommit(false);
+            setTenantSearchPath(c, tenant);
             setStatementTimeout(c);
 
             try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setString(1, tenantId);
-
-                int revoked = ps.executeUpdate();
-                log.info("event=sso_emergency_revoke_db tenant={} count_revoked={}", tenantId, revoked);
+                ps.setString(1, tenant);
+                int deleted = ps.executeUpdate();
+                c.commit();
                 recordSuccess();
-                return revoked;
+                log.info("Emergency revoke tenant={} count_revoked={}", tenant, deleted);
+                return deleted;
+            } catch (SQLException ex) {
+                c.rollback();
+                recordFailure();
+                throw new SsoSessionRepositoryException(
+                        "Failed to revoke all SSO sessions for tenant " + tenant, ex);
+            } finally {
+                c.setAutoCommit(true);
             }
-
-        } catch (SQLException e) {
+        } catch (SQLException ex) {
             recordFailure();
             throw new SsoSessionRepositoryException(
-                    "Failed to revoke SSO sessions for tenant " + tenantId, e);
+                    "Failed to revoke SSO sessions (connection error) for tenant " + tenant, ex);
         }
     }
 
