@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed - 2026-07-13
+
+- **`vc` claim in the access token is now always a nested JSON object**: previously `JwsAccessTokenBuilder` only emitted `vc` as a
+  JSON object when the credential's schema profile had `wrap_vc_in_access_token: true`; otherwise it emitted a **stringified**
+  (escaped) JSON. Since no schema profile in the codebase set that flag (it defaulted to `false`), **both legacy (`LEGACY_V1_1`) and
+  bumped (`BUMPED_V2_0`) credentials were emitted as a string** in practice — the object form only ever appeared in tests that set
+  the flag manually. The builder now serializes `vc` as an object unconditionally, so consumers never need a second `JSON.parse`.
+  **Breaking change** for relying parties that parsed the `vc` claim as a string.
+
+### Removed - 2026-07-13
+
+- **`wrap_vc_in_access_token` schema-profile flag removed**: it was a second, redundant legacy/bumped classifier (the authoritative
+  source is `verifier.dispatch.rules[].format` in `application.yaml`) whose only effect — the `vc` string-vs-object shape — no longer
+  exists now that `vc` is always an object. Removed from `SchemaProfile`, `ReaderResult`, `LocalSchemaProfileRegistry`, and the
+  profile JSON schema. It never influenced the `dome.legacy-read-enabled` / `bumped-read-enabled` sunset gating, which is driven
+  exclusively by the dispatch-rules catalog — gating behaviour is unchanged.
+- **`DispatchDecision` removed from `BuildContext`**: the token-build path only ever read `credentialConfigurationId` from it, so
+  `BuildContext` now carries that `String` directly. `TokenGenerationWorkflow` no longer fabricates a synthetic `DispatchDecision`
+  (its two `issueAccessToken` overloads are collapsed into one) and no longer depends on `SchemaProfileRegistry`. `DispatchDecision`
+  remains the return type of the dispatcher (`CredentialSchemaDispatcher`) and its OID4VP / M2M consumers.
+- **Dead `CredentialReader` layer removed**: `CredentialReader` (SPI), `LegacyCredentialReader`, `BumpedCredentialReader` and
+  `ReaderResult` were `@Component` beans that were never injected or invoked anywhere in production — the token-build path goes
+  straight from the dispatched credential to `JwsAccessTokenBuilder`. Removed together with their unit tests; the `dualformat`
+  flow tests were reworked to exercise the real dispatcher + token builder without the reader indirection.
+
 ## [3.2.1] - 2026-07-09
 
 ### Changed
