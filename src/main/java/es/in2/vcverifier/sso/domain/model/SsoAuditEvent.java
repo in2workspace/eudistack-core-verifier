@@ -21,6 +21,9 @@ public class SsoAuditEvent {
         SSO_REUSE_DENIED,
         SSO_CATALOG_CLIENT_ADDED,
         SSO_CATALOG_CLIENT_REMOVED,
+        SSO_SESSION_EXPIRED,
+        SSO_LOGOUT_INITIATED,
+        SSO_BACKCHANNEL_DELIVERED,
     }
 
     private final EventType eventType;
@@ -30,5 +33,18 @@ public class SsoAuditEvent {
     private final String outcome;
     private final String correlationId;
     private final Instant occurredAt;
+    private final String reason;
+
+    public SsoAuditEvent(
+            EventType eventType,
+            String tenant,
+            String clientId,
+            String holderHash,
+            String outcome,
+            String correlationId,
+            Instant occurredAt
+    ) {
+        this(eventType, tenant, clientId, holderHash, outcome, correlationId, occurredAt, null);
+    }
 
 }
