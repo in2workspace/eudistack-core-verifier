@@ -13,13 +13,8 @@ import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchRule;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
-import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
-import es.in2.vcverifier.verifier.domain.service.CredentialReader;
-import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
-import es.in2.vcverifier.verifier.infrastructure.adapter.dispatch.BumpedCredentialReader;
 import es.in2.vcverifier.verifier.infrastructure.adapter.dispatch.ContextAndTypeCredentialSchemaDispatcher;
-import es.in2.vcverifier.verifier.infrastructure.adapter.dispatch.LegacyCredentialReader;
 import es.in2.vcverifier.verifier.infrastructure.adapter.tokens.JwsAccessTokenBuilder;
 
 import java.io.IOException;
@@ -27,12 +22,9 @@ import java.text.ParseException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -43,15 +35,12 @@ final class DualFormatFlowTestSupport {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ContextAndTypeCredentialSchemaDispatcher dispatcher;
-    private final List<CredentialReader> readers;
     private final JwsAccessTokenBuilder accessTokenBuilder;
-    private final SchemaProfileRegistry schemaProfileRegistry;
 
     DualFormatFlowTestSupport() {
         TenantConfigPort tenantConfigPort = mock(TenantConfigPort.class);
         when(tenantConfigPort.getDomeConfig(anyString())).thenReturn(new TenantDomeConfig(true, true));
 
-        this.schemaProfileRegistry = mock(SchemaProfileRegistry.class);
         JWTService jwtService = mock(JWTService.class);
         when(jwtService.issueJWT(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -71,12 +60,7 @@ final class DualFormatFlowTestSupport {
                 new SimpleMeterRegistry()
         );
 
-        this.readers = List.of(
-                new LegacyCredentialReader(schemaProfileRegistry),
-                new BumpedCredentialReader(schemaProfileRegistry)
-        );
-
-        this.accessTokenBuilder = new JwsAccessTokenBuilder(jwtService, backendConfig, schemaProfileRegistry, MAPPER);
+        this.accessTokenBuilder = new JwsAccessTokenBuilder(jwtService, backendConfig, MAPPER);
     }
 
     JsonNode readFixture(String resourcePath) throws IOException {
@@ -85,35 +69,14 @@ final class DualFormatFlowTestSupport {
 
     FlowResult runFlow(JsonNode credential) throws ParseException {
         DispatchDecision decision = dispatcher.dispatch(credential);
-        SchemaProfile profile = schemaProfile(decision.credentialConfigurationId(), decision.format() == CredentialFormat.BUMPED_V2_0);
-        when(schemaProfileRegistry.findByConfigId(decision.credentialConfigurationId())).thenReturn(Optional.of(profile));
 
-        CredentialReader selectedReader = readers.stream()
-                .filter(reader -> reader.supports(decision.format()))
-                .findFirst()
-                .orElseThrow();
-
-        BuildContext readerContext = buildContext(credential, decision);
-        var readerResult = selectedReader.read(readerContext);
-
-        BuildContext tokenContext = new BuildContext(
-                readerResult.credential(),
-                decision,
-                readerContext.extractedClaims(),
-                readerContext.issueTime(),
-                readerContext.expirationTime(),
-                readerContext.audience(),
-                readerContext.tenant(),
-                readerContext.additionalParameters(),
-                readerContext.generateIdToken()
-        );
-
+        BuildContext tokenContext = buildContext(credential, decision.credentialConfigurationId());
         String jwtPayload = accessTokenBuilder.build(tokenContext);
         JWTClaimsSet claimsSet = JWTClaimsSet.parse(jwtPayload);
-        return new FlowResult(decision, selectedReader, claimsSet);
+        return new FlowResult(decision, claimsSet);
     }
 
-    void assertHappyPath(FlowResult result, String expectedCredentialType, CredentialFormat expectedFormat, boolean expectedVcObject) {
+    void assertHappyPath(FlowResult result, String expectedCredentialType, CredentialFormat expectedFormat) {
         assertEquals(expectedCredentialType, result.dispatchDecision().credentialConfigurationId());
         assertEquals(expectedFormat, result.dispatchDecision().format());
         assertTrue(result.dispatchDecision().permitted());
@@ -123,22 +86,14 @@ final class DualFormatFlowTestSupport {
         assertEquals(expectedCredentialType, String.valueOf(result.claimsSet().getClaim("credential_type")));
         assertNotNull(result.claimsSet().getClaim("vc"));
 
-        if (expectedVcObject) {
-            assertTrue(result.claimsSet().getClaim("vc") instanceof Map);
-        } else {
-            assertTrue(result.claimsSet().getClaim("vc") instanceof String);
-        }
+        assertTrue(result.claimsSet().getClaim("vc") instanceof Map);
     }
 
-    static void assertReaderClass(FlowResult result, Class<?> expectedReaderType) {
-        assertSame(expectedReaderType, result.reader().getClass());
-    }
-
-    private BuildContext buildContext(JsonNode credential, DispatchDecision decision) {
+    private BuildContext buildContext(JsonNode credential, String credentialConfigurationId) {
         Instant issue = Instant.parse("2026-05-26T10:00:00Z");
         return new BuildContext(
                 credential,
-                decision,
+                credentialConfigurationId,
                 ExtractedClaims.builder()
                         .subject("did:key:z6Mktestsubject")
                         .scope("openid")
@@ -153,13 +108,8 @@ final class DualFormatFlowTestSupport {
         );
     }
 
-    private SchemaProfile schemaProfile(String configId, boolean wrap) {
-        return new SchemaProfile(configId, "openid", null, null, Set.of("authorization_code", "client_credentials"), false, null, null, wrap);
-    }
-
     record FlowResult(
             DispatchDecision dispatchDecision,
-            CredentialReader reader,
             JWTClaimsSet claimsSet
     ) {
     }

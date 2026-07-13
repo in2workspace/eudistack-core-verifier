@@ -19,32 +19,32 @@
 #                     Example: "PT15M"
 tenants:
   - tenant: "sandbox"
-    rootDomain: "sandbox.example.com"
+    rootDomain: "sandbox.stg.eudistack.net"
     ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-sandbox"
 
   - tenant: "cgcom"
-    rootDomain: "cgcom.example.com"
+    rootDomain: "cgcom.stg.eudistack.net"
     ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-cgcom"
 
   - tenant: "kpmg"
-    rootDomain: "kpmg.example.com"
+    rootDomain: "kpmg.stg.eudistack.net"
     ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-kpmg"
 
   - tenant: "dome"
-    rootDomain: "dome.example.com"
+    rootDomain: "dome-marketplace-lcl.org"
     ssoEnabled: true
     eligibleClients:
       - "vc-auth-client-dome"
       - "vc-auth-client-dome-custom"
 
   - tenant: "platform"
-    rootDomain: "platform.example.com"
+    rootDomain: "platform.stg.eudistack.net"
     ssoEnabled: false
     eligibleClients:
       - "vc-auth-client-platform"

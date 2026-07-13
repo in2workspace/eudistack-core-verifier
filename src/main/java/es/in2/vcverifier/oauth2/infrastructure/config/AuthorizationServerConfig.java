@@ -12,10 +12,13 @@ import es.in2.vcverifier.oauth2.application.workflow.ClientCredentialsValidation
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
+import es.in2.vcverifier.oauth2.domain.port.OAuth2M2MAuditPort;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthenticationProvider;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomTokenRequestConverter;
+import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationConverter;
+import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationProvider;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -36,6 +39,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.authentication.JwtClientAssertionAuthenticationProvider;
+import org.springframework.security.oauth2.server.authorization.authentication.JwtClientAssertionDecoderFactory;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
@@ -66,6 +71,7 @@ public class AuthorizationServerConfig {
     private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
     private final Set<String> allowedClientsOrigins;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
+    private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -75,6 +81,15 @@ public class AuthorizationServerConfig {
         http
                 .cors(cors -> cors.configurationSource(registeredClientsCorsConfig.registeredClientsCorsConfigurationSource()))
                 .getConfigurer(OAuth2AuthorizationServerConfigurer.class)
+                .clientAuthentication(clientAuthentication ->
+                        clientAuthentication
+                                // Lets an unregistered M2M client through this step so the token-endpoint
+                                // pipeline (CustomTokenRequestConverter / CustomAuthenticationProvider) can
+                                // validate its credential and derive its real identity/tenant. Pre-registered
+                                // clients are untouched — Spring's built-in converters/providers still handle them.
+                                .authenticationConverter(new UnregisteredM2MClientAuthenticationConverter(registeredClientRepository))
+                                .authenticationProvider(new UnregisteredM2MClientAuthenticationProvider())
+                )
                 .authorizationEndpoint(authorizationEndpoint ->
                         authorizationEndpoint
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
@@ -85,9 +100,21 @@ public class AuthorizationServerConfig {
                 )
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
-                                .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore))
-                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry))
+                                .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore, oAuth2M2MAuditPort))
+                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry, oAuth2M2MAuditPort))
                 )
+                // Override the client_assertion aud validation: the request-derived issuer includes the
+                // /verifier context-path, but legacy clients sign the assertion with the clean public URL.
+                // The custom decoder factory accepts the audience with and without the context-path.
+                .clientAuthentication(clientAuthentication ->
+                        clientAuthentication.authenticationProviders(authProviders ->
+                                authProviders.forEach(authProvider -> {
+                                    if (authProvider instanceof JwtClientAssertionAuthenticationProvider jwtClientAssertionProvider) {
+                                        JwtClientAssertionDecoderFactory decoderFactory = new JwtClientAssertionDecoderFactory();
+                                        decoderFactory.setJwtValidatorFactory(new ClientAssertionJwtValidatorFactory());
+                                        jwtClientAssertionProvider.setJwtDecoderFactory(decoderFactory);
+                                    }
+                                })))
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
 
         return http.build();

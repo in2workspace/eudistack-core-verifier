@@ -8,6 +8,11 @@ import es.in2.vcverifier.shared.crypto.JWTService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -56,14 +61,45 @@ public class ClientAssertionValidationServiceImpl implements ClientAssertionVali
     private boolean validateAudience(Payload payload) {
         log.debug("ClientAssertionValidationServiceImpl -- validateAudience -- Validating 'aud' (audience) claim against expected audience");
         String aud = jwtService.extractClaimFromPayload(payload, "aud");
-        String expectedAudience = backendConfig.getUrl();
+        Set<String> expectedAudiences = buildExpectedAudiences();
 
-        if (!aud.equals(expectedAudience)) {
-            log.error("VpValidationServiceImpl -- validateAudience -- The 'aud' (audience) claim does not match the expected audience.");
+        if (aud == null || !expectedAudiences.contains(aud)) {
+            log.error("ClientAssertionValidation -- validateAudience -- The 'aud' (audience) claim does not match the expected audience. received={}, expected={}", aud, expectedAudiences);
             return false;
         }
         log.info("ClientAssertionValidation -- 'aud' (audience) matches expected audience");
         return true;
+    }
+
+    /**
+     * Accepts the canonical verifier URL both WITH the servlet context-path (e.g. .../verifier)
+     * and WITHOUT it (the clean public URL legacy clients point at). This mirrors the tolerance
+     * applied to the authorization_code path so M2M clients that never changed their URL keep
+     * working after the /verifier context-path was introduced.
+     */
+    private Set<String> buildExpectedAudiences() {
+        Set<String> audiences = new LinkedHashSet<>();
+        String canonical = backendConfig.getUrl();
+        if (canonical == null || canonical.isBlank()) {
+            return audiences;
+        }
+        audiences.add(canonical);
+
+        String contextPath = currentContextPath();
+        if (!contextPath.isEmpty() && canonical.endsWith(contextPath)) {
+            audiences.add(canonical.substring(0, canonical.length() - contextPath.length()));
+        }
+        return audiences;
+    }
+
+    private String currentContextPath() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
+            String contextPath = attrs.getRequest().getContextPath();
+            if (contextPath != null) {
+                return contextPath;
+            }
+        }
+        return "";
     }
 
     private boolean validateJti(Payload payload) {
