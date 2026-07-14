@@ -1,4 +1,4 @@
-package es.in2.vcverifier.sso.infrastructure.web;
+package es.in2.vcverifier.sso.infrastructure.controller;
 
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.sso.domain.model.SsoTenantMetrics;
