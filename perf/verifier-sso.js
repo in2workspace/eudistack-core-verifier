@@ -10,116 +10,114 @@ import { Trend, Counter } from 'k6/metrics';
  * NFR-P-550-01  verifier_sso_catalog_hit_duration_ms         p95 < 1000 ms
  *               verifier_sso_catalog_miss_duration_ms        p95 < 1000 ms
  *               verifier_sso_catalog_check_overhead_ms       p95 < 20 ms
- * NFR-O-552-01  (cobertura enum EventType ↔ tests — verificada en JUnit, no medible por k6)
+ * NFR-O-552-01  (enum EventType ↔ tests coverage — verified in JUnit, not measurable by k6)
  * NFR-O-552-02  verifier_sso_reuse_with_observability_ms     p95 < 1000 ms
  *
- * NFR-O-552-02 (US-07) — La emisión de auditoría (SSO_SESSION_REUSED vía SsoAuditPort)
- * y de métricas (verifier_sso_reuse_total + verifier_sso_oid4vp_avoided_total vía
- * SsoMetricsPort) en el flujo de reutilización prompt=none es SÍNCRONA best-effort
- * (AD-1): un log.info estructurado + dos Counter.increment(), apoyados en el async
- * appender de la plataforma. Su coste debe ser despreciable frente al presupuesto
- * total NFR-P-01 (< 1 s p95). El escenario (5) reuseObservabilityOverhead ejercita el
- * camino de reuso exitoso — el único que emite auditoría + métricas — y verifica que el
- * p95 se mantiene bajo NFR-P-01; un p95 cercano al de reuseThrottled (mismo camino sin
- * carga extra medible) confirma que la instrumentación no está en la ruta crítica.
+ * NFR-O-552-02 (US-07) — Audit emission (SSO_SESSION_REUSED via SsoAuditPort) and metric
+ * emission (verifier_sso_reuse_total + verifier_sso_oid4vp_avoided_total via SsoMetricsPort)
+ * on the prompt=none reuse flow are SYNCHRONOUS best-effort (AD-1): one structured log.info +
+ * two Counter.increment(), backed by the platform async appender. Their cost must be negligible
+ * against the total NFR-P-01 budget (< 1 s p95). Scenario (5) reuseObservabilityOverhead
+ * exercises the successful reuse path — the only one that emits audit + metrics — and verifies
+ * the p95 stays under NFR-P-01; a p95 close to reuseThrottled (same path, no measurable extra
+ * load) confirms the instrumentation is not on the critical path.
  *
- * R-1 §3.7.2 — El UPDATE de last_used_at NO debe afectar la latencia p95 del
- * flujo de reutilización SSO (prompt=none). El throttle de 1 update/min
- * (THROTTLE_INTERVAL en ReuseSsoSessionWorkflowImpl) mitiga el riesgo:
- *   · Escenario reuseThrottled   → solicitudes rápidas: touch suprimido por throttle.
- *   · Escenario idleTouchOverhead → 1 req / 70 s: throttle siempre abierto,
- *     CompletableFuture.runAsync(updateLastUsedAt) se dispara en cada request.
- * Si p95(touch_active) ≈ p95(throttled) se verifica que el async dispatch
- * (fire-and-forget) no añade overhead medible al camino de respuesta.
+ * R-1 §3.7.2 — The last_used_at UPDATE MUST NOT affect the p95 latency of the SSO reuse flow
+ * (prompt=none). The 1-update/min throttle (THROTTLE_INTERVAL in ReuseSsoSessionWorkflowImpl)
+ * mitigates the risk:
+ *   · reuseThrottled scenario   → fast requests: touch suppressed by the throttle.
+ *   · idleTouchOverhead scenario → 1 req / 70 s: throttle always open,
+ *     CompletableFuture.runAsync(updateLastUsedAt) fires on every request.
+ * If p95(touch_active) ≈ p95(throttled) it is verified that the async dispatch
+ * (fire-and-forget) adds no measurable overhead to the response path.
  *
- * NFR-P-550-01 — El chequeo de catálogo SSO (TenantSsoCatalog.contains) NO debe
- * degradar el flujo prompt=none. El catálogo se resuelve desde
- * AtomicReference<Map<String, TenantSsoConfig>> en memoria — cero I/O en el camino
- * caliente. El overhead es puro AtomicReference.get() + Map.get() + Set.contains(),
- * orden nanosegundos, por debajo del umbral de resolución HTTP de k6 (~1 ms).
- *   · Escenario reuseCatalogCheck (4): request "hit" (CATALOG_CLIENT_ID eligible)
- *     vs request "miss" (NON_CATALOG_CLIENT_ID no elegible) en la misma iteración.
- *     Si p95(hit) ≈ p95(miss) y p95(delta) < 20 ms → overhead despreciable (NFR-P-550-01).
- *     Ambos caminos deben respetar el presupuesto total NFR-P-01 < 1 s p95.
+ * NFR-P-550-01 — The SSO catalog check (TenantSsoCatalog.contains) MUST NOT degrade the
+ * prompt=none flow. The catalog is resolved from an in-memory
+ * AtomicReference<Map<String, TenantSsoConfig>> — zero I/O on the hot path. The overhead is a
+ * pure AtomicReference.get() + Map.get() + Set.contains(), on the order of nanoseconds, below
+ * k6's HTTP resolution threshold (~1 ms).
+ *   · reuseCatalogCheck scenario (4): "hit" request (CATALOG_CLIENT_ID eligible)
+ *     vs "miss" request (NON_CATALOG_CLIENT_ID not eligible) in the same iteration.
+ *     If p95(hit) ≈ p95(miss) and p95(delta) < 20 ms → negligible overhead (NFR-P-550-01).
+ *     Both paths must respect the total NFR-P-01 budget < 1 s p95.
  *
- * Variables de entorno:
- *   BASE_URL              URL raíz del verifier          (default: http://localhost:8082/verifier)
- *   TENANT                Slug del tenant SSO             (default: sandbox)
- *   CLIENT_ID             client_id OIDC base             (default: vc-auth-client-sandbox)
- *   REDIRECT_URI          redirect_uri registrada         (default: https://localhost/callback)
- *   SSO_STATE             state param para establish      (default: test-state)
- *   SSO_VP_TOKEN          vp_token para establish         (default: dummy-vp-token)
- *   SSO_SESSION_ID        ID de sesión pre-establecida    (default: stub-session)
- *                         Si se proporciona, los escenarios de reuse usarán una
- *                         sesión real y llegarán al código de touch idle y catalog.
- *                         Sin él, el flujo termina en LOGIN_REQUIRED (sesión no
- *                         encontrada), válido para medir overhead del pipeline hasta
- *                         ese punto, pero el catalog check NO se alcanza (AD-2 orden).
- *   CATALOG_CLIENT_ID     client_id configurado como elegible en el catálogo SSO del
- *                         tenant. Debe estar en eligible_clients del YAML de config.
- *                         (default: igual que CLIENT_ID)
- *   NON_CATALOG_CLIENT_ID client_id ausente del catálogo SSO del tenant.
+ * Environment variables:
+ *   BASE_URL              verifier root URL              (default: http://localhost:8082/verifier)
+ *   TENANT                SSO tenant slug                 (default: sandbox)
+ *   CLIENT_ID             base OIDC client_id             (default: vc-auth-client-sandbox)
+ *   REDIRECT_URI          registered redirect_uri         (default: https://localhost/callback)
+ *   SSO_STATE             state param for establish       (default: test-state)
+ *   SSO_VP_TOKEN          vp_token for establish          (default: dummy-vp-token)
+ *   SSO_SESSION_ID        pre-established session ID       (default: stub-session)
+ *                         If provided, the reuse scenarios use a real session and reach the
+ *                         idle-touch and catalog code. Without it, the flow ends in
+ *                         LOGIN_REQUIRED (session not found), valid to measure the pipeline
+ *                         overhead up to that point, but the catalog check is NOT reached
+ *                         (AD-2 ordering).
+ *   CATALOG_CLIENT_ID     client_id configured as eligible in the tenant's SSO catalog. Must be
+ *                         in the config YAML's eligible_clients. (default: same as CLIENT_ID)
+ *   NON_CATALOG_CLIENT_ID client_id absent from the tenant's SSO catalog.
  *                         (default: non-eligible-client)
  */
 
-// ── Métricas ───────────────────────────────────────────────────────────────
+// ── Metrics ─────────────────────────────────────────────────────────────────
 
-// NFR-P-547-01: overhead de establecimiento SSO vs baseline OID4VP
+// NFR-P-547-01: SSO establishment overhead vs OID4VP baseline
 const ssoOverhead = new Trend('verifier_sso_establish_overhead_ms');
 
-// NFR-P-548-01: duración total del flujo de reuse (agrega ambos caminos)
+// NFR-P-548-01: total duration of the reuse flow (aggregates both paths)
 const ssoReuseDuration = new Trend('verifier_sso_reuse_duration_ms');
 
-// NFR-P-549-01: camino touch THROTTLED (solicitudes rápidas, <1 min entre sí)
+// NFR-P-549-01: THROTTLED touch path (fast requests, <1 min apart)
 const ssoTouchThrottled = new Trend('verifier_sso_reuse_touch_throttled_ms');
 
-// NFR-P-549-01: camino touch ACTIVO (>1 min entre solicitudes, throttle abierto)
+// NFR-P-549-01: ACTIVE touch path (>1 min between requests, throttle open)
 const ssoTouchActive = new Trend('verifier_sso_reuse_touch_active_ms');
 
-// NFR-P-550-01: duración del flujo prompt=none cuando el cliente ES elegible (catalog hit)
+// NFR-P-550-01: prompt=none flow duration when the client IS eligible (catalog hit)
 const ssoCatalogHitDuration = new Trend('verifier_sso_catalog_hit_duration_ms');
 
-// NFR-P-550-01: duración del flujo prompt=none cuando el cliente NO es elegible (catalog miss)
+// NFR-P-550-01: prompt=none flow duration when the client is NOT eligible (catalog miss)
 const ssoCatalogMissDuration = new Trend('verifier_sso_catalog_miss_duration_ms');
 
-// NFR-P-550-01: delta |hit_ms - miss_ms| por iteración — proxy del overhead observable del
-// chequeo de catálogo. Ambos caminos ejecutan el mismo AtomicReference.get() + Set.contains();
-// el delta refleja principalmente jitter de red/servidor, no el coste del catálogo.
-// p95 < 20 ms confirma que el overhead del catálogo es despreciable.
+// NFR-P-550-01: |hit_ms - miss_ms| delta per iteration — proxy for the observable overhead of
+// the catalog check. Both paths run the same AtomicReference.get() + Set.contains();
+// the delta mainly reflects network/server jitter, not the catalog cost.
+// p95 < 20 ms confirms the catalog overhead is negligible.
 const ssoCatalogCheckOverhead = new Trend('verifier_sso_catalog_check_overhead_ms');
 
-// NFR-O-552-02 (US-07): duración del flujo de reuse prompt=none INCLUYENDO la emisión
-// síncrona de auditoría (SSO_SESSION_REUSED) + métricas (reuse_total, oid4vp_avoided_total).
-// Debe mantenerse bajo el presupuesto total NFR-P-01 (< 1 s p95).
+// NFR-O-552-02 (US-07): prompt=none reuse flow duration INCLUDING the synchronous emission
+// of audit (SSO_SESSION_REUSED) + metrics (reuse_total, oid4vp_avoided_total).
+// Must stay under the total NFR-P-01 budget (< 1 s p95).
 const ssoReuseObservability = new Trend('verifier_sso_reuse_with_observability_ms');
 
 const ssoErrors = new Counter('verifier_sso_errors');
 
-// ── Configuración de entorno ───────────────────────────────────────────────
+// ── Environment configuration ────────────────────────────────────────────────
 
 const BASE_URL             = __ENV.BASE_URL             || 'http://localhost:8082/verifier';
 const TENANT               = __ENV.TENANT               || 'sandbox';
 const CLIENT_ID            = __ENV.CLIENT_ID            || 'vc-auth-client-sandbox';
 const REDIRECT_URI         = __ENV.REDIRECT_URI         || 'https://localhost/callback';
 
-// NFR-P-550-01: clientes para aislar el camino catalog-hit vs catalog-miss.
-// CATALOG_CLIENT_ID     debe aparecer en eligible_clients del YAML de configuración del tenant.
-// NON_CATALOG_CLIENT_ID debe estar ausente de eligible_clients (o el tenant sin config) para
-// forzar el camino REJECT_CATALOG y medir el delta de latencia respecto al camino ALLOWED.
+// NFR-P-550-01: clients to isolate the catalog-hit vs catalog-miss path.
+// CATALOG_CLIENT_ID     must appear in the tenant config YAML's eligible_clients.
+// NON_CATALOG_CLIENT_ID must be absent from eligible_clients (or the tenant have no config) to
+// force the REJECT_CATALOG path and measure the latency delta against the ALLOWED path.
 const CATALOG_CLIENT_ID     = __ENV.CATALOG_CLIENT_ID     || CLIENT_ID;
 const NON_CATALOG_CLIENT_ID = __ENV.NON_CATALOG_CLIENT_ID || 'non-eligible-client';
 
-// Nombre de la cookie SSO: espejo de SsoSessionAuthenticationSuccessHandler
+// SSO cookie name: mirror of SsoSessionAuthenticationSuccessHandler
 const SSO_COOKIE_NAME = `__Secure-sso-${TENANT}`;
 
-// ── Escenarios ─────────────────────────────────────────────────────────────
+// ── Scenarios ────────────────────────────────────────────────────────────────
 
 export const options = {
     scenarios: {
 
-        // ── (1) Overhead de establecimiento SSO ─────────────────────────
-        // NFR-P-547-01: mide el delta de latencia entre el flujo OID4VP puro
-        // y el flujo SSO completo (POST /oid4vp/auth-response + set-cookie).
+        // ── (1) SSO establishment overhead ──────────────────────────────
+        // NFR-P-547-01: measures the latency delta between the pure OID4VP flow
+        // and the full SSO flow (POST /oid4vp/auth-response + set-cookie).
         // Ramp up → steady → ramp down.
         establishOverhead: {
             executor: 'ramping-vus',
@@ -131,76 +129,76 @@ export const options = {
             exec: 'measureEstablishOverhead',
         },
 
-        // ── (2) Reuse con touch THROTTLED ────────────────────────────────
-        // NFR-P-549-01 baseline: 20 VUs enviando GET /oidc/authorize?prompt=none
-        // con pacing de 0.5 s → las solicitudes llegan con <<1 min entre ellas.
-        // Después del primer toque por sesión, THROTTLE_INTERVAL (60 s) suprime
-        // los UPDATE de last_used_at: el flujo no ejecuta el async dispatch.
-        // Mide la latencia sin I/O de touch → sirve de baseline para comparar
-        // contra el escenario (3).
+        // ── (2) Reuse with THROTTLED touch ───────────────────────────────
+        // NFR-P-549-01 baseline: 20 VUs sending GET /oidc/authorize?prompt=none
+        // with 0.5 s pacing → requests arrive <<1 min apart.
+        // After the first touch per session, THROTTLE_INTERVAL (60 s) suppresses
+        // the last_used_at UPDATEs: the flow does not run the async dispatch.
+        // Measures latency without touch I/O → serves as the baseline to compare
+        // against scenario (3).
         reuseThrottled: {
             executor: 'constant-vus',
             vus: 20,
             duration: '2m',
-            startTime: '2m',       // arranca tras el calentamiento de establish
+            startTime: '2m',       // starts after the establish warm-up
             exec: 'reuseThrottledScenario',
         },
 
-        // ── (3) Reuse con touch ACTIVO ───────────────────────────────────
-        // NFR-P-549-01 overhead medido: el executor constant-arrival-rate lanza
-        // 1 solicitud global cada 70 s. Como 70 s > THROTTLE_INTERVAL (60 s),
-        // la condición del throttle (now − lastUsedAt ≥ 1 min) se cumple en
-        // cada request → ReuseSsoSessionWorkflowImpl ejecuta:
+        // ── (3) Reuse with ACTIVE touch ──────────────────────────────────
+        // NFR-P-549-01 measured overhead: the constant-arrival-rate executor fires
+        // 1 global request every 70 s. Since 70 s > THROTTLE_INTERVAL (60 s),
+        // the throttle condition (now − lastUsedAt ≥ 1 min) holds on every
+        // request → ReuseSsoSessionWorkflowImpl runs:
         //     CompletableFuture.runAsync(() -> sessionRepository.updateLastUsedAt(...))
-        // El dispatch es fire-and-forget: la respuesta HTTP no espera al UPDATE.
-        // p95(touch_active) debe ser estadísticamente igual a p95(throttled);
-        // una diferencia significativa indicaría contención en el ForkJoinPool
-        // o un bug que bloquea el camino de respuesta.
+        // The dispatch is fire-and-forget: the HTTP response does not wait for the UPDATE.
+        // p95(touch_active) should be statistically equal to p95(throttled);
+        // a significant difference would indicate contention in the ForkJoinPool
+        // or a bug blocking the response path.
         idleTouchOverhead: {
             executor: 'constant-arrival-rate',
             rate: 1,
-            timeUnit: '70s',       // >THROTTLE_INTERVAL → touch siempre activo
+            timeUnit: '70s',       // >THROTTLE_INTERVAL → touch always active
             duration: '7m',
             preAllocatedVUs: 3,
             maxVUs: 5,
-            startTime: '2m',       // comparte ventana de medición con (2)
+            startTime: '2m',       // shares the measurement window with (2)
             exec: 'reuseWithTouchScenario',
         },
 
-        // ── (4) Overhead del chequeo de catálogo SSO — NFR-P-550-01 ─────
-        // El catálogo de clientes elegibles se resuelve desde AtomicReference
-        // (TenantSsoConfigYamlAdapter.resolveEligibleClients) — cero I/O en el
-        // camino caliente. Este escenario demuestra que el overhead es despreciable:
+        // ── (4) SSO catalog check overhead — NFR-P-550-01 ───────────────
+        // The eligible-clients catalog is resolved from an AtomicReference
+        // (TenantSsoConfigYamlAdapter.resolveEligibleClients) — zero I/O on the
+        // hot path. This scenario shows the overhead is negligible:
         //
-        //   · Cada iteración lanza dos GET /oidc/authorize?prompt=none consecutivos:
-        //       request "hit"  — CATALOG_CLIENT_ID  → catalog.contains() = true  → ALLOWED
-        //       request "miss" — NON_CATALOG_CLIENT_ID → catalog.contains() = false → REJECT_CATALOG
-        //   · Ambos caminos ejecutan exactamente el mismo AtomicReference.get()
-        //     + Map.get() + Set.contains() sin ningún I/O, por lo que el delta
-        //     |hit_ms − miss_ms| refleja principalmente jitter de red, no el catálogo.
-        //   · Si p95(catalog_check_overhead) < 20 ms → overhead del catálogo despreciable
-        //     y ambas duraciones se mantienen bajo el presupuesto total NFR-P-01 (1 s p95).
+        //   · Each iteration fires two consecutive GET /oidc/authorize?prompt=none:
+        //       "hit"  request — CATALOG_CLIENT_ID  → catalog.contains() = true  → ALLOWED
+        //       "miss" request — NON_CATALOG_CLIENT_ID → catalog.contains() = false → REJECT_CATALOG
+        //   · Both paths run exactly the same AtomicReference.get()
+        //     + Map.get() + Set.contains() with no I/O, so the delta
+        //     |hit_ms − miss_ms| mainly reflects network jitter, not the catalog.
+        //   · If p95(catalog_check_overhead) < 20 ms → negligible catalog overhead
+        //     and both durations stay under the total NFR-P-01 budget (1 s p95).
         //
-        // Sin SSO_SESSION_ID real, el flujo termina antes de llegar al catalog check
-        // (AD-2 orden: clientRegistered → sessionValid → catalog.contains). En ese
-        // modo stub el delta es ≈ 0, lo que también es correcto (no hay catalog I/O).
+        // Without a real SSO_SESSION_ID, the flow ends before reaching the catalog check
+        // (AD-2 ordering: clientRegistered → sessionValid → catalog.contains). In that
+        // stub mode the delta is ≈ 0, which is also correct (no catalog I/O).
         reuseCatalogCheck: {
             executor:  'constant-vus',
             vus:       15,
             duration:  '3m',
-            startTime: '2m',       // comparte ventana de medición con (2) y (3)
+            startTime: '2m',       // shares the measurement window with (2) and (3)
             exec:      'reuseCatalogCheckScenario',
         },
 
-        // ── (5) Overhead de observabilidad (auditoría + métricas) — NFR-O-552-02 ─
-        // El camino de reuso exitoso (prompt=none → ALLOWED) es el ÚNICO que emite,
-        // de forma síncrona best-effort (AD-1):
-        //     · SsoAuditPort.publish(SSO_SESSION_REUSED)  → log.info estructurado
+        // ── (5) Observability overhead (audit + metrics) — NFR-O-552-02 ─
+        // The successful reuse path (prompt=none → ALLOWED) is the ONLY one that emits,
+        // synchronously and best-effort (AD-1):
+        //     · SsoAuditPort.publish(SSO_SESSION_REUSED)  → structured log.info
         //     · SsoMetricsPort.recordReuse(tenant, client) → Counter.increment()
         //     · SsoMetricsPort.recordOid4vpAvoided(tenant) → Counter.increment()
-        // Este escenario ejercita ese camino y registra su duración total. Si el p95 se
-        // mantiene bajo NFR-P-01 (< 1 s) y cercano al de reuseThrottled (mismo flujo),
-        // la instrumentación no añade overhead observable (NFR-O-552-02).
+        // This scenario exercises that path and records its total duration. If the p95 stays
+        // under NFR-P-01 (< 1 s) and close to reuseThrottled (same flow), the instrumentation
+        // adds no observable overhead (NFR-O-552-02).
         reuseObservabilityOverhead: {
             executor:  'constant-vus',
             vus:       15,
@@ -214,19 +212,19 @@ export const options = {
         // NFR-P-547-01
         verifier_sso_establish_overhead_ms: ['p(95)<100'],
 
-        // NFR-P-548-01: latencia del flujo de reuse (agregado de ambos caminos)
+        // NFR-P-548-01: reuse flow latency (aggregate of both paths)
         verifier_sso_reuse_duration_ms: ['p(95)<1000'],
 
         // NFR-P-549-01 (R-1 §3.7.2):
-        // Ambos caminos deben cumplir el mismo umbral. Si p95(touch_active)
-        // ≈ p95(throttled) el overhead del async touch es despreciable.
+        // Both paths must meet the same threshold. If p95(touch_active)
+        // ≈ p95(throttled) the async touch overhead is negligible.
         verifier_sso_reuse_touch_throttled_ms: ['p(95)<1000'],
         verifier_sso_reuse_touch_active_ms:    ['p(95)<1000'],
 
-        // NFR-P-550-01: el chequeo de catálogo (AtomicReference, cero I/O en camino caliente)
-        // no supera el presupuesto total NFR-P-01 (< 1 s p95) en ninguno de los dos caminos.
-        // El overhead observable entre caminos (catalog_check_overhead) debe ser < 20 ms;
-        // un valor mayor indicaría un acceso inesperado a disco/red en el camino caliente.
+        // NFR-P-550-01: the catalog check (AtomicReference, zero I/O on the hot path)
+        // does not exceed the total NFR-P-01 budget (< 1 s p95) on either path.
+        // The observable cross-path overhead (catalog_check_overhead) must be < 20 ms;
+        // a higher value would indicate an unexpected disk/network access on the hot path.
         verifier_sso_catalog_hit_duration_ms:   ['p(95)<1000'],
         verifier_sso_catalog_miss_duration_ms:  ['p(95)<1000'],
         verifier_sso_catalog_check_overhead_ms: ['p(95)<20'],
@@ -236,11 +234,11 @@ export const options = {
     },
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 /**
- * Construye query params para GET /oidc/authorize?prompt=none con el client_id indicado.
- * El state es único por llamada para evitar cache hits espurios en el servidor.
+ * Builds query params for GET /oidc/authorize?prompt=none with the given client_id.
+ * The state is unique per call to avoid spurious server-side cache hits.
  */
 function authorizeParamsFor(clientId) {
     return {
@@ -253,19 +251,19 @@ function authorizeParamsFor(clientId) {
     };
 }
 
-/** Construye los query params estándar para GET /oidc/authorize?prompt=none con CLIENT_ID. */
+/** Builds the standard query params for GET /oidc/authorize?prompt=none with CLIENT_ID. */
 function authorizeParams() {
     return authorizeParamsFor(CLIENT_ID);
 }
 
-/** Registra error funcional si el status no es un redirect válido o 200. */
+/** Records a functional error if the status is not a valid redirect or 200. */
 function checkReuse(res, label) {
     const ok = res.status === 302 || res.status === 303 || res.status === 200;
     check(res, { [`${label}: 2xx/3xx`]: () => ok });
     if (!ok) ssoErrors.add(1);
 }
 
-/** Registra error funcional para el flujo de establish. */
+/** Records a functional error for the establish flow. */
 function checkEstablish(res) {
     const ok = res.status === 200 || res.status === 302 || res.status === 303;
     check(res, {
@@ -275,18 +273,18 @@ function checkEstablish(res) {
     if (!ok) ssoErrors.add(1);
 }
 
-// ── Funciones de escenario exportadas ─────────────────────────────────────
+// ── Exported scenario functions ────────────────────────────────────────────
 
 /**
  * (1) measureEstablishOverhead — NFR-P-547-01
  *
- * Delta = latencia(SSO establish) − latencia(baseline OID4VP).
- * Ambas llamadas usan el mismo endpoint POST /oid4vp/auth-response;
- * la diferencia refleja el coste del establish de sesión SSO.
+ * Delta = latency(SSO establish) − latency(OID4VP baseline).
+ * Both calls use the same POST /oid4vp/auth-response endpoint;
+ * the difference reflects the cost of establishing the SSO session.
  */
 export function measureEstablishOverhead() {
 
-    // Baseline: POST /auth-response sin sesión SSO activa (stub token)
+    // Baseline: POST /auth-response without an active SSO session (stub token)
     const t0   = Date.now();
     const base = http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
         headers:   { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -295,7 +293,7 @@ export function measureEstablishOverhead() {
     });
     const baseMs = Date.now() - t0;
 
-    // Flujo SSO: POST /auth-response con estado OIDC real (o stub configurado)
+    // SSO flow: POST /auth-response with a real OIDC state (or the configured stub)
     const t1  = Date.now();
     const sso = http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
         headers:   { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -307,7 +305,7 @@ export function measureEstablishOverhead() {
     });
     const ssoMs = Date.now() - t1;
 
-    // Solo registrar el overhead si el delta es positivo (evita ruido de medición)
+    // Only record the overhead if the delta is positive (avoids measurement noise)
     const overhead = ssoMs - baseMs;
     if (overhead >= 0) ssoOverhead.add(overhead);
 
@@ -317,13 +315,13 @@ export function measureEstablishOverhead() {
 }
 
 /**
- * (2) reuseThrottledScenario — NFR-P-549-01 baseline (touch suprimido)
+ * (2) reuseThrottledScenario — NFR-P-549-01 baseline (touch suppressed)
  *
- * GET /oidc/authorize?prompt=none con la cookie SSO del jar del VU.
- * El pacing (sleep 0.5 s) mantiene las solicitudes por debajo de THROTTLE_INTERVAL,
- * por lo que después de la primera solicitud el throttle suprime los UPDATE.
- * La métrica verifier_sso_reuse_touch_throttled_ms captura la latencia sin
- * overhead de I/O de touch.
+ * GET /oidc/authorize?prompt=none with the SSO cookie from the VU's jar.
+ * The pacing (sleep 0.5 s) keeps requests below THROTTLE_INTERVAL,
+ * so after the first request the throttle suppresses the UPDATEs.
+ * The verifier_sso_reuse_touch_throttled_ms metric captures the latency
+ * without touch I/O overhead.
  */
 export function reuseThrottledScenario() {
 
@@ -345,22 +343,22 @@ export function reuseThrottledScenario() {
 
     checkReuse(res, 'throttled');
 
-    // Pacing <<1 min: garantiza que el throttle SIEMPRE esté activo para las
-    // solicitudes posteriores a la primera (last_used_at actualizado hace <60 s)
+    // Pacing <<1 min: ensures the throttle is ALWAYS active for the requests
+    // after the first (last_used_at updated <60 s ago)
     sleep(0.5);
 }
 
 /**
- * (3) reuseWithTouchScenario — NFR-P-549-01 overhead medido (touch activo)
+ * (3) reuseWithTouchScenario — NFR-P-549-01 measured overhead (active touch)
  *
- * El executor constant-arrival-rate (rate=1/70 s) garantiza que entre dos
- * solicitudes del mismo VU siempre hayan pasado >THROTTLE_INTERVAL (60 s).
- * Esto fuerza que ReuseSsoSessionWorkflowImpl evalúe:
+ * The constant-arrival-rate executor (rate=1/70 s) ensures that between two
+ * requests of the same VU more than THROTTLE_INTERVAL (60 s) has always elapsed.
+ * This forces ReuseSsoSessionWorkflowImpl to evaluate:
  *     Duration.between(session.getLastUsedAt(), now) >= THROTTLE_INTERVAL → true
- * y ejecute:
+ * and run:
  *     CompletableFuture.runAsync(() -> sessionRepository.updateLastUsedAt(...))
- * La respuesta HTTP no espera al UPDATE (fire-and-forget); este escenario
- * mide que el dispatch async no añade latencia observable al p95.
+ * The HTTP response does not wait for the UPDATE (fire-and-forget); this scenario
+ * measures that the async dispatch adds no observable latency to the p95.
  */
 export function reuseWithTouchScenario() {
 
@@ -382,31 +380,31 @@ export function reuseWithTouchScenario() {
 
     checkReuse(res, 'touch-active');
 
-    // Sin sleep adicional: el pacing de 70 s lo controla el executor
-    // constant-arrival-rate (no interferir con el cómputo de arrival rate)
+    // No extra sleep: the 70 s pacing is controlled by the constant-arrival-rate
+    // executor (do not interfere with the arrival rate computation)
 }
 
 /**
  * (4) reuseCatalogCheckScenario — NFR-P-550-01
  *
- * Valida que el chequeo de catálogo SSO (TenantSsoCatalog.contains) no degrada
- * el flujo prompt=none. El catálogo se resuelve íntegramente desde la caché
- * AtomicReference<Map<String, TenantSsoConfig>> de TenantSsoConfigYamlAdapter,
- * sin ningún I/O en el camino caliente.
+ * Validates that the SSO catalog check (TenantSsoCatalog.contains) does not degrade
+ * the prompt=none flow. The catalog is resolved entirely from the
+ * AtomicReference<Map<String, TenantSsoConfig>> cache of TenantSsoConfigYamlAdapter,
+ * with no I/O on the hot path.
  *
- * Estrategia de medición: en cada iteración se ejecutan dos peticiones consecutivas
- * con el mismo VU y la misma cookie de sesión, minimizando la variación ambiental:
+ * Measurement strategy: each iteration runs two consecutive requests with the same VU
+ * and the same session cookie, minimizing environmental variance:
  *
- *   · Request "hit"  — CATALOG_CLIENT_ID  → catalog.contains() = true  → ALLOWED
- *   · Request "miss" — NON_CATALOG_CLIENT_ID → catalog.contains() = false → REJECT_CATALOG
+ *   · "hit"  request — CATALOG_CLIENT_ID  → catalog.contains() = true  → ALLOWED
+ *   · "miss" request — NON_CATALOG_CLIENT_ID → catalog.contains() = false → REJECT_CATALOG
  *
- * Ambos caminos ejecutan el mismo AtomicReference.get() + Map.get() + Set.contains();
- * el delta |hit_ms − miss_ms| refleja el jitter de red y carga del servidor, no el
- * coste del catálogo. p95(delta) < 20 ms → overhead del catálogo despreciable.
+ * Both paths run the same AtomicReference.get() + Map.get() + Set.contains();
+ * the delta |hit_ms − miss_ms| reflects network jitter and server load, not the
+ * catalog cost. p95(delta) < 20 ms → negligible catalog overhead.
  *
- * Nota AD-2: si SSO_SESSION_ID no apunta a una sesión válida, el flujo termina en
- * sessionValid=false antes de alcanzar catalog.contains(). El delta seguirá siendo ≈ 0
- * (no se accede al catálogo), lo que es correcto para el propósito de este escenario.
+ * AD-2 note: if SSO_SESSION_ID does not point to a valid session, the flow ends at
+ * sessionValid=false before reaching catalog.contains(). The delta will still be ≈ 0
+ * (the catalog is not accessed), which is correct for this scenario's purpose.
  */
 export function reuseCatalogCheckScenario() {
 
@@ -416,7 +414,7 @@ export function reuseCatalogCheckScenario() {
 
     const commonHeaders = { 'X-Tenant': TENANT, 'X-Forwarded-Proto': 'https' };
 
-    // ── Request "hit": cliente ELEGIBLE — catalog.contains(clientId) = true ──
+    // ── "hit" request: ELIGIBLE client — catalog.contains(clientId) = true ──
     const t0     = Date.now();
     const hitRes = http.get(`${BASE_URL}/oidc/authorize`, {
         params:    authorizeParamsFor(CATALOG_CLIENT_ID),
@@ -426,7 +424,7 @@ export function reuseCatalogCheckScenario() {
     });
     const hitMs = Date.now() - t0;
 
-    // ── Request "miss": cliente NO ELEGIBLE — catalog.contains(clientId) = false ──
+    // ── "miss" request: NON-ELIGIBLE client — catalog.contains(clientId) = false ──
     const t1      = Date.now();
     const missRes = http.get(`${BASE_URL}/oidc/authorize`, {
         params:    authorizeParamsFor(NON_CATALOG_CLIENT_ID),
@@ -436,16 +434,16 @@ export function reuseCatalogCheckScenario() {
     });
     const missMs = Date.now() - t1;
 
-    // Registrar duración de cada camino (ambos deben cumplir NFR-P-01 < 1 s p95)
+    // Record each path's duration (both must meet NFR-P-01 < 1 s p95)
     ssoCatalogHitDuration.add(hitMs);
     ssoCatalogMissDuration.add(missMs);
 
-    // Agrega el camino ALLOWED al total de reuse para que NFR-P-548-01 lo incluya
+    // Add the ALLOWED path to the reuse total so NFR-P-548-01 includes it
     ssoReuseDuration.add(hitMs);
 
-    // Delta como proxy del overhead observable del chequeo de catálogo.
-    // Se descarta la iteración si alguna respuesta fue anómalanente lenta (> 500 ms de delta),
-    // ya que esos outliers reflejan saturación del servidor, no overhead del catálogo.
+    // Delta as a proxy for the observable overhead of the catalog check.
+    // The iteration is discarded if a response was anomalously slow (> 500 ms delta),
+    // since those outliers reflect server saturation, not catalog overhead.
     const delta = Math.abs(hitMs - missMs);
     if (delta < 500) {
         ssoCatalogCheckOverhead.add(delta);
@@ -456,26 +454,28 @@ export function reuseCatalogCheckScenario() {
     if (hitRes.status === 500)  ssoErrors.add(1);
     if (missRes.status === 500) ssoErrors.add(1);
 
-    // Pacing moderado: evita saturar el servidor durante el escenario compartido
+    // Moderate pacing: avoids saturating the server during the shared scenario
     sleep(0.5);
 }
 
 /**
  * (5) reuseObservabilityScenario — NFR-O-552-02 (US-07)
  *
- * Ejercita el camino de reuso prompt=none, el único que en caso de éxito (ALLOWED) emite
- * de forma síncrona best-effort (AD-1):
- *     · SsoAuditPort.publish(SSO_SESSION_REUSED)   → log.info estructurado
+ * Exercises the prompt=none reuse path, the only one that on success (ALLOWED) emits
+ * synchronously and best-effort (AD-1):
+ *     · SsoAuditPort.publish(SSO_SESSION_REUSED)   → structured log.info
  *     · SsoMetricsPort.recordReuse(tenant, client) → Counter.increment()
  *     · SsoMetricsPort.recordOid4vpAvoided(tenant) → Counter.increment()
  *
- * La métrica verifier_sso_reuse_with_observability_ms captura la duración TOTAL del flujo
- * (incluida esa emisión). El umbral p95 < 1000 ms (NFR-P-01) confirma que la instrumentación
- * no rompe el presupuesto de latencia; comparándola con verifier_sso_reuse_touch_throttled_ms
- * (mismo camino) se verifica que el overhead de auditoría + métricas es despreciable.
+ * The verifier_sso_reuse_with_observability_ms metric captures the TOTAL flow duration
+ * (including that emission). The p95 < 1000 ms threshold (NFR-P-01) confirms the
+ * instrumentation does not break the latency budget; comparing it with
+ * verifier_sso_reuse_touch_throttled_ms (same path) verifies the audit + metrics
+ * overhead is negligible.
  *
- * Nota: sin SSO_SESSION_ID válido el flujo termina en LOGIN_REQUIRED antes de emitir el evento
- * de reuso; en ese modo stub se mide el pipeline hasta ese punto (cota superior conservadora).
+ * Note: without a valid SSO_SESSION_ID the flow ends in LOGIN_REQUIRED before emitting the
+ * reuse event; in that stub mode the pipeline is measured up to that point (conservative
+ * upper bound).
  */
 export function reuseObservabilityScenario() {
 
@@ -500,16 +500,16 @@ export function reuseObservabilityScenario() {
     sleep(0.5);
 }
 
-// ── Compatibilidad con ejecución directa ───────────────────────────────────
+// ── Direct-execution compatibility ──────────────────────────────────────────
 
 /**
- * Función por defecto para ejecución sin --scenario (k6 run perf/verifier-sso.js).
- * Ejecuta el pipeline completo: baseline → establish → reuse throttled.
- * Para el escenario de touch activo usar: k6 run --scenario idleTouchOverhead ...
+ * Default function for execution without --scenario (k6 run perf/verifier-sso.js).
+ * Runs the full pipeline: baseline → establish → reuse throttled.
+ * For the active-touch scenario use: k6 run --scenario idleTouchOverhead ...
  */
 export default function () {
 
-    // 1. Baseline OID4VP (sin SSO)
+    // 1. OID4VP baseline (no SSO)
     const t0   = Date.now();
     http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
         headers:   { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -534,7 +534,7 @@ export default function () {
     if (overhead >= 0) ssoOverhead.add(overhead);
     checkEstablish(sso);
 
-    // 3. Reuse SSO (flujo correcto: GET /oidc/authorize?prompt=none)
+    // 3. SSO reuse (correct flow: GET /oidc/authorize?prompt=none)
     const jar          = http.cookieJar();
     const sessionValue = __ENV.SSO_SESSION_ID || `stub-default-${__VU}`;
     jar.set(BASE_URL, SSO_COOKIE_NAME, sessionValue);
@@ -549,7 +549,7 @@ export default function () {
     const reuseMs = Date.now() - t2;
 
     ssoReuseDuration.add(reuseMs);
-    ssoTouchThrottled.add(reuseMs);   // ejecución directa → sin control de pacing → throttled
+    ssoTouchThrottled.add(reuseMs);   // direct execution → no pacing control → throttled
     checkReuse(reuse, 'default-reuse');
 
     sleep(0.2);
