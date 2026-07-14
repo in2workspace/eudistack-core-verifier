@@ -50,7 +50,7 @@ public class SsoAuditAdapter implements SsoAuditPort {
     }
 
     /**
-     * NFR-O-01: formato estructurado para cambios de catálogo SSO.
+     * NFR-O-01: structured format for SSO catalog changes.
      * eventType=CATALOG_CHANGE, operation=ADD|REMOVE, tenant, clientId, timestamp.
      */
     private void emitCatalogChangeEvent(SsoAuditEvent event) {
@@ -69,8 +69,8 @@ public class SsoAuditAdapter implements SsoAuditPort {
     }
 
     /**
-     * No incluye cookie SSO, sub ni holderHash: el corte es masivo por tenant y no referencia
-     * a ningún Holder concreto (solo identificadores opacos, architecture.md §6.1).
+     * Does not include the SSO cookie, sub or holderHash: the cut is tenant-wide and does not
+     * reference any specific Holder.
      */
     private void emitEmergencyRevokeEvent(SsoAuditEvent event) {
         Map<String, Object> logEvent = new LinkedHashMap<>();

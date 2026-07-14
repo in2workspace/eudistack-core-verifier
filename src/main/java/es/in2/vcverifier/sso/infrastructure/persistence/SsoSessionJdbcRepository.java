@@ -392,7 +392,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
-    // REVOKE ALL BY TENANT — corte de emergencia (EUDISTACK-554 / US-09)
+    // REVOKE ALL BY TENANT
     // =========================================================
 
     @Override
