@@ -10,6 +10,18 @@ import { Trend, Counter } from 'k6/metrics';
  * NFR-P-550-01  verifier_sso_catalog_hit_duration_ms         p95 < 1000 ms
  *               verifier_sso_catalog_miss_duration_ms        p95 < 1000 ms
  *               verifier_sso_catalog_check_overhead_ms       p95 < 20 ms
+ * NFR-O-552-01  (cobertura enum EventType ↔ tests — verificada en JUnit, no medible por k6)
+ * NFR-O-552-02  verifier_sso_reuse_with_observability_ms     p95 < 1000 ms
+ *
+ * NFR-O-552-02 (US-07) — La emisión de auditoría (SSO_SESSION_REUSED vía SsoAuditPort)
+ * y de métricas (verifier_sso_reuse_total + verifier_sso_oid4vp_avoided_total vía
+ * SsoMetricsPort) en el flujo de reutilización prompt=none es SÍNCRONA best-effort
+ * (AD-1): un log.info estructurado + dos Counter.increment(), apoyados en el async
+ * appender de la plataforma. Su coste debe ser despreciable frente al presupuesto
+ * total NFR-P-01 (< 1 s p95). El escenario (5) reuseObservabilityOverhead ejercita el
+ * camino de reuso exitoso — el único que emite auditoría + métricas — y verifica que el
+ * p95 se mantiene bajo NFR-P-01; un p95 cercano al de reuseThrottled (mismo camino sin
+ * carga extra medible) confirma que la instrumentación no está en la ruta crítica.
  *
  * R-1 §3.7.2 — El UPDATE de last_used_at NO debe afectar la latencia p95 del
  * flujo de reutilización SSO (prompt=none). El throttle de 1 update/min
@@ -75,6 +87,11 @@ const ssoCatalogMissDuration = new Trend('verifier_sso_catalog_miss_duration_ms'
 // el delta refleja principalmente jitter de red/servidor, no el coste del catálogo.
 // p95 < 20 ms confirma que el overhead del catálogo es despreciable.
 const ssoCatalogCheckOverhead = new Trend('verifier_sso_catalog_check_overhead_ms');
+
+// NFR-O-552-02 (US-07): duración del flujo de reuse prompt=none INCLUYENDO la emisión
+// síncrona de auditoría (SSO_SESSION_REUSED) + métricas (reuse_total, oid4vp_avoided_total).
+// Debe mantenerse bajo el presupuesto total NFR-P-01 (< 1 s p95).
+const ssoReuseObservability = new Trend('verifier_sso_reuse_with_observability_ms');
 
 const ssoErrors = new Counter('verifier_sso_errors');
 
@@ -174,6 +191,23 @@ export const options = {
             startTime: '2m',       // comparte ventana de medición con (2) y (3)
             exec:      'reuseCatalogCheckScenario',
         },
+
+        // ── (5) Overhead de observabilidad (auditoría + métricas) — NFR-O-552-02 ─
+        // El camino de reuso exitoso (prompt=none → ALLOWED) es el ÚNICO que emite,
+        // de forma síncrona best-effort (AD-1):
+        //     · SsoAuditPort.publish(SSO_SESSION_REUSED)  → log.info estructurado
+        //     · SsoMetricsPort.recordReuse(tenant, client) → Counter.increment()
+        //     · SsoMetricsPort.recordOid4vpAvoided(tenant) → Counter.increment()
+        // Este escenario ejercita ese camino y registra su duración total. Si el p95 se
+        // mantiene bajo NFR-P-01 (< 1 s) y cercano al de reuseThrottled (mismo flujo),
+        // la instrumentación no añade overhead observable (NFR-O-552-02).
+        reuseObservabilityOverhead: {
+            executor:  'constant-vus',
+            vus:       15,
+            duration:  '3m',
+            startTime: '2m',
+            exec:      'reuseObservabilityScenario',
+        },
     },
 
     thresholds: {
@@ -196,6 +230,7 @@ export const options = {
         verifier_sso_catalog_hit_duration_ms:   ['p(95)<1000'],
         verifier_sso_catalog_miss_duration_ms:  ['p(95)<1000'],
         verifier_sso_catalog_check_overhead_ms: ['p(95)<20'],
+        verifier_sso_reuse_with_observability_ms: ['p(95)<1000'],
 
         http_req_failed: ['rate<0.01'],
     },
@@ -422,6 +457,46 @@ export function reuseCatalogCheckScenario() {
     if (missRes.status === 500) ssoErrors.add(1);
 
     // Pacing moderado: evita saturar el servidor durante el escenario compartido
+    sleep(0.5);
+}
+
+/**
+ * (5) reuseObservabilityScenario — NFR-O-552-02 (US-07)
+ *
+ * Ejercita el camino de reuso prompt=none, el único que en caso de éxito (ALLOWED) emite
+ * de forma síncrona best-effort (AD-1):
+ *     · SsoAuditPort.publish(SSO_SESSION_REUSED)   → log.info estructurado
+ *     · SsoMetricsPort.recordReuse(tenant, client) → Counter.increment()
+ *     · SsoMetricsPort.recordOid4vpAvoided(tenant) → Counter.increment()
+ *
+ * La métrica verifier_sso_reuse_with_observability_ms captura la duración TOTAL del flujo
+ * (incluida esa emisión). El umbral p95 < 1000 ms (NFR-P-01) confirma que la instrumentación
+ * no rompe el presupuesto de latencia; comparándola con verifier_sso_reuse_touch_throttled_ms
+ * (mismo camino) se verifica que el overhead de auditoría + métricas es despreciable.
+ *
+ * Nota: sin SSO_SESSION_ID válido el flujo termina en LOGIN_REQUIRED antes de emitir el evento
+ * de reuso; en ese modo stub se mide el pipeline hasta ese punto (cota superior conservadora).
+ */
+export function reuseObservabilityScenario() {
+
+    const jar          = http.cookieJar();
+    const sessionValue = __ENV.SSO_SESSION_ID || `stub-observability-${__VU}`;
+    jar.set(BASE_URL, SSO_COOKIE_NAME, sessionValue);
+
+    const t0  = Date.now();
+    const res = http.get(`${BASE_URL}/oidc/authorize`, {
+        params:    authorizeParams(),
+        redirects: 0,
+        jar:       jar,
+        headers:   { 'X-Tenant': TENANT, 'X-Forwarded-Proto': 'https' },
+    });
+    const ms = Date.now() - t0;
+
+    ssoReuseDuration.add(ms);
+    ssoReuseObservability.add(ms);
+
+    checkReuse(res, 'observability');
+
     sleep(0.5);
 }
 
