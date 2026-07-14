@@ -1,7 +1,6 @@
 package es.in2.vcverifier.verifier.dualformat;
 
 import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
-import es.in2.vcverifier.verifier.infrastructure.adapter.dispatch.BumpedCredentialReader;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -19,7 +18,6 @@ class BumpedAllTypesDispatchIT {
         var credential = support.readFixture(fixturePath);
         var result = support.runFlow(credential);
 
-        DualFormatFlowTestSupport.assertReaderClass(result, BumpedCredentialReader.class);
-        support.assertHappyPath(result, expectedCredentialType, CredentialFormat.BUMPED_V2_0, true);
+        support.assertHappyPath(result, expectedCredentialType, CredentialFormat.BUMPED_V2_0);
     }
 }

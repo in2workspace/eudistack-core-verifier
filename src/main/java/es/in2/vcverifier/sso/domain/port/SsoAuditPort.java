@@ -5,7 +5,7 @@ import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 public interface SsoAuditPort {
 
     /**
-     * Registra un evento de auditoría de SSO.
+     * Records an SSO audit event.
      * @param event
      */
     void publish(SsoAuditEvent event);

@@ -12,7 +12,7 @@ class SchemaProfileGrantEligibilityBumpedIT {
 
     @Test
     void bumpedProfileIncludesClientCredentialsGrant() {
-        SchemaProfile profile = new SchemaProfile("LEARCredentialMachine.3", "openid", null, null, Set.of("authorization_code", "client_credentials"), false, null, null, true);
+        SchemaProfile profile = new SchemaProfile("LEARCredentialMachine.3", "openid", null, null, Set.of("authorization_code", "client_credentials"), false, null, null);
         assertTrue(profile.grantEligibility().contains("client_credentials"));
     }
 }

@@ -5,18 +5,18 @@ import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 public interface SsoCatalogRepositoryPort {
 
     /**
-     * Añade un cliente al catálogo SSO del tenant.
-     * Idempotente: si el cliente ya existe devuelve {@code false} sin duplicar.
+     * Adds a client to the tenant's SSO catalog.
+     * Idempotent: if the client already exists it returns {@code false} without duplicating.
      *
-     * @return {@code true} si el cliente fue añadido, {@code false} si ya estaba presente
+     * @return {@code true} if the client was added, {@code false} if it was already present
      */
     boolean addClient(String tenant, SsoEligibleClient client);
 
     /**
-     * Elimina un cliente del catálogo SSO del tenant.
-     * Idempotente: si el cliente no existe devuelve {@code false} sin fallar.
+     * Removes a client from the tenant's SSO catalog.
+     * Idempotent: if the client does not exist it returns {@code false} without failing.
      *
-     * @return {@code true} si el cliente fue eliminado, {@code false} si no existía
+     * @return {@code true} if the client was removed, {@code false} if it did not exist
      */
     boolean removeClient(String tenant, SsoEligibleClient client);
 }
