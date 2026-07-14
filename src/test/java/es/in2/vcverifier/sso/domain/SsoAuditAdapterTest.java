@@ -131,6 +131,17 @@ class SsoAuditAdapterTest {
     }
 
     @Test
+    void SsoAuditAdapter_publish_structuresEstablishFailedEvent() {
+        adapter.publish(new SsoAuditEvent(
+                SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
+                "tenantA", "clientA", "sub-value", "FAILURE", "corr-fail", Instant.now()));
+
+        assertThat(singleAuditEvent())
+                .contains("eventType=SSO_ESTABLISH_FAILED")
+                .contains("outcome=FAILURE");
+    }
+
+    @Test
     void SsoAuditAdapter_publish_neverLogsPlainSubNorFullSessionId() {
         String rawSub = "did:key:z6MkVerySensitiveSubjectValue0123456789";
 
