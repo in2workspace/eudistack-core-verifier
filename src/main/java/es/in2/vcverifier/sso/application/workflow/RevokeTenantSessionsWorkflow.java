@@ -37,11 +37,11 @@ public class RevokeTenantSessionsWorkflow {
     }
 
     /**
-     * Ejecuta el corte de emergencia.
+     * Executes the emergency cut.
      *
-     * @param command tenant (derivado del principal admin) + correlationId
-     * @return número de sesiones revocadas ({@code count_revoked})
-     * @throws TenantRevocationException si la revocación en base de datos falla (rollback aplicado)
+     * @param command tenant (derived from the admin principal) + correlationId
+     * @return number of revoked sessions ({@code count_revoked})
+     * @throws TenantRevocationException if the database revocation fails (rollback applied)
      */
     public int execute(RevokeTenantSessionsCommand command) {
 
