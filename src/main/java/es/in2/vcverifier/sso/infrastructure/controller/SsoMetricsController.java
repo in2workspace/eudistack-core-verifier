@@ -1,5 +1,6 @@
 package es.in2.vcverifier.sso.infrastructure.controller;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.sso.domain.model.SsoTenantMetrics;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Slf4j
@@ -26,12 +28,12 @@ public class SsoMetricsController {
     private final SsoMetricsPort metricsPort;
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<SsoTenantMetrics> getMetrics(
+    public ResponseEntity<SsoMetricsResponse> getMetrics(
             HttpServletRequest request,
             Authentication authentication) {
 
         String tenant = resolveAndValidateTenant(request, authentication);
-        return ResponseEntity.ok(metricsPort.metricsFor(tenant));
+        return ResponseEntity.ok(SsoMetricsResponse.from(metricsPort.metricsFor(tenant)));
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────────
@@ -67,6 +69,35 @@ public class SsoMetricsController {
             return t;
         }
         return null;
+    }
+
+    // ─── response DTO ─────────────────────────────────────────────────────────
+
+    public record SsoMetricsResponse(
+            @JsonProperty("tenant") String tenant,
+            @JsonProperty("established_total") long establishedTotal,
+            @JsonProperty("reuse_total") long reuseTotal,
+            @JsonProperty("oid4vp_avoided_total") long oid4vpAvoidedTotal,
+            @JsonProperty("reuse_ratio") Double reuseRatio,
+            @JsonProperty("by_client_id") Map<String, ClientReuse> byClientId
+    ) {
+        public record ClientReuse(
+                @JsonProperty("client_id") String clientId,
+                @JsonProperty("reuse_total") long reuseTotal
+        ) {}
+
+        static SsoMetricsResponse from(SsoTenantMetrics metrics) {
+            Map<String, ClientReuse> byClientId = new LinkedHashMap<>();
+            metrics.byClientId().forEach((clientId, m) ->
+                    byClientId.put(clientId, new ClientReuse(m.clientId(), m.reuseTotal())));
+            return new SsoMetricsResponse(
+                    metrics.tenant(),
+                    metrics.establishedTotal(),
+                    metrics.reuseTotal(),
+                    metrics.oid4vpAvoidedTotal(),
+                    metrics.reuseRatio(),
+                    byClientId);
+        }
     }
 
 }

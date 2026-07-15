@@ -73,11 +73,11 @@ class SsoMetricsEndpointIT {
                         .with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenant").value(TENANT))
-                .andExpect(jsonPath("$.establishedTotal").value(100))
-                .andExpect(jsonPath("$.reuseTotal").value(250))
-                .andExpect(jsonPath("$.oid4vpAvoidedTotal").value(250))
-                .andExpect(jsonPath("$.reuseRatio").value(2.5))
-                .andExpect(jsonPath("$.byClientId.clientB.reuseTotal").value(250));
+                .andExpect(jsonPath("$.established_total").value(100))
+                .andExpect(jsonPath("$.reuse_total").value(250))
+                .andExpect(jsonPath("$.oid4vp_avoided_total").value(250))
+                .andExpect(jsonPath("$.reuse_ratio").value(2.5))
+                .andExpect(jsonPath("$.by_client_id.clientB.reuse_total").value(250));
     }
 
     @Test
@@ -91,10 +91,10 @@ class SsoMetricsEndpointIT {
                         .with(authentication(adminAuth(TENANT)))
                         .with(csrf()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.establishedTotal").value(0))
-                .andExpect(jsonPath("$.reuseTotal").value(0))
-                .andExpect(jsonPath("$.oid4vpAvoidedTotal").value(0))
-                .andExpect(jsonPath("$.reuseRatio").doesNotExist());
+                .andExpect(jsonPath("$.established_total").value(0))
+                .andExpect(jsonPath("$.reuse_total").value(0))
+                .andExpect(jsonPath("$.oid4vp_avoided_total").value(0))
+                .andExpect(jsonPath("$.reuse_ratio").doesNotExist());
     }
 
     private static UsernamePasswordAuthenticationToken adminAuth(String tenant) {
