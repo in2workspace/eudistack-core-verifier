@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - 2026-07-15
+
+- **CGCOM — VCT rename `doctorid.sd.1` → `urn:es.cgcom:doctorid:1`**: updated `credential-configuration-id` in `application.yaml` to the canonical URN-based VCT, aligning with the DoctorID issuer and the CGCOM verifier DCQL profiles / trusted-issuers configuration.
+
 ### Added - 2026-07-13
 
 - **SSO emergency cut per tenant (US-09)**: new admin endpoint + `RevokeTenantSessionsWorkflow` that revokes every active SSO session of a tenant in a single call, driven by `SsoSessionRepositoryPort.revokeAllByTenant(tenantId)`. Emits an `EMERGENCY_REVOKE` audit event (`event=sso_emergency_revoke`) with `count_revoked`, `correlation_id` and outcome (`success` / `failure`); on repository error the transaction is rolled back, a `failure` audit is still emitted, and a `TenantRevocationException` is raised.
