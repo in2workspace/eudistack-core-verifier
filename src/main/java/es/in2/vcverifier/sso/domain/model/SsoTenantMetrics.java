@@ -11,6 +11,10 @@ public record SsoTenantMetrics(
         Map<String, ClientReuseMetrics> byClientId
 ) {
 
+    public SsoTenantMetrics {
+        byClientId = byClientId == null ? Map.of() : Map.copyOf(byClientId);
+    }
+
     public record ClientReuseMetrics(String clientId, long reuseTotal) {}
 
     public static SsoTenantMetrics of(
