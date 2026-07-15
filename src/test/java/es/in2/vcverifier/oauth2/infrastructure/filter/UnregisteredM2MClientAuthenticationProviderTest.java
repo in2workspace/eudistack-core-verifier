@@ -36,7 +36,13 @@ class UnregisteredM2MClientAuthenticationProviderTest {
         assertEquals("assertion-jwt", token.getCredentials());
         assertNotNull(token.getRegisteredClient());
         assertEquals("unregistered-machine-client", token.getRegisteredClient().getClientId());
-        assertTrue(token.getRegisteredClient().getAuthorizationGrantTypes().contains(AuthorizationGrantType.CLIENT_CREDENTIALS));
+        // SEC: the placeholder must NOT declare CLIENT_CREDENTIALS (or any grant type Spring's
+        // built-in OAuth2ClientCredentialsAuthenticationProvider recognizes) — otherwise that
+        // built-in provider, which remains in the chain alongside ours, could independently
+        // mint a token for this placeholder without ever running our credential/tenant checks.
+        assertFalse(token.getRegisteredClient().getAuthorizationGrantTypes().contains(AuthorizationGrantType.CLIENT_CREDENTIALS));
+        assertFalse(token.getRegisteredClient().getAuthorizationGrantTypes().contains(AuthorizationGrantType.AUTHORIZATION_CODE));
+        assertFalse(token.getRegisteredClient().getAuthorizationGrantTypes().contains(AuthorizationGrantType.REFRESH_TOKEN));
     }
 
     @Test

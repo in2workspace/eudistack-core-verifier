@@ -297,7 +297,7 @@ class CustomAuthenticationProviderTest {
         // Client is NOT pre-registered: repository only knows "test-client" (from setUp())
         setCurrentRequestTenant("dome");
 
-        JsonNode vcJson = buildMachineCredentialWithMandator("dome");
+        JsonNode vcJson = buildMachineCredentialWithPowerDomain("dome");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
@@ -329,13 +329,64 @@ class CustomAuthenticationProviderTest {
     }
 
     @Test
-    @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMatchesRequestCaseInsensitively_success")
-    void authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMatchesRequestCaseInsensitively_success() {
-        // TenantDomainFilter always normalizes the request tenant to lowercase, but the mandator's
-        // organizationIdentifier in the credential is not under our control and may carry any case.
+    @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_multiplePowerDomainsOneMatches_success")
+    void authenticate_clientCredentialsGrantWithoutPreRegistration_multiplePowerDomainsOneMatches_success() {
+        // A credential can authorize several domains; a match on ANY of them is enough — same
+        // pattern as the Issuer's own tenant-domain authorization check (powers.stream().anyMatch(...)).
         setCurrentRequestTenant("dome");
 
-        JsonNode vcJson = buildMachineCredentialWithMandator("DOME");
+        JsonNode vcJson = buildMachineCredentialWithPowerDomain("kpmg", "dome", "sandbox");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+
+        TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
+                "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
+                null, "machine learcredential", "did:key:zDnaeMachine123");
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
+                .thenReturn(tokenResult);
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "unregistered-machine-client");
+        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+
+        OAuth2ClientCredentialsAuthenticationToken authToken = new OAuth2ClientCredentialsAuthenticationToken(
+                mock(Authentication.class), null, additionalParams);
+
+        Authentication result = provider.authenticate(authToken);
+
+        assertNotNull(result);
+        assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
+    }
+
+    @Test
+    @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_mandatorOrgIdMatchesButNoPowerDomain_throwsInvalidClient")
+    void authenticate_clientCredentialsGrantWithoutPreRegistration_mandatorOrgIdMatchesButNoPowerDomain_throwsInvalidClient() {
+        // SEC regression: mandator.organizationIdentifier must NEVER be treated as a tenant slug,
+        // even when it happens to equal the request tenant by coincidence — only mandate.power[].domain
+        // may authorize a tenant. Without mandate.power[] at all, this must reject as not-derivable,
+        // before the request tenant is even resolved (no stub needed for it here).
+        JsonNode vcJson = buildMachineCredentialWithMandatorOrgIdOnly("dome");
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "unregistered-machine-client");
+        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+
+        OAuth2ClientCredentialsAuthenticationToken authToken = new OAuth2ClientCredentialsAuthenticationToken(
+                mock(Authentication.class), null, additionalParams);
+
+        OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                () -> provider.authenticate(authToken));
+        assertEquals(OAuth2ErrorCodes.INVALID_CLIENT, exception.getError().getErrorCode());
+        verify(tokenGenerationWorkflow, never()).issueAccessToken(any(), any(), any(), anyBoolean(), any());
+    }
+
+    @Test
+    @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMatchesRequestCaseInsensitively_success")
+    void authenticate_clientCredentialsGrantWithoutPreRegistration_tenantMatchesRequestCaseInsensitively_success() {
+        // TenantDomainFilter always normalizes the request tenant to lowercase, but the
+        // mandate.power[].domain value in the credential is not under our control and may carry any case.
+        setCurrentRequestTenant("dome");
+
+        JsonNode vcJson = buildMachineCredentialWithPowerDomain("DOME");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
@@ -370,7 +421,7 @@ class CustomAuthenticationProviderTest {
         // Client is NOT pre-registered: repository only knows "test-client" (from setUp())
         setCurrentRequestTenant("acme");
 
-        JsonNode vcJson = buildMachineCredentialWithMandator("dome");
+        JsonNode vcJson = buildMachineCredentialWithPowerDomain("dome");
 
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "unregistered-machine-client");
@@ -398,7 +449,7 @@ class CustomAuthenticationProviderTest {
     @DisplayName("authenticate_clientCredentialsGrantWithoutPreRegistration_credentialTenantNotDerivable_throwsInvalidClient")
     void authenticate_clientCredentialsGrantWithoutPreRegistration_credentialTenantNotDerivable_throwsInvalidClient() {
         // Client is NOT pre-registered: repository only knows "test-client" (from setUp())
-        // Credential has no mandate/mandator block, so no organizationIdentifier can be derived.
+        // Credential has no mandate block at all, so no mandate.power[].domain can be derived.
         // Rejection must happen before the request-tenant is even resolved.
         JsonNode vcJson = buildMachineCredentialV1();
 
@@ -432,7 +483,7 @@ class CustomAuthenticationProviderTest {
         // resolveCurrentTenant() returns null. The credential-derived tenant must NOT be trusted
         // unconditionally in that case — it must be rejected, same as an undeterminable credential
         // tenant. No request tenant is set up here on purpose (RequestContextHolder left empty).
-        JsonNode vcJson = buildMachineCredentialWithMandator("dome");
+        JsonNode vcJson = buildMachineCredentialWithPowerDomain("dome");
 
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "unregistered-machine-client");
@@ -492,12 +543,37 @@ class CustomAuthenticationProviderTest {
         return vc;
     }
 
-    private JsonNode buildMachineCredentialWithMandator(String mandatorOrganizationIdentifier) {
+    /**
+     * Builds a machine credential whose mandate.power[] authorizes the given domain(s) — this is
+     * the field CustomAuthenticationProvider derives the tenant from. mandator.organizationIdentifier
+     * is deliberately NOT set here: it is the mandator's own real business identifier, never a
+     * tenant slug, and must play no role in tenant derivation (see extractPowerDomainsFromCredential).
+     */
+    private JsonNode buildMachineCredentialWithPowerDomain(String... powerDomains) {
+        ObjectNode vc = (ObjectNode) buildMachineCredentialV1();
+        ObjectNode cs = (ObjectNode) vc.get("credentialSubject");
+        ObjectNode mandate = cs.putObject("mandate");
+        ArrayNode power = mandate.putArray("power");
+        for (String domain : powerDomains) {
+            ObjectNode powerEntry = power.addObject();
+            powerEntry.put("type", "domain");
+            powerEntry.put("domain", domain);
+            powerEntry.put("function", "Onboarding");
+            powerEntry.putArray("action").add("Execute");
+        }
+        return vc;
+    }
+
+    /**
+     * Builds a machine credential that only carries mandator.organizationIdentifier (no
+     * mandate.power[] at all) — used to lock in that this field is never read as a tenant.
+     */
+    private JsonNode buildMachineCredentialWithMandatorOrgIdOnly(String organizationIdentifier) {
         ObjectNode vc = (ObjectNode) buildMachineCredentialV1();
         ObjectNode cs = (ObjectNode) vc.get("credentialSubject");
         ObjectNode mandate = cs.putObject("mandate");
         ObjectNode mandator = mandate.putObject("mandator");
-        mandator.put("organizationIdentifier", mandatorOrganizationIdentifier);
+        mandator.put("organizationIdentifier", organizationIdentifier);
         return vc;
     }
 }
