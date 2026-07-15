@@ -40,7 +40,7 @@ class AccessTokenStructureParityIT {
 
         assertEquals("LEARCredentialEmployee.3", legacyClaims.getStringClaim("credential_type"));
         assertEquals("LEARCredentialEmployee.4", bumpedClaims.getStringClaim("credential_type"));
-        assertTrue(legacyClaims.getClaim("vc") instanceof String);
+        assertTrue(legacyClaims.getClaim("vc") instanceof Map);
         assertTrue(bumpedClaims.getClaim("vc") instanceof Map);
     }
 

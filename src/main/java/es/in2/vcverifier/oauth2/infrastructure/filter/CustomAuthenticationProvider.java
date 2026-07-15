@@ -291,6 +291,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             publishM2MAudit(clientId, String.join(",", powerDomains), AUDIT_OUTCOME_REJECT, AUDIT_REASON_TENANT_MISMATCH);
             throw new TenantMismatchException(
                     "Credential power domains " + powerDomains + " do not authorize request tenant '" + requestTenant + "'");
+
         }
         // Use the request-resolved tenant (already normalized to lowercase by TenantDomainFilter)
         // so client settings, token claims, and audit logs stay consistent regardless of how the

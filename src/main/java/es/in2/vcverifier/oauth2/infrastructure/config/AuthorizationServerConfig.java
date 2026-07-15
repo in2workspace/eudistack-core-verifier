@@ -39,6 +39,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.authentication.JwtClientAssertionAuthenticationProvider;
+import org.springframework.security.oauth2.server.authorization.authentication.JwtClientAssertionDecoderFactory;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
@@ -101,6 +103,18 @@ public class AuthorizationServerConfig {
                                 .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore, oAuth2M2MAuditPort))
                                 .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService(), tokenGenerationWorkflow, schemaProfileRegistry, oAuth2M2MAuditPort))
                 )
+                // Override the client_assertion aud validation: the request-derived issuer includes the
+                // /verifier context-path, but legacy clients sign the assertion with the clean public URL.
+                // The custom decoder factory accepts the audience with and without the context-path.
+                .clientAuthentication(clientAuthentication ->
+                        clientAuthentication.authenticationProviders(authProviders ->
+                                authProviders.forEach(authProvider -> {
+                                    if (authProvider instanceof JwtClientAssertionAuthenticationProvider jwtClientAssertionProvider) {
+                                        JwtClientAssertionDecoderFactory decoderFactory = new JwtClientAssertionDecoderFactory();
+                                        decoderFactory.setJwtValidatorFactory(new ClientAssertionJwtValidatorFactory());
+                                        jwtClientAssertionProvider.setJwtDecoderFactory(decoderFactory);
+                                    }
+                                })))
                 .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
 
         return http.build();

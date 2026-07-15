@@ -392,6 +392,47 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
+    // REVOKE ALL BY TENANT
+    // =========================================================
+
+    @Override
+    public int revokeAllByTenant(String tenant) {
+        ensureTenantSafe(tenant);
+        checkCircuit();
+
+        String sql = """
+            DELETE FROM sso_session
+            WHERE tenant = ?
+        """;
+
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            setTenantSearchPath(c, tenant);
+            setStatementTimeout(c);
+
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setString(1, tenant);
+                int deleted = ps.executeUpdate();
+                c.commit();
+                recordSuccess();
+                log.info("Emergency revoke tenant={} count_revoked={}", tenant, deleted);
+                return deleted;
+            } catch (SQLException ex) {
+                c.rollback();
+                recordFailure();
+                throw new SsoSessionRepositoryException(
+                        "Failed to revoke all SSO sessions for tenant " + tenant, ex);
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException ex) {
+            recordFailure();
+            throw new SsoSessionRepositoryException(
+                    "Failed to revoke SSO sessions (connection error) for tenant " + tenant, ex);
+        }
+    }
+
+    // =========================================================
     // HELPERS
     // =========================================================
 

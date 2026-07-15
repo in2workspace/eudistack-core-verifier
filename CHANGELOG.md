@@ -23,9 +23,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.2.0] - 2026-07-08
 
+### Added - 2026-07-13
+
+- **SSO emergency cut per tenant (US-09)**: new admin endpoint + `RevokeTenantSessionsWorkflow` that revokes every active SSO session of a tenant in a single call, driven by `SsoSessionRepositoryPort.revokeAllByTenant(tenantId)`. Emits an `EMERGENCY_REVOKE` audit event (`event=sso_emergency_revoke`) with `count_revoked`, `correlation_id` and outcome (`success` / `failure`); on repository error the transaction is rolled back, a `failure` audit is still emitted, and a `TenantRevocationException` is raised.
+
+### Changed - 2026-07-13
+
+- **`vc` claim in the access token is now always a nested JSON object**: previously `JwsAccessTokenBuilder` only emitted `vc` as a
+  JSON object when the credential's schema profile had `wrap_vc_in_access_token: true`; otherwise it emitted a **stringified**
+  (escaped) JSON. Since no schema profile in the codebase set that flag (it defaulted to `false`), **both legacy (`LEGACY_V1_1`) and
+  bumped (`BUMPED_V2_0`) credentials were emitted as a string** in practice — the object form only ever appeared in tests that set
+  the flag manually. The builder now serializes `vc` as an object unconditionally, so consumers never need a second `JSON.parse`.
+  **Breaking change** for relying parties that parsed the `vc` claim as a string.
+
+### Removed - 2026-07-13
+
+- **`wrap_vc_in_access_token` schema-profile flag removed**: it was a second, redundant legacy/bumped classifier (the authoritative
+  source is `verifier.dispatch.rules[].format` in `application.yaml`) whose only effect — the `vc` string-vs-object shape — no longer
+  exists now that `vc` is always an object. Removed from `SchemaProfile`, `ReaderResult`, `LocalSchemaProfileRegistry`, and the
+  profile JSON schema. It never influenced the `dome.legacy-read-enabled` / `bumped-read-enabled` sunset gating, which is driven
+  exclusively by the dispatch-rules catalog — gating behaviour is unchanged.
+- **`DispatchDecision` removed from `BuildContext`**: the token-build path only ever read `credentialConfigurationId` from it, so
+  `BuildContext` now carries that `String` directly. `TokenGenerationWorkflow` no longer fabricates a synthetic `DispatchDecision`
+  (its two `issueAccessToken` overloads are collapsed into one) and no longer depends on `SchemaProfileRegistry`. `DispatchDecision`
+  remains the return type of the dispatcher (`CredentialSchemaDispatcher`) and its OID4VP / M2M consumers.
+- **Dead `CredentialReader` layer removed**: `CredentialReader` (SPI), `LegacyCredentialReader`, `BumpedCredentialReader` and
+  `ReaderResult` were `@Component` beans that were never injected or invoked anywhere in production — the token-build path goes
+  straight from the dispatched credential to `JwsAccessTokenBuilder`. Removed together with their unit tests; the `dualformat`
+  flow tests were reworked to exercise the real dispatcher + token builder without the reader indirection.
+
+## [3.2.1] - 2026-07-09
+
+### Changed
+**EUD-155 — Hardened M2M without pre-registration**: The client_credentials fallback for non-pre-registered machines (CustomAuthenticationProvider) is now secure and reachable end-to-end. 
+- Fail-closed tenant isolation in both directions (credential and request).
+- Structured auditing for every attempt, whether accepted or rejected.
+- Standard OAuth2 errors, avoiding internal information leakage.
+- New client authentication step in Spring Security: requests without pre-registration are now successfully validated (previously, they were rejected with an empty 401).
+- Zero impact on already pre-registered clients.
+
+## [3.2.0] - 2026-07-08
+
+## Fixed - 2026-07-09
+- **`client_assertion` `aud` rejected during `private_key_jwt` client authentication (authorization_code / refresh_token flows)**: after
+  `server.servlet.context-path=/verifier` was introduced (3.1.0), the issuer the Authorization Server derives dynamically from the request (issuer  
+  not pinned, to support multi-tenant subdomains) started including the `/verifier` prefix. Spring's default `JwtClientAssertionDecoderFactory` only
+  accepts `aud` values derived from that issuer (`https://host/verifier[/oidc/token]`), but legacy clients still point at the clean public URL      
+  (without `/verifier`) and sign the `client_assertion` with that audience — causing `invalid_client: The aud claim is not valid` when exchanging   
+  the code at `POST /oidc/token`. A custom `JwtClientAssertionDecoderFactory` is now registered via
+  `OAuth2AuthorizationServerConfigurer.clientAuthentication(...)` on the `JwtClientAssertionAuthenticationProvider`, with a
+  `ClientAssertionJwtValidatorFactory` that mirrors Spring's default validation (`iss`/`sub`/`exp`/signature unchanged) and replaces only the `aud`
+  check with `ClientAssertionAudienceValidator`: it accepts the audience **with and without** the servlet context-path (derived dynamically from the
+  request, `/verifier` not hardcoded), preserving per-host isolation (multi-tenant) and still rejecting foreign hosts. Adds a `received` vs
+  `expected` log (DEBUG on success, WARN on failure) that did not exist before. Legacy clients no longer need to change their URL.
+- **Same `aud` tolerance extended to the M2M (`client_credentials`) flow**: `ClientAssertionValidationServiceImpl.validateAudience` validated     
+  `aud` with an exact `equals` against `backendConfig.getUrl()` (which now includes `/verifier`), so a legacy M2M client sending the clean URL would
+  have failed too. It is replaced by a set of accepted audiences (canonical URL with and without the context-path, derived from the request),       
+  consistent with the authorization_code validator. Foreign-host rejection and the strict `iss`/`sub`/`jti`/`exp` validation are preserved.
+
+### Added 2026-07-06
+
+- **US-08 — Legacy application coexistence on the Verifier IdP (EUDISTACK-553)**: 0 regressions for non-migrated tenants/applications during the transition to SSO (FR-14, NFR-M-01). Legacy tenant (`sso.enabled=false` or no `tenant_sso` entry) → fail-closed without creating a session or cookie; `prompt=none` on a legacy tenant → `error=login_required` to the `redirect_uri` (no QR render, residual SSO cookie ignored, no `code`/`id_token`). Coexistence verification suite: `EstablishSsoSessionWorkflow_SsoDisabledTest`/`_ConfigAbsentTest` (guard unit tests), `LegacyConvivenciaIT` (SSO+legacy coexistence and flag flip) and `PromptNoneLegacyIT` (AC-03/ES-02). ACs covered: AC-01..AC-03, EC-01..EC-02, ES-01..ES-02, NFR-S-553-01, NFR-S-553-02.
+
 ### Changed - 2026-07-08
 
-- **`sso-config.yaml`: `rootDomain` de ejemplo reemplazados por dominios reales**: los valores placeholder (`*.example.com`) de los tenants `sandbox`, `cgcom`, `kpmg`, `dome` y `platform` se sustituyen por los dominios raíz reales (`*.stg.eudistack.net` y, para `dome`, `dome-marketplace-lcl.org`) usados por el catálogo SSO per tenant (EUDISTACK-550 US-05).
+- **`sso-config.yaml`: example `rootDomain` values replaced with real domains**: the placeholder values (`*.example.com`) for tenants `sandbox`, `cgcom`, `kpmg`, `dome` and `platform` are replaced with the real root domains (`*.stg.eudistack.net` and, for `dome`, `dome-marketplace-lcl.org`) used by the per-tenant SSO catalog (EUDISTACK-550 US-05).
 
 ### Added
 - **EUDISTACK-546**: 

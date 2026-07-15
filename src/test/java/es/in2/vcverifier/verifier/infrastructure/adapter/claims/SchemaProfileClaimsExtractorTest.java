@@ -66,7 +66,7 @@ class SchemaProfileClaimsExtractorTest {
                         W3C_EMBED,
                         "openid learcredential"
                 ),
-                null, Set.of(), false, null, null, false
+                null, Set.of(), false, null, null
         );
     }
 
@@ -82,7 +82,7 @@ class SchemaProfileClaimsExtractorTest {
                         W3C_EMBED,
                         "machine learcredential"
                 ),
-                null, Set.of(), false, null, null, false
+                null, Set.of(), false, null, null
         );
     }
 

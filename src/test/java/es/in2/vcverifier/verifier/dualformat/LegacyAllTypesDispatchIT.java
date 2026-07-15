@@ -1,7 +1,6 @@
 package es.in2.vcverifier.verifier.dualformat;
 
 import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
-import es.in2.vcverifier.verifier.infrastructure.adapter.dispatch.LegacyCredentialReader;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -19,7 +18,6 @@ class LegacyAllTypesDispatchIT {
         var credential = support.readFixture(fixturePath);
         var result = support.runFlow(credential);
 
-        DualFormatFlowTestSupport.assertReaderClass(result, LegacyCredentialReader.class);
-        support.assertHappyPath(result, expectedCredentialType, CredentialFormat.LEGACY_V1_1, false);
+        support.assertHappyPath(result, expectedCredentialType, CredentialFormat.LEGACY_V1_1);
     }
 }
