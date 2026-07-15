@@ -264,14 +264,17 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         }
         log.info("M2M client '{}' not pre-registered, building synthetic client from credential", clientId);
         JsonNode credentialJson = getJsonCredential(authentication);
-        String tenant = extractTenantFromCredential(credentialJson);
+        List<String> powerDomains = extractPowerDomainsFromCredential(credentialJson);
 
-        // AD-2 fail-closed: an undeterminable tenant cannot be trusted to isolate anything,
-        // so it is rejected outright rather than falling through with no tenant restriction.
-        if (tenant == null || tenant.isBlank()) {
-            publishM2MAudit(clientId, tenant, AUDIT_OUTCOME_REJECT, AUDIT_REASON_TENANT_NOT_DERIVABLE);
+        // AD-2 fail-closed: a credential with no mandate.power[].domain cannot be trusted to
+        // authorize any tenant, so it is rejected outright rather than falling through with no
+        // tenant restriction. (mandator.organizationIdentifier is NOT a tenant identifier — it is
+        // the mandator's own real business identifier (e.g. a VAT-style code) checked elsewhere,
+        // per the same pattern the Issuer itself uses for tenant-domain authorization checks.)
+        if (powerDomains.isEmpty()) {
+            publishM2MAudit(clientId, null, AUDIT_OUTCOME_REJECT, AUDIT_REASON_TENANT_NOT_DERIVABLE);
             throw new TenantMismatchException(
-                    "Cannot determine credential tenant: missing mandator.organizationIdentifier");
+                    "Cannot determine credential tenant: missing mandate.power[].domain");
         }
 
         // AD-2 fail-closed, symmetric case: a request whose tenant cannot be resolved cannot be
@@ -279,19 +282,20 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         // credential's self-declared tenant unconditionally.
         String requestTenant = resolveCurrentTenant();
         if (requestTenant == null) {
-            publishM2MAudit(clientId, tenant, AUDIT_OUTCOME_REJECT, AUDIT_REASON_REQUEST_TENANT_NOT_DERIVABLE);
+            publishM2MAudit(clientId, String.join(",", powerDomains), AUDIT_OUTCOME_REJECT, AUDIT_REASON_REQUEST_TENANT_NOT_DERIVABLE);
             throw new TenantMismatchException(
                     "Cannot determine request tenant: unable to resolve tenant from request context");
         }
-        if (!tenant.equalsIgnoreCase(requestTenant)) {
-            publishM2MAudit(clientId, tenant, AUDIT_OUTCOME_REJECT, AUDIT_REASON_TENANT_MISMATCH);
+        boolean tenantAuthorized = powerDomains.stream().anyMatch(domain -> domain.equalsIgnoreCase(requestTenant));
+        if (!tenantAuthorized) {
+            publishM2MAudit(clientId, String.join(",", powerDomains), AUDIT_OUTCOME_REJECT, AUDIT_REASON_TENANT_MISMATCH);
             throw new TenantMismatchException(
-                    "Credential tenant '" + tenant + "' does not match request tenant '" + requestTenant + "'");
+                    "Credential power domains " + powerDomains + " do not authorize request tenant '" + requestTenant + "'");
         }
-        // Canonicalize to the request-resolved tenant (already normalized to lowercase by
-        // TenantDomainFilter) so client settings, token claims, and audit logs stay consistent
-        // regardless of how the credential itself capitalized organizationIdentifier.
-        tenant = requestTenant;
+        // Use the request-resolved tenant (already normalized to lowercase by TenantDomainFilter)
+        // so client settings, token claims, and audit logs stay consistent regardless of how the
+        // credential itself capitalized the power domain.
+        String tenant = requestTenant;
 
         RegisteredClient syntheticClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId(clientId)
@@ -330,23 +334,30 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     }
 
     /**
-     * Extracts the tenant identifier from the mandator's organizationIdentifier
-     * in the credential. Navigates: credentialSubject.mandate.mandator.organizationIdentifier
+     * Extracts the tenant domain(s) this credential's mandate authorizes.
+     * Navigates: credentialSubject.mandate.power[].domain
+     *
+     * mandator.organizationIdentifier is deliberately NOT used here — it carries the mandator's
+     * own real-world business identifier (e.g. a VAT-style code), not a tenant slug, and is never
+     * equal to one for a genuinely issued credential. mandate.power[].domain is the field the
+     * Issuer itself already uses for the equivalent tenant-domain authorization check (see
+     * PolicyContextFactory.resolveTenantAdmin in eudistack-core-issuer).
      */
-    private String extractTenantFromCredential(JsonNode credentialJson) {
-        JsonNode mandator = credentialJson.at("/credentialSubject/mandate/mandator");
-        if (mandator.isMissingNode()) {
-            log.warn("No mandator found in credential, cannot resolve tenant");
-            return null;
+    private List<String> extractPowerDomainsFromCredential(JsonNode credentialJson) {
+        JsonNode powers = credentialJson.at("/credentialSubject/mandate/power");
+        if (!powers.isArray() || powers.isEmpty()) {
+            log.warn("No mandate.power[] found in credential, cannot resolve authorized tenant domain(s)");
+            return List.of();
         }
-        JsonNode orgId = mandator.get("organizationIdentifier");
-        if (orgId == null || orgId.isNull()) {
-            log.warn("No organizationIdentifier found in mandator");
-            return null;
+        List<String> domains = new ArrayList<>();
+        for (JsonNode power : powers) {
+            JsonNode domainNode = power.get("domain");
+            if (domainNode != null && !domainNode.isNull() && !domainNode.asText().isBlank()) {
+                domains.add(domainNode.asText());
+            }
         }
-        String organizationIdentifier = orgId.asText();
-        log.info("Extracted organizationIdentifier from M2M credential: {}", organizationIdentifier);
-        return organizationIdentifier;
+        log.info("Extracted power domain(s) from M2M credential: {}", domains);
+        return domains;
     }
 
     private JsonNode getJsonCredential(OAuth2AuthorizationGrantAuthenticationToken authentication) {

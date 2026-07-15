@@ -22,8 +22,22 @@ import static es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClie
  * {@link CustomAuthenticationProvider#getOrBuildRegisteredClient} performs its own
  * independent {@code registeredClientRepository.findByClientId} lookup afterwards and
  * derives the real client identity and tenant from the validated credential.
+ *
+ * SEC: the placeholder's grant type is deliberately a bogus, non-standard value
+ * ({@link #PLACEHOLDER_GRANT_TYPE}) rather than {@code CLIENT_CREDENTIALS}.
+ * {@code OAuth2ClientAuthenticationConfigurer#authenticationProvider} / the equivalent
+ * token-endpoint configurer APPEND to Spring's own provider lists rather than replacing
+ * them, so Spring's built-in {@code OAuth2ClientCredentialsAuthenticationProvider} remains
+ * in the chain. If the placeholder declared CLIENT_CREDENTIALS, that built-in provider
+ * would independently accept it too and mint a token with none of our credential/tenant
+ * validation — bypassing CustomAuthenticationProvider entirely. A grant type no built-in
+ * provider recognizes ensures every one of them rejects the placeholder, so only our own
+ * downstream validation can ever produce a token for an unregistered client.
  */
 public class UnregisteredM2MClientAuthenticationProvider implements AuthenticationProvider {
+
+    private static final AuthorizationGrantType PLACEHOLDER_GRANT_TYPE =
+            new AuthorizationGrantType("urn:eudistack:oauth:grant-type:unregistered-vc-placeholder");
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
@@ -36,7 +50,7 @@ public class UnregisteredM2MClientAuthenticationProvider implements Authenticati
         RegisteredClient placeholderClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId(clientId)
                 .clientAuthenticationMethod(UNREGISTERED_VC_METHOD)
-                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .authorizationGrantType(PLACEHOLDER_GRANT_TYPE)
                 .build();
 
         return new OAuth2ClientAuthenticationToken(placeholderClient, UNREGISTERED_VC_METHOD,
