@@ -7,6 +7,7 @@ import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +32,7 @@ class SsoSessionConcurrencyIT {
     @Mock private TenantSsoConfigPort tenantSsoConfigPort;
     @Mock private SsoSessionRepositoryPort sessionRepositoryPort;
     @Mock private SsoAuditPort auditPort;
+    @Mock private SsoMetricsPort metricsPort;
     @Mock private HashingService hashingService;
     @Mock private Clock clock;
 

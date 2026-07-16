@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 2026-07-14
+
+- **SSO audit & observability per tenant (US-07)**: completes the FR-13 audit event catalog with the lifecycle events `SSO_SESSION_EXPIRED`, `SSO_LOGOUT_INITIATED` and `SSO_BACKCHANNEL_DELIVERED` plus an optional `reason` field (backward-compatible, nullable). Adds FR-16 functional metrics via a domain `SsoMetricsPort` + `SsoMetricsRecorder` (Micrometer): `verifier_sso_reuse_total{tenant,client_id}`, `verifier_sso_oid4vp_avoided_total{tenant}` and `verifier_sso_established_total{tenant}`, exposed per tenant through the new admin endpoint `GET /tenant/sso/metrics` (scoped to the authenticated tenant, fail-closed cross-tenant) with the reuse ratio (division-by-zero guarded). The establish/reuse workflows are instrumented and `SsoAuditAdapter` is hardened to best-effort: emission never propagates a failure to the business flow (ES-01), applies explicit defaults + an anomaly marker on missing mandatory fields (ES-04), and keeps the `sub`/session-id PII redacted for the whole catalog (AC-06). Audit and metric emission are non-blocking (AD-1).
 ### Fixed - 2026-07-15
 
 - **CGCOM — VCT rename `doctorid.sd.1` → `urn:es.cgcom:doctorid:1`**: updated `credential-configuration-id` in `application.yaml` to the canonical URN-based VCT, aligning with the DoctorID issuer and the CGCOM verifier DCQL profiles / trusted-issuers configuration.
