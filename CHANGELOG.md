@@ -4,7 +4,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.2.2] - 2026-07-15
+
+### Fixed
+**EUD-155 — Two critical M2M gaps found during real end-to-end stg validation, not caught by 3.2.1**:
+- **Security bypass via Spring's built-in provider**: the unregistered-client placeholder (`UnregisteredM2MClientAuthenticationProvider`) declared `AuthorizationGrantType.CLIENT_CREDENTIALS`. Spring's `OAuth2ClientAuthenticationConfigurer`/`OAuth2TokenEndpointConfigurer` *append* custom providers to Spring's own internal list rather than replacing it, so the built-in `OAuth2ClientCredentialsAuthenticationProvider` remained in the chain and could independently mint a fully valid access token for the placeholder — bypassing every credential/tenant check `CustomAuthenticationProvider` performs. Fixed by giving the placeholder a bogus, non-standard grant type (`urn:eudistack:oauth:grant-type:unregistered-vc-placeholder`) that no built-in provider recognizes, so only our own validation can ever produce a token.
+- **Wrong field used for tenant derivation**: `CustomAuthenticationProvider` derived the authorized tenant from `credentialSubject.mandate.mandator.organizationIdentifier` — the mandator's fiscal/VAT identifier, never a tenant slug. This both rejected legitimate credentials (any real `organizationIdentifier` fails to match a tenant slug like `sandbox`/`dome`) and, in principle, could accept ones with a coincidentally matching value. Fixed to read `credentialSubject.mandate.power[].domain` instead — the field already used for tenant-scoped authorization elsewhere in the platform (`PolicyContextFactory.resolveTenantAdmin` in the Issuer), matching any power whose domain equals the request tenant.
+
+## [3.2.1] - 2026-07-09
+
+### Changed
+**EUD-155 — Hardened M2M without pre-registration**: The client_credentials fallback for non-pre-registered machines (CustomAuthenticationProvider) is now reachable end-to-end, with the remaining gaps closed in 3.2.2 above.
+- Fail-closed tenant isolation in both directions (credential and request) — the credential-side field used was corrected in 3.2.2.
+- Structured auditing for every attempt, whether accepted or rejected.
+- Standard OAuth2 errors, avoiding internal information leakage.
+- New client authentication step in Spring Security: requests without pre-registration are now successfully validated (previously, they were rejected with an empty 401) — the placeholder client's grant type was hardened against a bypass in 3.2.2.
+- Zero impact on already pre-registered clients.
+
+## [3.2.0] - 2026-07-08
 
 ### Added - 2026-07-14
 
