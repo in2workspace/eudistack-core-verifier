@@ -9,6 +9,7 @@ import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,7 @@ public class EstablishSsoSessionWorkflow {
     private final TenantSsoConfigPort tenantSsoConfigPort;
     private final SsoSessionRepositoryPort sessionRepositoryPort;
     private final SsoAuditPort auditPort;
+    private final SsoMetricsPort metricsPort;
     private final HashingService hashingService;
     private final Clock clock;
 
@@ -36,12 +38,14 @@ public class EstablishSsoSessionWorkflow {
             TenantSsoConfigPort tenantSsoConfigPort,
             SsoSessionRepositoryPort sessionRepositoryPort,
             SsoAuditPort auditPort,
+            SsoMetricsPort metricsPort,
             HashingService hashingService,
             Clock clock
     ) {
         this.tenantSsoConfigPort = tenantSsoConfigPort;
         this.sessionRepositoryPort = sessionRepositoryPort;
         this.auditPort = auditPort;
+        this.metricsPort = metricsPort;
         this.hashingService = hashingService;
         this.clock = clock;
     }
@@ -97,6 +101,8 @@ public class EstablishSsoSessionWorkflow {
                 command.correlationId(),
                 now
         ));
+
+        metricsPort.recordEstablishment(command.tenant());
 
         return new SsoSessionCookieDescriptor(
                 "SSO_SESSION",

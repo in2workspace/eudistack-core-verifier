@@ -10,8 +10,7 @@ plugins {
 }
 
 group = 'com.eudistack'
-version = '3.2.2'
-
+version = '3.3.0'
 
 java {
     toolchain {
@@ -60,6 +59,12 @@ dependencies {
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
     implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'io.micrometer:micrometer-registry-otlp'
+    implementation 'io.opentelemetry.proto:opentelemetry-proto:1.3.2-alpha'
+    implementation 'io.grpc:grpc-netty-shaded:1.63.0'
+    implementation 'io.grpc:grpc-stub:1.63.0'
+    implementation 'io.grpc:grpc-protobuf:1.63.0'
 
     // --- Documentation ---
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'

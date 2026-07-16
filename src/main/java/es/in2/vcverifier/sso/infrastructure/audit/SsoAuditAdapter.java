@@ -17,30 +17,57 @@ import java.util.Map;
 @Slf4j
 public class SsoAuditAdapter implements SsoAuditPort {
 
+    private static final String UNKNOWN = "unknown";
+
     @Override
     public void publish(SsoAuditEvent event) {
         // NFR-O-01: eventos de catálogo emiten formato CATALOG_CHANGE con campo operation
-        if (event.getEventType() == SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_ADDED
-                || event.getEventType() == SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_REMOVED) {
-            emitCatalogChangeEvent(event);
-            return;
-        }
+        try {
+            if (event == null) {
+                log.error("SSO_AUDIT_EMISSION_FAILED reason=null_event");
+                return;
+            }
 
-        if (event.getEventType() == SsoAuditEvent.EventType.EMERGENCY_REVOKE) {
-            emitEmergencyRevokeEvent(event);
-            return;
-        }
+            if (event.getEventType() == SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_ADDED
+                    || event.getEventType() == SsoAuditEvent.EventType.SSO_CATALOG_CLIENT_REMOVED) {
+                emitCatalogChangeEvent(event);
+                return;
+            }
 
+            if (event.getEventType() == SsoAuditEvent.EventType.EMERGENCY_REVOKE) {
+                emitEmergencyRevokeEvent(event);
+                return;
+            }
+
+            emitLifecycleEvent(event);
+        } catch (Exception ex) {
+            log.error("SSO_AUDIT_EMISSION_FAILED eventType={} correlationId={} error={}",
+                    safeType(event), safeCorrelation(event), ex.getClass().getSimpleName());
+        }
+    }
+
+    private void emitLifecycleEvent(SsoAuditEvent event) {
         Map<String, Object> logEvent = new HashMap<>();
 
+        String tenant = defaultIfBlank(event.getTenant(), UNKNOWN);
+        String outcome = defaultIfBlank(event.getOutcome(), UNKNOWN);
+
+        if (isBlank(event.getTenant()) || isBlank(event.getOutcome())) {
+            logEvent.put("anomaly", "missing_mandatory_field");
+        }
+
         logEvent.put("eventType", event.getEventType().name());
-        logEvent.put("tenant", event.getTenant());
+        logEvent.put("tenant", tenant);
         logEvent.put("clientId", event.getClientId());
-        logEvent.put("outcome", event.getOutcome());
+        logEvent.put("outcome", outcome);
         logEvent.put("correlationId", event.getCorrelationId());
         logEvent.put("occurredAt", event.getOccurredAt());
 
-        // NFR-S-547-01: never log sub in clear — SHA-256 one-way hash
+        if (event.getReason() != null) {
+            logEvent.put("reason", event.getReason());
+        }
+
+        // NFR-S-547-01 / NFR-S-552-01: never log sub in clear — SHA-256 one-way hash
         logEvent.put("sub", maskSubject(event.getHolderHash()));
 
         // NFR-S-547-02: holderHash prefix for traceability (not a session id)
@@ -107,6 +134,26 @@ public class SsoAuditAdapter implements SsoAuditPort {
         return holderHash.length() <= 8
                 ? holderHash
                 : holderHash.substring(0, 8);
+    }
+
+    // ─── helpers (ES-01 / ES-04) ─────────────────────────────────────────────
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String defaultIfBlank(String value, String fallback) {
+        return isBlank(value) ? fallback : value;
+    }
+
+    private static String safeType(SsoAuditEvent event) {
+        return event == null || event.getEventType() == null
+                ? UNKNOWN
+                : event.getEventType().name();
+    }
+
+    private static String safeCorrelation(SsoAuditEvent event) {
+        return event == null ? UNKNOWN : defaultIfBlank(event.getCorrelationId(), UNKNOWN);
     }
 
 }
