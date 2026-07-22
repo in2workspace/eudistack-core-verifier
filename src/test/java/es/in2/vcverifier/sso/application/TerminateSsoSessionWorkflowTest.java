@@ -154,6 +154,8 @@ class TerminateSsoSessionWorkflowTest {
         verify(notifierPort, never()).notifyLogout(any(), any());
         verify(auditPort).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.BACKCHANNEL_SKIPPED
-                        && "callee-c".equals(event.getClientId())));
+                        && "callee-c".equals(event.getClientId())
+                        && "skipped".equals(event.getOutcome())
+                        && "no_backchannel_uri".equals(event.getReason())));
     }
 }

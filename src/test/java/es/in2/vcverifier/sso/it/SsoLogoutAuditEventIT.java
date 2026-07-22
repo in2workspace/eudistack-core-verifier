@@ -207,7 +207,7 @@ class SsoLogoutAuditEventIT {
 
         String skippedLine = findLine(logs, "BACKCHANNEL_SKIPPED");
         assertThat(skippedLine).contains("tenant=" + TENANT).contains("clientId=" + skippedClientId)
-                .contains("outcome=no_backchannel_uri").contains("correlationId=");
+                .contains("outcome=skipped").contains("reason=no_backchannel_uri").contains("correlationId=");
 
         // NFR-S-551-02: el session_id completo NUNCA debe aparecer en ningún log — solo su
         // prefijo de 8 chars (que sí debe aparecer, para trazabilidad).

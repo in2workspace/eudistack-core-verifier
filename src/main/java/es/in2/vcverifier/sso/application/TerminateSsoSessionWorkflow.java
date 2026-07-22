@@ -84,6 +84,7 @@ public class TerminateSsoSessionWorkflow {
                     .clientId(command.initiatorClientId())
                     .sessionId(command.sessionId().getValue())
                     .outcome("error")
+                    .reason(ex.getClass().getSimpleName())
                     .correlationId(command.correlationId())
                     .occurredAt(now)
                     .build());
@@ -138,7 +139,8 @@ public class TerminateSsoSessionWorkflow {
                         .tenant(command.tenant())
                         .clientId(clientId)
                         .sessionId(command.sessionId().getValue())
-                        .outcome("no_backchannel_uri")
+                        .outcome("skipped")
+                        .reason("no_backchannel_uri")
                         .correlationId(command.correlationId())
                         .occurredAt(now)
                         .build());
@@ -178,7 +180,8 @@ public class TerminateSsoSessionWorkflow {
                     .tenant(command.tenant())
                     .clientId(failed.clientId())
                     .sessionId(command.sessionId().getValue())
-                    .outcome(failed.reason())
+                    .outcome("error")
+                    .reason(failed.reason())
                     .correlationId(command.correlationId())
                     .occurredAt(deliveredAt)
                     .build());

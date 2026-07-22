@@ -232,8 +232,8 @@ class BackChannelLogoutDispatchIT {
                         .param("client_id", initiatorClientId))
                 .andExpect(status().is3xxRedirection());
 
-        verify(auditPort, timeout(3000)).publish(argThatEventTypeAndOutcome(
-                SsoAuditEvent.EventType.BACKCHANNEL_SKIPPED, calleeClientId, "no_backchannel_uri"));
+        verify(auditPort, timeout(3000)).publish(argThatEventTypeOutcomeAndReason(
+                SsoAuditEvent.EventType.BACKCHANNEL_SKIPPED, calleeClientId, "skipped", "no_backchannel_uri"));
 
         assertThat(calleeRequestBodies.poll(500, TimeUnit.MILLISECONDS))
                 .as("un callee sin canal declarado nunca debe recibir el logout_token")
@@ -322,10 +322,12 @@ class BackChannelLogoutDispatchIT {
                 event.getEventType() == type && clientId.equals(event.getClientId()));
     }
 
-    private SsoAuditEvent argThatEventTypeAndOutcome(SsoAuditEvent.EventType type, String clientId, String outcome) {
+    private SsoAuditEvent argThatEventTypeOutcomeAndReason(
+            SsoAuditEvent.EventType type, String clientId, String outcome, String reason) {
         return org.mockito.ArgumentMatchers.argThat(event ->
                 event.getEventType() == type
                         && clientId.equals(event.getClientId())
-                        && outcome.equals(event.getOutcome()));
+                        && outcome.equals(event.getOutcome())
+                        && reason.equals(event.getReason()));
     }
 }

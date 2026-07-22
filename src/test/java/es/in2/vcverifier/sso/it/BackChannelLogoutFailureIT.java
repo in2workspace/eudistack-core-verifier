@@ -185,8 +185,8 @@ class BackChannelLogoutFailureIT {
         // no la revierte jamás.
         assertThat(sessionState(sessionId)).isEqualTo("TERMINATED");
 
-        verify(auditPort, timeout(6000)).publish(argThatEventType(
-                SsoAuditEvent.EventType.BACKCHANNEL_FAILED, failingClientId));
+        verify(auditPort, timeout(6000)).publish(argThatEventTypeOutcomeAndReason(
+                SsoAuditEvent.EventType.BACKCHANNEL_FAILED, failingClientId, "error", "http_500"));
         verify(auditPort, timeout(6000)).publish(argThatEventType(
                 SsoAuditEvent.EventType.BACKCHANNEL_DELIVERED, okClientId));
 
@@ -216,8 +216,8 @@ class BackChannelLogoutFailureIT {
         // sin llegar a la red — cero hits adicionales al callee.
         dispatchOnceToFailingCallee("initiator-circuit-open", failingClientId);
 
-        verify(auditPort, timeout(3000)).publish(argThatEventTypeAndOutcome(
-                SsoAuditEvent.EventType.BACKCHANNEL_FAILED, failingClientId, "circuit_open"));
+        verify(auditPort, timeout(3000)).publish(argThatEventTypeOutcomeAndReason(
+                SsoAuditEvent.EventType.BACKCHANNEL_FAILED, failingClientId, "error", "circuit_open"));
 
         assertThat(failingServerHits.get())
                 .as("con el circuit breaker abierto, el 6º dispatch no debe llegar a la red")
@@ -323,10 +323,12 @@ class BackChannelLogoutFailureIT {
                 event.getEventType() == type && clientId.equals(event.getClientId()));
     }
 
-    private SsoAuditEvent argThatEventTypeAndOutcome(SsoAuditEvent.EventType type, String clientId, String outcome) {
+    private SsoAuditEvent argThatEventTypeOutcomeAndReason(
+            SsoAuditEvent.EventType type, String clientId, String outcome, String reason) {
         return org.mockito.ArgumentMatchers.argThat(event ->
                 event.getEventType() == type
                         && clientId.equals(event.getClientId())
-                        && outcome.equals(event.getOutcome()));
+                        && outcome.equals(event.getOutcome())
+                        && reason.equals(event.getReason()));
     }
 }

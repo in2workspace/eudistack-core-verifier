@@ -184,8 +184,8 @@ class BackChannelLogoutTimeoutIT {
                 .isLessThan(Duration.ofSeconds(1));
 
         // 3 intentos x 5s de timeout + backoff entre intentos ≈ 16.5s — margen amplio.
-        verify(auditPort, timeout(25000)).publish(argThatEventTypeAndOutcome(
-                SsoAuditEvent.EventType.BACKCHANNEL_FAILED, hangingClientId, "timeout"));
+        verify(auditPort, timeout(25000)).publish(argThatEventTypeOutcomeAndReason(
+                SsoAuditEvent.EventType.BACKCHANNEL_FAILED, hangingClientId, "error", "timeout"));
     }
 
     // =========================================================
@@ -258,10 +258,12 @@ class BackChannelLogoutTimeoutIT {
                 sessionId, TENANT, clientId, now, now);
     }
 
-    private SsoAuditEvent argThatEventTypeAndOutcome(SsoAuditEvent.EventType type, String clientId, String outcome) {
+    private SsoAuditEvent argThatEventTypeOutcomeAndReason(
+            SsoAuditEvent.EventType type, String clientId, String outcome, String reason) {
         return org.mockito.ArgumentMatchers.argThat(event ->
                 event.getEventType() == type
                         && clientId.equals(event.getClientId())
-                        && outcome.equals(event.getOutcome()));
+                        && outcome.equals(event.getOutcome())
+                        && reason.equals(event.getReason()));
     }
 }
