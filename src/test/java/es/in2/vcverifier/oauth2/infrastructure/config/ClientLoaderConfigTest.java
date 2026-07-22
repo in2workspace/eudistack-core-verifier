@@ -15,6 +15,7 @@ import java.util.Set;
 
 import es.in2.vcverifier.oauth2.domain.exception.ClientLoadingException;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -351,6 +352,72 @@ class ClientLoaderConfigTest {
         assertThat(allowedOrigins)
                 .as("redirect URI scheme comparison must be case-insensitive (RFC 3986 3.1)")
                 .contains("https://app.example.com");
+    }
+
+    // =========================================================
+    // [B3] backchannelLogoutUri: HTTPS enforcement at registration (SSRF, SEC-14).
+    // =========================================================
+
+    @Test
+    void retrieveClients_withHttpsBackchannelLogoutUri_storesInClientSettings() {
+        // Arrange
+        String backchannelLogoutUri = "https://app.example.com/backchannel-logout";
+        ClientData clientData = new ClientData(
+                null, "https://app.example.com",
+                "vc-auth-client-bcl", null,
+                List.of("https://app.example.com/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://app.example.com"),
+                true, null, null,
+                null, null, null, backchannelLogoutUri
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        // Act
+        RegisteredClientRepository repo = config.getRegisteredClientRepository();
+        RegisteredClient registered = repo.findByClientId("vc-auth-client-bcl");
+
+        // Assert
+        assertThat(registered).isNotNull();
+        assertThat((String) registered.getClientSettings().getSetting(CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI))
+                .isEqualTo(backchannelLogoutUri);
+    }
+
+    @Test
+    void retrieveClients_withNonHttpsBackchannelLogoutUri_throwsException() {
+        // Arrange
+        ClientData clientData = new ClientData(
+                null, "https://app.example.com",
+                "vc-auth-client-bad-bcl", null,
+                List.of("https://app.example.com/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://app.example.com"),
+                true, null, null,
+                null, null, null, "http://insecure.example.com/backchannel-logout"
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        // Act & Assert
+        assertThatThrownBy(config::getRegisteredClientRepository)
+                .isInstanceOf(ClientLoadingException.class);
     }
 
     @Test

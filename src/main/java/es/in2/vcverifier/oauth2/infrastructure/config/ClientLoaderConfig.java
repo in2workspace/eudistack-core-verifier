@@ -111,6 +111,14 @@ public class ClientLoaderConfig {
                     clientSettingsBuilder.setting(CLIENT_SETTING_CLIENT_METADATA, clientData.clientMetadata());
                 }
                 if (clientData.backchannelLogoutUri() != null && !clientData.backchannelLogoutUri().isBlank()) {
+                    // [B3] SEC-14: mismo enforcement HTTPS que loginPageUri — el host/rango
+                    // privado se valida en resolución (RegisteredClientBackchannelLogoutUriResolver,
+                    // vía SafeUrlValidator), pero el esquema se rechaza ya en el registro.
+                    URI backchannelLogoutUri = URI.create(clientData.backchannelLogoutUri());
+                    if (!HTTPS_SCHEME.equalsIgnoreCase(backchannelLogoutUri.getScheme())) {
+                        throw new ClientLoadingException("backchannelLogoutUri must use HTTPS scheme for client '"
+                                + clientData.clientId() + "': " + clientData.backchannelLogoutUri());
+                    }
                     clientSettingsBuilder.setting(CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI, clientData.backchannelLogoutUri());
                 }
                 if (clientData.loginPageUri() != null && !clientData.loginPageUri().isBlank()) {
