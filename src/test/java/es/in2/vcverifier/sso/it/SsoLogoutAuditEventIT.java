@@ -200,6 +200,12 @@ class SsoLogoutAuditEventIT {
         String initiatedLine = findLine(logs, "SSO_LOGOUT_INITIATED");
         assertThat(initiatedLine).contains("tenant=" + TENANT).contains("clientId=" + initiatorClientId)
                 .contains("outcome=success").contains("correlationId=");
+        // AC-06: holder_hash de la sesión terminada, presente vía su prefijo de 8 chars
+        // (mismo tratamiento NFR-S-551-02 que session_id — nunca el valor completo).
+        String holderHash = "holder-" + sessionId;
+        assertThat(initiatedLine)
+                .contains("holderHashPrefix=" + holderHash.substring(0, 8))
+                .doesNotContain(holderHash);
 
         String deliveredLine = findLine(logs, "BACKCHANNEL_DELIVERED");
         assertThat(deliveredLine).contains("tenant=" + TENANT).contains("clientId=" + deliveredClientId)

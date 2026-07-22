@@ -4,7 +4,9 @@ import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.TerminateSsoSessionWorkflow;
 import es.in2.vcverifier.sso.application.command.TerminateSsoSessionCommand;
+import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
+import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,16 +43,19 @@ public class SsoSessionLogoutHandler implements AuthenticationSuccessHandler {
     private final TerminateSsoSessionWorkflow terminateSsoSessionWorkflow;
     private final SsoSessionCookieFactory cookieFactory;
     private final TenantSsoConfigPort tenantSsoConfigPort;
+    private final SsoSessionRepositoryPort sessionRepositoryPort;
     private final AuthenticationSuccessHandler delegate = new OidcLogoutAuthenticationSuccessHandler();
 
     public SsoSessionLogoutHandler(
             TerminateSsoSessionWorkflow terminateSsoSessionWorkflow,
             SsoSessionCookieFactory cookieFactory,
-            TenantSsoConfigPort tenantSsoConfigPort
+            TenantSsoConfigPort tenantSsoConfigPort,
+            SsoSessionRepositoryPort sessionRepositoryPort
     ) {
         this.terminateSsoSessionWorkflow = terminateSsoSessionWorkflow;
         this.cookieFactory = cookieFactory;
         this.tenantSsoConfigPort = tenantSsoConfigPort;
+        this.sessionRepositoryPort = sessionRepositoryPort;
     }
 
     @Override
@@ -92,11 +97,21 @@ public class SsoSessionLogoutHandler implements AuthenticationSuccessHandler {
         }
 
         String correlationId = UUID.randomUUID().toString();
+        SsoSessionId sessionId = SsoSessionId.of(sessionIdValue);
+
+        // AC-06: resuelve holder_hash desde la sesión ANTES de invocar el workflow
+        // (mismo patrón que ReuseSsoSessionWorkflowImpl al leer SsoSession.getHolderHash()).
+        // Nullable si la sesión ya no está activa (EC-01) — el workflow sigue siendo idempotente.
+        String holderHash = sessionRepositoryPort.findActiveById(sessionId, tenant)
+                .map(SsoSession::getHolderHash)
+                .orElse(null);
+
         var command = new TerminateSsoSessionCommand(
                 tenant,
-                SsoSessionId.of(sessionIdValue),
+                sessionId,
                 logoutToken.getClientId(),
-                correlationId
+                correlationId,
+                holderHash
         );
 
         terminateSsoSessionWorkflow.execute(command);

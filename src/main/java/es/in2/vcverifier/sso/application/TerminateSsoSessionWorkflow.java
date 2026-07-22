@@ -82,6 +82,7 @@ public class TerminateSsoSessionWorkflow {
                     .eventType(SsoAuditEvent.EventType.SSO_LOGOUT_STORE_ERROR)
                     .tenant(command.tenant())
                     .clientId(command.initiatorClientId())
+                    .holderHash(command.holderHash())
                     .sessionId(command.sessionId().getValue())
                     .outcome("error")
                     .reason(ex.getClass().getSimpleName())
@@ -97,6 +98,7 @@ public class TerminateSsoSessionWorkflow {
                     .eventType(SsoAuditEvent.EventType.SSO_LOGOUT_INITIATED)
                     .tenant(command.tenant())
                     .clientId(command.initiatorClientId())
+                    .holderHash(command.holderHash())
                     .sessionId(command.sessionId().getValue())
                     .outcome("noop")
                     .correlationId(command.correlationId())
@@ -106,10 +108,12 @@ public class TerminateSsoSessionWorkflow {
         }
 
         // AC-01/AC-02: invalidación confirmada — se audita el éxito ANTES de calcular callees.
+        // AC-06: holder_hash siempre presente en sso_logout_initiated.
         auditPort.publish(SsoAuditEvent.builder()
                 .eventType(SsoAuditEvent.EventType.SSO_LOGOUT_INITIATED)
                 .tenant(command.tenant())
                 .clientId(command.initiatorClientId())
+                .holderHash(command.holderHash())
                 .sessionId(command.sessionId().getValue())
                 .outcome("success")
                 .correlationId(command.correlationId())

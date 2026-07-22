@@ -39,6 +39,7 @@ class TerminateSsoSessionWorkflowTest {
     private static final String TENANT = "tenant-a";
     private static final String INITIATOR = "app-a";
     private static final SsoSessionId SESSION_ID = SsoSessionId.of("opaque-session-id-123");
+    private static final String HOLDER_HASH = "holder-hash-abc123";
 
     @Mock private SsoSessionRepositoryPort sessionRepositoryPort;
     @Mock private BackchannelLogoutUriPort backchannelLogoutUriPort;
@@ -67,7 +68,7 @@ class TerminateSsoSessionWorkflowTest {
     }
 
     private TerminateSsoSessionCommand command() {
-        return new TerminateSsoSessionCommand(TENANT, SESSION_ID, INITIATOR, "corr-123");
+        return new TerminateSsoSessionCommand(TENANT, SESSION_ID, INITIATOR, "corr-123", HOLDER_HASH);
     }
 
     // ─── AD-3: invalidación local ANTES de cualquier dispatch ─────────────────
@@ -120,7 +121,8 @@ class TerminateSsoSessionWorkflowTest {
         verify(notifierPort, never()).notifyLogout(any(), any());
         verify(auditPort).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_LOGOUT_INITIATED
-                        && "success".equals(event.getOutcome())));
+                        && "success".equals(event.getOutcome())
+                        && HOLDER_HASH.equals(event.getHolderHash())));
     }
 
     // ─── ES-04: fallo al persistir la invalidación — fail-closed, sin dispatch ─
