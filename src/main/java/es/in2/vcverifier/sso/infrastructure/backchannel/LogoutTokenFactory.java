@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGOUT_JWT_TYPE;
+
 /**
  * US-06 (Single Logout): construye y firma el {@code logout_token} conforme a
  * OIDC Back-Channel Logout 1.0 §2.4. Reutiliza {@link JWTService#issueJWT(String)}
@@ -31,12 +33,13 @@ public class LogoutTokenFactory {
         claims.put("aud", token.aud());
         claims.put("sid", token.sid());
         claims.put("iat", token.iat().getEpochSecond());
+        claims.put("exp", token.exp().getEpochSecond());
         claims.put("jti", token.jti());
         claims.put("events", token.events());
 
         try {
             String payload = objectMapper.writeValueAsString(claims);
-            return jwtService.issueJWT(payload);
+            return jwtService.issueJWTwithType(payload, LOGOUT_JWT_TYPE);
         } catch (JsonProcessingException e) {
             throw new JWTCreationException("Error creating logout_token: " + e.getMessage());
         }

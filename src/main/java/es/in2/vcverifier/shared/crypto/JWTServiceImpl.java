@@ -134,8 +134,13 @@ public class JWTServiceImpl implements JWTService {
 
     @Override
     public String issueJWTwithOI4VPType(String payload) {
-        log.info("Starting OID4VP JWT generation with typ={}", OID4VP_TYPE);
-        return generateJWTInternal(payload,new JOSEObjectType(OID4VP_TYPE));
+        return issueJWTwithType(payload, OID4VP_TYPE);
+    }
+
+    @Override
+    public String issueJWTwithType(String payload, String type) {
+        log.info("Starting JWT generation with typ={}", type);
+        return generateJWTInternal(payload, new JOSEObjectType(type));
     }
 
     private String generateJWTInternal(String payload, JOSEObjectType type) {

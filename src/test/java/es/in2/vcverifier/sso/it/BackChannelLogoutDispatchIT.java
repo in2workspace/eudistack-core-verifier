@@ -190,6 +190,11 @@ class BackChannelLogoutDispatchIT {
                 .as("la firma del logout_token debe verificar con la clave pública del Verifier")
                 .isTrue();
 
+        // [W3]: typ=logout+jwt (OIDC Back-Channel Logout 1.0 §2.4/§5) — evita confusión de tipo
+        // de token, ya que la misma clave EC firma id_token/access_token/logout_token.
+        assertThat(signedJwt.getHeader().getType())
+                .isEqualTo(new com.nimbusds.jose.JOSEObjectType("logout+jwt"));
+
         // Claims OIDC Back-Channel Logout 1.0 §2.4 — completos, sin nonce.
         var claims = signedJwt.getJWTClaimsSet();
         assertThat(claims.getAudience()).containsExactly(calleeClientId);
@@ -197,6 +202,9 @@ class BackChannelLogoutDispatchIT {
         assertThat(claims.getStringClaim("jti")).isNotBlank();
         assertThat(claims.getStringClaim("iss")).isNotBlank();
         assertThat(claims.getIssueTime()).isNotNull();
+        // [W3]: exp acotado (iat + 2min) — limita la ventana de replay contra el RP.
+        assertThat(claims.getExpirationTime())
+                .isEqualTo(java.util.Date.from(claims.getIssueTime().toInstant().plusSeconds(120)));
         assertThat(claims.getClaim("nonce")).as("el logout_token nunca lleva nonce").isNull();
 
         @SuppressWarnings("unchecked")

@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,14 +44,14 @@ class LogoutTokenFactoryTest {
                 "jti-abc-123"
         );
 
-        when(jwtService.issueJWT(anyString())).thenReturn("signed.jwt.value");
+        when(jwtService.issueJWTwithType(anyString(), eq("logout+jwt"))).thenReturn("signed.jwt.value");
 
         String result = factory.build(token);
 
         assertEquals("signed.jwt.value", result);
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jwtService).issueJWT(payloadCaptor.capture());
+        verify(jwtService).issueJWTwithType(payloadCaptor.capture(), eq("logout+jwt"));
         String payload = payloadCaptor.getValue();
 
         // AC-04: claims completos
@@ -60,6 +61,9 @@ class LogoutTokenFactoryTest {
         assertTrue(payload.contains("\"jti\":\"jti-abc-123\""));
         assertTrue(payload.contains("\"iat\":" + Instant.parse("2026-01-15T10:00:00Z").getEpochSecond()));
         assertTrue(payload.contains("http://schemas.openid.net/event/backchannel-logout"));
+
+        // [W3]: exp = iat + 2min
+        assertTrue(payload.contains("\"exp\":" + Instant.parse("2026-01-15T10:02:00Z").getEpochSecond()));
 
         // AC-04: MUST NOT incluir nonce
         assertFalse(payload.contains("nonce"));

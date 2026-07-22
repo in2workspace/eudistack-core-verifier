@@ -19,6 +19,9 @@ public class Constants {
     public static final String INTERACTION_REQUIRED = "interaction_required";
     public static final String LOG_ERROR_FORMAT = "{} - {}";
     public static final String OID4VP_TYPE = "oauth-authz-req+jwt";
+    // US-06 [W3]: OIDC Back-Channel Logout 1.0 §2.4/§5 RECOMMENDS typ=logout+jwt to prevent
+    // token-type confusion, since the same EC key signs id_token/access_token/logout_token.
+    public static final String LOGOUT_JWT_TYPE = "logout+jwt";
     public static final long MSB = 0x80L;
     public static final long MSBALL = 0xFFFFFF80L;
     public static final String EXPIRATION = "expiration";

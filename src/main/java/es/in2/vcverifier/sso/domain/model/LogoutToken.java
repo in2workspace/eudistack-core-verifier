@@ -1,5 +1,6 @@
 package es.in2.vcverifier.sso.domain.model;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
@@ -23,6 +24,13 @@ public record LogoutToken(
     private static final String BACKCHANNEL_LOGOUT_EVENT_URI =
             "http://schemas.openid.net/event/backchannel-logout";
 
+    /**
+     * [W3]: ventana de validez del {@code logout_token}, acotada para limitar la superficie de
+     * replay contra el endpoint back-channel del RP (la spec no exige {@code exp}, pero tampoco
+     * lo prohíbe — un token de un solo uso con vida corta es más seguro que uno sin expiración).
+     */
+    private static final Duration EXPIRATION_WINDOW = Duration.ofMinutes(2);
+
     public LogoutToken {
         Objects.requireNonNull(iss, "iss cannot be null");
         Objects.requireNonNull(aud, "aud cannot be null");
@@ -41,5 +49,10 @@ public record LogoutToken(
      */
     public Map<String, Object> events() {
         return Map.of(BACKCHANNEL_LOGOUT_EVENT_URI, Map.of());
+    }
+
+    /** [W3]: {@code exp} derivado de {@code iat + 2min} — no es un componente independiente del record. */
+    public Instant exp() {
+        return iat.plus(EXPIRATION_WINDOW);
     }
 }
