@@ -6,9 +6,7 @@ import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
-import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.service.AccessTokenBuilder;
-import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -24,15 +22,12 @@ public class JwsAccessTokenBuilder implements AccessTokenBuilder {
 
     private final JWTService jwtService;
     private final BackendConfig backendConfig;
-    private final SchemaProfileRegistry schemaProfileRegistry;
     private final ObjectMapper objectMapper;
 
     @Override
     public String build(BuildContext buildContext) {
         ExtractedClaims extractedClaims = buildContext.extractedClaims();
-        String configId = buildContext.dispatchDecision().credentialConfigurationId();
-        SchemaProfile schemaProfile = schemaProfileRegistry.findByConfigId(configId).orElse(null);
-        boolean wrapVc = schemaProfile != null && schemaProfile.wrapVcInAccessToken();
+        String configId = buildContext.credentialConfigurationId();
 
         JWTClaimsSet.Builder payloadBuilder = new JWTClaimsSet.Builder()
                 .issuer(backendConfig.getUrl())
@@ -59,11 +54,7 @@ public class JwsAccessTokenBuilder implements AccessTokenBuilder {
             log.warn("Client has no tenant configured. Excluding tenant claim from access token.");
         }
 
-        if (wrapVc) {
-            payloadBuilder.claim("vc", objectMapper.convertValue(buildContext.credential(), Object.class));
-        } else {
-            payloadBuilder.claim("vc", buildContext.credential().toString());
-        }
+        payloadBuilder.claim("vc", objectMapper.convertValue(buildContext.credential(), Object.class));
 
         JWTClaimsSet payload = payloadBuilder.build();
         return jwtService.issueJWT(payload.toString());

@@ -18,6 +18,9 @@ public class SsoAuditEvent {
         SSO_REUSE_DENIED,
         SSO_CATALOG_CLIENT_ADDED,
         SSO_CATALOG_CLIENT_REMOVED,
+        SSO_SESSION_EXPIRED,
+        SSO_BACKCHANNEL_DELIVERED,
+        EMERGENCY_REVOKE,
         // US-06 Single Logout (AC-06)
         SSO_LOGOUT_INITIATED,
         BACKCHANNEL_DELIVERED,
@@ -34,6 +37,8 @@ public class SsoAuditEvent {
     private final String outcome;
     private final String correlationId;
     private final Instant occurredAt;
+    private final String reason;
+    private final Integer countRevoked;
 
     /**
      * US-06 (Single Logout): identificador de sesión SSO asociado al evento.
@@ -43,8 +48,9 @@ public class SsoAuditEvent {
     private final String sessionId;
 
     /**
-     * Constructor legacy (pre-US-06): mantiene compatibilidad con los call sites
-     * posicionales existentes (US-02/US-03/US-05). {@code sessionId} queda a {@code null}.
+     * Constructor legacy (pre-US-06/US-07/US-09): mantiene compatibilidad con los call sites
+     * posicionales existentes (US-02/US-03/US-05). {@code reason}, {@code countRevoked} y
+     * {@code sessionId} quedan a {@code null}.
      */
     public SsoAuditEvent(
             EventType eventType,
@@ -55,7 +61,7 @@ public class SsoAuditEvent {
             String correlationId,
             Instant occurredAt
     ) {
-        this(eventType, tenant, clientId, holderHash, outcome, correlationId, occurredAt, null);
+        this(eventType, tenant, clientId, holderHash, outcome, correlationId, occurredAt, null, null, null);
     }
 
     @Builder
@@ -67,6 +73,8 @@ public class SsoAuditEvent {
             String outcome,
             String correlationId,
             Instant occurredAt,
+            String reason,
+            Integer countRevoked,
             String sessionId
     ) {
         this.eventType = eventType;
@@ -76,6 +84,8 @@ public class SsoAuditEvent {
         this.outcome = outcome;
         this.correlationId = correlationId;
         this.occurredAt = occurredAt;
+        this.reason = reason;
+        this.countRevoked = countRevoked;
         this.sessionId = sessionId;
     }
 

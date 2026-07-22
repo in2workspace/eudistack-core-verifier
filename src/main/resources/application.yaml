@@ -42,6 +42,8 @@ logging:
   level:
     es.in2.vcverifier: INFO
     org.springframework.security: INFO
+    io.micrometer.registry.otlp: DEBUG
+    io.opentelemetry.exporter: DEBUG
 
 management.tracing:
   # Local dev → true (Spring exports to Jaeger); AWS → false (ADOT agent handles X-Ray)
@@ -53,7 +55,19 @@ management.tracing:
 
 management.otlp:
   tracing:
+    # Primary export: HTTP → Jaeger (unchanged). A second, gRPC → OTel Collector → Zipkin
+    # export is added independently via OtlpGrpcTracingConfig (dual export, opt-in).
     endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    grpc:
+      enabled: ${MANAGEMENT_OTLP_GRPC_TRACING_ENABLED:false}
+      endpoint: ${OTEL_COLLECTOR_GRPC_URL:http://127.0.0.1:4317}
+  metrics:
+    export:
+      enabled: ${MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED:false}
+      url: ${OTEL_COLLECTOR_GRPC_URL:http://127.0.0.1:4317}
+      step: 5s
+      resource-attributes:
+        service.name: ${spring.application.name}
 
 management:
   endpoints:
@@ -159,7 +173,7 @@ verifier:
           format: BUMPED_V2_0
         - credential-configuration-id: learcredential.machine.sd.1
           format: BUMPED_V2_0
-        - credential-configuration-id: doctorid.sd.1
+        - credential-configuration-id: urn:es.cgcom:doctorid:1
           format: BUMPED_V2_0
 
   # DCQL profiles are loaded from the external file specified by

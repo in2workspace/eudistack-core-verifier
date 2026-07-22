@@ -55,7 +55,7 @@ class FlagDefaultsTest {
                     assertThat(rule.format()).isEqualTo("BUMPED_V2_0");
                 })
                 .anySatisfy(rule -> {
-                    assertThat(rule.credentialConfigurationId()).isEqualTo("doctorid.sd.1");
+                    assertThat(rule.credentialConfigurationId()).isEqualTo("urn:es.cgcom:doctorid:1");
                     assertThat(rule.format()).isEqualTo("BUMPED_V2_0");
                 });
     }

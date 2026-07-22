@@ -6,13 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.crypto.JWTService;
-import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
-import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
-import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
-import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
-import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,8 +18,6 @@ import java.text.ParseException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -43,24 +36,20 @@ class JwsAccessTokenBuilderTest {
     @Mock
     private BackendConfig backendConfig;
 
-    @Mock
-    private SchemaProfileRegistry schemaProfileRegistry;
-
     private JwsAccessTokenBuilder jwsAccessTokenBuilder;
 
     @BeforeEach
     void setUp() {
         when(jwtService.issueJWT(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
         when(backendConfig.getUrl()).thenReturn("https://verifier.example");
-        jwsAccessTokenBuilder = new JwsAccessTokenBuilder(jwtService, backendConfig, schemaProfileRegistry, MAPPER);
+        jwsAccessTokenBuilder = new JwsAccessTokenBuilder(jwtService, backendConfig, MAPPER);
     }
 
     @Test
-    void build_wrapEnabled_putsVcAsObject() throws ParseException {
+    void build_bumpedCredential_putsVcAsObject() throws ParseException {
         String configId = "LEARCredentialEmployee.4";
-        when(schemaProfileRegistry.findByConfigId(configId)).thenReturn(Optional.of(schemaProfile(configId, true)));
 
-        String tokenPayload = jwsAccessTokenBuilder.build(buildContext(configId, credential(configId), CredentialFormat.BUMPED_V2_0));
+        String tokenPayload = jwsAccessTokenBuilder.build(buildContext(configId, credential(configId)));
         JWTClaimsSet claims = JWTClaimsSet.parse(tokenPayload);
 
         assertEquals(configId, claims.getStringClaim("credential_type"));
@@ -68,17 +57,16 @@ class JwsAccessTokenBuilderTest {
     }
 
     @Test
-    void build_wrapDisabled_putsVcAsString() throws ParseException {
+    void build_legacyCredential_putsVcAsObject() throws ParseException {
         String configId = "LEARCredentialEmployee.3";
-        when(schemaProfileRegistry.findByConfigId(configId)).thenReturn(Optional.of(schemaProfile(configId, false)));
 
         JsonNode legacyCredential = credential(configId);
-        String tokenPayload = jwsAccessTokenBuilder.build(buildContext(configId, legacyCredential, CredentialFormat.LEGACY_V1_1));
+        String tokenPayload = jwsAccessTokenBuilder.build(buildContext(configId, legacyCredential));
         JWTClaimsSet claims = JWTClaimsSet.parse(tokenPayload);
 
         assertEquals(configId, claims.getStringClaim("credential_type"));
-        assertInstanceOf(String.class, claims.getClaim("vc"));
-        assertEquals(legacyCredential.toString(), claims.getClaim("vc"));
+        assertInstanceOf(Map.class, claims.getClaim("vc"));
+        assertEquals(MAPPER.convertValue(legacyCredential, Map.class), claims.getClaim("vc"));
     }
 
     @Test
@@ -86,15 +74,12 @@ class JwsAccessTokenBuilderTest {
         String legacyConfigId = "LEARCredentialEmployee.3";
         String bumpedConfigId = "LEARCredentialEmployee.4";
 
-        when(schemaProfileRegistry.findByConfigId(legacyConfigId)).thenReturn(Optional.of(schemaProfile(legacyConfigId, false)));
-        when(schemaProfileRegistry.findByConfigId(bumpedConfigId)).thenReturn(Optional.of(schemaProfile(bumpedConfigId, true)));
-
         JWTClaimsSet legacyClaims = JWTClaimsSet.parse(
-                jwsAccessTokenBuilder.build(buildContext(legacyConfigId, credential(legacyConfigId), CredentialFormat.LEGACY_V1_1))
+                jwsAccessTokenBuilder.build(buildContext(legacyConfigId, credential(legacyConfigId)))
         );
 
         JWTClaimsSet bumpedClaims = JWTClaimsSet.parse(
-                jwsAccessTokenBuilder.build(buildContext(bumpedConfigId, credential(bumpedConfigId), CredentialFormat.BUMPED_V2_0))
+                jwsAccessTokenBuilder.build(buildContext(bumpedConfigId, credential(bumpedConfigId)))
         );
 
         Map<String, Object> legacyRoot = new HashMap<>(legacyClaims.getClaims());
@@ -106,11 +91,11 @@ class JwsAccessTokenBuilderTest {
         assertTrue(legacyRoot.keySet().contains("tenant"));
     }
 
-    private BuildContext buildContext(String configId, JsonNode credential, CredentialFormat format) {
+    private BuildContext buildContext(String configId, JsonNode credential) {
         Instant issue = Instant.parse("2026-05-26T10:00:00Z");
         return new BuildContext(
                 credential,
-                DispatchDecision.permitted(configId, format, DispatchReason.BY_TYPE),
+                configId,
                 ExtractedClaims.builder()
                         .subject("did:key:z6Mktestsubject")
                         .scope("openid")
@@ -132,9 +117,5 @@ class JwsAccessTokenBuilderTest {
         credential.put("credential_configuration_id", configId);
         credential.putObject("credentialSubject").put("id", "did:key:z6Mktestsubject");
         return credential;
-    }
-
-    private SchemaProfile schemaProfile(String configId, boolean wrapVc) {
-        return new SchemaProfile(configId, "openid", null, null, Set.of("authorization_code"), false, null, null, wrapVc);
     }
 }

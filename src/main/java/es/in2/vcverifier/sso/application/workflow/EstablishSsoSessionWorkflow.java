@@ -4,10 +4,12 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
+import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +29,7 @@ public class EstablishSsoSessionWorkflow {
     private final TenantSsoConfigPort tenantSsoConfigPort;
     private final SsoSessionRepositoryPort sessionRepositoryPort;
     private final SsoAuditPort auditPort;
+    private final SsoMetricsPort metricsPort;
     private final HashingService hashingService;
     private final Clock clock;
 
@@ -35,12 +38,14 @@ public class EstablishSsoSessionWorkflow {
             TenantSsoConfigPort tenantSsoConfigPort,
             SsoSessionRepositoryPort sessionRepositoryPort,
             SsoAuditPort auditPort,
+            SsoMetricsPort metricsPort,
             HashingService hashingService,
             Clock clock
     ) {
         this.tenantSsoConfigPort = tenantSsoConfigPort;
         this.sessionRepositoryPort = sessionRepositoryPort;
         this.auditPort = auditPort;
+        this.metricsPort = metricsPort;
         this.hashingService = hashingService;
         this.clock = clock;
     }
@@ -49,22 +54,7 @@ public class EstablishSsoSessionWorkflow {
 
         Objects.requireNonNull(command);
 
-        var configOpt = tenantSsoConfigPort.getByTenant(command.tenant());
-
-        if (configOpt.isEmpty() || !configOpt.get().ssoEnabled()) {
-
-            auditPort.publish(new SsoAuditEvent(
-                    SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT,
-                    command.tenant(),
-                    command.clientId(),
-                    null,
-                    "SSO disabled",
-                    command.correlationId(),
-                    Instant.now(clock)
-            ));
-
-            throw new SsoConfigInconsistentException("SSO disabled for tenant " + command.tenant());
-        }
+        validateTenantSsoConfiguration(command);
 
         SsoSessionTtl ttl = tenantSsoConfigPort.resolveTtl(command.tenant());
 
@@ -116,11 +106,42 @@ public class EstablishSsoSessionWorkflow {
                 now
         ));
 
+        metricsPort.recordEstablishment(command.tenant());
+
         return new SsoSessionCookieDescriptor(
                 "SSO_SESSION",
                 session.getId().getValue().toString(),
                 session.getExpiresAt()
         );
+    }
+
+    private void validateTenantSsoConfiguration(SsoSessionCommand command) {
+        var config = tenantSsoConfigPort.getByTenant(command.tenant())
+                .orElseThrow(() -> {
+                    publishMissingConfigAudit(command);
+                    return new SsoConfigInconsistentException(
+                            "Missing SSO config for tenant " + command.tenant());
+                });
+
+        if (!config.ssoEnabled()) {
+            log.debug(
+                    "event=sso_legacy_tenant tenant={} correlation_id={}",
+                    command.tenant(),
+                    command.correlationId());
+
+            throw new SsoDisabledForTenantException(command.tenant());
+        }
+    }
+    private void publishMissingConfigAudit(SsoSessionCommand command) {
+        auditPort.publish(new SsoAuditEvent(
+                SsoAuditEvent.EventType.SSO_CONFIG_INCONSISTENT,
+                command.tenant(),
+                command.clientId(),
+                null,
+                "CONFIG_ABSENT",
+               command.correlationId(),
+                Instant.now(clock)
+        ));
     }
 
     public record SsoSessionCookieDescriptor(

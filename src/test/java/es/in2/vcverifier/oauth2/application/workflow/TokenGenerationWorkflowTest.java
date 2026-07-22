@@ -10,15 +10,10 @@ import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
-import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
-import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
-import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
-import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.service.AccessTokenBuilder;
 import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
-import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,7 +29,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,7 +42,6 @@ class TokenGenerationWorkflowTest {
     @Mock private BackendConfig backendConfig;
     @Mock private ClaimsExtractor claimsExtractor;
     @Mock private AccessTokenBuilder accessTokenBuilder;
-    @Mock private SchemaProfileRegistry schemaProfileRegistry;
     @Mock private SsoSessionRepositoryPort ssoSessionRepositoryPort;
     @Mock private TenantSsoConfigPort tenantSsoConfigPort;
     @Mock private HashingService hashingService;
@@ -64,7 +57,6 @@ class TokenGenerationWorkflowTest {
                 objectMapper,
                 List.of(claimsExtractor),
                 accessTokenBuilder,
-                schemaProfileRegistry,
                 ssoSessionRepositoryPort,
                 tenantSsoConfigPort,
                 hashingService);
@@ -86,19 +78,6 @@ class TokenGenerationWorkflowTest {
         ObjectNode credentialSubject = credential.putObject("credentialSubject");
         credentialSubject.put("id", "did:key:z6MkSubject");
         return credential;
-    }
-
-    private SchemaProfile schemaProfile(String configId, boolean wrapVcInAccessToken, String... grantEligibility) {
-        return new SchemaProfile(
-                configId,
-                null,
-                null,
-                null,
-                Set.of(grantEligibility),
-                false,
-                null,
-                null,
-                wrapVcInAccessToken);
     }
 
     @Nested
@@ -144,8 +123,6 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(Optional.of(
-                    schemaProfile("learcredential.employee.w3c.4", true, "authorization_code")));
             when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt");
             when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
 
@@ -167,8 +144,7 @@ class TokenGenerationWorkflowTest {
             ArgumentCaptor<BuildContext> captor = ArgumentCaptor.forClass(BuildContext.class);
             verify(accessTokenBuilder).build(captor.capture());
             BuildContext buildContext = captor.getValue();
-            assertThat(buildContext.dispatchDecision()).isEqualTo(
-                    DispatchDecision.permitted("learcredential.employee.w3c.4", CredentialFormat.BUMPED_V2_0, DispatchReason.BY_TYPE));
+            assertThat(buildContext.credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.4");
             assertThat(buildContext.tenant()).isEqualTo("altia");
             assertThat(buildContext.audience()).isEqualTo("did:key:client");
             assertThat(buildContext.generateIdToken()).isTrue();
@@ -188,8 +164,6 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.machine.w3c.3")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(schemaProfileRegistry.findByConfigId("learcredential.machine.w3c.3")).thenReturn(Optional.of(
-                    schemaProfile("learcredential.machine.w3c.3", false, "client_credentials")));
             when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt-only");
 
             TokenGenerationWorkflow.Result result = workflow.issueAccessToken(
@@ -218,8 +192,6 @@ class TokenGenerationWorkflowTest {
 
             when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
-            when(schemaProfileRegistry.findByConfigId("learcredential.employee.w3c.4")).thenReturn(Optional.of(
-                    schemaProfile("learcredential.employee.w3c.4", true, "authorization_code")));
             when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("jwt");
 
             workflow.issueAccessToken(credential, "did:key:client", Map.of("custom", "value"), false, null);
@@ -229,7 +201,7 @@ class TokenGenerationWorkflowTest {
             BuildContext buildContext = captor.getValue();
             assertThat(buildContext.tenant()).isNull();
             assertThat(buildContext.additionalParameters()).containsEntry("custom", "value");
-            assertThat(buildContext.dispatchDecision().credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.4");
+            assertThat(buildContext.credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.4");
         }
 
         @Test
@@ -265,8 +237,6 @@ class TokenGenerationWorkflowTest {
             when(claimsExtractor.supports(credentialType)).thenReturn(true);
             when(claimsExtractor.extract(credential)).thenReturn(claims);
             when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-            when(schemaProfileRegistry.findByConfigId(credentialType)).thenReturn(Optional.of(
-                    schemaProfile(credentialType, true, "authorization_code")));
             when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt");
         }
 

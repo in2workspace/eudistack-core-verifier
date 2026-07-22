@@ -13,10 +13,8 @@ import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
-import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.service.AccessTokenBuilder;
 import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
-import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +34,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -140,11 +137,6 @@ class IdTokenSidCorrelationIT {
         AccessTokenBuilder accessTokenBuilder = mock(AccessTokenBuilder.class);
         when(accessTokenBuilder.build(any())).thenReturn("access-jwt");
 
-        SchemaProfileRegistry schemaProfileRegistry = mock(SchemaProfileRegistry.class);
-        when(schemaProfileRegistry.findByConfigId(CREDENTIAL_TYPE)).thenReturn(Optional.of(new SchemaProfile(
-                CREDENTIAL_TYPE, null, null, null,
-                Set.of("authorization_code"), false, null, null, true)));
-
         TenantSsoConfigPort tenantSsoConfigPort = mock(TenantSsoConfigPort.class);
         TenantSsoConfig config = new TenantSsoConfig(
                 TENANT, "", true,
@@ -158,7 +150,6 @@ class IdTokenSidCorrelationIT {
                 objectMapper,
                 List.of(claimsExtractor),
                 accessTokenBuilder,
-                schemaProfileRegistry,
                 sessionRepository,
                 tenantSsoConfigPort,
                 hashingService);

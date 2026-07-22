@@ -11,6 +11,7 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
     private final SsoSessionRepositoryPort sessionRepository;
     private final Clock clock;
     private final SsoAuditPort auditPort;
+    private final SsoMetricsPort metricsPort;
     private final RegisteredClientRepository registeredClientRepository;
 
     public ReuseSsoSessionWorkflowImpl(
@@ -40,12 +42,14 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             SsoSessionRepositoryPort sessionRepository,
             Clock clock,
             SsoAuditPort auditPort,
+            SsoMetricsPort metricsPort,
             RegisteredClientRepository registeredClientRepository
     ) {
         this.configPort = configPort;
         this.sessionRepository = sessionRepository;
         this.clock = clock;
         this.auditPort = auditPort;
+        this.metricsPort = metricsPort;
         this.registeredClientRepository = registeredClientRepository;
     }
 
@@ -59,12 +63,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         Instant now = Instant.now(clock);
 
         // 1. CONFIG
-        TenantSsoConfig config = configPort.getByTenant(tenantSlug)
-                .orElseThrow(() -> new IllegalStateException(
-                        "ES-02: Missing tenant SSO config (fail-closed)"
-                ));
-
-        if (!config.ssoEnabled()) {
+        Optional<TenantSsoConfig> configOpt = configPort.getByTenant(tenantSlug);
+        if (configOpt.isEmpty() || !configOpt.get().ssoEnabled()) {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
@@ -182,6 +182,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                         .occurredAt(now)
                         .build()
         );
+
+        metricsPort.recordReuse(tenantSlug, clientId);
+        metricsPort.recordOid4vpAvoided(tenantSlug);
 
         return new Result(Result.Status.ALLOWED, null);
     }

@@ -9,15 +9,10 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
-import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
-import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
-import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
-import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.service.AccessTokenBuilder;
 import es.in2.vcverifier.verifier.domain.service.ClaimsExtractor;
-import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +43,6 @@ public class TokenGenerationWorkflow {
     private final ObjectMapper objectMapper;
     private final List<ClaimsExtractor> claimsExtractors;
     private final AccessTokenBuilder accessTokenBuilder;
-    private final SchemaProfileRegistry schemaProfileRegistry;
 
     // US-06 (AD-6 / ADR-109): estampado condicional del claim `sid` en el id_token —
     // cross-BC de lectura oauth2 → sso, ver spec-deltas.md DELTA-03.
@@ -76,32 +70,19 @@ public class TokenGenerationWorkflow {
      * @return a Result with the JWT strings and metadata
      */
     public Result issueAccessToken(JsonNode credentialJson, String audience, Map<String, Object> additionalParameters, boolean generateIdToken, String tenant) {
-        String credentialType = extractCredentialType(credentialJson);
-        SchemaProfile schemaProfile = schemaProfileRegistry.findByConfigId(credentialType).orElse(null);
-        DispatchDecision dispatchDecision = schemaProfile == null
-            ? DispatchDecision.permitted(credentialType, CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE)
-            : DispatchDecision.permitted(
-                credentialType,
-                schemaProfile.wrapVcInAccessToken() ? CredentialFormat.BUMPED_V2_0 : CredentialFormat.LEGACY_V1_1,
-                DispatchReason.BY_TYPE);
-
-        return issueAccessToken(credentialJson, dispatchDecision, audience, additionalParameters, generateIdToken, tenant);
-        }
-
-        public Result issueAccessToken(JsonNode credentialJson, DispatchDecision dispatchDecision, String audience, Map<String, Object> additionalParameters, boolean generateIdToken, String tenant) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 backendConfig.getAccessTokenExpirationSeconds(),
                 ChronoUnit.SECONDS
         );
 
-        String credentialType = extractCredentialType(credentialJson);
-        ExtractedClaims extractedClaims = extractClaims(credentialType, credentialJson);
+        String credentialConfigurationId = extractCredentialType(credentialJson);
+        ExtractedClaims extractedClaims = extractClaims(credentialConfigurationId, credentialJson);
         String subject = extractedClaims.subject();
 
         BuildContext buildContext = new BuildContext(
             credentialJson,
-            dispatchDecision,
+            credentialConfigurationId,
             extractedClaims,
             issueTime,
             expirationTime,

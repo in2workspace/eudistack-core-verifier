@@ -10,7 +10,7 @@ import java.util.Optional;
 public interface SsoSessionRepositoryPort {
 
     /**
-     * Persiste el aggregate completo
+     * Persists the full aggregate.
      * @param session
      * @return
      */
@@ -18,7 +18,7 @@ public interface SsoSessionRepositoryPort {
 
 
     /**
-     * Obtiene una sesión activa para un tenant y holder concreto.
+     * Retrieves an active session for a specific tenant and holder.
      * @param tenant
      * @param holderHash
      * @return
@@ -30,7 +30,7 @@ public interface SsoSessionRepositoryPort {
 
 
     /**
-     * Cierra sesión activa en BD
+     * Closes an active session in the DB.
      * @param tenant
      * @param holderHash
      */
@@ -40,7 +40,7 @@ public interface SsoSessionRepositoryPort {
     );
 
     /**
-     * Obtiene una sesión activa por su identificador y tenant.
+     * Retrieves an active session by its identifier and tenant.
      */
     Optional<SsoSession> findActiveById(
             SsoSessionId sessionId,
@@ -48,7 +48,7 @@ public interface SsoSessionRepositoryPort {
     );
 
     /**
-     * Actualiza el timestamp de último uso de una sesión activa.
+     * Updates the last-used timestamp of an active session.
      */
     void updateLastUsedAt(
             SsoSessionId sessionId,
@@ -57,8 +57,8 @@ public interface SsoSessionRepositoryPort {
     );
 
     /**
-     * Busca una sesión por ID sin filtro de tenant.
-     * Usado exclusivamente para detectar intentos de acceso cross-tenant (AC-04).
+     * Finds a session by ID without a tenant filter.
+     * Used exclusively to detect cross-tenant access attempts (AC-04).
      */
     Optional<SsoSession> findById(SsoSessionId sessionId);
 
@@ -96,5 +96,14 @@ public interface SsoSessionRepositoryPort {
             String tenant,
             String clientId
     );
+
+    /**
+     * Emergency cut: deletes in a single atomic operation all SSO sessions
+     * of the given tenant (EUDISTACK-554 / US-09).
+     *
+     * @param tenantId tenant whose sessions are revoked (derived from the authenticated admin context)
+     * @return number of deleted sessions ({@code count_revoked})
+     */
+    int revokeAllByTenant(String tenantId);
 
 }

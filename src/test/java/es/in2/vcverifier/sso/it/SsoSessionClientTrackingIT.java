@@ -12,6 +12,7 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import org.junit.jupiter.api.AfterAll;
@@ -183,6 +184,7 @@ class SsoSessionClientTrackingIT {
 
         TenantSsoConfigPort tenantSsoConfigPort = mock(TenantSsoConfigPort.class);
         SsoAuditPort auditPort = mock(SsoAuditPort.class);
+        SsoMetricsPort metricsPort = mock(SsoMetricsPort.class);
         HashingService hashingService = mock(HashingService.class);
 
         TenantSsoConfig config = mock(TenantSsoConfig.class);
@@ -192,7 +194,7 @@ class SsoSessionClientTrackingIT {
         when(hashingService.sha256(anyString())).thenReturn("holder-hash-established");
 
         EstablishSsoSessionWorkflow workflow = new EstablishSsoSessionWorkflow(
-                tenantSsoConfigPort, repository, auditPort, hashingService, Clock.systemUTC());
+                tenantSsoConfigPort, repository, auditPort, metricsPort, hashingService, Clock.systemUTC());
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor =
                 workflow.execute(new SsoSessionCommand(tenant, "sub-value", "initiator-client", "corr-1"));
@@ -231,6 +233,7 @@ class SsoSessionClientTrackingIT {
 
         TenantSsoConfigPort configPort = mock(TenantSsoConfigPort.class);
         SsoAuditPort auditPort = mock(SsoAuditPort.class);
+        SsoMetricsPort metricsPort = mock(SsoMetricsPort.class);
         RegisteredClientRepository registeredClientRepository = mock(RegisteredClientRepository.class);
 
         TenantSsoConfig config = mock(TenantSsoConfig.class);
@@ -243,7 +246,7 @@ class SsoSessionClientTrackingIT {
                 .thenReturn(mock(RegisteredClient.class));
 
         ReuseSsoSessionWorkflowImpl workflow = new ReuseSsoSessionWorkflowImpl(
-                configPort, repository, Clock.systemUTC(), auditPort, registeredClientRepository);
+                configPort, repository, Clock.systemUTC(), auditPort, metricsPort, registeredClientRepository);
 
         ReuseSsoSessionWorkflow.Result result = workflow.reuse(
                 tenant, session.getId().getValue(), null, calleeClientId);
