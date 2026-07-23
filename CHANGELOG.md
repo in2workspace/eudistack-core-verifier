@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1] - 2026-07-20
+
+### Added
+**EUD-156 — US-03: Verifier rechaza credencial no de máquina o no confiable, de forma trazable**:
+- Nueva excepción de dominio `InvalidProofOfPossessionException` (`oauth2/domain/exception`): señala de forma distinguible que el `client_assertion` (`private_key_jwt`) de un cliente M2M no prueba la posesión de su clave (firma inválida, `iss`/`sub`/`aud` incorrectos, `exp` caducado, o `jti` ya consumido/replay).
+- `ClientCredentialsValidationWorkflow` lanza ahora `InvalidProofOfPossessionException` en vez de un `IllegalArgumentException` genérico cuando `verifyClientAssertionJWTClaims` devuelve `false`, preservando el orden de comprobación existente (elegibilidad de tipo → prueba de posesión → validación de presentación).
+- `CustomTokenRequestConverter` captura explícitamente `InvalidProofOfPossessionException` e `IssuerNotAuthorizedException` (esta última ya existía, ahora se audita) antes del catch genérico, publicando dos nuevos `reason` de auditoría: `invalid_proof_of_possession` e `issuer_not_trusted`. Ambos casos siguen devolviendo únicamente `invalid_client` a la Relying Party (sin `error_description`/`error_uri`).
+- Con esto, los 3 tipos de fallo M2M que el SRS nombra explícitamente (prueba de posesión inválida, credencial no de máquina, emisor no confiable) quedan auditables con motivos mutuamente distinguibles, sin fuga de motivo hacia la Relying Party.
+- Cobertura de test: unit (`ClientCredentialsValidationWorkflowTest`, `CustomTokenRequestConverterTest`, `OAuth2ErrorTranslatorTest`) e integración end-to-end contra `/oidc/token` (`M2MRejectionIT`, nuevo) cubriendo los 3 tipos de rechazo, precedencia determinista, veredicto binario, cobertura de auditoría del 100 % y no-regresión de clientes pre-registrados.
+
 ## [3.2.2] - 2026-07-15
 
 ### Fixed
