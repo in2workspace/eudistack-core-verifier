@@ -1,7 +1,10 @@
 package es.in2.vcverifier.sso;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
@@ -111,6 +114,12 @@ class TenantSsoCatalogReuseIT {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private CacheStore<JsonNode> ssoSessionCredentialCache;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @MockitoBean
     private TenantSsoConfigPort tenantSsoConfigPort;
@@ -396,7 +405,11 @@ class TenantSsoCatalogReuseIT {
     // HELPERS — inserción directa en BD
     // =========================================================
 
-    /** Sesión ACTIVE con expires_at futuro y last_used_at reciente (idle OK). */
+    /**
+     * Sesión ACTIVE con expires_at futuro y last_used_at reciente (idle OK). Además siembra el
+     * snapshot de credencial (cacheStoreForSsoSessionCredential) que un establecimiento real
+     * habría dejado, para que las rutas ALLOWED puedan emitir el code (ver ReuseSsoSessionWorkflowImpl).
+     */
     private String insertActiveSession(String tenant, String holderHash) {
         String id = SsoSessionId.generate().getValue();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
@@ -410,6 +423,8 @@ class TenantSsoCatalogReuseIT {
                 now.plusMinutes(30),
                 now.minusMinutes(2)
         );
+        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
+        ssoSessionCredentialCache.add(id, fakeCredential);
         return id;
     }
 

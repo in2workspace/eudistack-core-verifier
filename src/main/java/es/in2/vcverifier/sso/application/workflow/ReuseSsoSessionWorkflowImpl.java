@@ -1,6 +1,8 @@
 package es.in2.vcverifier.sso.application.workflow;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
@@ -14,15 +16,20 @@ import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -36,6 +43,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
     private final SsoAuditPort auditPort;
     private final SsoMetricsPort metricsPort;
     private final RegisteredClientRepository registeredClientRepository;
+    private final AuthorizationResponseProcessorService authorizationResponseProcessorService;
+    private final CacheStore<JsonNode> ssoSessionCredentialCache;
 
     public ReuseSsoSessionWorkflowImpl(
             TenantSsoConfigPort configPort,
@@ -43,7 +52,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             Clock clock,
             SsoAuditPort auditPort,
             SsoMetricsPort metricsPort,
-            RegisteredClientRepository registeredClientRepository
+            RegisteredClientRepository registeredClientRepository,
+            AuthorizationResponseProcessorService authorizationResponseProcessorService,
+            CacheStore<JsonNode> ssoSessionCredentialCache
     ) {
         this.configPort = configPort;
         this.sessionRepository = sessionRepository;
@@ -51,6 +62,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         this.auditPort = auditPort;
         this.metricsPort = metricsPort;
         this.registeredClientRepository = registeredClientRepository;
+        this.authorizationResponseProcessorService = authorizationResponseProcessorService;
+        this.ssoSessionCredentialCache = ssoSessionCredentialCache;
     }
 
     @Override
@@ -168,7 +181,42 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             });
         }
 
-        // 7. AUDIT
+        // 7. COMPLETE THE AUTHORIZATION — no VP is re-presented on reuse, so the credential
+        // claims come from the snapshot cached at establishment time (see
+        // SsoSessionAuthenticationSuccessHandler / cacheStoreForSsoSessionCredential). A cache
+        // miss (eviction, cold restart, session established before this cache existed) fails
+        // closed to LOGIN_REQUIRED rather than issuing a code without claims.
+        JsonNode credentialJson = ssoSessionCredentialCache.getIfPresent(sessionId.getValue());
+        if (credentialJson == null) {
+            auditPort.publish(
+                    SsoAuditEvent.builder()
+                            .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
+                            .tenant(tenantSlug)
+                            .clientId(clientId)
+                            .outcome("CREDENTIAL_SNAPSHOT_MISSING")
+                            .occurredAt(now)
+                            .build()
+            );
+            return new Result(Result.Status.LOGIN_REQUIRED, null);
+        }
+
+        RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
+        Set<String> scopes = ctx.scope() == null
+                ? Set.of()
+                : Arrays.stream(ctx.scope().split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet());
+
+        String redirectUrl = authorizationResponseProcessorService.issueCodeForReusedSession(
+                registeredClient,
+                ctx.redirectUri(),
+                scopes,
+                ctx.state(),
+                ctx.codeChallenge(),
+                ctx.codeChallengeMethod(),
+                ctx.clientNonce(),
+                credentialJson
+        );
+
+        // 8. AUDIT
         auditPort.publish(
                 SsoAuditEvent.builder()
                         .eventType(SsoAuditEvent.EventType.SSO_SESSION_REUSED)
@@ -182,6 +230,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         metricsPort.recordReuse(tenantSlug, clientId);
         metricsPort.recordOid4vpAvoided(tenantSlug);
 
-        return new Result(Result.Status.ALLOWED, null);
+        return new Result(Result.Status.ALLOWED, redirectUrl);
     }
 }

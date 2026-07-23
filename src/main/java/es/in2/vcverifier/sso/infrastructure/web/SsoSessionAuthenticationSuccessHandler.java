@@ -1,6 +1,8 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
 
+import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
@@ -30,18 +32,21 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
     private final SsoSessionCookieFactory cookieFactory;
     private final SsoAuditPort auditPort;
     private final TenantSsoConfigPort tenantSsoConfigPort;
+    private final CacheStore<JsonNode> ssoSessionCredentialCache;
 
 
     public SsoSessionAuthenticationSuccessHandler(
             EstablishSsoSessionWorkflow establishSsoSessionWorkflow,
             SsoSessionCookieFactory cookieFactory,
             SsoAuditPort auditPort,
-            TenantSsoConfigPort tenantSsoConfigPort
+            TenantSsoConfigPort tenantSsoConfigPort,
+            CacheStore<JsonNode> ssoSessionCredentialCache
     ) {
         this.establishSsoSessionWorkflow = establishSsoSessionWorkflow;
         this.cookieFactory = cookieFactory;
         this.auditPort = auditPort;
         this.tenantSsoConfigPort = tenantSsoConfigPort;
+        this.ssoSessionCredentialCache = ssoSessionCredentialCache;
     }
 
     @Override
@@ -92,6 +97,13 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
 
                 // Set-Cookie ANTES de delegar al handler que puede hacer commit del response.
                 response.addHeader("Set-Cookie", cookie.toString());
+
+                // Snapshot the resolved credential claims keyed by session id, so a later SSO
+                // reuse (prompt=none, no VP re-presentation) can still mint a valid id_token —
+                // see ReuseSsoSessionWorkflowImpl / cacheStoreForSsoSessionCredential.
+                if (vpData.credentialJson() != null) {
+                    ssoSessionCredentialCache.add(sessionDescriptor.value(), vpData.credentialJson());
+                }
 
                 auditPort.publish(new SsoAuditEvent(
                         SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
@@ -144,7 +156,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("tenant"),
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
-                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant"))
+                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
+                    (JsonNode) map.get("credentialJson")
             );
         }
 
@@ -155,7 +168,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("tenant"),
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
-                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant"))
+                    (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
+                    (JsonNode) map.get("credentialJson")
             );
         }
 
@@ -163,7 +177,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 authentication.getName(),
                 "",
                 authentication.getName(),
-                authentication.getName()
+                authentication.getName(),
+                null
         );
     }
 
@@ -171,6 +186,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             String tenant,
             String holderHash,
             String clientId,
-            String tenantSlug
+            String tenantSlug,
+            JsonNode credentialJson
     ) {}
 }

@@ -8,7 +8,7 @@ public interface ReuseSsoSessionWorkflow {
 
     record Result(
             Status status,
-            AuthorizationRequestBuildWorkflow.Result authorizationResult
+            String redirectUrl
     ) {
         public enum Status {
             ALLOWED,

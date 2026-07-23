@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
@@ -58,6 +59,19 @@ public class CacheStoreConfig {
     @Bean
     public CacheStore<String> jtiCacheStore() {
         return new CacheStore<>(JTI_CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    // Snapshot of the resolved VC claims from establishment, keyed by sso_session.id, so a
+    // prompt=none reuse (which never re-presents a VP) can still mint a valid id_token without
+    // storing claims in the sso_session DB row itself (architecture.md §6.1 / ADR-104). TTL is a
+    // safe upper bound set to the maximum configurable SSO absolute TTL (ADR-106: 24h) — CacheStore
+    // has a single expiry per instance, so it cannot track each tenant's shorter configured TTL
+    // exactly; actual usability is always gated by the authoritative sso_session row still being
+    // ACTIVE (ReuseSsoSessionWorkflowImpl checks that first), so an entry outliving its own
+    // session's shorter TTL is inert, never a security issue by itself.
+    @Bean
+    public CacheStore<JsonNode> cacheStoreForSsoSessionCredential() {
+        return new CacheStore<>(24, TimeUnit.HOURS, 5_000L);
     }
     
     @Bean

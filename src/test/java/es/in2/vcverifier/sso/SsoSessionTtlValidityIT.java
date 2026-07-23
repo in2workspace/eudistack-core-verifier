@@ -1,7 +1,10 @@
 package es.in2.vcverifier.sso;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
@@ -106,6 +109,12 @@ class SsoSessionTtlValidityIT {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private CacheStore<JsonNode> ssoSessionCredentialCache;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @MockitoBean
     private TenantSsoConfigPort tenantSsoConfigPort;
@@ -335,6 +344,10 @@ class SsoSessionTtlValidityIT {
                 established.plusHours(8), // expiresAt calculado con el TTL original de 8h
                 now.minusMinutes(5)        // last_used_at: 5 min atrás (idle OK)
         );
+        // Snapshot de credencial que un establecimiento real habría dejado — necesario para que
+        // la ruta ALLOWED emita el code (ver ReuseSsoSessionWorkflowImpl).
+        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
+        ssoSessionCredentialCache.add(id, fakeCredential);
         return id;
     }
 }
