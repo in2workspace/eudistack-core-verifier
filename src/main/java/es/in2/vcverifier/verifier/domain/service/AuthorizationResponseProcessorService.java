@@ -1,7 +1,6 @@
 package es.in2.vcverifier.verifier.domain.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
 import java.util.Set;
 
@@ -17,11 +16,13 @@ public interface AuthorizationResponseProcessorService {
      * Issues an authorization code directly for an already-authenticated SSO-reused session — no VP
      * is re-presented. Mirrors the code-issuance tail of {@link #handleAuthResponse}, using a
      * credential snapshot captured at the original establishment instead of a freshly-verified VP.
+     * The caller MUST have already validated {@code redirectUri} against the client's registered
+     * redirect URIs — this method does not repeat that check.
      *
      * @return the redirect URL ({@code redirectUri?code=...&state=...}) to send back to the RP
      */
     String issueCodeForReusedSession(
-            RegisteredClient registeredClient,
+            String clientId,
             String redirectUri,
             Set<String> scopes,
             String state,

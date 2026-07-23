@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
@@ -201,12 +202,34 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         }
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
+
+        // SEC: a code must never be issued for a redirect_uri that isn't registered to THIS
+        // client — mirrors CustomAuthorizationRequestConverter#validateRedirectUri, which every
+        // other authorization path in this codebase runs before dispatching a redirect. Full-URI
+        // match (not just origin): the origin-level allowlist elsewhere is not a substitute.
+        String normalizedRequested = OriginNormalizer.normalizeUri(ctx.redirectUri());
+        boolean redirectUriRegistered = normalizedRequested != null
+                && registeredClient.getRedirectUris().stream()
+                        .anyMatch(registered -> normalizedRequested.equals(OriginNormalizer.normalizeUri(registered)));
+        if (!redirectUriRegistered) {
+            auditPort.publish(
+                    SsoAuditEvent.builder()
+                            .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
+                            .tenant(tenantSlug)
+                            .clientId(clientId)
+                            .outcome("REDIRECT_URI_MISMATCH")
+                            .occurredAt(now)
+                            .build()
+            );
+            return new Result(Result.Status.LOGIN_REQUIRED, null);
+        }
+
         Set<String> scopes = ctx.scope() == null
                 ? Set.of()
                 : Arrays.stream(ctx.scope().split(" ")).filter(s -> !s.isBlank()).collect(Collectors.toSet());
 
         String redirectUrl = authorizationResponseProcessorService.issueCodeForReusedSession(
-                registeredClient,
+                clientId,
                 ctx.redirectUri(),
                 scopes,
                 ctx.state(),

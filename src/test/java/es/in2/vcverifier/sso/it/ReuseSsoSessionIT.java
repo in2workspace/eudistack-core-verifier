@@ -127,6 +127,9 @@ class ReuseSsoSessionIT {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private java.util.Set<String> allowedClientsOrigins;
+
     // ── Mocks ──────────────────────────────────────────────────
     @MockitoBean
     private TenantSsoConfigPort tenantSsoConfigPort;
@@ -213,6 +216,45 @@ class ReuseSsoSessionIT {
         verify(auditPort, times(1)).publish(argThat(e ->
                 e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED
                         && "REUSED".equals(e.getOutcome())));
+    }
+
+    // =========================================================
+    // SEC: redirect_uri con MISMO origen (ya en el allowlist) pero PATH distinto
+    // al registrado para el cliente → nunca se emite code, aunque la sesión SSO
+    // sea válida y el cliente esté en el catálogo. Regresión de seguridad
+    // detectada en code-review: la ruta ALLOWED emitía el code confiando en el
+    // redirect_uri crudo de la petición, validado solo a nivel de origen
+    // (CustomErrorResponseHandler#isAllowedRedirectUri, que es global y
+    // cross-client) pero NUNCA contra los redirectUris registrados de ESE
+    // cliente en concreto (el control per-cliente y full-URI que
+    // CustomAuthorizationRequestConverter#validateRedirectUri aplica en el
+    // resto de flujos de este fichero). Usar el mismo origen que el registrado
+    // reproduce exactamente el escenario explotable (pasa el allowlist de
+    // origen, debe fallar el match per-cliente de URI completa).
+    // =========================================================
+    @Test
+    void should_notIssueCode_whenRedirectUriPathNotRegisteredForClient() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-hash-sec01");
+        // REDIRECT_URI = "https://localhost/callback" — mismo origen, path distinto
+        allowedClientsOrigins.add("https://localhost");
+
+        mockMvc.perform(get("/oidc/authorize")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT)
+                        .param("client_id", CLIENT_ID)
+                        .param("scope", "openid")
+                        .param("state", "xyz")
+                        .param("redirect_uri", "https://localhost/not-the-registered-path")
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("code="))));
+
+        verify(auditPort, never()).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
+        verify(auditPort, atLeastOnce()).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "REDIRECT_URI_MISMATCH".equals(e.getOutcome())));
     }
 
     // =========================================================

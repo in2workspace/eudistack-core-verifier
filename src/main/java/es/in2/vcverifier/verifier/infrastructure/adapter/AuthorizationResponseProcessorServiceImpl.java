@@ -219,7 +219,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
     @Override
     public String issueCodeForReusedSession(
-            RegisteredClient registeredClient,
+            String clientId,
             String redirectUri,
             Set<String> scopes,
             String state,
@@ -228,6 +228,10 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String nonce,
             JsonNode credentialJson
     ) {
+        RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
+        if (registeredClient == null) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
+        }
         String redirectUrl = issueAuthorizationCode(
                 registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson);
         log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
