@@ -22,5 +22,8 @@ public record ClientData(
         String tokenEndpointAuthenticationSigningAlgorithm,
         String tenant,
         String loginPageUri,
-        ClientMetadata clientMetadata
+        ClientMetadata clientMetadata,
+        // US-06 Single Logout (AD-4/DELTA-01): backchannel_logout_uri declarado por el RP.
+        // Opcional; ausente = el callee se trata como sin canal (backchannel_skipped, AC-04).
+        String backchannelLogoutUri
 ) {}

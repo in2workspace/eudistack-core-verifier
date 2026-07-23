@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.adapter;
 
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -70,9 +71,8 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort, SsoCatal
     public TenantSsoCatalog resolveEligibleClients(String tenant) {
         return getByTenant(tenant)
                 .map(config -> {
-                    List<SsoEligibleClient> clients = config.eligibleClientIds().stream()
-                            .filter(id -> id != null && !id.isBlank())
-                            .map(SsoEligibleClient::of)
+                    List<SsoEligibleClient> clients = config.eligibleClients().stream()
+                            .map(e -> SsoEligibleClient.of(e.clientId(), e.backchannelLogoutUri()))
                             .toList();
                     return TenantSsoCatalog.of(clients);
                 })
@@ -102,7 +102,7 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort, SsoCatal
             // no todo el catálogo; aislamiento per-tenant (fallo de un tenant no aborta otros).
             // ES-02 — el AtomicReference + @Scheduled preserva última config válida si load() lanza;
             // resolveEligibleClients() devuelve TenantSsoCatalog.empty() si el tenant no tiene config.
-            List<String> eligibleClients = parseEligibleClients(tenant, t.eligibleClients());
+            List<EligibleClientConfig> eligibleClients = parseEligibleClients(tenant, t.eligibleClients());
 
             // FAIL-CLOSED: ssoEnabled=true pero rootDomain ausente → SSO desactivado
             if (enabled && (rootDomain == null || rootDomain.isBlank())) {
@@ -178,26 +178,30 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort, SsoCatal
 
     /**
      * ES-01 — parseo defensivo de la lista de {@code eligibleClients}.
-     * Cada entrada se evalúa de forma independiente: una entrada nula, en blanco o que
-     * lance al construir {@link SsoEligibleClient} se descarta con log estructurado,
+     * Cada entrada se evalúa de forma independiente: una entrada nula, con {@code clientId} en
+     * blanco, o que lance al construir {@link SsoEligibleClient} se descarta con log estructurado,
      * sin afectar al resto de entradas del tenant ni al refresco de otros tenants.
      * Si la lista de entrada es {@code null} se devuelve catálogo vacío (fail-closed ES-02).
+     * <p>
+     * US-06 (AD-4/DELTA-01): cada entrada es {@link EligibleClientConfig} (clientId +
+     * backchannelLogoutUri opcional), no un string plano.
      */
-    private static List<String> parseEligibleClients(String tenant, List<String> raw) {
+    private static List<EligibleClientConfig> parseEligibleClients(String tenant, List<EligibleClientConfig> raw) {
         if (raw == null) return List.of();
-        List<String> valid = new ArrayList<>(raw.size());
-        for (String entry : raw) {
-            if (entry == null || entry.isBlank()) {
+        List<EligibleClientConfig> valid = new ArrayList<>(raw.size());
+        for (EligibleClientConfig entry : raw) {
+            if (entry == null || entry.clientId() == null || entry.clientId().isBlank()) {
                 log.warn("event=sso_catalog_entry_malformed tenant={} entry=null_or_blank — discarding",
                         tenant);
                 continue;
             }
             try {
                 // SsoEligibleClient.of aplica trim y valida; su valor normalizado es el canónico.
-                valid.add(SsoEligibleClient.of(entry).clientId());
+                SsoEligibleClient normalized = SsoEligibleClient.of(entry.clientId(), entry.backchannelLogoutUri());
+                valid.add(EligibleClientConfig.of(normalized.clientId(), normalized.backchannelLogoutUri()));
             } catch (IllegalArgumentException ex) {
                 log.warn("event=sso_catalog_entry_malformed tenant={} entry=\"{}\" — discarding: {}",
-                        tenant, entry, ex.getMessage());
+                        tenant, entry.clientId(), ex.getMessage());
             }
         }
         return List.copyOf(valid);

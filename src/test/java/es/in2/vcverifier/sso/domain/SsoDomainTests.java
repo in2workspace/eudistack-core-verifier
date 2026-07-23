@@ -15,6 +15,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -109,7 +110,7 @@ public class SsoDomainTests {
                 .thenReturn(false);
 
         SsoSessionJdbcRepository repository =
-                new SsoSessionJdbcRepository(dataSource);
+                new SsoSessionJdbcRepository(dataSource, Clock.systemUTC());
 
         Optional<SsoSession> result =
                 repository.findActiveByTenantAndHolder(

@@ -1,6 +1,7 @@
 package es.in2.vcverifier.sso;
 
 import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -42,10 +43,10 @@ class TenantSsoTtlResolutionIT {
         TenantSsoConfigYamlData data = new TenantSsoConfigYamlData(List.of(
                 // AC-01: sin TTL → defaults
                 new TenantSsoEntry("default-tenant", "default.example.com", true,
-                        List.of("client-a"), null, null),
+                        List.of(EligibleClientConfig.of("client-a")), null, null),
                 // AC-02: TTL completo válido
                 new TenantSsoEntry("custom-tenant", "custom.example.com", true,
-                        List.of("client-a"), "PT4H", "PT15M"),
+                        List.of(EligibleClientConfig.of("client-a")), "PT4H", "PT15M"),
                 // EC-03: solo ttlAbsolute
                 new TenantSsoEntry("partial-tenant", "partial.example.com", true,
                         List.of(), "PT4H", null)

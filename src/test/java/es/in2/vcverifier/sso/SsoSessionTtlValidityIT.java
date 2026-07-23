@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
@@ -270,7 +271,7 @@ class SsoSessionTtlValidityIT {
         return new TenantSsoConfig(
                 TENANT, "domain", true,
                 new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(8), IDLE_TTL),
-                List.of(CLIENT_ID)
+                List.of(EligibleClientConfig.of(CLIENT_ID))
         );
     }
 

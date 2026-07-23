@@ -74,6 +74,10 @@ public class EstablishSsoSessionWorkflow {
 
             sessionRepositoryPort.save(session);
 
+            // ADR-108/DELTA-02: registra el aplicativo iniciador como primer callee conocido
+            // de la sesión (best-effort: recordClientActivity nunca lanza, ver adapter).
+            sessionRepositoryPort.recordClientActivity(session.getId(), command.tenant(), command.clientId());
+
         } catch (Exception ex) {
 
             log.error("Error persisting SSO session for tenant={}", command.tenant(), ex);

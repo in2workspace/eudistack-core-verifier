@@ -172,10 +172,14 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
 
         // 6. THROTTLE UPDATE — non-blocking (R-3 / NFR-P-549-01): la respuesta al cliente
         // no espera el UPDATE; el fallo se registra pero no afecta al resultado de reuse.
+        // ADR-108/DELTA-02: piggyback de recordClientActivity en el mismo bloque async —
+        // recordClientActivity es un upsert idempotente, por lo que el mismo cadencing que
+        // el touch de last_used_at es suficiente para mantener sso_session_client al día.
         if (Duration.between(session.getLastUsedAt(), now).compareTo(THROTTLE_INTERVAL) >= 0) {
             CompletableFuture.runAsync(() -> {
                 try {
                     sessionRepository.updateLastUsedAt(sessionId, tenantSlug, now);
+                    sessionRepository.recordClientActivity(sessionId, tenantSlug, clientId);
                 } catch (Exception ex) {
                     log.warn("sso_touch_failed session={} tenant={}", sessionId, tenantSlug, ex);
                 }

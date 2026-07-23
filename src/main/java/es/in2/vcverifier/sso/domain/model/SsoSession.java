@@ -23,6 +23,9 @@ public class SsoSession {
 
     private SsoSessionState state;
 
+    // US-06: instante de terminación (Single Logout). Null hasta que terminate() transiciona la sesión.
+    private Instant terminatedAt;
+
     private SsoSession(
             SsoSessionId id,
             String tenant,
@@ -95,6 +98,24 @@ public class SsoSession {
         }
 
         this.state = SsoSessionState.SUPERSEDED;
+    }
+
+    /**
+     * Termina la sesión (US-06, Single Logout intra-tenant): transición {@code ACTIVE -> TERMINATED}.
+     * Idempotente semánticamente (EC-01): invocar sobre un estado distinto de {@code ACTIVE} es
+     * un no-op de dominio (no lanza, no muta {@code state}/{@code terminatedAt}). La idempotencia
+     * real de persistencia (rows-affected) vive en {@code SsoSessionRepositoryPort#terminateActive}.
+     */
+    public void terminate(Instant now) {
+
+        Objects.requireNonNull(now, "now cannot be null");
+
+        if (state != SsoSessionState.ACTIVE) {
+            return;
+        }
+
+        this.state = SsoSessionState.TERMINATED;
+        this.terminatedAt = now;
     }
 
     // =========================
