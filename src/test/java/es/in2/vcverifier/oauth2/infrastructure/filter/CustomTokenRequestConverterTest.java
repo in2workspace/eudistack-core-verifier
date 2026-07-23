@@ -14,7 +14,9 @@ import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
+import es.in2.vcverifier.oauth2.domain.exception.InvalidProofOfPossessionException;
 import es.in2.vcverifier.oauth2.domain.exception.UnsupportedGrantTypeException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
@@ -181,6 +183,32 @@ class CustomTokenRequestConverterTest {
         }
 
         @Test
+        @DisplayName("convert_invalidProofOfPossession_throwsInvalidClientAndPublishesInvalidProofOfPossessionAudit")
+        void convert_invalidProofOfPossession_throwsInvalidClientAndPublishesInvalidProofOfPossessionAudit() {
+            givenClientCredentialsRequest(CLIENT_ID, CLIENT_ASSERTION);
+            when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
+                    .thenThrow(new InvalidProofOfPossessionException("Invalid JWT claims from assertion"));
+
+            OAuth2AuthenticationException exception = whenConvertThrows();
+
+            thenErrorCodeIs(exception, OAuth2ErrorCodes.INVALID_CLIENT);
+            thenAuditPublishedWithReason(CLIENT_ID, "invalid_proof_of_possession");
+        }
+
+        @Test
+        @DisplayName("convert_untrustedIssuer_throwsInvalidClientAndPublishesIssuerNotTrustedAudit")
+        void convert_untrustedIssuer_throwsInvalidClientAndPublishesIssuerNotTrustedAudit() {
+            givenClientCredentialsRequest(CLIENT_ID, CLIENT_ASSERTION);
+            when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
+                    .thenThrow(new IssuerNotAuthorizedException("Issuer is not trusted"));
+
+            OAuth2AuthenticationException exception = whenConvertThrows();
+
+            thenErrorCodeIs(exception, OAuth2ErrorCodes.INVALID_CLIENT);
+            thenAuditPublishedWithReason(CLIENT_ID, "issuer_not_trusted");
+        }
+
+        @Test
         @DisplayName("convert_expiredCredential_throwsInvalidGrantAndPublishesCredentialExpiredAudit")
         void convert_expiredCredential_throwsInvalidGrantAndPublishesCredentialExpiredAudit() {
             givenClientCredentialsRequest(CLIENT_ID, CLIENT_ASSERTION);
@@ -246,11 +274,14 @@ class CustomTokenRequestConverterTest {
         }
 
         @Test
-        @DisplayName("convert_illegalArgumentFromAssertionClaims_throwsInvalidClientAndPublishesCredentialValidationFailedAudit")
-        void convert_illegalArgumentFromAssertionClaims_throwsInvalidClientAndPublishesCredentialValidationFailedAudit() {
+        @DisplayName("convert_unenumeratedIllegalArgument_throwsInvalidClientAndPublishesCredentialValidationFailedAudit")
+        void convert_unenumeratedIllegalArgument_throwsInvalidClientAndPublishesCredentialValidationFailedAudit() {
+            // ES-01, fail-closed default: an IllegalArgumentException not enumerated above (e.g. a
+            // malformed / non-decodable vp_token) falls through to the generic catch, distinct from
+            // InvalidProofOfPossessionException (which now owns "invalid claims from assertion").
             givenClientCredentialsRequest(CLIENT_ID, CLIENT_ASSERTION);
             when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
-                    .thenThrow(new IllegalArgumentException("Invalid JWT claims from assertion"));
+                    .thenThrow(new IllegalArgumentException("vp_token is not valid Base64"));
 
             OAuth2AuthenticationException exception = whenConvertThrows();
 
