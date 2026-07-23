@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
+import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
 import es.in2.vcverifier.verifier.domain.service.AccessTokenBuilder;
@@ -39,6 +43,12 @@ public class TokenGenerationWorkflow {
     private final ObjectMapper objectMapper;
     private final List<ClaimsExtractor> claimsExtractors;
     private final AccessTokenBuilder accessTokenBuilder;
+
+    // US-06 (AD-6 / ADR-109): estampado condicional del claim `sid` en el id_token —
+    // cross-BC de lectura oauth2 → sso, ver spec-deltas.md DELTA-03.
+    private final SsoSessionRepositoryPort ssoSessionRepositoryPort;
+    private final TenantSsoConfigPort tenantSsoConfigPort;
+    private final HashingService hashingService;
 
     public record Result(
             String accessTokenJwt,
@@ -86,7 +96,7 @@ public class TokenGenerationWorkflow {
 
         String idTokenJwt = null;
         if (generateIdToken) {
-            idTokenJwt = buildIdToken(credentialJson, extractedClaims, subject, audience, additionalParameters);
+            idTokenJwt = buildIdToken(credentialJson, extractedClaims, subject, audience, additionalParameters, tenant);
         }
 
         return new Result(accessTokenJwt, issueTime, expirationTime, idTokenJwt, extractedClaims.scope(), subject);
@@ -129,7 +139,8 @@ public class TokenGenerationWorkflow {
     }
 
     private String buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
-                                 String subject, String audience, Map<String, Object> additionalParameters) {
+                                 String subject, String audience, Map<String, Object> additionalParameters,
+                                 String tenant) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 backendConfig.getIdTokenExpirationSeconds(),
@@ -166,7 +177,36 @@ public class TokenGenerationWorkflow {
             idTokenClaimsBuilder.claim(NONCE, additionalParameters.get(NONCE));
         }
 
+        stampSidIfActiveSsoSession(idTokenClaimsBuilder, tenant, subject);
+
         JWTClaimsSet idTokenClaims = idTokenClaimsBuilder.build();
         return jwtService.issueJWT(idTokenClaims.toString());
+    }
+
+    /**
+     * US-06 (AD-6 / ADR-109): estampa {@code sid} = {@code sso_session.id} (valor en crudo,
+     * sin derivar) cuando el tenant tiene SSO habilitado y existe una sesión {@code ACTIVE}
+     * para {@code (tenant, sha256(subject))}. Sin sesión o SSO deshabilitado, el {@code id_token}
+     * no lleva {@code sid} — comportamiento idéntico al previo a esta Story (AC-05).
+     * <p>
+     * Best-effort / fail-open: cualquier fallo en la resolución (BBDD, config) se registra y
+     * se omite el claim — el estampado de {@code sid} nunca debe impedir la emisión del
+     * {@code id_token}, que es camino crítico de autenticación.
+     */
+    private void stampSidIfActiveSsoSession(JWTClaimsSet.Builder idTokenClaimsBuilder, String tenant, String subject) {
+        if (tenant == null) {
+            return;
+        }
+        try {
+            tenantSsoConfigPort.getByTenant(tenant)
+                    .filter(TenantSsoConfig::ssoEnabled)
+                    .ifPresent(config -> {
+                        String holderHash = hashingService.sha256(subject);
+                        ssoSessionRepositoryPort.findActiveByTenantAndHolder(tenant, holderHash)
+                                .ifPresent(session -> idTokenClaimsBuilder.claim("sid", session.getId().getValue()));
+                    });
+        } catch (Exception e) {
+            log.warn("sso_sid_stamp_lookup_failed tenant={}", tenant, e);
+        }
     }
 }

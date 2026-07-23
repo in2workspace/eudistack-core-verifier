@@ -2,6 +2,7 @@ package es.in2.vcverifier.sso.domain.model;
 
 import java.util.Collection;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -34,6 +35,19 @@ public final class TenantSsoCatalog {
             return false;
         }
         return clients.contains(SsoEligibleClient.of(clientId));
+    }
+
+    /**
+     * US-06 (AD-4/DELTA-01 fallback source): recupera la entrada completa (incl.
+     * {@code backchannelLogoutUri}) de un client_id del catálogo. Vacío si no está presente.
+     */
+    public Optional<SsoEligibleClient> findByClientId(String clientId) {
+        if (clientId == null || clientId.isBlank()) {
+            return Optional.empty();
+        }
+        return clients.stream()
+                .filter(c -> c.equals(SsoEligibleClient.of(clientId)))
+                .findFirst();
     }
 
     public boolean isEmpty() {

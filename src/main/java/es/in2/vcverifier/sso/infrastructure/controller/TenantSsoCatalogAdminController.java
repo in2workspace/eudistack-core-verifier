@@ -2,7 +2,7 @@ package es.in2.vcverifier.sso.infrastructure.controller;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
-import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.catalog.AddEligibleClientCommand;
 import es.in2.vcverifier.sso.application.catalog.ManageTenantSsoCatalogService;
@@ -53,7 +53,9 @@ public class TenantSsoCatalogAdminController {
         String tenant = resolveAndValidateTenant(request, authentication);
 
         List<String> clients = configPort.getByTenant(tenant)
-                .map(TenantSsoConfig::eligibleClientIds)
+                .map(config -> config.eligibleClients().stream()
+                        .map(EligibleClientConfig::clientId)
+                        .toList())
                 .orElse(List.of());
 
         return ResponseEntity.ok(new EligibleClientsResponse(clients));

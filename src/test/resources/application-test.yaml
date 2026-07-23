@@ -1,6 +1,13 @@
 verifier:
   frontend:
     portalUrl: http://localhost:4200
+  # US-06 [B3]: SafeUrlValidator ahora también valida backchannel_logout_uri (SSRF, SEC-14).
+  # Los ITs de Single Logout despliegan sus callees de prueba en servidores HTTP locales
+  # (http://localhost:<port>), que SafeUrlValidator rechazaría por defecto como loopback.
+  # allow-private=true SOLO aplica al perfil de test; ninguna IT ejercita el rechazo SSRF
+  # real vía el Spring context (esa cobertura vive en SafeUrlValidatorTest, unit puro).
+  ssrf:
+    allow-private: true
   backend:
     url: https://raw.githubusercontent.com
     identity:

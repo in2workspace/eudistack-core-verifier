@@ -1,13 +1,10 @@
 package es.in2.vcverifier.sso.domain.model;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import java.time.Instant;
 
 import lombok.Builder;
-@AllArgsConstructor
 @Data
-@Builder
 public class SsoAuditEvent {
 
 
@@ -22,9 +19,15 @@ public class SsoAuditEvent {
         SSO_CATALOG_CLIENT_ADDED,
         SSO_CATALOG_CLIENT_REMOVED,
         SSO_SESSION_EXPIRED,
-        SSO_LOGOUT_INITIATED,
         SSO_BACKCHANNEL_DELIVERED,
         EMERGENCY_REVOKE,
+        // US-06 Single Logout (AC-06)
+        SSO_LOGOUT_INITIATED,
+        BACKCHANNEL_DELIVERED,
+        BACKCHANNEL_FAILED,
+        BACKCHANNEL_SKIPPED,
+        SSO_LOGOUT_REJECTED,
+        SSO_LOGOUT_STORE_ERROR,
     }
 
     private final EventType eventType;
@@ -37,9 +40,53 @@ public class SsoAuditEvent {
     private final String reason;
     private final Integer countRevoked;
 
-    public SsoAuditEvent(EventType eventType, String tenant, String clientId, String holderHash,
-                         String outcome, String correlationId, Instant occurredAt) {
-        this(eventType, tenant, clientId, holderHash, outcome, correlationId, occurredAt, null, null);
+    /**
+     * US-06 (Single Logout): identificador de sesión SSO asociado al evento.
+     * Nullable — solo los eventos del flujo de logout lo llevan. NFR-S-551-02:
+     * el adapter de auditoría nunca lo loggea completo, solo un prefijo de 8 chars.
+     */
+    private final String sessionId;
+
+    /**
+     * Constructor legacy (pre-US-06/US-07/US-09): mantiene compatibilidad con los call sites
+     * posicionales existentes (US-02/US-03/US-05). {@code reason}, {@code countRevoked} y
+     * {@code sessionId} quedan a {@code null}.
+     */
+    public SsoAuditEvent(
+            EventType eventType,
+            String tenant,
+            String clientId,
+            String holderHash,
+            String outcome,
+            String correlationId,
+            Instant occurredAt
+    ) {
+        this(eventType, tenant, clientId, holderHash, outcome, correlationId, occurredAt, null, null, null);
+    }
+
+    @Builder
+    public SsoAuditEvent(
+            EventType eventType,
+            String tenant,
+            String clientId,
+            String holderHash,
+            String outcome,
+            String correlationId,
+            Instant occurredAt,
+            String reason,
+            Integer countRevoked,
+            String sessionId
+    ) {
+        this.eventType = eventType;
+        this.tenant = tenant;
+        this.clientId = clientId;
+        this.holderHash = holderHash;
+        this.outcome = outcome;
+        this.correlationId = correlationId;
+        this.occurredAt = occurredAt;
+        this.reason = reason;
+        this.countRevoked = countRevoked;
+        this.sessionId = sessionId;
     }
 
 }

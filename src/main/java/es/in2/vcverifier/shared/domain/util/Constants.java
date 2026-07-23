@@ -19,6 +19,9 @@ public class Constants {
     public static final String INTERACTION_REQUIRED = "interaction_required";
     public static final String LOG_ERROR_FORMAT = "{} - {}";
     public static final String OID4VP_TYPE = "oauth-authz-req+jwt";
+    // US-06 [W3]: OIDC Back-Channel Logout 1.0 §2.4/§5 RECOMMENDS typ=logout+jwt to prevent
+    // token-type confusion, since the same EC key signs id_token/access_token/logout_token.
+    public static final String LOGOUT_JWT_TYPE = "logout+jwt";
     public static final long MSB = 0x80L;
     public static final long MSBALL = 0xFFFFFF80L;
     public static final String EXPIRATION = "expiration";
@@ -26,6 +29,9 @@ public class Constants {
     public static final String CLIENT_SETTING_TENANT = "settings.tenant";
     public static final String CLIENT_SETTING_LOGIN_PAGE_URI = "settings.login_page_uri";
     public static final String CLIENT_SETTING_CLIENT_METADATA = "settings.clientMetadata";
+    // US-06 Single Logout (AD-4/DELTA-01): backchannel_logout_uri declarado por el RP,
+    // fuente primaria del BackchannelLogoutUriPort.
+    public static final String CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI = "settings.backchannelLogoutUri";
     // JTI cache TTL: 2x access token lifetime (900s) to ensure replay window coverage
     public static final long JTI_CACHE_TTL_SECONDS = 1800L;
     public static final String X_TENANT_HEADER = "X-Tenant";

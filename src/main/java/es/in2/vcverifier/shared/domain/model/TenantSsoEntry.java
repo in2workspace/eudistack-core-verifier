@@ -10,12 +10,17 @@ import java.util.List;
  * se trata como ausente y el adaptador aplica el default del sistema.
  * {@code eligibleClients} ausente en YAML desserializa a null; el constructor
  * compacto lo normaliza a lista vacía (lista nunca null, US-05).
+ * <p>
+ * US-06 (AD-4/DELTA-01): cada entrada de {@code eligibleClients} pasa de string plano a objeto
+ * {@link EligibleClientConfig} (clientId + backchannelLogoutUri opcional). Shape YAML:
+ * {@code - clientId: "app-a"} (opcionalmente {@code backchannelLogoutUri: "https://..."})
+ * en lugar de {@code - "app-a"}.
  */
 public record TenantSsoEntry(
         String tenant,
         String rootDomain,
         boolean ssoEnabled,
-        List<String> eligibleClients,
+        List<EligibleClientConfig> eligibleClients,
         String ttlAbsolute,
         String ttlIdle
 ) {

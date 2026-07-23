@@ -3,7 +3,7 @@ tenants:
     rootDomain: "sandbox.example.com"
     ssoEnabled: true
     eligibleClients:
-      - "verifier-client"
+      - clientId: "verifier-client"
 
   - tenant: "sandboxDos"
     rootDomain: ""

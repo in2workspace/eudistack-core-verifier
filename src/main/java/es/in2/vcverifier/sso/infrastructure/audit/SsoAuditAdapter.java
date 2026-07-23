@@ -73,6 +73,10 @@ public class SsoAuditAdapter implements SsoAuditPort {
         // NFR-S-547-02: holderHash prefix for traceability (not a session id)
         logEvent.put("holderHashPrefix", prefix(event.getHolderHash()));
 
+        // US-06 / NFR-S-551-02: session_id nunca completo — solo prefijo 8 chars.
+        // Solo lo llevan los eventos del flujo de logout; null en el resto (prefix(null) = null).
+        logEvent.put("sessionIdPrefix", prefix(event.getSessionId()));
+
         log.info("SSO_AUDIT_EVENT {}", logEvent);
     }
 
