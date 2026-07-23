@@ -46,6 +46,7 @@ import java.text.ParseException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -263,6 +264,33 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         log.info("Authorization code generated: {}...", code.substring(0, 8));
 
         Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
+
+        // Spring Authorization Server's OWN stock OAuth2AuthorizationCodeAuthenticationProvider
+        // (still in the token-endpoint provider chain alongside CustomAuthenticationProvider) runs
+        // its internal CodeVerifierAuthenticator on every authorization_code grant for a PKCE client,
+        // and that reads this attribute directly off the OAuth2Authorization — NOT just the
+        // codeChallenge/codeChallengeMethod attributes above (those are for CustomAuthenticationProvider's
+        // own check). Omitting it throws a raw NPE deep inside Spring's PKCE validator instead of a
+        // clean OAuth2 error, for every single authorization_code exchange, not just SSO reuse.
+        Map<String, Object> requestAdditionalParameters = new HashMap<>();
+        if (org.springframework.util.StringUtils.hasText(nonce)) {
+            requestAdditionalParameters.put(NONCE, nonce);
+        }
+        if (org.springframework.util.StringUtils.hasText(codeChallenge)) {
+            requestAdditionalParameters.put(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
+        }
+        if (org.springframework.util.StringUtils.hasText(codeChallengeMethod)) {
+            requestAdditionalParameters.put(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
+        }
+        OAuth2AuthorizationRequest authorizationRequest = OAuth2AuthorizationRequest.authorizationCode()
+                .authorizationUri(backendConfig.getUrl())
+                .clientId(registeredClient.getClientId())
+                .redirectUri(redirectUri)
+                .scopes(scopes)
+                .state(state)
+                .additionalParameters(requestAdditionalParameters)
+                .build();
+
         OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
                 .id(registeredClient.getId())
                 .principalName(registeredClient.getClientId())
@@ -270,7 +298,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 .token(new OAuth2AuthorizationCode(code, issueTime, expirationTime))
                 .attribute(OAuth2ParameterNames.CLIENT_ID, registeredClient.getClientId())
                 .attribute(OAuth2ParameterNames.REDIRECT_URI, redirectUri)
-                .attribute(OAuth2ParameterNames.SCOPE, String.join(" ", scopes));
+                .attribute(OAuth2ParameterNames.SCOPE, String.join(" ", scopes))
+                .attribute(OAuth2AuthorizationRequest.class.getName(), authorizationRequest);
 
         if (org.springframework.util.StringUtils.hasText(codeChallenge)) {
             authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
