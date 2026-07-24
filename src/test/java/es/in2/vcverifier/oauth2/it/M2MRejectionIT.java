@@ -39,6 +39,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -368,7 +371,7 @@ class M2MRejectionIT {
     // ES-04: external dependency failure / timeout (trusted-issuers registry, status list)
     // =========================================================
     @Test
-    void rejectsWhenTrustedIssuersRegistryUnreachable_returnsServerErrorWithDistinguishableReason() throws Exception {
+    void rejectsWhenTrustedIssuersRegistryUnreachable_returnsBadRequestWithServerErrorCodeAndDistinguishableReason() throws Exception {
         when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant(eq(CLIENT_ID), eq(CLIENT_ASSERTION)))
                 .thenThrow(new FailedCommunicationException("Error fetching issuer data"));
 
@@ -383,7 +386,7 @@ class M2MRejectionIT {
     }
 
     @Test
-    void rejectsWhenStatusListFetchFails_returnsServerErrorWithDistinguishableReason() throws Exception {
+    void rejectsWhenStatusListFetchFails_returnsBadRequestWithServerErrorCodeAndDistinguishableReason() throws Exception {
         when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant(eq(CLIENT_ID), eq(CLIENT_ASSERTION)))
                 .thenThrow(new StatusListCredentialException("Failed to gunzip content"));
 
@@ -404,7 +407,7 @@ class M2MRejectionIT {
     // =========================================================
     @Test
     void everyRejectionTypeAcrossTheFullSetPublishesExactlyOneDistinguishableReason() throws Exception {
-        var scenarios = java.util.List.<RejectionScenario>of(
+        var scenarios = List.<RejectionScenario>of(
                 new RejectionScenario(new InvalidProofOfPossessionException("x"), "invalid_proof_of_possession"),
                 new RejectionScenario(new InvalidCredentialTypeException("x"), "credential_type_not_eligible"),
                 new RejectionScenario(new IssuerNotAuthorizedException("x"), "issuer_not_trusted"),
@@ -416,7 +419,7 @@ class M2MRejectionIT {
                 new RejectionScenario(new IllegalArgumentException("x"), "credential_validation_failed")
         );
 
-        var observedReasons = new java.util.ArrayList<String>();
+        var observedReasons = new ArrayList<String>();
         for (RejectionScenario scenario : scenarios) {
             reset(oAuth2M2MAuditPort);
             when(clientCredentialsValidationWorkflow.validateClientCredentialsGrant(eq(CLIENT_ID), eq(CLIENT_ASSERTION)))
@@ -434,7 +437,7 @@ class M2MRejectionIT {
         // reason (by design — both are "not the client's fault"), so this is expected, not a
         // distinguishability violation of AC-05 (which is about failure *types*, not exception classes).
         assertThat(observedReasons).hasSize(9);
-        assertThat(new java.util.HashSet<>(observedReasons)).hasSize(8);
+        assertThat(new HashSet<>(observedReasons)).hasSize(8);
     }
 
     private record RejectionScenario(RuntimeException exception, String expectedReason) {
