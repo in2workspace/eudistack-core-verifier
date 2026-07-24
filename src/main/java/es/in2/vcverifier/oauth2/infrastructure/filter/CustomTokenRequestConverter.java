@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
 import es.in2.vcverifier.oauth2.application.workflow.ClientCredentialsValidationWorkflow;
+import es.in2.vcverifier.oauth2.domain.exception.InvalidProofOfPossessionException;
 import es.in2.vcverifier.oauth2.domain.exception.UnsupportedGrantTypeException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.OAuth2M2MAuditEvent;
@@ -13,6 +14,7 @@ import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
+import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,8 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
 
     private static final String AUDIT_OUTCOME_REJECT = "REJECT";
     private static final String AUDIT_REASON_CREDENTIAL_TYPE_NOT_ELIGIBLE = "credential_type_not_eligible";
+    private static final String AUDIT_REASON_INVALID_PROOF_OF_POSSESSION = "invalid_proof_of_possession";
+    private static final String AUDIT_REASON_ISSUER_NOT_TRUSTED = "issuer_not_trusted";
     private static final String AUDIT_REASON_CREDENTIAL_EXPIRED = "credential_expired";
     private static final String AUDIT_REASON_CREDENTIAL_NOT_ACTIVE = "credential_not_active";
     private static final String AUDIT_REASON_CREDENTIAL_REVOKED = "credential_revoked";
@@ -142,6 +146,14 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         } catch (InvalidCredentialTypeException e) {
             log.warn("M2M client '{}' rejected: credential type not eligible for client_credentials: {}", clientId, e.getMessage());
             publishAudit(clientId, AUDIT_REASON_CREDENTIAL_TYPE_NOT_ELIGIBLE);
+            throw OAuth2ErrorTranslator.invalidClient();
+        } catch (InvalidProofOfPossessionException e) {
+            log.warn("M2M client '{}' rejected: invalid proof of possession: {}", clientId, e.getMessage());
+            publishAudit(clientId, AUDIT_REASON_INVALID_PROOF_OF_POSSESSION);
+            throw OAuth2ErrorTranslator.invalidClient();
+        } catch (IssuerNotAuthorizedException e) {
+            log.warn("M2M client '{}' rejected: issuer not trusted: {}", clientId, e.getMessage());
+            publishAudit(clientId, AUDIT_REASON_ISSUER_NOT_TRUSTED);
             throw OAuth2ErrorTranslator.invalidClient();
         } catch (CredentialExpiredException e) {
             // The credential's temporal validity is what's wrong here, not the client's identity —

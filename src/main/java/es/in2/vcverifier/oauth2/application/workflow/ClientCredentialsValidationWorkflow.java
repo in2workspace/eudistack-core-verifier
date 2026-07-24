@@ -3,6 +3,7 @@ package es.in2.vcverifier.oauth2.application.workflow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
+import es.in2.vcverifier.oauth2.domain.exception.InvalidProofOfPossessionException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
@@ -72,7 +73,7 @@ public class ClientCredentialsValidationWorkflow {
         boolean isValid = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, payload);
         if (!isValid) {
             log.error("JWT claims from client_assertion are invalid");
-            throw new IllegalArgumentException("Invalid JWT claims from assertion");
+            throw new InvalidProofOfPossessionException("Invalid JWT claims from assertion");
         }
 
         // Full VP validation — cnf.jwk binding skipped:
