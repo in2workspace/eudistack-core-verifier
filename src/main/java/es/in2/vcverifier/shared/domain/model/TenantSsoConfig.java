@@ -9,8 +9,10 @@ public record TenantSsoConfig(
         boolean ssoEnabled,
         SsoTtlConfig ttl,
 
-        // lista de clientes elegibles para reutilización SSO
-        List<String> eligibleClientIds
+        // Catálogo de clientes elegibles para reutilización SSO (US-05) enriquecido con
+        // backchannelLogoutUri opcional (US-06, AD-4/DELTA-01 fallback source).
+        // Reemplaza el antiguo eligibleClientIds: List<String>.
+        List<EligibleClientConfig> eligibleClients
 ) {
 
     public record SsoTtlConfig(

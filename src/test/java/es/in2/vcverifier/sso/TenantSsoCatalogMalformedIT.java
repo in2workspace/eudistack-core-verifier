@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.TenantSsoConfigYamlAdapter;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -70,7 +71,7 @@ class TenantSsoCatalogMalformedIT {
         // Se construye ANTES de when() para no dejar Mockito en stubbing incompleto si algo falla.
         TenantSsoConfigYamlData data = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        Arrays.asList(null, "client-valid"), "PT2H", "PT10M")
+                        Arrays.asList(null, EligibleClientConfig.of("client-valid")), "PT2H", "PT10M")
         ));
         when(provider.retrieve()).thenReturn(data);
 
@@ -98,7 +99,7 @@ class TenantSsoCatalogMalformedIT {
     void init_shouldEmitWarnLog_whenEmptyStringEntryInEligibleClients() {
         when(provider.retrieve()).thenReturn(new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        List.of("", "client-valid"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of(""), EligibleClientConfig.of("client-valid")), "PT2H", "PT10M")
         )));
 
         TenantSsoConfigYamlAdapter adapter = new TenantSsoConfigYamlAdapter(provider);
@@ -125,7 +126,7 @@ class TenantSsoCatalogMalformedIT {
     void init_shouldEmitWarnLog_whenWhitespaceOnlyEntryInEligibleClients() {
         when(provider.retrieve()).thenReturn(new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        List.of("   ", "client-valid"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("   "), EligibleClientConfig.of("client-valid")), "PT2H", "PT10M")
         )));
 
         TenantSsoConfigYamlAdapter adapter = new TenantSsoConfigYamlAdapter(provider);
@@ -152,7 +153,8 @@ class TenantSsoCatalogMalformedIT {
     void init_shouldKeepOnlyValidEntries_whenListContainsMixedContent() {
         TenantSsoConfigYamlData data = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        Arrays.asList(null, "", "  ", "client-valid-1", "client-valid-2"),
+                        Arrays.asList(null, EligibleClientConfig.of(""), EligibleClientConfig.of("  "),
+                                EligibleClientConfig.of("client-valid-1"), EligibleClientConfig.of("client-valid-2")),
                         "PT2H", "PT10M")
         ));
         when(provider.retrieve()).thenReturn(data);
@@ -180,7 +182,7 @@ class TenantSsoCatalogMalformedIT {
     void init_shouldReturnEmptyCatalog_whenAllEntriesAreMalformed() {
         TenantSsoConfigYamlData data = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        Arrays.asList(null, "", "   "), "PT2H", "PT10M")
+                        Arrays.asList(null, EligibleClientConfig.of(""), EligibleClientConfig.of("   ")), "PT2H", "PT10M")
         ));
         when(provider.retrieve()).thenReturn(data);
 
@@ -206,10 +208,10 @@ class TenantSsoCatalogMalformedIT {
         TenantSsoConfigYamlData data = new TenantSsoConfigYamlData(List.of(
                 // tenant-a: lista con entradas malformadas (null y vacío)
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        Arrays.asList(null, ""), "PT2H", "PT10M"),
+                        Arrays.asList(null, EligibleClientConfig.of("")), "PT2H", "PT10M"),
                 // tenant-b: lista completamente válida
                 new TenantSsoEntry("tenant-b", "b.example.com", true,
-                        List.of("rp-client-1", "rp-client-2"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("rp-client-1"), EligibleClientConfig.of("rp-client-2")), "PT2H", "PT10M")
         ));
         when(provider.retrieve()).thenReturn(data);
 
@@ -242,14 +244,14 @@ class TenantSsoCatalogMalformedIT {
         // Arrays.asList(null) con un solo argumento null lanza NPE (varargs ambigüedad);
         // se construye la lista explícitamente y ANTES de llamar a when() para no dejar
         // Mockito en estado de stubbing incompleto si ocurre algún error.
-        List<String> tenantAClients = new ArrayList<>();
+        List<EligibleClientConfig> tenantAClients = new ArrayList<>();
         tenantAClients.add(null);
 
         TenantSsoConfigYamlData data = new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
                         tenantAClients, "PT2H", "PT10M"),
                 new TenantSsoEntry("tenant-b", "b.example.com", true,
-                        List.of("client-ok"), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("client-ok")), "PT2H", "PT10M")
         ));
         when(provider.retrieve()).thenReturn(data);
 
@@ -278,7 +280,7 @@ class TenantSsoCatalogMalformedIT {
     void init_shouldNormalizeWhitespaceInValidEntry_notDiscardIt() {
         when(provider.retrieve()).thenReturn(new TenantSsoConfigYamlData(List.of(
                 new TenantSsoEntry("tenant-a", "a.example.com", true,
-                        List.of("  client-a  "), "PT2H", "PT10M")
+                        List.of(EligibleClientConfig.of("  client-a  ")), "PT2H", "PT10M")
         )));
 
         TenantSsoConfigYamlAdapter adapter = new TenantSsoConfigYamlAdapter(provider);

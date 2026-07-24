@@ -88,7 +88,7 @@ class ReuseSsoSessionStoreFailureIT {
                                 java.time.Duration.ofHours(1),
                                 java.time.Duration.ofMinutes(10)
                         ),
-                        List.of("clientA")
+                        List.of(es.in2.vcverifier.shared.domain.model.EligibleClientConfig.of("clientA"))
                 )));
 
         when(sessionRepositoryPort.findActiveById(any(), any()))

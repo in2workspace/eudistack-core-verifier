@@ -23,6 +23,8 @@ import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuild
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.sso.infrastructure.web.SsoSessionLogoutFailureHandler;
+import es.in2.vcverifier.sso.infrastructure.web.SsoSessionLogoutHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 
@@ -31,7 +33,6 @@ import java.util.Set;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -71,6 +72,8 @@ public class AuthorizationServerConfig {
     private final es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry schemaProfileRegistry;
     private final Set<String> allowedClientsOrigins;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
+    private final SsoSessionLogoutHandler ssoSessionLogoutHandler;
+    private final SsoSessionLogoutFailureHandler ssoSessionLogoutFailureHandler;
     private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
 
     @Bean
@@ -115,7 +118,27 @@ public class AuthorizationServerConfig {
                                         jwtClientAssertionProvider.setJwtDecoderFactory(decoderFactory);
                                     }
                                 })))
-                .oidc(Customizer.withDefaults());    // Enable OpenID Connect 1.0
+                .oidc(oidc -> oidc
+                        // US-06 (AD-1): enganche del Single Logout tras la validación estándar
+                        // RP-Initiated Logout (id_token_hint / post_logout_redirect_uri) — no
+                        // reimplementa esa validación, solo decora el resultado (éxito/fallo).
+                        .logoutEndpoint(logoutEndpoint -> logoutEndpoint
+                                .logoutResponseHandler(ssoSessionLogoutHandler)
+                                .errorResponseHandler(ssoSessionLogoutFailureHandler)
+                        )
+                        // US-06 (ADR-107): refleja soporte de Back-Channel Logout 1.0 en la
+                        // metadata OIDC. No hay setter tipado en OidcProviderConfiguration.Builder
+                        // para estos claims (verificado contra Spring AS 1.5.6) — se añaden vía
+                        // .claim(...) genérico, aditivo sobre los defaults del framework
+                        // (issuer, endpoints, algoritmos), sin sobrescribirlos.
+                        .providerConfigurationEndpoint(providerConfigurationEndpoint ->
+                                providerConfigurationEndpoint.providerConfigurationCustomizer(builder -> builder
+                                        .claim("backchannel_logout_supported", true)
+                                        .claim("backchannel_logout_session_supported", true)
+                                        .claim("frontchannel_logout_supported", false)
+                                )
+                        )
+                );
 
         return http.build();
     }

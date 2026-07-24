@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.oauth2.domain.exception.SsoConfigLoadingException;
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfigYamlData;
 import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigProvider;
@@ -112,14 +113,15 @@ public class TenantSsoConfigYamlProvider implements TenantSsoConfigProvider {
                     continue;
                 }
                 tenantFound = true;
-                List<String> clients = new ArrayList<>(entry.eligibleClients());
+                List<EligibleClientConfig> clients = new ArrayList<>(entry.eligibleClients());
                 if (add) {
-                    if (!clients.contains(clientId)) {
-                        clients.add(clientId);
+                    boolean exists = clients.stream().anyMatch(c -> c.clientId().equals(clientId));
+                    if (!exists) {
+                        clients.add(EligibleClientConfig.of(clientId));
                         changed = true;
                     }
                 } else {
-                    changed = clients.remove(clientId);
+                    changed = clients.removeIf(c -> c.clientId().equals(clientId));
                 }
                 updatedTenants.add(new TenantSsoEntry(
                         entry.tenant(), entry.rootDomain(), entry.ssoEnabled(),
