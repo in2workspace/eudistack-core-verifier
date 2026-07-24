@@ -4,7 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.3.1] - 2026-07-20
+
+### Added
+
+**EUD-156 — US-03: Verifier rejects non-machine or untrusted credentials in a traceable manner**:
+- New domain exception InvalidProofOfPossessionException (oauth2/domain/exception): clearly flags that the client_assertion (private_key_jwt) of an M2M client fails to prove key possession (invalid signature, incorrect iss/sub/aud, expired exp, or already consumed/replay jti).
+- ClientCredentialsValidationWorkflow now throws InvalidProofOfPossessionException instead of a generic IllegalArgumentException when verifyClientAssertionJWTClaims returns false, preserving the existing check order (type eligibility → proof of possession → presentation validation).
+- CustomTokenRequestConverter explicitly catches InvalidProofOfPossessionException and IssuerNotAuthorizedException (the latter already existed, now audited) prior to the generic catch, publishing two new audit reason values: invalid_proof_of_possession and issuer_not_trusted. Both cases continue to return only invalid_client to the Relying Party (without error_description/error_uri).
+- With this, the 3 M2M failure types explicitly specified in the SRS (invalid proof of possession, non-machine credential, untrusted issuer) are fully auditable with mutually distinguishable reasons, without leaking details to the Relying Party.
+- Test coverage: unit (ClientCredentialsValidationWorkflowTest, CustomTokenRequestConverterTest, OAuth2ErrorTranslatorTest) and end-to-end integration against /oidc/token (M2MRejectionIT, new) covering all 3 rejection types, deterministic precedence, binary verdict, 100% audit coverage, and no regression for pre-registered clients.
 
 ### Added
 
