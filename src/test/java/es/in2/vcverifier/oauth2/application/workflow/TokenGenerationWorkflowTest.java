@@ -136,6 +136,7 @@ class TokenGenerationWorkflowTest {
 
             assertThat(result.accessTokenJwt()).isEqualTo("access-jwt");
             assertThat(result.idTokenJwt()).isEqualTo("id-jwt");
+            assertThat(result.idTokenClaims()).containsEntry("name", "Test User");
             assertThat(result.scope()).isEqualTo("openid learcredential");
             assertThat(result.subject()).isEqualTo("did:key:z6MkSubject");
             assertThat(result.issueTime()).isNotNull();
@@ -175,6 +176,7 @@ class TokenGenerationWorkflowTest {
 
             assertThat(result.accessTokenJwt()).isEqualTo("access-jwt-only");
             assertThat(result.idTokenJwt()).isNull();
+            assertThat(result.idTokenClaims()).isNull();
             verify(accessTokenBuilder).build(any(BuildContext.class));
             verify(jwtService, never()).issueJWT(anyString());
         }
