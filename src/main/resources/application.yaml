@@ -1,6 +1,6 @@
 spring:
   application:
-    name: ${OTEL_SERVICE_NAME:vc-verifier}
+    name: eudistack-core-verifier
   config:
     import: optional:file:${VERIFIER_BACKEND_LOCALFILES_DCQLPATH:}
   # Virtual Threads: enables lightweight threads for I/O-bound operations (SSE, HTTP calls)
