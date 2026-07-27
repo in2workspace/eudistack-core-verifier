@@ -171,4 +171,42 @@ class LocalSchemaProfileRegistryTest {
         // Duplicates are removed because it is a Set
         assertEquals(Set.of("client_credentials", "authorization_code"), profile.grantEligibility());
     }
+
+    @Test
+    void registerTypeAliases_withDivergentSdJwtVct_registersVctAsAlias() throws IOException {
+        // Given: profile file (defines the profile itself)
+        String profileJson = """
+                {
+                  "credential_configuration_id": "doctorid.sd.1",
+                  "token_claims_mapping": {
+                    "subject_paths": ["registrationNumber"],
+                    "id_token": {},
+                    "access_token": {}
+                  }
+                }
+                """;
+        Files.writeString(tempDir.resolve("doctorid.sd.1.profile.json"), profileJson);
+
+        // And: the raw schema file, whose vct differs from the credential_configuration_id
+        // (mirrors real-world DoctorID schema, vct = urn:es.cgcom:doctorid:1)
+        String schemaJson = """
+                {
+                  "credential_configuration_id": "doctorid.sd.1",
+                  "credential_definition": { "type": ["VerifiableCredential", "doctorid.sd.1"] },
+                  "sd_jwt": { "vct": "urn:es.cgcom:doctorid:1" }
+                }
+                """;
+        Files.writeString(tempDir.resolve("doctorid.sd.1.json"), schemaJson);
+
+        // When
+        var registry = new LocalSchemaProfileRegistry(tempDir.toString());
+
+        // Then: the token endpoint looks up profiles by vct, not by credential_configuration_id
+        assertTrue(registry.hasProfile("doctorid.sd.1"));
+        assertTrue(registry.hasProfile("urn:es.cgcom:doctorid:1"));
+        assertEquals(
+                registry.findByConfigId("doctorid.sd.1").orElseThrow(),
+                registry.findByConfigId("urn:es.cgcom:doctorid:1").orElseThrow()
+        );
+    }
 }

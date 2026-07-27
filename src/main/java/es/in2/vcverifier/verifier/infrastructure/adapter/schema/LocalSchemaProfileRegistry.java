@@ -146,14 +146,24 @@ public class LocalSchemaProfileRegistry implements SchemaProfileRegistry {
             if (profile == null) return;
 
             JsonNode typeNode = root.path("credential_definition").path("type");
-            if (!typeNode.isArray()) return;
+            if (typeNode.isArray()) {
+                for (JsonNode t : typeNode) {
+                    String type = t.asText();
+                    if ("VerifiableCredential".equals(type) || "VerifiableAttestation".equals(type)) continue;
+                    if (type.equals(configId)) continue;
+                    if (profiles.putIfAbsent(type, profile) == null) {
+                        log.info("Registered schema profile alias '{}' → '{}' from {}", type, configId, source);
+                    }
+                }
+            }
 
-            for (JsonNode t : typeNode) {
-                String type = t.asText();
-                if ("VerifiableCredential".equals(type) || "VerifiableAttestation".equals(type)) continue;
-                if (type.equals(configId)) continue;
-                if (profiles.putIfAbsent(type, profile) == null) {
-                    log.info("Registered schema profile alias '{}' → '{}' from {}", type, configId, source);
+            // SD-JWT VC: the token endpoint identifies the credential by the 'vct' claim,
+            // which can differ from the credential_configuration_id (e.g. doctorid.sd.1 → urn:es.cgcom:doctorid:1)
+            JsonNode vctNode = root.path("sd_jwt").path("vct");
+            if (vctNode.isTextual()) {
+                String vct = vctNode.asText();
+                if (!vct.equals(configId) && profiles.putIfAbsent(vct, profile) == null) {
+                    log.info("Registered schema profile alias '{}' → '{}' from {}", vct, configId, source);
                 }
             }
         } catch (Exception e) {
