@@ -35,7 +35,7 @@ class SunsetClosedIT {
         assertThrows(LegacyFormatSunsetClosedException.class, () -> dispatcher.dispatch(credential));
 
         var counter = registry.find("dome_verifier_dispatcher_total")
-                .tags("tenant", "default", "format", "legacy_v1_1", "decision", "deny", "reason", "LEGACY_SUNSET_CLOSED")
+                .tags("tenant", "unknown", "format", "legacy_v1_1", "decision", "deny", "reason", "LEGACY_SUNSET_CLOSED")
                 .counter();
 
         assertNotNull(counter);

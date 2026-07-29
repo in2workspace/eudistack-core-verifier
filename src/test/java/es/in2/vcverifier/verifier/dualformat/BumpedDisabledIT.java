@@ -35,7 +35,7 @@ class BumpedDisabledIT {
         assertThrows(BumpedFormatTemporarilyDisabledException.class, () -> dispatcher.dispatch(credential));
 
         var counter = registry.find("dome_verifier_dispatcher_total")
-                .tags("tenant", "default", "format", "bumped_v2_0", "decision", "deny", "reason", "BUMPED_DISABLED")
+                .tags("tenant", "unknown", "format", "bumped_v2_0", "decision", "deny", "reason", "BUMPED_DISABLED")
                 .counter();
 
         assertNotNull(counter);

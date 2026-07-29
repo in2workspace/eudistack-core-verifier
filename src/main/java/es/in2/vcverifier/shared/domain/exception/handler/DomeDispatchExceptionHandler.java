@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RequiredArgsConstructor
 public class DomeDispatchExceptionHandler {
 
+    private static final String UNKNOWN_TENANT = "unknown";
+
     private final MeterRegistry meterRegistry;
 
     @ExceptionHandler(LegacyFormatSunsetClosedException.class)
@@ -51,9 +53,9 @@ public class DomeDispatchExceptionHandler {
 
     private String resolveTenant(HttpServletRequest request) {
         if (request == null) {
-            return "default";
+            return UNKNOWN_TENANT;
         }
         Object tenant = request.getAttribute("tenantDomain");
-        return tenant instanceof String value && !value.isBlank() ? value : "default";
+        return tenant instanceof String value && !value.isBlank() ? value : UNKNOWN_TENANT;
     }
 }
