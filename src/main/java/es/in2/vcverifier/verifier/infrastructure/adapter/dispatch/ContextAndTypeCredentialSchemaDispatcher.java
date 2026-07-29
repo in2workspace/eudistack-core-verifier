@@ -34,6 +34,7 @@ public class ContextAndTypeCredentialSchemaDispatcher implements CredentialSchem
 
     private static final String VC_V2_CONTEXT = "https://www.w3.org/ns/credentials/v2";
     private static final String VC_V1_CONTEXT = "https://www.w3.org/2018/credentials/v1";
+    private static final String UNKNOWN_TENANT = "unknown";
 
     private final List<DispatchRule> dispatchRules;
     private final TenantConfigPort tenantConfigPort;
@@ -161,14 +162,14 @@ public class ContextAndTypeCredentialSchemaDispatcher implements CredentialSchem
         try {
             ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes == null) {
-                return "default";
+                return UNKNOWN_TENANT;
             }
             HttpServletRequest request = attributes.getRequest();
             String tenantDomain = TenantDomainFilter.getCurrentTenant(request);
-            return tenantDomain == null || tenantDomain.isBlank() ? "default" : tenantDomain;
+            return tenantDomain == null || tenantDomain.isBlank() ? UNKNOWN_TENANT : tenantDomain;
         } catch (Exception ex) {
-            log.debug("Unable to resolve tenant domain from request context. Falling back to default", ex);
-            return "default";
+            log.debug("Unable to resolve tenant domain from request context. Falling back to unknown", ex);
+            return UNKNOWN_TENANT;
         }
     }
 }

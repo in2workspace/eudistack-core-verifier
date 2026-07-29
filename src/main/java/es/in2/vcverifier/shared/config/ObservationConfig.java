@@ -4,11 +4,15 @@ import io.micrometer.common.KeyValue;
 import io.micrometer.observation.ObservationFilter;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.aop.ObservedAspect;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class ObservationConfig {
+
+    private static final String MDC_TENANT_DOMAIN = "tenantDomain";
+    private static final String UNKNOWN_TENANT = "unknown";
 
     /**
      * Registers the AOP aspect to enable the use of @Observed.
@@ -23,7 +27,13 @@ public class ObservationConfig {
     public ObservationFilter globalObservationFilter() {
         return context -> {
             context.addLowCardinalityKeyValue(KeyValue.of("component", "verifier-backend"));
+            context.addLowCardinalityKeyValue(KeyValue.of("tenant", currentTenant()));
             return context;
         };
+    }
+
+    private static String currentTenant() {
+        String tenant = MDC.get(MDC_TENANT_DOMAIN);
+        return tenant == null || tenant.isBlank() ? UNKNOWN_TENANT : tenant;
     }
 }
