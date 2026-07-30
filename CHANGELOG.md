@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Business metric for verified credentials**: new Micrometer counter `business.credential.verified` (finding H-06 of the verifier observability review), tagged with `tenant`, `configuration_id` and `outcome` (`ok`/`error`). It is an in-memory counter only — the Verifier does not persist the accumulated value; durability across restarts is delegated to the Prometheus scrape / OTel Collector, which reconstruct totals via `rate()`/`increase()` and handle the counter reset on restart transparently. Neither the existing `dome_verifier_dispatcher_total` (runs only after crypto verification already passed, so it never fires on signature/expiry/revocation/trust failures) nor `verifier_sso_established_total` (SSO-scoped, tenant-gated) could stand in for this.
+  - New port `CredentialVerificationMetricsPort` (`verifier/domain/port`) + adapter `CredentialVerificationMetricsRecorder` (`verifier/infrastructure/metrics`), mirroring the existing `SsoMetricsPort`/`SsoMetricsRecorder` split — required because `ClientCredentialsValidationWorkflow` lives in `application` and ArchUnit forbids `application → infrastructure`. Unlike `SsoMetricsRecorder`, the tenant is not a caller-supplied parameter (neither call site has it); the recorder resolves it from the request context the same way `ContextAndTypeCredentialSchemaDispatcher` does.
+  - Recorded at the two flows that actually verify a credential: `AuthorizationResponseProcessorServiceImpl.handleAuthResponse` (OID4VP `/oid4vp/auth-response`, the wallet path) and `ClientCredentialsValidationWorkflow.validateClientCredentialsGrant` (M2M `client_credentials` grant with a VP inside the `client_assertion`). `VerifyPresentationWorkflow` is dead code and is not wired.
+  - In the OID4VP flow the `configuration_id` is only known once the credential schema dispatcher's decision is resolved (previously discarded at the call site); a `verificationCounted` flag + `finally` guarantees exactly one increment per call, and failures that happen *after* a successful verification (unregistered client, persistence, SSE) are correctly **not** double-counted as verification errors — pre-dispatch failures fall back to `configuration_id=unknown` since the wallet-asserted type cannot be trusted before signature verification passes.
+  - Deliberate deviation from `conv-observability.md` §3: tags reuse this repo's existing `tenant`/`configuration_id` naming (consistent with `verifier_sso_*` and `dome_verifier_*`) instead of the convention's `tenant.id`/`credential.type`; `outcome` and `configuration_id` are additional dimensions not listed in §3 for `.verified`. `business.error.count` is intentionally not emitted.
+  - Tests: `CredentialVerificationMetricsRecorderTest` (new counter contract: tags, tenant resolution from request context, accumulation, unknown fallbacks, non-blocking registry-failure regression — mirrors `SsoMetricsRecorderTest`), `AuthorizationResponseProcessorServiceImplTest` (ok/error assertions across the happy path, pre-dispatch failures, and the post-verification-failure exactly-once guarantee), `ClientCredentialsValidationWorkflowTest` (`verify()` on success/ineligible-type/invalid-claims/VP-failure paths).
+
 ## [3.3.1] - 2026-07-29
 
 ### Added

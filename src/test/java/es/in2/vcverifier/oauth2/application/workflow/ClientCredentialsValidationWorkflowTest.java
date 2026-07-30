@@ -12,6 +12,7 @@ import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.port.CredentialVerificationMetricsPort;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
@@ -43,6 +44,7 @@ class ClientCredentialsValidationWorkflowTest {
     @Mock private VpService vpService;
     @Mock private CredentialSchemaDispatcher credentialSchemaDispatcher;
     @Mock private SchemaProfileRegistry schemaProfileRegistry;
+    @Mock private CredentialVerificationMetricsPort credentialVerificationMetrics;
 
     @InjectMocks
     private ClientCredentialsValidationWorkflow workflow;
@@ -90,6 +92,8 @@ class ClientCredentialsValidationWorkflowTest {
 
         assertThat(result).isEqualTo(credential);
         verify(vpService).verifyVerifiablePresentation(VP_TOKEN_RAW, false);
+        verify(credentialVerificationMetrics).recordVerifiedOk("learcredential.machine.w3c.3");
+        verify(credentialVerificationMetrics, never()).recordVerifiedError(any());
     }
 
     @Test
@@ -113,6 +117,8 @@ class ClientCredentialsValidationWorkflowTest {
                 .hasMessageContaining("not eligible for client_credentials");
 
         verify(vpService, never()).verifyVerifiablePresentation(any());
+        verify(credentialVerificationMetrics).recordVerifiedError("learcredential.employee.w3c.4");
+        verify(credentialVerificationMetrics, never()).recordVerifiedOk(any());
     }
 
     @Test
@@ -137,6 +143,7 @@ class ClientCredentialsValidationWorkflowTest {
                 .hasMessageContaining("Invalid JWT claims");
 
         verify(vpService, never()).verifyVerifiablePresentation(any());
+        verify(credentialVerificationMetrics).recordVerifiedError("learcredential.machine.w3c.3");
     }
 
     @Test
@@ -229,5 +236,8 @@ class ClientCredentialsValidationWorkflowTest {
         assertThatThrownBy(() -> workflow.validateClientCredentialsGrant(CLIENT_ID, CLIENT_ASSERTION))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("VP invalid");
+
+        verify(credentialVerificationMetrics).recordVerifiedError("learcredential.machine.w3c.3");
+        verify(credentialVerificationMetrics, never()).recordVerifiedOk(any());
     }
 }
