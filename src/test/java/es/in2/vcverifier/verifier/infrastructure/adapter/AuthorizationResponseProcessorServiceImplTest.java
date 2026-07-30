@@ -19,6 +19,10 @@ import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
+import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
+import es.in2.vcverifier.verifier.domain.port.CredentialVerificationMetricsPort;
 import es.in2.vcverifier.verifier.infrastructure.adapter.AuthorizationResponseProcessorServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,6 +89,9 @@ class AuthorizationResponseProcessorServiceImplTest {
     private CredentialSchemaDispatcher credentialSchemaDispatcher;
 
     @Mock
+    private CredentialVerificationMetricsPort credentialVerificationMetrics;
+
+    @Mock
     private AuthorizationResponseProcessorServiceImpl authorizationResponseProcessorService;
 
     @BeforeEach
@@ -102,7 +109,8 @@ class AuthorizationResponseProcessorServiceImplTest {
                 cacheForNonceByState,
                 cryptoComponent,
                 java.util.List.of(),
-                credentialSchemaDispatcher
+                credentialSchemaDispatcher,
+                credentialVerificationMetrics
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
         lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
@@ -147,6 +155,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
 
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
+        when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
+                DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(registeredClient);
 
@@ -168,6 +178,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertTrue(redirectUrl.startsWith("https://client.example.com/callback?"));
 
         verify(oAuth2AuthorizationService).save(any(OAuth2Authorization.class));
+        verify(credentialVerificationMetrics).recordVerifiedOk("test-config-id");
+        verify(credentialVerificationMetrics, never()).recordVerifiedError(any());
     }
 
     @Test
@@ -218,6 +230,9 @@ class AuthorizationResponseProcessorServiceImplTest {
                 authorizationResponseProcessorService.handleAuthResponse(state, vpToken)
         );
 
+        // Failed before the dispatcher ever ran → no bounded type is known, so it tags "unknown".
+        verify(credentialVerificationMetrics).recordVerifiedError(null);
+        verify(credentialVerificationMetrics, never()).recordVerifiedOk(any());
     }
 
     @Test
@@ -240,6 +255,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(null);
+        when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
+                DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
         // Act & Assert
         when(cacheForNonceByState.get(state)).thenReturn(state);
@@ -248,6 +265,10 @@ class AuthorizationResponseProcessorServiceImplTest {
         );
         assertEquals(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT, exception.getError().getErrorCode());
 
+        // The credential DID verify successfully — the client-not-registered failure happens
+        // afterwards and must not be double-counted as a verification error.
+        verify(credentialVerificationMetrics).recordVerifiedOk("test-config-id");
+        verify(credentialVerificationMetrics, never()).recordVerifiedError(any());
     }
 
     private String createVpToken(String nonce) throws JOSEException {
@@ -304,6 +325,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertEquals("Login time has expired", exception.getMessage());
 
         verify(cacheStoreForOAuth2AuthorizationRequest, times(1)).delete(state);
+        verify(credentialVerificationMetrics).recordVerifiedError(null);
     }
 
 
@@ -519,6 +541,8 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
+        when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
+                DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(rc);
 
@@ -572,6 +596,8 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
+        when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
+                DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(rc);
 
