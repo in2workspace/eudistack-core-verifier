@@ -7,6 +7,7 @@ import es.in2.vcverifier.oauth2.domain.exception.InvalidProofOfPossessionExcepti
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.port.CredentialVerificationMetricsPort;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
@@ -34,6 +35,7 @@ public class ClientCredentialsValidationWorkflow {
     private final VpService vpService;
     private final CredentialSchemaDispatcher credentialSchemaDispatcher;
     private final SchemaProfileRegistry schemaProfileRegistry;
+    private final CredentialVerificationMetricsPort credentialVerificationMetrics;
 
     /**
      * Validates an M2M client_credentials grant by:
@@ -50,38 +52,46 @@ public class ClientCredentialsValidationWorkflow {
     public JsonNode validateClientCredentialsGrant(String clientId, String clientAssertion) {
         log.info("ClientCredentialsValidationWorkflow: validating M2M grant");
 
-        SignedJWT signedJWT = jwtService.parseJWT(clientAssertion);
-        Payload payload = jwtService.extractPayloadFromSignedJWT(signedJWT);
-        String vpToken = jwtService.extractClaimFromPayload(payload, "vp_token");
-        String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
+        String configurationId = null;
+        try {
+            SignedJWT signedJWT = jwtService.parseJWT(clientAssertion);
+            Payload payload = jwtService.extractPayloadFromSignedJWT(signedJWT);
+            String vpToken = jwtService.extractClaimFromPayload(payload, "vp_token");
+            String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
 
-        // Extract credential and validate grant eligibility via schema profile
-        JsonNode vc = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(decodedVpToken);
-        DispatchDecision dispatchDecision = credentialSchemaDispatcher.dispatch(vc);
-        String configId = dispatchDecision.credentialConfigurationId();
-        log.info("ClientCredentialsValidationWorkflow: dispatch decision format={}, reason={}, configId={}",
-            dispatchDecision.format(), dispatchDecision.reason(), configId);
-        SchemaProfile profile = schemaProfileRegistry.findByConfigId(configId)
-                .orElseThrow(() -> new InvalidCredentialTypeException("No profile found for: " + configId));
-        if (!profile.grantEligibility().contains("client_credentials")) {
-            log.error("Credential type {} is not eligible for client_credentials grant", configId);
-            throw new InvalidCredentialTypeException(
-                    "Credential type " + configId + " is not eligible for client_credentials grant");
+            // Extract credential and validate grant eligibility via schema profile
+            JsonNode vc = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(decodedVpToken);
+            DispatchDecision dispatchDecision = credentialSchemaDispatcher.dispatch(vc);
+            String configId = dispatchDecision.credentialConfigurationId();
+            configurationId = configId;
+            log.info("ClientCredentialsValidationWorkflow: dispatch decision format={}, reason={}, configId={}",
+                dispatchDecision.format(), dispatchDecision.reason(), configId);
+            SchemaProfile profile = schemaProfileRegistry.findByConfigId(configId)
+                    .orElseThrow(() -> new InvalidCredentialTypeException("No profile found for: " + configId));
+            if (!profile.grantEligibility().contains("client_credentials")) {
+                log.error("Credential type {} is not eligible for client_credentials grant", configId);
+                throw new InvalidCredentialTypeException(
+                        "Credential type " + configId + " is not eligible for client_credentials grant");
+            }
+
+            // Validate client assertion JWT claims
+            boolean isValid = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, payload);
+            if (!isValid) {
+                log.error("JWT claims from client_assertion are invalid");
+                throw new InvalidProofOfPossessionException("Invalid JWT claims from assertion");
+            }
+
+            // Full VP validation — cnf.jwk binding skipped:
+            // the calling app does not hold the wallet's private key.
+            vpService.verifyVerifiablePresentation(decodedVpToken, false);
+            log.info("ClientCredentialsValidationWorkflow: VP validated successfully");
+
+            credentialVerificationMetrics.recordVerifiedOk(configurationId);
+            return vc;
+        } catch (RuntimeException e) {
+            credentialVerificationMetrics.recordVerifiedError(configurationId);
+            throw e;
         }
-
-        // Validate client assertion JWT claims
-        boolean isValid = clientAssertionValidationService.verifyClientAssertionJWTClaims(clientId, payload);
-        if (!isValid) {
-            log.error("JWT claims from client_assertion are invalid");
-            throw new InvalidProofOfPossessionException("Invalid JWT claims from assertion");
-        }
-
-        // Full VP validation — cnf.jwk binding skipped:
-        // the calling app does not hold the wallet's private key.
-        vpService.verifyVerifiablePresentation(decodedVpToken, false);
-        log.info("ClientCredentialsValidationWorkflow: VP validated successfully");
-
-        return vc;
     }
 
 }

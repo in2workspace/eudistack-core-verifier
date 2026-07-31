@@ -19,6 +19,8 @@ import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.exception.LegacyFormatSunsetClosedException;
 import es.in2.vcverifier.verifier.domain.exception.UnknownCredentialFormatException;
+import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.port.CredentialVerificationMetricsPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
@@ -74,10 +76,14 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final CryptoComponent cryptoComponent;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
     private final CredentialSchemaDispatcher credentialSchemaDispatcher;
+    private final CredentialVerificationMetricsPort credentialVerificationMetrics;
 
     @Override
     public JsonNode handleAuthResponse(String state, String vpToken){
         log.info("Processing authorization response");
+
+        boolean verificationCounted = false;
+        String configurationId = null;
 
         try {
             // Validate if the state exists in the cache
@@ -151,12 +157,16 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             }
 
             try {
-                credentialSchemaDispatcher.dispatch(credentialJson);
+                DispatchDecision dispatchDecision = credentialSchemaDispatcher.dispatch(credentialJson);
+                configurationId = dispatchDecision.credentialConfigurationId();
             } catch (LegacyFormatSunsetClosedException | BumpedFormatTemporarilyDisabledException
                      | UnknownCredentialFormatException e) {
                 sseEmitterStore.sendValidationFailed(state, "FORMAT_GATED", e.getMessage());
                 throw e;
             }
+
+            verificationCounted = true;
+            credentialVerificationMetrics.recordVerifiedOk(configurationId);
 
             RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
 
@@ -215,6 +225,10 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             log.error("Unexpected error during VP validation: {}", e.getMessage(), e);
             sseEmitterStore.sendValidationFailed(state, "VALIDATION_ERROR", "Validation failed: " + e.getMessage());
             throw e;
+        } finally {
+            if (!verificationCounted) {
+                credentialVerificationMetrics.recordVerifiedError(configurationId);
+            }
         }
     }
 
