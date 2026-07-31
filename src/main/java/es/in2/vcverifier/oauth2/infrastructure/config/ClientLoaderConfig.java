@@ -23,7 +23,6 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
@@ -76,8 +75,13 @@ public class ClientLoaderConfig {
             List<RegisteredClient> registeredClients = new ArrayList<>();
             Set<String> freshOrigins = new java.util.HashSet<>();
             for (ClientData clientData : clientsYamlData.clients()) {
+                // Stable across scheduled refreshClients() reloads: OAuth2Authorization records
+                // (in-memory, no expiry) store this id as registeredClientId, so a fresh random
+                // UUID on every reload would orphan every in-flight authorization/id_token as soon
+                // as the registry refreshes, causing RP-Initiated Logout to NPE on a null
+                // RegisteredClient (registeredClientRepository.findById() misses the stale id).
                 RegisteredClient.Builder registeredClientBuilder = RegisteredClient
-                        .withId(UUID.randomUUID().toString())
+                        .withId(clientData.clientId())
                         .clientId(clientData.clientId())
                         .clientAuthenticationMethods(authMethods -> clientData.clientAuthenticationMethods().forEach(method -> authMethods.add(new ClientAuthenticationMethod(method))))
                         .authorizationGrantTypes(grantTypes -> clientData.authorizationGrantTypes().forEach(grantType -> grantTypes.add(new AuthorizationGrantType(grantType))))
