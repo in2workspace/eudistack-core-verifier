@@ -226,8 +226,13 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
         cacheStoreForRefreshTokenData.add(oAuth2RefreshToken.getTokenValue(), refreshTokenDataCache);
 
+        // A unique id per authorization, NOT registeredClient.getId(): that static value is the
+        // same for every login of this client, so InMemoryOAuth2AuthorizationService.save() would
+        // overwrite one tab/session's authorization (and its id_token) every time another tab of
+        // the same client (e.g. an SSO reuse) exchanges its own code — silently breaking that
+        // earlier tab's later id_token_hint lookup on logout.
         OAuth2Authorization.Builder authorizationBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
-                .id(registeredClient.getId())
+                .id(UUID.randomUUID().toString())
                 .principalName(registeredClient.getClientId())
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .token(oAuth2RefreshToken)

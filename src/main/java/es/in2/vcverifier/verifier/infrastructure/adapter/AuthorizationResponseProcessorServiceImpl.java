@@ -291,8 +291,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 .additionalParameters(requestAdditionalParameters)
                 .build();
 
+        // A unique id per authorization, NOT registeredClient.getId(): that static value is the
+        // same for every login of this client, so InMemoryOAuth2AuthorizationService.save() would
+        // overwrite one login's code/attributes every time another concurrent login (or SSO reuse)
+        // of the same client issues its own code — silently breaking the earlier login's exchange.
         OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
-                .id(registeredClient.getId())
+                .id(UUID.randomUUID().toString())
                 .principalName(registeredClient.getClientId())
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .token(new OAuth2AuthorizationCode(code, issueTime, expirationTime))
