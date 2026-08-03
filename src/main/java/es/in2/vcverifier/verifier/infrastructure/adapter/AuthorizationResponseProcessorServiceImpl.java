@@ -20,7 +20,7 @@ import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.exception.LegacyFormatSunsetClosedException;
 import es.in2.vcverifier.verifier.domain.exception.UnknownCredentialFormatException;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
-import es.in2.vcverifier.verifier.domain.port.CredentialVerificationMetricsPort;
+import es.in2.vcverifier.verifier.domain.port.CredentialVerificationLoggerPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
@@ -74,14 +74,15 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final CryptoComponent cryptoComponent;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
     private final CredentialSchemaDispatcher credentialSchemaDispatcher;
-    private final CredentialVerificationMetricsPort credentialVerificationMetrics;
+    private final CredentialVerificationLoggerPort credentialVerificationLogger;
 
     @Override
     public void handleAuthResponse(String state, String vpToken){
         log.info("Processing authorization response");
 
-        boolean verificationCounted = false;
+        boolean verificationLogged = false;
         String configurationId = null;
+        Throwable verificationFailure = null;
 
         try {
             // Validate if the state exists in the cache
@@ -163,8 +164,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 throw e;
             }
 
-            verificationCounted = true;
-            credentialVerificationMetrics.recordVerifiedOk(configurationId);
+            verificationLogged = true;
+            credentialVerificationLogger.logVerifiedOk(configurationId);
 
             // Generate a code (code)
             // SEC-S9: Authorization codes must not be logged in full.
@@ -242,31 +243,37 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             // State not found in cache (expired or invalid)
             log.error("State not found or expired: {}", state);
             sseEmitterStore.sendValidationFailed(state, "INVALID_STATE", "State not found or expired");
+            verificationFailure = e;
             throw e;
         } catch (CredentialExpiredException e) {
             log.error("Credential has expired: {}", e.getMessage());
             sseEmitterStore.sendValidationFailed(state, "CREDENTIAL_EXPIRED", "The credential has expired");
+            verificationFailure = e;
             throw e;
         } catch (CredentialNotActiveException e) {
             log.error("Credential not yet active: {}", e.getMessage());
             sseEmitterStore.sendValidationFailed(state, "CREDENTIAL_NOT_ACTIVE", "The credential is not yet active");
+            verificationFailure = e;
             throw e;
         } catch (IssuerNotAuthorizedException e) {
             log.error("Issuer not authorized: {}", e.getMessage());
             sseEmitterStore.sendValidationFailed(state, "ISSUER_NOT_TRUSTED", "The credential issuer is not trusted");
+            verificationFailure = e;
             throw e;
         } catch (LoginTimeoutException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException
                  | LegacyFormatSunsetClosedException | BumpedFormatTemporarilyDisabledException | UnknownCredentialFormatException e) {
             // Already sent SSE event in inner catch blocks, just re-throw
+            verificationFailure = e;
             throw e;
         } catch (Exception e) {
             // Catch-all for unexpected errors
             log.error("Unexpected error during VP validation: {}", e.getMessage(), e);
             sseEmitterStore.sendValidationFailed(state, "VALIDATION_ERROR", "Validation failed: " + e.getMessage());
+            verificationFailure = e;
             throw e;
         } finally {
-            if (!verificationCounted) {
-                credentialVerificationMetrics.recordVerifiedError(configurationId);
+            if (!verificationLogged) {
+                credentialVerificationLogger.logVerifiedError(configurationId, verificationFailure);
             }
         }
     }

@@ -7,7 +7,7 @@ import es.in2.vcverifier.oauth2.domain.exception.InvalidProofOfPossessionExcepti
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
-import es.in2.vcverifier.verifier.domain.port.CredentialVerificationMetricsPort;
+import es.in2.vcverifier.verifier.domain.port.CredentialVerificationLoggerPort;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import es.in2.vcverifier.oauth2.domain.service.ClientAssertionValidationService;
@@ -35,7 +35,7 @@ public class ClientCredentialsValidationWorkflow {
     private final VpService vpService;
     private final CredentialSchemaDispatcher credentialSchemaDispatcher;
     private final SchemaProfileRegistry schemaProfileRegistry;
-    private final CredentialVerificationMetricsPort credentialVerificationMetrics;
+    private final CredentialVerificationLoggerPort credentialVerificationLogger;
 
     /**
      * Validates an M2M client_credentials grant by:
@@ -86,10 +86,10 @@ public class ClientCredentialsValidationWorkflow {
             vpService.verifyVerifiablePresentation(decodedVpToken, false);
             log.info("ClientCredentialsValidationWorkflow: VP validated successfully");
 
-            credentialVerificationMetrics.recordVerifiedOk(configurationId);
+            credentialVerificationLogger.logVerifiedOk(configurationId);
             return vc;
         } catch (RuntimeException e) {
-            credentialVerificationMetrics.recordVerifiedError(configurationId);
+            credentialVerificationLogger.logVerifiedError(configurationId, e);
             throw e;
         }
     }
