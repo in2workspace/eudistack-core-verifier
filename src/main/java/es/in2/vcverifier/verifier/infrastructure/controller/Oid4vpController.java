@@ -96,9 +96,9 @@ public class Oid4vpController {
         String correlationId = UUID.randomUUID().toString();
 
         try {
-            authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
+            JsonNode credentialJson = authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
             ssoSessionHandler.onAuthenticationSuccess(request, response,
-                    buildSsoAuthentication(vpToken, tenant));
+                    buildSsoAuthentication(vpToken, tenant, credentialJson));
         } catch (Exception ex) {
             // ES-01: VP invalid or any processing failure → emit sso_establish_failed audit, then re-throw
             // The existing OID4VP error handling produces the access_denied response.
@@ -115,7 +115,7 @@ public class Oid4vpController {
         }
     }
 
-    private Authentication buildSsoAuthentication(String vpToken, String tenant) {
+    private Authentication buildSsoAuthentication(String vpToken, String tenant, JsonNode credentialJson) {
         String sub = extractSubFromVpToken(vpToken);
         String safeTenant = tenant != null ? tenant : "";
 
@@ -124,6 +124,8 @@ public class Oid4vpController {
         principal.put("holderHash", sub);       // raw sub — workflow applies SHA-256(sub)
         principal.put("clientId", safeTenant);  // fallback: tenant as clientId for audit
         principal.put("tenantSlug", safeTenant);
+        // Snapshot for SSO reuse (prompt=none, no VP re-presentation) — see ReuseSsoSessionWorkflowImpl.
+        principal.put("credentialJson", credentialJson);
 
         return new UsernamePasswordAuthenticationToken(principal, vpToken);
     }

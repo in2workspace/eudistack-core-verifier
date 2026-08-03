@@ -172,8 +172,8 @@ class EstablishSsoSessionIT {
         // -------------------------
         // AUTH SERVICE
         // -------------------------
-        doNothing().when(authorizationResponseProcessorService)
-                .handleAuthResponse(anyString(), anyString());
+        when(authorizationResponseProcessorService.handleAuthResponse(anyString(), anyString()))
+                .thenReturn(null);
 
         // -------------------------
         // PRINCIPAL

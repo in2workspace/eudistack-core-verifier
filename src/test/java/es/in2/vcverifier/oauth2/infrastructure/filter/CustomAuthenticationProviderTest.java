@@ -31,9 +31,11 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
+import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.authentication.*;
 import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
@@ -125,7 +127,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                "signed-id-jwt", "openid learcredential", "did:key:zDnaeTest123");
+                "signed-id-jwt", Map.of("sub", "did:key:zDnaeTest123"), "openid learcredential", "did:key:zDnaeTest123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true), any()))
                 .thenReturn(tokenResult);
         when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
@@ -146,6 +148,13 @@ class CustomAuthenticationProviderTest {
         assertNotNull(result);
         assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
         verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true), any());
+
+        // EUDISTACK-551 regression guard: Spring AS's RP-Initiated Logout resolves the
+        // id_token_hint via OAuth2AuthorizationService#findByToken(..., ID_TOKEN_TOKEN_TYPE).
+        // Without registering the id_token here, every logout attempt fails with invalid_token.
+        OAuth2Authorization foundAuthorization = oAuth2AuthorizationService.findByToken(
+                "signed-id-jwt", new OAuth2TokenType(OidcParameterNames.ID_TOKEN));
+        assertNotNull(foundAuthorization, "id_token must be registered in OAuth2AuthorizationService so RP-Initiated Logout can resolve id_token_hint");
     }
 
     @Test
@@ -156,7 +165,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), any()))
                 .thenReturn(tokenResult);
 
@@ -248,7 +257,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);
 
@@ -274,7 +283,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), isNull()))
                 .thenReturn(tokenResult);
 
@@ -302,7 +311,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);
 
@@ -340,7 +349,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123");
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);
 
@@ -391,7 +400,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123");
         // Canonicalized to the request-resolved tenant ("dome"), not the credential's original casing.
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);

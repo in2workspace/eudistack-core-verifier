@@ -18,6 +18,7 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.*;
+import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
@@ -142,7 +143,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             additionalParameters = Map.of();
         } else {
             additionalParameters = Map.of("id_token", tokenResult.idTokenJwt());
-            oAuth2RefreshToken = getOAuth2RefreshToken(authentication, tokenResult.issueTime(), clientId, credentialJson, registeredClient);
+            oAuth2RefreshToken = getOAuth2RefreshToken(authentication, tokenResult, clientId, credentialJson, registeredClient);
         }
 
         log.info("Authorization grant successfully processed");
@@ -213,9 +214,9 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     }
 
     private OAuth2RefreshToken getOAuth2RefreshToken(OAuth2AuthorizationGrantAuthenticationToken authentication,
-                                                      Instant issueTime, String clientId,
+                                                      TokenGenerationWorkflow.Result tokenResult, String clientId,
                                                       JsonNode credentialJson, RegisteredClient registeredClient) {
-        OAuth2RefreshToken oAuth2RefreshToken = issueRefreshToken(issueTime);
+        OAuth2RefreshToken oAuth2RefreshToken = issueRefreshToken(tokenResult.issueTime());
 
         RefreshTokenDataCache refreshTokenDataCache = RefreshTokenDataCache.builder()
                 .refreshToken(oAuth2RefreshToken)
@@ -225,14 +226,30 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
         cacheStoreForRefreshTokenData.add(oAuth2RefreshToken.getTokenValue(), refreshTokenDataCache);
 
-        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(registeredClient)
-                .id(registeredClient.getId())
+        // A unique id per authorization, NOT registeredClient.getId(): that static value is the
+        // same for every login of this client, so InMemoryOAuth2AuthorizationService.save() would
+        // overwrite one tab/session's authorization (and its id_token) every time another tab of
+        // the same client (e.g. an SSO reuse) exchanges its own code — silently breaking that
+        // earlier tab's later id_token_hint lookup on logout.
+        OAuth2Authorization.Builder authorizationBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
+                .id(UUID.randomUUID().toString())
                 .principalName(registeredClient.getClientId())
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .token(oAuth2RefreshToken)
-                .attribute(Principal.class.getName(), authentication.getPrincipal())
-                .build();
-        oAuth2AuthorizationService.save(authorization);
+                .attribute(Principal.class.getName(), authentication.getPrincipal());
+
+        // EUDISTACK-551: Spring AS's RP-Initiated Logout (/oidc/logout) resolves the id_token_hint
+        // via OAuth2AuthorizationService#findByToken(..., ID_TOKEN_TOKEN_TYPE) — without registering
+        // the id_token here, every logout attempt fails with invalid_token, no session ever gets
+        // invalidated. The id_token itself is still hand-built by TokenGenerationWorkflow (VC-derived
+        // claims); this only makes Spring AS aware of it for its own bookkeeping.
+        if (tokenResult.idTokenJwt() != null) {
+            OidcIdToken oidcIdToken = new OidcIdToken(
+                    tokenResult.idTokenJwt(), tokenResult.issueTime(), tokenResult.expirationTime(), tokenResult.idTokenClaims());
+            authorizationBuilder.token(oidcIdToken);
+        }
+
+        oAuth2AuthorizationService.save(authorizationBuilder.build());
         return oAuth2RefreshToken;
     }
 

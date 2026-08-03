@@ -48,9 +48,11 @@ import java.text.ParseException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.UUID;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
@@ -77,7 +79,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final CredentialVerificationMetricsPort credentialVerificationMetrics;
 
     @Override
-    public void handleAuthResponse(String state, String vpToken){
+    public JsonNode handleAuthResponse(String state, String vpToken){
         log.info("Processing authorization response");
 
         boolean verificationCounted = false;
@@ -166,11 +168,6 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             verificationCounted = true;
             credentialVerificationMetrics.recordVerifiedOk(configurationId);
 
-            // Generate a code (code)
-            // SEC-S9: Authorization codes must not be logged in full.
-            String code = UUID.randomUUID().toString();
-            log.info("Authorization code generated: {}...", code.substring(0, 8));
-
             RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
 
             if (registeredClient == null) {
@@ -178,66 +175,30 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
             }
 
-
             var addl = oAuth2AuthorizationRequest.getAdditionalParameters();
             String codeChallenge       = (String) addl.get(PkceParameterNames.CODE_CHALLENGE);
             String codeChallengeMethod = (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD);
+            String nonceValue = (String) addl.get(NONCE);
 
-
-            Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
-            // Register the Oauth2Authorization because is needed for verifications
-            OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
-                    .id(registeredClient.getId())
-                    .principalName(registeredClient.getClientId())
-                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                    .token(new OAuth2AuthorizationCode(code, issueTime, expirationTime))
-                    .attribute(OAuth2ParameterNames.CLIENT_ID, registeredClient.getClientId())
-                    .attribute(OAuth2ParameterNames.REDIRECT_URI, oAuth2AuthorizationRequest.getRedirectUri())
-                    .attribute(OAuth2ParameterNames.SCOPE, String.join(" ", oAuth2AuthorizationRequest.getScopes()))
-                    .attribute(OAuth2AuthorizationRequest.class.getName(), oAuth2AuthorizationRequest);
-
-            if (org.springframework.util.StringUtils.hasText(codeChallenge)) {
-                authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
-            }
-            if (org.springframework.util.StringUtils.hasText(codeChallengeMethod)) {
-                authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
-            }
-
-            OAuth2Authorization authorization = authBuilder.build();
-            oAuth2AuthorizationService.save(authorization);
-
-            log.info("OAuth2Authorization generated");
-
-            // Retrieve nonce from additional parameters
-            String nonceValue = (String) oAuth2AuthorizationRequest.getAdditionalParameters().get(NONCE);
-
-            // Create a builder
-            AuthorizationCodeData.AuthorizationCodeDataBuilder authCodeDataBuilder = AuthorizationCodeData.builder()
-                    .state(state)
-                    .verifiableCredential(credentialJson)
-                    .oAuth2Authorization(authorization)
-                    .requestedScopes(oAuth2AuthorizationRequest.getScopes());
-
-            authCodeDataBuilder.clientNonce(nonceValue);
-
-            // Finally build the object
-            AuthorizationCodeData authorizationCodeData = authCodeDataBuilder.build();
-            cacheStoreForAuthorizationCodeData.add(code, authorizationCodeData);
-
-
-            // Build the redirect URL with the code (code) and the state
-            String redirectUrl = UriComponentsBuilder.fromHttpUrl(redirectUri)
-                    .queryParam("code", code)
-                    .queryParam("state", state)
-                    .build()
-                    .toUriString();
+            String redirectUrl = issueAuthorizationCode(
+                    registeredClient,
+                    redirectUri,
+                    oAuth2AuthorizationRequest.getScopes(),
+                    state,
+                    codeChallenge,
+                    codeChallengeMethod,
+                    nonceValue,
+                    credentialJson
+            );
 
             // SEC-O2: Log redirect target without full authorization code.
             log.info("Redirecting to: {}", redirectUri);
 
             // Send the redirect URL to the browser via SSE
             sseEmitterStore.send(state, redirectUrl);
-            
+
+            return credentialJson;
+
         } catch (NoSuchElementException e) {
             // State not found in cache (expired or invalid)
             log.error("State not found or expired: {}", state);
@@ -271,6 +232,120 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
     }
 
+    @Override
+    public String issueCodeForReusedSession(
+            String clientId,
+            String redirectUri,
+            Set<String> scopes,
+            String state,
+            String codeChallenge,
+            String codeChallengeMethod,
+            String nonce,
+            JsonNode credentialJson
+    ) {
+        RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
+        if (registeredClient == null) {
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
+        }
+        String redirectUrl = issueAuthorizationCode(
+                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson);
+        log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
+        return redirectUrl;
+    }
+
+    /**
+     * Generates a fresh authorization code, registers the {@link OAuth2Authorization} (needed at
+     * the token endpoint), caches the {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow}
+     * to read the credential claims from, and builds the {@code redirectUri?code=...&state=...} URL.
+     * Shared by the VP-validated establishment path ({@link #handleAuthResponse}) and the SSO-reuse
+     * path ({@link #issueCodeForReusedSession}) — the only difference between them is where
+     * {@code credentialJson} comes from (freshly verified VP vs. cached establishment snapshot).
+     */
+    private String issueAuthorizationCode(
+            RegisteredClient registeredClient,
+            String redirectUri,
+            Set<String> scopes,
+            String state,
+            String codeChallenge,
+            String codeChallengeMethod,
+            String nonce,
+            JsonNode credentialJson
+    ) {
+        Instant issueTime = Instant.now();
+
+        // SEC-S9: Authorization codes must not be logged in full.
+        String code = UUID.randomUUID().toString();
+        log.info("Authorization code generated: {}...", code.substring(0, 8));
+
+        Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
+
+        // Spring Authorization Server's OWN stock OAuth2AuthorizationCodeAuthenticationProvider
+        // (still in the token-endpoint provider chain alongside CustomAuthenticationProvider) runs
+        // its internal CodeVerifierAuthenticator on every authorization_code grant for a PKCE client,
+        // and that reads this attribute directly off the OAuth2Authorization — NOT just the
+        // codeChallenge/codeChallengeMethod attributes above (those are for CustomAuthenticationProvider's
+        // own check). Omitting it throws a raw NPE deep inside Spring's PKCE validator instead of a
+        // clean OAuth2 error, for every single authorization_code exchange, not just SSO reuse.
+        Map<String, Object> requestAdditionalParameters = new HashMap<>();
+        if (org.springframework.util.StringUtils.hasText(nonce)) {
+            requestAdditionalParameters.put(NONCE, nonce);
+        }
+        if (org.springframework.util.StringUtils.hasText(codeChallenge)) {
+            requestAdditionalParameters.put(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
+        }
+        if (org.springframework.util.StringUtils.hasText(codeChallengeMethod)) {
+            requestAdditionalParameters.put(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
+        }
+        OAuth2AuthorizationRequest authorizationRequest = OAuth2AuthorizationRequest.authorizationCode()
+                .authorizationUri(backendConfig.getUrl())
+                .clientId(registeredClient.getClientId())
+                .redirectUri(redirectUri)
+                .scopes(scopes)
+                .state(state)
+                .additionalParameters(requestAdditionalParameters)
+                .build();
+
+        // A unique id per authorization, NOT registeredClient.getId(): that static value is the
+        // same for every login of this client, so InMemoryOAuth2AuthorizationService.save() would
+        // overwrite one login's code/attributes every time another concurrent login (or SSO reuse)
+        // of the same client issues its own code — silently breaking the earlier login's exchange.
+        OAuth2Authorization.Builder authBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
+                .id(UUID.randomUUID().toString())
+                .principalName(registeredClient.getClientId())
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .token(new OAuth2AuthorizationCode(code, issueTime, expirationTime))
+                .attribute(OAuth2ParameterNames.CLIENT_ID, registeredClient.getClientId())
+                .attribute(OAuth2ParameterNames.REDIRECT_URI, redirectUri)
+                .attribute(OAuth2ParameterNames.SCOPE, String.join(" ", scopes))
+                .attribute(OAuth2AuthorizationRequest.class.getName(), authorizationRequest);
+
+        if (org.springframework.util.StringUtils.hasText(codeChallenge)) {
+            authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
+        }
+        if (org.springframework.util.StringUtils.hasText(codeChallengeMethod)) {
+            authBuilder.attribute(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
+        }
+
+        OAuth2Authorization authorization = authBuilder.build();
+        oAuth2AuthorizationService.save(authorization);
+
+        log.info("OAuth2Authorization generated");
+
+        AuthorizationCodeData.AuthorizationCodeDataBuilder authCodeDataBuilder = AuthorizationCodeData.builder()
+                .state(state)
+                .verifiableCredential(credentialJson)
+                .oAuth2Authorization(authorization)
+                .requestedScopes(scopes)
+                .clientNonce(nonce);
+
+        cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
+
+        return UriComponentsBuilder.fromHttpUrl(redirectUri)
+                .queryParam("code", code)
+                .queryParam("state", state)
+                .build()
+                .toUriString();
+    }
 
     private boolean isSdJwt(String token) {
         return token != null && token.contains("~");

@@ -1,5 +1,9 @@
 package es.in2.vcverifier.sso.it;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
@@ -15,6 +19,7 @@ import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +46,7 @@ import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -235,6 +241,8 @@ class SsoSessionClientTrackingIT {
         SsoAuditPort auditPort = mock(SsoAuditPort.class);
         SsoMetricsPort metricsPort = mock(SsoMetricsPort.class);
         RegisteredClientRepository registeredClientRepository = mock(RegisteredClientRepository.class);
+        AuthorizationResponseProcessorService authorizationResponseProcessorService =
+                mock(AuthorizationResponseProcessorService.class);
 
         TenantSsoConfig config = mock(TenantSsoConfig.class);
         when(config.ssoEnabled()).thenReturn(true);
@@ -242,14 +250,33 @@ class SsoSessionClientTrackingIT {
         when(configPort.resolveTtl(tenant)).thenReturn(SsoSessionTtl.systemDefault());
         when(configPort.resolveEligibleClients(tenant))
                 .thenReturn(TenantSsoCatalog.of(Set.of(SsoEligibleClient.of(calleeClientId))));
-        when(registeredClientRepository.findByClientId(calleeClientId))
-                .thenReturn(mock(RegisteredClient.class));
+
+        String redirectUri = "https://callee.example/callback";
+        RegisteredClient registeredClient = mock(RegisteredClient.class);
+        when(registeredClient.getRedirectUris()).thenReturn(Set.of(redirectUri));
+        when(registeredClientRepository.findByClientId(calleeClientId)).thenReturn(registeredClient);
+
+        // ALLOWED now requires a credential snapshot from establishment (US-06 reuse-completion
+        // fix) — seed it directly since this test bypasses the real establish flow.
+        CacheStore<JsonNode> ssoSessionCredentialCache = new CacheStore<>(1, TimeUnit.HOURS);
+        JsonNode fakeCredential = new ObjectMapper().createObjectNode().put("sub", "holder-hash-reuse");
+        ssoSessionCredentialCache.add(session.getId().getValue(), fakeCredential);
+        when(authorizationResponseProcessorService.issueCodeForReusedSession(
+                anyString(), anyString(), any(), anyString(), any(), any(), any(), any()))
+                .thenReturn(redirectUri + "?code=fake-code&state=xyz");
 
         ReuseSsoSessionWorkflowImpl workflow = new ReuseSsoSessionWorkflowImpl(
-                configPort, repository, Clock.systemUTC(), auditPort, metricsPort, registeredClientRepository);
+                configPort, repository, Clock.systemUTC(), auditPort, metricsPort, registeredClientRepository,
+                authorizationResponseProcessorService, ssoSessionCredentialCache);
+
+        AuthorizationContext ctx = AuthorizationContext.builder()
+                .redirectUri(redirectUri)
+                .scope("openid")
+                .state("xyz")
+                .build();
 
         ReuseSsoSessionWorkflow.Result result = workflow.reuse(
-                tenant, session.getId().getValue(), null, calleeClientId);
+                tenant, session.getId().getValue(), ctx, calleeClientId);
 
         assertThat(result.status()).isEqualTo(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
 
