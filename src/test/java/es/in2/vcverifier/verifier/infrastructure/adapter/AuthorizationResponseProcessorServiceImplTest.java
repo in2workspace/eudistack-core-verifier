@@ -22,7 +22,7 @@ import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
-import es.in2.vcverifier.verifier.domain.port.CredentialVerificationMetricsPort;
+import es.in2.vcverifier.verifier.domain.port.CredentialVerificationLoggerPort;
 import es.in2.vcverifier.verifier.infrastructure.adapter.AuthorizationResponseProcessorServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -89,7 +89,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     private CredentialSchemaDispatcher credentialSchemaDispatcher;
 
     @Mock
-    private CredentialVerificationMetricsPort credentialVerificationMetrics;
+    private CredentialVerificationLoggerPort credentialVerificationLogger;
 
     @Mock
     private AuthorizationResponseProcessorServiceImpl authorizationResponseProcessorService;
@@ -110,7 +110,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 cryptoComponent,
                 java.util.List.of(),
                 credentialSchemaDispatcher,
-                credentialVerificationMetrics
+                credentialVerificationLogger
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
         lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
@@ -178,8 +178,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertTrue(redirectUrl.startsWith("https://client.example.com/callback?"));
 
         verify(oAuth2AuthorizationService).save(any(OAuth2Authorization.class));
-        verify(credentialVerificationMetrics).recordVerifiedOk("test-config-id");
-        verify(credentialVerificationMetrics, never()).recordVerifiedError(any());
+        verify(credentialVerificationLogger).logVerifiedOk("test-config-id");
+        verify(credentialVerificationLogger, never()).logVerifiedError(any(), any());
     }
 
     @Test
@@ -231,8 +231,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         );
 
         // Failed before the dispatcher ever ran → no bounded type is known, so it tags "unknown".
-        verify(credentialVerificationMetrics).recordVerifiedError(null);
-        verify(credentialVerificationMetrics, never()).recordVerifiedOk(any());
+        verify(credentialVerificationLogger).logVerifiedError(isNull(), any(Throwable.class));
+        verify(credentialVerificationLogger, never()).logVerifiedOk(any());
     }
 
     @Test
@@ -267,8 +267,8 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         // The credential DID verify successfully — the client-not-registered failure happens
         // afterwards and must not be double-counted as a verification error.
-        verify(credentialVerificationMetrics).recordVerifiedOk("test-config-id");
-        verify(credentialVerificationMetrics, never()).recordVerifiedError(any());
+        verify(credentialVerificationLogger).logVerifiedOk("test-config-id");
+        verify(credentialVerificationLogger, never()).logVerifiedError(any(), any());
     }
 
     private String createVpToken(String nonce) throws JOSEException {
@@ -325,7 +325,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertEquals("Login time has expired", exception.getMessage());
 
         verify(cacheStoreForOAuth2AuthorizationRequest, times(1)).delete(state);
-        verify(credentialVerificationMetrics).recordVerifiedError(null);
+        verify(credentialVerificationLogger).logVerifiedError(isNull(), any(Throwable.class));
     }
 
 
