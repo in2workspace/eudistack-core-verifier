@@ -9,20 +9,39 @@
         </layout>
     </appender>
 
+    <!-- OTLP export to the OTel Collector → OpenObserve. Uses MaskingOpenTelemetryAppender
+         to redact PII & secrets, since the OTel appender reads the raw event and bypasses
+         MaskingPatternLayout entirely. Kept at INFO regardless of the console level (STG
+         runs es.in2.vcverifier and Spring Security at DEBUG; shipping that to OpenObserve
+         is pure S3 cost). Not affected by SuppressEndpointLogFilter below: that turboFilter
+         only DENYs DEBUG-level /health and /.well-known noise, already excluded by this
+         filter — the two never overlap. -->
+    <appender name="OTLP" class="es.in2.vcverifier.shared.config.MaskingOpenTelemetryAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+        <captureMdcAttributes>*</captureMdcAttributes>
+        <captureKeyValuePairAttributes>true</captureKeyValuePairAttributes>
+        <captureLoggerContext>true</captureLoggerContext>
+    </appender>
+
     <!-- Suppress DEBUG logs for /health and /.well-known/openid-configuration -->
     <turboFilter class="es.in2.vcverifier.shared.config.SuppressEndpointLogFilter"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="OTLP"/>
     </root>
 
     <!-- Production / Staging profile: reduce verbosity of noisy libraries. -->
     <springProfile name="prod,stg">
         <logger name="org.springframework.security" level="WARN" additivity="false">
             <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="OTLP"/>
         </logger>
         <logger name="com.nimbusds" level="WARN" additivity="false">
             <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="OTLP"/>
         </logger>
     </springProfile>
 </configuration>

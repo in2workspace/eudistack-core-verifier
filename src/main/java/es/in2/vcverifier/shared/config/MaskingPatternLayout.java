@@ -37,7 +37,7 @@ public class MaskingPatternLayout extends PatternLayout {
 
     // Internal helpers
 
-    private static String applyMasking(String line) {
+    static String applyMasking(String line) {
         if (line == null || line.isEmpty()) {
             return line;
         }
