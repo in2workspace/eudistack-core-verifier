@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-08-04
+
 ### Added
 
 - **Business event log for verified credentials**: new `CredentialVerificationLogger` (domain port `CredentialVerificationLoggerPort` in `verifier/domain/port` + impl `CredentialVerificationLogger` in `verifier/infrastructure/logging`, following the same port/adapter split as `SsoMetricsPort`) logs one line per verification outcome — `event=business.credential.verified tenant=<tenant> configurationId=<id> outcome=ok|error` (`errorType=<SimpleName>` added on failure). Tenant is resolved from the servlet request context (`TenantDomainFilter.getCurrentTenant`), with `unknown` as fallback for tenant/configurationId, matching the previous counter's semantics.
