@@ -169,6 +169,11 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             verificationLogged = true;
             credentialVerificationLogger.logVerifiedOk(configurationId);
 
+            // Generate a code (code)
+            // SEC-S9: Authorization codes must not be logged in full.
+            String code = UUID.randomUUID().toString();
+            log.info("Authorization code generated: {}...", code.substring(0, 8));
+
             RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
 
             if (registeredClient == null) {

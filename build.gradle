@@ -66,6 +66,10 @@ dependencies {
     implementation 'io.grpc:grpc-netty-shaded'
     implementation 'io.grpc:grpc-stub'
     implementation 'io.grpc:grpc-protobuf'
+    // Boot has no Logback→OTel bridge; version pinned (not via the instrumentation BOM,
+    // which would override opentelemetry-api to a version Boot doesn't manage) to the
+    // release pairing with opentelemetry-api 1.49.0, the version Boot 3.5.11 manages.
+    implementation 'io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:2.15.0-alpha'
 
     // --- Documentation ---
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
