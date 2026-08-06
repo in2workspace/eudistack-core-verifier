@@ -55,9 +55,12 @@ public class TokenGenerationWorkflow {
             Instant issueTime,
             Instant expirationTime,
             String idTokenJwt,
+            Map<String, Object> idTokenClaims,
             String scope,
             String subject
     ) {}
+
+    private record IdTokenBuildResult(String jwt, Map<String, Object> claims) {}
 
     /**
      * Generates an access token (and optionally an ID token) from a validated credential.
@@ -95,11 +98,14 @@ public class TokenGenerationWorkflow {
         String accessTokenJwt = accessTokenBuilder.build(buildContext);
 
         String idTokenJwt = null;
+        Map<String, Object> idTokenClaims = null;
         if (generateIdToken) {
-            idTokenJwt = buildIdToken(credentialJson, extractedClaims, subject, audience, additionalParameters, tenant);
+            IdTokenBuildResult idTokenResult = buildIdToken(credentialJson, extractedClaims, subject, audience, additionalParameters, tenant);
+            idTokenJwt = idTokenResult.jwt();
+            idTokenClaims = idTokenResult.claims();
         }
 
-        return new Result(accessTokenJwt, issueTime, expirationTime, idTokenJwt, extractedClaims.scope(), subject);
+        return new Result(accessTokenJwt, issueTime, expirationTime, idTokenJwt, idTokenClaims, extractedClaims.scope(), subject);
     }
 
     public String extractCredentialType(JsonNode credentialJson) {
@@ -138,7 +144,7 @@ public class TokenGenerationWorkflow {
                 null));
     }
 
-    private String buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
+    private IdTokenBuildResult buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                  String subject, String audience, Map<String, Object> additionalParameters,
                                  String tenant) {
         Instant issueTime = Instant.now();
@@ -180,7 +186,8 @@ public class TokenGenerationWorkflow {
         stampSidIfActiveSsoSession(idTokenClaimsBuilder, tenant, subject);
 
         JWTClaimsSet idTokenClaims = idTokenClaimsBuilder.build();
-        return jwtService.issueJWT(idTokenClaims.toString());
+        String jwt = jwtService.issueJWT(idTokenClaims.toString());
+        return new IdTokenBuildResult(jwt, idTokenClaims.toJSONObject());
     }
 
     /**

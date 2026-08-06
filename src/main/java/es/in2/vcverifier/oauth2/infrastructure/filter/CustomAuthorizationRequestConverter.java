@@ -110,7 +110,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             log.info("Processing an authorization request without a signed JWT object.");
             ReuseSsoSessionWorkflow.Result ssoResult = tryReuseSsoSession(request, authorizationContext, clientId);
             if (ssoResult != null) {
-                handlePromptNoneResult(ssoResult.status(), authorizationContext);
+                // Every branch of handleSsoReuseResult throws: LOGIN_REQUIRED/INTERACTION_REQUIRED
+                // redirect back to the RP with an OIDC error, ALLOWED redirects with a real code —
+                // none of them should fall through to a fresh OID4VP/QR challenge below.
+                handleSsoReuseResult(ssoResult, authorizationContext);
             }
             return handleOIDCStandardRequest(authorizationContext, registeredClient);
         }
@@ -133,13 +136,22 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
     }
 
-    private void handlePromptNoneResult(ReuseSsoSessionWorkflow.Result.Status status,
-                                        AuthorizationContext ctx) {
-        switch (status) {
+    private void handleSsoReuseResult(ReuseSsoSessionWorkflow.Result result, AuthorizationContext ctx) {
+        switch (result.status()) {
             case LOGIN_REQUIRED -> throwPromptNoneOidcError(LOGIN_REQUIRED, ctx);
             case INTERACTION_REQUIRED -> throwPromptNoneOidcError(INTERACTION_REQUIRED, ctx);
-            default -> { /* ALLOWED: fall through to standard flow */ }
+            case ALLOWED -> throwSsoReuseRedirect(result.redirectUrl());
         }
+    }
+
+    /**
+     * ALLOWED reuse: the code was already issued by ReuseSsoSessionWorkflow — redirect straight to
+     * the RP with it, same mechanism throwRedirectAuthentication uses for the QR-page redirect
+     * (an "error" whose uri is really just the next hop, not a real OAuth failure).
+     */
+    private void throwSsoReuseRedirect(String redirectUrl) {
+        OAuth2Error error = new OAuth2Error(REQUIRED_EXTERNAL_USER_AUTHENTICATION, "SSO session reused", redirectUrl);
+        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
     }
 
     private void throwPromptNoneOidcError(String errorCode, AuthorizationContext ctx) {

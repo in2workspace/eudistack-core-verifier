@@ -420,6 +420,52 @@ class ClientLoaderConfigTest {
                 .isInstanceOf(ClientLoadingException.class);
     }
 
+    // =========================================================
+    // registeredClientId stability across scheduled reloads: an in-memory
+    // OAuth2Authorization stores RegisteredClient.getId() as registeredClientId
+    // and never expires, so a fresh random id per refreshClients() run would
+    // orphan every authorization created before the next reload — surfacing
+    // as a null RegisteredClient (NPE) during RP-Initiated Logout.
+    // =========================================================
+
+    @Test
+    void refreshClients_keepsRegisteredClientIdStable_soPreRefreshIdStillResolves() {
+        // Arrange
+        ClientData clientData = new ClientData(
+                null, "https://app.example.com",
+                "vc-auth-client-stable", null,
+                List.of("https://app.example.com/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of("https://app.example.com"),
+                true, null, null,
+                null, null, null, null
+        );
+
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clientData)).build());
+
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientLoaderConfig config = new ClientLoaderConfig(provider, allowedOrigins);
+
+        RegisteredClientRepository repo = config.getRegisteredClientRepository();
+        String idBeforeRefresh = repo.findByClientId("vc-auth-client-stable").getId();
+
+        // Act: simulate the scheduled reload (registeredClientId of an OAuth2Authorization
+        // issued before this point must still resolve afterwards)
+        config.refreshClients();
+        RegisteredClient afterRefresh = repo.findById(idBeforeRefresh);
+
+        // Assert
+        assertThat(afterRefresh)
+                .as("RegisteredClient.getId() must be stable across refreshClients() reloads")
+                .isNotNull();
+        assertThat(afterRefresh.getClientId()).isEqualTo("vc-auth-client-stable");
+    }
+
     @Test
     void retrieveClients_withUppercaseSchemeLoginPageUri_doesNotThrowAndAddsOrigin() {
         // Arrange

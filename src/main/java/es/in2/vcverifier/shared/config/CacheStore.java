@@ -36,6 +36,11 @@ public class CacheStore<T> {
         }
     }
 
+    /** Same lookup as {@link #get(String)} but returns {@code null} instead of throwing on a miss. */
+    public T getIfPresent(String key) {
+        return cache.getIfPresent(key);
+    }
+
     public void delete(String key) {
         cache.invalidate(key);
     }

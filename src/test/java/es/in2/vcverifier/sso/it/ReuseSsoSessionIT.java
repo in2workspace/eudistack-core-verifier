@@ -1,7 +1,10 @@
 package es.in2.vcverifier.sso.it;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -54,6 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -117,6 +121,15 @@ class ReuseSsoSessionIT {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private CacheStore<JsonNode> ssoSessionCredentialCache;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private java.util.Set<String> allowedClientsOrigins;
 
     // ── Mocks ──────────────────────────────────────────────────
     @MockitoBean
@@ -191,12 +204,58 @@ class ReuseSsoSessionIT {
         mockMvc.perform(baseRequest()
                         .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "none"))
-                .andExpect(status().is3xxRedirection());
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("code=")));
 
         verify(sessionRepository, atLeastOnce())
                 .findActiveById(any(SsoSessionId.class), anyString());
         verify(tenantSsoConfigPort, atLeastOnce())
                 .getByTenant(anyString());
+        // Asserts the ALLOWED outcome specifically — a 3xx redirect alone would also be produced
+        // by a LOGIN_REQUIRED/INTERACTION_REQUIRED fallback, which is exactly what masked the
+        // original SSO-reuse bug (the redirect always pointed to the QR login page instead).
+        verify(auditPort, times(1)).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED
+                        && "REUSED".equals(e.getOutcome())));
+    }
+
+    // =========================================================
+    // SEC: redirect_uri con MISMO origen (ya en el allowlist) pero PATH distinto
+    // al registrado para el cliente → nunca se emite code, aunque la sesión SSO
+    // sea válida y el cliente esté en el catálogo. Regresión de seguridad
+    // detectada en code-review: la ruta ALLOWED emitía el code confiando en el
+    // redirect_uri crudo de la petición, validado solo a nivel de origen
+    // (CustomErrorResponseHandler#isAllowedRedirectUri, que es global y
+    // cross-client) pero NUNCA contra los redirectUris registrados de ESE
+    // cliente en concreto (el control per-cliente y full-URI que
+    // CustomAuthorizationRequestConverter#validateRedirectUri aplica en el
+    // resto de flujos de este fichero). Usar el mismo origen que el registrado
+    // reproduce exactamente el escenario explotable (pasa el allowlist de
+    // origen, debe fallar el match per-cliente de URI completa).
+    // =========================================================
+    @Test
+    void should_notIssueCode_whenRedirectUriPathNotRegisteredForClient() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-hash-sec01");
+        // REDIRECT_URI = "https://localhost/callback" — mismo origen, path distinto
+        allowedClientsOrigins.add("https://localhost");
+
+        mockMvc.perform(get("/oidc/authorize")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT)
+                        .param("client_id", CLIENT_ID)
+                        .param("scope", "openid")
+                        .param("state", "xyz")
+                        .param("redirect_uri", "https://localhost/not-the-registered-path")
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("code="))));
+
+        verify(auditPort, never()).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
+        verify(auditPort, atLeastOnce()).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "REDIRECT_URI_MISMATCH".equals(e.getOutcome())));
     }
 
     // =========================================================
@@ -433,6 +492,10 @@ class ReuseSsoSessionIT {
                 now.plusHours(1),
                 now.minusMinutes(5)
         );
+        // Snapshot de credencial que un establecimiento real habría dejado — necesario para que
+        // la ruta ALLOWED emita el code en vez de caer a LOGIN_REQUIRED (ver ReuseSsoSessionWorkflowImpl).
+        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
+        ssoSessionCredentialCache.add(id, fakeCredential);
         return id;
     }
 

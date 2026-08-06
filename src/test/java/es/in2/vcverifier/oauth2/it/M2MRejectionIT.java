@@ -235,7 +235,7 @@ class M2MRejectionIT {
         Instant issueTime = Instant.now();
         when(tokenGenerationWorkflow.issueAccessToken(any(), anyString(), anyMap(), eq(false), nullable(String.class)))
                 .thenReturn(new TokenGenerationWorkflow.Result(
-                        "fake-access-token", issueTime, issueTime.plusSeconds(900), null, "openid", "did:key:subject"));
+                        "fake-access-token", issueTime, issueTime.plusSeconds(900), null, null, "openid", "did:key:subject"));
 
         mockMvc.perform(post("/oidc/token")
                         .with(csrf())
