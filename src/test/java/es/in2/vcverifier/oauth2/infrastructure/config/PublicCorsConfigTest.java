@@ -128,4 +128,52 @@ class PublicCorsConfigTest {
         assertEquals("https://any-wallet.example.com",
                 corsConfig.checkOrigin("https://any-wallet.example.com"));
     }
+
+    // =========================================================
+    // /oid4vp/auth-response allowCredentials — EUDISTACK-548: SsoSessionAuthenticationSuccessHandler
+    // sets the SSO session cookie as a Set-Cookie on this response; a browser only stores it on a
+    // cross-origin response (wallet.* -> verifier.*) when this endpoint's CORS config answers
+    // Access-Control-Allow-Credentials: true. With the endpoint sharing the other public
+    // endpoints' allowCredentials(false), the cookie was silently discarded on every SSO
+    // establishment — confirmed live (a valid, non-expired session existed in the DB, but every
+    // reuse attempt received zero cookies).
+    // =========================================================
+
+    @Test
+    @DisplayName("OID4VP auth-response path allows credentials, unlike the other public endpoints")
+    void getCorsConfiguration_oid4vpAuthResponse_allowsCredentials() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/oid4vp/auth-response");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertEquals(Boolean.TRUE, corsConfig.getAllowCredentials());
+    }
+
+    @Test
+    @DisplayName("OID4VP auth-response's credentialed wildcard still reflects the actual request origin")
+    void checkOrigin_oid4vpAuthResponse_reflectsRequestOrigin() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/oid4vp/auth-response");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        // Spring only allows combining allowCredentials(true) with a *pattern* ("*" via
+        // setAllowedOriginPatterns) because it reflects the caller's own Origin back per-request
+        // instead of emitting a literal "*" — the literal form is what the CORS spec forbids
+        // pairing with credentials. This asserts that reflection actually happens here.
+        assertEquals("https://wallet-dome.127.0.0.1.nip.io:4443",
+                corsConfig.checkOrigin("https://wallet-dome.127.0.0.1.nip.io:4443"));
+    }
+
+    @Test
+    @DisplayName("Other public endpoints are unaffected — still no credentials")
+    void getCorsConfiguration_oid4vpAuthRequest_stillNoCredentials() {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/oid4vp/auth-request/nonce-123");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertFalse(Boolean.TRUE.equals(corsConfig.getAllowCredentials()));
+    }
 }
