@@ -133,6 +133,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             return null;
         }
         String cookieValue = extractCookieValue(request, SSO_COOKIE_PREFIX + tenant);
+        // EUDISTACK-548: mirrors the sso_cookie_issued log above — lets us see, side by side,
+        // whether the exact cookie this request expected was ever actually presented by the
+        // browser. Cookie value itself is never logged, only whether one was found.
+        log.debug("event=sso_cookie_lookup tenant={} expectedCookieName={} found={}",
+                tenant, SSO_COOKIE_PREFIX + tenant, cookieValue != null);
         return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
     }
 

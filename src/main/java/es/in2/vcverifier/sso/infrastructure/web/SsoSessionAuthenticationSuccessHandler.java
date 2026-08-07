@@ -96,6 +96,12 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 );
 
                 // Set-Cookie ANTES de delegar al handler que puede hacer commit del response.
+                // EUDISTACK-548: Domain/SameSite/Secure attributes logged at DEBUG so a cookie the
+                // browser silently drops (malformed/mismatched, with no client-side signal at all)
+                // can still be diagnosed — cookie value itself is redacted, it's the session token.
+                log.debug("event=sso_cookie_issued tenant={} name={} domain={} sameSite={} secure={} path={}",
+                        vpData.tenant(), cookie.getName(), cookie.getDomain(), cookie.getSameSite(),
+                        cookie.isSecure(), cookie.getPath());
                 response.addHeader("Set-Cookie", cookie.toString());
 
                 // Snapshot the resolved credential claims keyed by session id, so a later SSO
