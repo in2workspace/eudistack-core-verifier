@@ -34,13 +34,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Verifica el fix de transaccionalidad de {@link SsoSessionJdbcRepository}: cada método debe
- * abrir una transacción real ({@code setAutoCommit(false)}) antes de aplicar
- * {@code SET LOCAL search_path}/{@code statement_timeout}, para que ambos ajustes sigan
- * vigentes cuando corre la sentencia de negocio, y hacer {@code commit()}/{@code rollback()}
- * explícito según el resultado.
- */
 @ExtendWith(MockitoExtension.class)
 class SsoSessionJdbcRepositoryTest {
 
