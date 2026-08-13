@@ -9,7 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -103,7 +106,48 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
-    // SAVE (UNCHANGED)
+    // TENANT-SCOPED TRANSACTION
+    // `SET LOCAL` (search_path / statement_timeout) only persists within an active
+    // transaction — a connection with autocommit=true reverts it before the business
+    // statement runs, silently breaking schema-per-tenant isolation. Every method below
+    // must run its business statement inside the same transaction as the `SET LOCAL` calls.
+    // Never replace `SET LOCAL` with `SET SESSION`: with HikariCP that would leak the
+    // setting into the pooled physical connection.
+    // =========================================================
+
+    @FunctionalInterface
+    private interface SqlOperation<T> {
+        T execute(Connection c) throws SQLException;
+    }
+
+    /**
+     * Runs {@code op} inside a real transaction so `search_path` (when {@code tenant} is
+     * given) and `statement_timeout` apply to the business statement. A {@code null} tenant
+     * skips the search_path fix — used by {@link #findById} which intentionally queries
+     * without a tenant filter (AC-04 cross-tenant detection).
+     */
+    private <T> T inTransaction(String tenant, SqlOperation<T> op) throws SQLException {
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                if (tenant != null) {
+                    setTenantSearchPath(c, tenant);
+                }
+                setStatementTimeout(c);
+                T result = op.execute(c);
+                c.commit();
+                return result;
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        }
+    }
+
+    // =========================================================
+    // SAVE
     // =========================================================
 
     @Override
@@ -117,66 +161,45 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
              VALUES (?, ?, ?, ?, ?, ?, ?)
         """;
 
-        try (Connection c = dataSource.getConnection()) {
-
-            setTenantSearchPath(c, session.getTenant());
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(insertSql)) {
-                ps.setObject(1, session.getId().getValue());
-                ps.setString(2, session.getTenant());
-                ps.setString(3, session.getHolderHash());
-                ps.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
-                ps.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
-                ps.setObject(6, session.getLastUsedAt().atOffset(ZoneOffset.UTC));
-                ps.setString(7, session.getState().name());
-
-                ps.executeUpdate();
-                recordSuccess();
-                return session;
-
-            } catch (SQLException e) {
-                // B6: NFR-S-547-02 — log only 8-char prefix of session id and holder hash
-                log.warn("Insert failed for session {}...: {}", prefix8(session.getId().getValue()), e.getMessage());
-                recordFailure();
-
-                if (isUniqueViolation(e)) {
-                    log.info("Unique active session exists for tenant={} holderHash={}... - attempting supersede and retry",
-                            session.getTenant(), prefix8(session.getHolderHash()));
-                    try {
-                    supersedeActive(session.getTenant(), session.getHolderHash());
-                    } catch (Exception supEx) {
-                        log.warn("Supersede attempt failed: {}", supEx.getMessage());
+        try {
+            return inTransaction(session.getTenant(), c -> {
+                try (PreparedStatement ps = c.prepareStatement(insertSql)) {
+                    bindSession(ps, session);
+                    ps.executeUpdate();
+                    recordSuccess();
+                    return session;
+                } catch (SQLException e) {
+                    if (!isUniqueViolation(e)) {
+                        log.warn("Insert failed for session {}...: {}", prefix8(session.getId().getValue()), e.getMessage());
+                        throw e;
                     }
 
-                    // retry insert once
-                    try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
-                        ps2.setObject(1, session.getId().getValue());
-                        ps2.setString(2, session.getTenant());
-                        ps2.setString(3, session.getHolderHash());
-                        ps2.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
-                        ps2.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
-                        ps2.setObject(6, session.getLastUsedAt().atOffset(ZoneOffset.UTC));
-                        ps2.setString(7, session.getState().name());
+                    log.info("Unique active session exists for tenant={} holderHash={}... - attempting supersede and retry",
+                            session.getTenant(), prefix8(session.getHolderHash()));
+                    supersedeActiveInConnection(c, session.getTenant(), session.getHolderHash());
 
+                    try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
+                        bindSession(ps2, session);
                         ps2.executeUpdate();
                         recordSuccess();
                         return session;
-
-                    } catch (SQLException e2) {
-                        log.error("Retry insert failed: {}", e2.getMessage());
-                        recordFailure();
-                        throw new SsoSessionRepositoryException("Failed to persist SSO session after retry", e2);
                     }
                 }
-
-                throw new SsoSessionRepositoryException("Failed to persist session", e);
-            }
-
+            });
         } catch (SQLException ex) {
             recordFailure();
-            throw new SsoSessionRepositoryException("Failed to persist SSO session (connection error)", ex);
+            throw new SsoSessionRepositoryException("Failed to persist SSO session", ex);
         }
+    }
+
+    private void bindSession(PreparedStatement ps, SsoSession session) throws SQLException {
+        ps.setObject(1, session.getId().getValue());
+        ps.setString(2, session.getTenant());
+        ps.setString(3, session.getHolderHash());
+        ps.setObject(4, session.getEstablishedAt().atOffset(ZoneOffset.UTC));
+        ps.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
+        ps.setObject(6, session.getLastUsedAt().atOffset(ZoneOffset.UTC));
+        ps.setString(7, session.getState().name());
     }
 
     @Override
@@ -193,26 +216,18 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         LIMIT 1
     """;
 
-        try (Connection c = dataSource.getConnection()) {
+        try {
+            return inTransaction(tenant, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setString(1, tenant);
+                    ps.setString(2, holderHash);
 
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setString(1, tenant);
-                ps.setString(2, holderHash);
-
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
+                    try (ResultSet rs = ps.executeQuery()) {
                         recordSuccess();
-                        return Optional.of(sessionFromResultSet(rs));
-                    } else {
-                    recordSuccess();
-                    return Optional.empty();
+                        return rs.next() ? Optional.of(sessionFromResultSet(rs)) : Optional.empty();
                     }
                 }
-            }
-
+            });
         } catch (SQLException e) {
             log.debug("findActiveByTenantAndHolder error: {}", e.getMessage());
             recordFailure();
@@ -221,7 +236,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
-    // NEW: FIND ACTIVE BY ID
+    // FIND ACTIVE BY ID
     // =========================================================
 
     @Override
@@ -239,25 +254,18 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             LIMIT 1
         """;
 
-        try (Connection c = dataSource.getConnection()) {
+        try {
+            return inTransaction(tenant, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setObject(1, sessionId.getValue());
+                    ps.setString(2, tenant);
 
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setObject(1, sessionId.getValue());
-                ps.setString(2, tenant);
-
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
+                    try (ResultSet rs = ps.executeQuery()) {
                         recordSuccess();
-                        return Optional.of(sessionFromResultSet(rs));
+                        return rs.next() ? Optional.of(sessionFromResultSet(rs)) : Optional.empty();
                     }
-                    recordSuccess();
-                    return Optional.empty();
                 }
-            }
-
+            });
         } catch (SQLException e) {
             recordFailure();
             return Optional.empty();
@@ -279,23 +287,17 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             LIMIT 1
         """;
 
-        try (Connection c = dataSource.getConnection()) {
+        try {
+            return inTransaction(null, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setObject(1, sessionId.getValue());
 
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setObject(1, sessionId.getValue());
-
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
+                    try (ResultSet rs = ps.executeQuery()) {
                         recordSuccess();
-                        return Optional.of(sessionFromResultSet(rs));
+                        return rs.next() ? Optional.of(sessionFromResultSet(rs)) : Optional.empty();
                     }
-                    recordSuccess();
-                    return Optional.empty();
                 }
-            }
-
+            });
         } catch (SQLException e) {
             recordFailure();
             return Optional.empty();
@@ -331,25 +333,23 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
               AND state = 'ACTIVE'
         """;
 
-        try (Connection c = dataSource.getConnection()) {
+        try {
+            inTransaction(tenant, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setObject(1, OffsetDateTime.ofInstant(lastUsedAt, ZoneOffset.UTC));
+                    ps.setObject(2, sessionId.getValue());
+                    ps.setString(3, tenant);
 
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
+                    int updated = ps.executeUpdate();
+                    if (updated == 0) {
+                        log.debug("sso_touch_noop session={}... tenant={} — session GCed or missing",
+                                prefix8(sessionId.getValue()), tenant);
+                    }
 
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setObject(1, OffsetDateTime.ofInstant(lastUsedAt, ZoneOffset.UTC));
-                ps.setObject(2, sessionId.getValue());
-                ps.setString(3, tenant);
-
-                int updated = ps.executeUpdate();
-                if (updated == 0) {
-                    log.debug("sso_touch_noop session={}... tenant={} — session GCed or missing",
-                            prefix8(sessionId.getValue()), tenant);
+                    recordSuccess();
+                    return null;
                 }
-
-                recordSuccess();
-            }
-
+            });
         } catch (SQLException e) {
             // Best-effort: no registrar como fallo de CB para no afectar operaciones críticas.
             log.warn("sso_touch_db_error session={}... tenant={} error={}",
@@ -359,7 +359,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
-    // SUPSERSEDE (UNCHANGED)
+    // SUPERSEDE
     // =========================================================
 
     @Override
@@ -367,6 +367,20 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         ensureTenantSafe(tenant);
         checkCircuit();
 
+        try {
+            inTransaction(tenant, c -> {
+                supersedeActiveInConnection(c, tenant, holderHash);
+                recordSuccess();
+                return null;
+            });
+        } catch (SQLException e) {
+            recordFailure();
+            throw new SsoSessionRepositoryException("Failed to supersede active SSO sessions", e);
+        }
+    }
+
+    /** Supersede within an already-open connection/transaction — reused by {@link #save} retry path. */
+    private void supersedeActiveInConnection(Connection c, String tenant, String holderHash) throws SQLException {
         String sql = """
             UPDATE sso_session
             SET state = 'SUPERSEDED'
@@ -374,25 +388,12 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
               AND holder_hash = ?
               AND state = 'ACTIVE'
         """;
-
-        try (Connection c = dataSource.getConnection()) {
-
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setString(1, tenant);
-                ps.setString(2, holderHash);
-
-                int updated = ps.executeUpdate();
-                // B6: NFR-S-547-02 — 8-char prefix of holder hash only
-                log.info("Superseded {} rows for tenant={} holderHash={}...", updated, tenant, prefix8(holderHash));
-                recordSuccess();
-            }
-
-        } catch (SQLException e) {
-            recordFailure();
-            throw new SsoSessionRepositoryException("Failed to supersede active SSO sessions", e);
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, tenant);
+            ps.setString(2, holderHash);
+            int updated = ps.executeUpdate();
+            // B6: NFR-S-547-02 — 8-char prefix of holder hash only
+            log.info("Superseded {} rows for tenant={} holderHash={}...", updated, tenant, prefix8(holderHash));
         }
     }
 
@@ -414,21 +415,18 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
               AND state = 'ACTIVE'
         """;
 
-        try (Connection c = dataSource.getConnection()) {
+        try {
+            return inTransaction(tenant, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setObject(1, OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC));
+                    ps.setObject(2, sessionId.getValue());
+                    ps.setString(3, tenant);
 
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setObject(1, OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC));
-                ps.setObject(2, sessionId.getValue());
-                ps.setString(3, tenant);
-
-                int updated = ps.executeUpdate();
-                recordSuccess();
-                return updated;
-            }
-
+                    int updated = ps.executeUpdate();
+                    recordSuccess();
+                    return updated;
+                }
+            });
         } catch (SQLException e) {
             recordFailure();
             throw new SsoSessionRepositoryException("Failed to terminate SSO session", e);
@@ -455,25 +453,22 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
               AND tenant = ?
         """;
 
-        try (Connection c = dataSource.getConnection()) {
+        try {
+            return inTransaction(tenant, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setObject(1, sessionId.getValue());
+                    ps.setString(2, tenant);
 
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setObject(1, sessionId.getValue());
-                ps.setString(2, tenant);
-
-                try (ResultSet rs = ps.executeQuery()) {
-                    List<String> clientIds = new ArrayList<>();
-                    while (rs.next()) {
-                        clientIds.add(rs.getString("client_id"));
+                    try (ResultSet rs = ps.executeQuery()) {
+                        List<String> clientIds = new ArrayList<>();
+                        while (rs.next()) {
+                            clientIds.add(rs.getString("client_id"));
+                        }
+                        recordSuccess();
+                        return List.copyOf(clientIds);
                     }
-                    recordSuccess();
-                    return List.copyOf(clientIds);
                 }
-            }
-
+            });
         } catch (SQLException e) {
             log.warn("findClientsBySession error session={}... tenant={}: {}",
                     prefix8(sessionId.getValue()), tenant, e.getMessage());
@@ -501,23 +496,21 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             DO UPDATE SET last_used_at = EXCLUDED.last_used_at
         """;
 
-        try (Connection c = dataSource.getConnection()) {
+        try {
+            inTransaction(tenant, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    OffsetDateTime now = OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC);
+                    ps.setObject(1, sessionId.getValue());
+                    ps.setString(2, tenant);
+                    ps.setString(3, clientId);
+                    ps.setObject(4, now);
+                    ps.setObject(5, now);
 
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                OffsetDateTime now = OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC);
-                ps.setObject(1, sessionId.getValue());
-                ps.setString(2, tenant);
-                ps.setString(3, clientId);
-                ps.setObject(4, now);
-                ps.setObject(5, now);
-
-                ps.executeUpdate();
-                recordSuccess();
-            }
-
+                    ps.executeUpdate();
+                    recordSuccess();
+                    return null;
+                }
+            });
         } catch (SQLException e) {
             // Best-effort (ADR-108): no propagar — no debe romper establish/reuse.
             log.warn("sso_session_client_record_failed session={}... tenant={} error={}",
@@ -539,30 +532,20 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             WHERE tenant = ?
         """;
 
-        try (Connection c = dataSource.getConnection()) {
-            c.setAutoCommit(false);
-            setTenantSearchPath(c, tenant);
-            setStatementTimeout(c);
-
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                ps.setString(1, tenant);
-                int deleted = ps.executeUpdate();
-                c.commit();
-                recordSuccess();
-                log.info("Emergency revoke tenant={} count_revoked={}", tenant, deleted);
-                return deleted;
-            } catch (SQLException ex) {
-                c.rollback();
-                recordFailure();
-                throw new SsoSessionRepositoryException(
-                        "Failed to revoke all SSO sessions for tenant " + tenant, ex);
-            } finally {
-                c.setAutoCommit(true);
-            }
-        } catch (SQLException ex) {
+        try {
+            return inTransaction(tenant, c -> {
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setString(1, tenant);
+                    int deleted = ps.executeUpdate();
+                    recordSuccess();
+                    log.info("Emergency revoke tenant={} count_revoked={}", tenant, deleted);
+                    return deleted;
+                }
+            });
+        } catch (SQLException e) {
             recordFailure();
             throw new SsoSessionRepositoryException(
-                    "Failed to revoke SSO sessions (connection error) for tenant " + tenant, ex);
+                    "Failed to revoke all SSO sessions for tenant " + tenant, e);
         }
     }
 
