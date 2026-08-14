@@ -97,10 +97,10 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
   }
 
   private void setStatementTimeout(Connection c) throws SQLException {
-    try (PreparedStatement s =
-                 c.prepareStatement("SET LOCAL statement_timeout = ?")) {
-      s.setInt(1, statementTimeoutMs);
-      s.execute();
+    String sql = "SELECT set_config('statement_timeout', ?, true)";
+    try (PreparedStatement s = c.prepareStatement(sql)) {
+      s.setString(1, String.valueOf(statementTimeoutMs));
+      s.executeQuery();
     }
   }
 
