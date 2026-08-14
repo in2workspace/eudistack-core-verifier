@@ -10,7 +10,7 @@ plugins {
 }
 
 group = 'com.eudistack'
-version = '3.3.2'
+version = '3.3.3'
 
 java {
     toolchain {
@@ -30,7 +30,6 @@ configurations {
 
 repositories {
     mavenCentral()
-    maven { url = uri('https://jitpack.io') }
 }
 
 dependencies {
@@ -47,7 +46,6 @@ dependencies {
     // --- Cryptography ---
     implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
-    implementation 'io.github.novacrypto:Base58:2022.01.17'
 
     // --- Validation ---
     implementation 'com.networknt:json-schema-validator:1.5.6'
