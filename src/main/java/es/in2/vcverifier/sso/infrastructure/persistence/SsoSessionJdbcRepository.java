@@ -88,19 +88,21 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
      * Fail-closed: if this fails, we must NOT continue with unqualified SQL
      * as queries could hit the wrong schema (cross-tenant data leak risk).
      */
-    private void setTenantSearchPath(Connection c, String tenant) throws SQLException {
-        String sql = "SET LOCAL search_path = \"" + tenant + "\", public";
-        try (PreparedStatement s = c.prepareStatement(sql)) {
-            s.execute();
-        }
+  private void setTenantSearchPath(Connection c, String tenant) throws SQLException {
+    String sql = "SELECT set_config('search_path', ?, true)";
+    try (PreparedStatement s = c.prepareStatement(sql)) {
+      s.setString(1, "\"" + tenant + "\", public");
+      s.executeQuery();
     }
+  }
 
-    private void setStatementTimeout(Connection c) throws SQLException {
-        try (PreparedStatement s = c.prepareStatement(
-                "SET LOCAL statement_timeout = " + statementTimeoutMs)) {
-            s.execute();
-        }
+  private void setStatementTimeout(Connection c) throws SQLException {
+    try (PreparedStatement s =
+                 c.prepareStatement("SET LOCAL statement_timeout = ?")) {
+      s.setInt(1, statementTimeoutMs);
+      s.execute();
     }
+  }
 
     // =========================================================
     // SAVE (UNCHANGED)
