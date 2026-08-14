@@ -143,6 +143,8 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Force new ECS deployment
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
@@ -153,7 +155,7 @@ jobs:
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
             --force-new-deployment \
-            --region "${{ secrets.AWS_REGION }}" \
+            --region "$AWS_REGION" \
             --no-cli-pager
 
           echo "### 🚀 Deployment triggered" >> $GITHUB_STEP_SUMMARY
@@ -161,6 +163,8 @@ jobs:
           echo "- **Service:** ${SERVICE}" >> $GITHUB_STEP_SUMMARY
 
       - name: Wait for deployment stability
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
@@ -170,7 +174,7 @@ jobs:
           aws ecs wait services-stable \
             --cluster "${CLUSTER}" \
             --services "${SERVICE}" \
-            --region "${{ secrets.AWS_REGION }}" \
+            --region "$AWS_REGION" \
             --no-cli-pager || {
               echo "::warning::Service did not stabilize within timeout"
               exit 1
@@ -252,17 +256,20 @@ jobs:
           echo "- **To:** ${PRO_IMAGE}" >> $GITHUB_STEP_SUMMARY
 
       - name: Force new ECS deployment
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
           SERVICE="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}-${{ env.APP_NAME }}-service"
+
 
           echo "Deploying ${SERVICE} on cluster ${CLUSTER}..."
           aws ecs update-service \
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
             --force-new-deployment \
-            --region "${{ secrets.AWS_REGION }}" \
+            --region "$AWS_REGION" \
             --no-cli-pager
 
           echo "### 🚀 Deployment triggered" >> $GITHUB_STEP_SUMMARY
@@ -270,6 +277,8 @@ jobs:
           echo "- **Service:** ${SERVICE}" >> $GITHUB_STEP_SUMMARY
 
       - name: Wait for deployment stability
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
@@ -279,7 +288,7 @@ jobs:
           aws ecs wait services-stable \
             --cluster "${CLUSTER}" \
             --services "${SERVICE}" \
-            --region "${{ secrets.AWS_REGION }}" \
+            --region "$AWS_REGION" \
             --no-cli-pager || {
               echo "::warning::Service did not stabilize within timeout"
               exit 1
