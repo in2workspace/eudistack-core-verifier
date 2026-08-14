@@ -31,10 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@6945a070ff70ed4d81106454790558f08c8d52a3 # v4.1.7
+        uses: actions/checkout@v4
 
       - name: Set up JDK 25
-        uses: actions/setup-java@6101fccd5721893c754024f315055f054215701a # v4.2.2
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '25'
@@ -48,7 +48,7 @@ jobs:
 
       - name: Publish JaCoCo Coverage
         if: always()
-        uses: madrapps/jacoco-report@d230f0f12c1451f2f01f4640d25712e9643d922a # v1.7.1
+        uses: madrapps/jacoco-report@v1.7.1
         with:
           paths: build/reports/jacoco/test/jacocoTestReport.xml
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +57,7 @@ jobs:
 
       - name: Upload Coverage Report
         if: always()
-        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        uses: actions/upload-artifact@v4
         with:
           name: jacoco-report
           path: build/jacocoHtml/

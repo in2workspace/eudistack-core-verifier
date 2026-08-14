@@ -28,10 +28,10 @@ jobs:
       ENVIRONMENT: stg
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@6945a070ff70ed4d81106454790558f08c8d52a3 # v4.1.7
+        uses: actions/checkout@v4
 
       - name: Set up JDK 25
-        uses: actions/setup-java@6101fccd5721893c754024f315055f054215701a # v4.2.2
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '25'
@@ -61,7 +61,7 @@ jobs:
           echo "Release ${TAG} does not exist — proceeding."
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d44e03b006d # v4.0.2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -69,7 +69,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: ecr
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build & Push Docker Image
         env:
@@ -103,7 +103,7 @@ jobs:
       ENVIRONMENT: stg
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d44e03b006d # v4.0.2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -161,7 +161,7 @@ jobs:
       ENVIRONMENT: pro
     steps:
       - name: Configure AWS credentials (${{ env.FROM_ENV }})
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d44e03b006d # v4.0.2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -169,7 +169,7 @@ jobs:
 
       - name: Login to Amazon ECR (${{ env.FROM_ENV }})
         id: ecr-stg
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Pull image from ${{ env.FROM_ENV }} ECR
         env:
@@ -184,7 +184,7 @@ jobs:
           docker pull "${STG_IMAGE}"
 
       - name: Configure AWS credentials (Production)
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d44e03b006d # v4.0.2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
@@ -192,7 +192,7 @@ jobs:
 
       - name: Login to Amazon ECR (Production)
         id: ecr-pro
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Tag & Push to Production ECR
         env:
