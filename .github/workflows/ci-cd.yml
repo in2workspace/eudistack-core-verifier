@@ -16,7 +16,9 @@ env:
   REGION_CODE: ew1
 
 permissions:
-  contents: read
+  contents: write
+  packages: write
+  actions: write
 
 jobs:
   ci:
@@ -50,11 +52,10 @@ jobs:
       - name: Check Release Does Not Exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           TAG="v${{ env.VERSION }}"
-          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+          if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
             echo "::error::Release ${TAG} already exists. Bump the version before merging."
             exit 1
           fi
@@ -75,14 +76,13 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecr-${{ env.REGION_CODE }}-${{ env.APP_NAME }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
           ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ env.ENVIRONMENT }}"
           ECR_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
           ECR_VERSION="${ECR_REGISTRY}/${ECR_REPOSITORY}:v${{ env.VERSION }}"
-          ECR_SHA="${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          ECR_SHA="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ github.sha }}"
 
           docker build --build-arg SKIP_TESTS=true -t "${ECR_IMAGE}" .
           docker tag "${ECR_IMAGE}" "${ECR_LATEST}"
@@ -97,7 +97,7 @@ jobs:
     name: Deploy to Staging
     needs: ci
     runs-on: ubuntu-latest
-    environment: 
+    environment:
       name: stg
     env:
       ENVIRONMENT: stg
@@ -110,8 +110,6 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Force new ECS deployment
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
@@ -122,7 +120,7 @@ jobs:
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
             --force-new-deployment \
-            --region "${AWS_REGION}" \
+            --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
 
           echo "### 🚀 Deployment triggered" >> $GITHUB_STEP_SUMMARY
@@ -130,8 +128,6 @@ jobs:
           echo "- **Service:** ${SERVICE}" >> $GITHUB_STEP_SUMMARY
 
       - name: Wait for deployment stability
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
@@ -141,7 +137,7 @@ jobs:
           aws ecs wait services-stable \
             --cluster "${CLUSTER}" \
             --services "${SERVICE}" \
-            --region "${AWS_REGION}" \
+            --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager || {
               echo "::warning::Service did not stabilize within timeout"
               exit 1
@@ -152,9 +148,7 @@ jobs:
     name: Deploy to Production
     needs: [ci, cd-stg]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    environment: 
+    environment:
       name: pro
     env:
       FROM_ENV: stg
@@ -175,11 +169,10 @@ jobs:
         env:
           ECR_REGISTRY_STG: ${{ steps.ecr-stg.outputs.registry }}
           ECR_REPOSITORY_STG: ${{ env.PROJECT_NAME }}-${{ env.FROM_ENV }}-ecr-${{ env.REGION_CODE }}-${{ env.APP_NAME }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           
-          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:${GITHUB_SHA}"
+          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:${{ github.sha }}"
           echo "Pulling staging image: ${STG_IMAGE}"
           docker pull "${STG_IMAGE}"
 
@@ -200,15 +193,14 @@ jobs:
           ECR_REGISTRY_PRO: ${{ steps.ecr-pro.outputs.registry }}
           ECR_REPOSITORY_STG: ${{ env.PROJECT_NAME }}-${{ env.FROM_ENV }}-ecr-${{ env.REGION_CODE }}-${{ env.APP_NAME }}
           ECR_REPOSITORY_PRO: ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecr-${{ env.REGION_CODE }}-${{ env.APP_NAME }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           
-          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:${GITHUB_SHA}"
+          STG_IMAGE="${ECR_REGISTRY_STG}/${ECR_REPOSITORY_STG}:${{ github.sha }}"
           PRO_IMAGE="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ env.ENVIRONMENT }}"
           PRO_LATEST="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:latest"
           PRO_VERSION="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:v${{ needs.ci.outputs.version }}"
-          PRO_SHA="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${GITHUB_SHA}"
+          PRO_SHA="${ECR_REGISTRY_PRO}/${ECR_REPOSITORY_PRO}:${{ github.sha }}"
           
           echo "Tagging for production..."
           docker tag "${STG_IMAGE}" "${PRO_IMAGE}"
@@ -227,8 +219,6 @@ jobs:
           echo "- **To:** ${PRO_IMAGE}" >> $GITHUB_STEP_SUMMARY
 
       - name: Force new ECS deployment
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
@@ -239,7 +229,7 @@ jobs:
             --cluster "${CLUSTER}" \
             --service "${SERVICE}" \
             --force-new-deployment \
-            --region "${AWS_REGION}" \
+            --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager
 
           echo "### 🚀 Deployment triggered" >> $GITHUB_STEP_SUMMARY
@@ -247,8 +237,6 @@ jobs:
           echo "- **Service:** ${SERVICE}" >> $GITHUB_STEP_SUMMARY
 
       - name: Wait for deployment stability
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-ecs-${{ env.REGION_CODE }}"
@@ -258,7 +246,7 @@ jobs:
           aws ecs wait services-stable \
             --cluster "${CLUSTER}" \
             --services "${SERVICE}" \
-            --region "${AWS_REGION}" \
+            --region "${{ secrets.AWS_REGION }}" \
             --no-cli-pager || {
               echo "::warning::Service did not stabilize within timeout"
               exit 1
@@ -269,12 +257,11 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           TAG="v${{ needs.ci.outputs.version }}"
           gh release create "${TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
+            --repo "${{ github.repository }}" \
             --title "${TAG}" \
             --generate-notes
           echo "### 🏷️ GitHub Release published: ${TAG}" >> $GITHUB_STEP_SUMMARY
