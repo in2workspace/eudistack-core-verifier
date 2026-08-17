@@ -17,9 +17,6 @@ env:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
-  packages: write
 
 concurrency:
   group: ci-${{ github.head_ref }}
@@ -29,6 +26,10 @@ jobs:
   build:
     name: Build & Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -75,7 +76,7 @@ jobs:
         run: ./gradlew sonar --info
 
       - name: SonarCloud Quality Gate
-        uses: sonarsource/sonarqube-quality-gate-action@master
+        uses: sonarsource/sonarqube-quality-gate-action@d304d050d930b02a896b0f85935344f023928496 # v2.1.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

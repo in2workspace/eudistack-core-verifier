@@ -16,9 +16,7 @@ env:
   REGION_CODE: ew1
 
 permissions:
-  contents: write
-  packages: write
-  actions: write
+  contents: read
 
 jobs:
   sonar:
@@ -47,7 +45,7 @@ jobs:
         run: ./gradlew build sonar --info
 
       - name: SonarCloud Quality Gate
-        uses: sonarsource/sonarqube-quality-gate-action@master
+        uses: sonarsource/sonarqube-quality-gate-action@d304d050d930b02a896b0f85935344f023928496 # v2.1.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -185,6 +183,8 @@ jobs:
     name: Deploy to Production
     needs: [ci, cd-stg]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     environment:
       name: pro
     env:
