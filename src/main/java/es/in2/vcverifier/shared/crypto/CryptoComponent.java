@@ -10,7 +10,7 @@ import com.nimbusds.jose.util.Base64;
 import com.nimbusds.jose.util.Base64URL;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.ECKeyCreationException;
-import io.github.novacrypto.base58.Base58;
+import es.in2.vcverifier.shared.domain.util.Base58Codec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.ECNamedCurveTable;
@@ -194,7 +194,7 @@ public class CryptoComponent {
         System.arraycopy(compressed, 0, multicodecKey, multicodecPrefix.length, compressed.length);
 
         // Base58btc with 'z' prefix (multibase convention)
-        String encoded = "z" + Base58.base58Encode(multicodecKey);
+        String encoded = "z" + Base58Codec.encode(multicodecKey);
 
         return "did:key:" + encoded;
     }
