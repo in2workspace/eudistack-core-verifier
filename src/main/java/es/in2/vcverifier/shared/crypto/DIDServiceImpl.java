@@ -2,8 +2,7 @@ package es.in2.vcverifier.shared.crypto;
 
 import es.in2.vcverifier.shared.domain.exception.PublicKeyDecodingException;
 import es.in2.vcverifier.shared.domain.exception.UnsupportedDIDTypeException;
-import es.in2.vcverifier.shared.crypto.DIDService;
-import io.github.novacrypto.base58.Base58;
+import es.in2.vcverifier.shared.domain.util.Base58Codec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.ECNamedCurveTable;
@@ -53,7 +52,7 @@ public class DIDServiceImpl implements DIDService {
             String multibaseEncoded = encodePublicKey.substring(1);
 
             // Multibase decode (Base58) the encoded part to get the bytes
-            byte[] decodedBytes = Base58.base58Decode(multibaseEncoded);
+            byte[] decodedBytes = Base58Codec.decode(multibaseEncoded);
             log.debug("DIDServiceImpl -- decodePublicKeyIntoPubKey -- Base58 decoded successfully. Byte length: {}", decodedBytes.length);
 
             // Multicodec prefix is fixed for "0x1200" for the secp256r1 curve

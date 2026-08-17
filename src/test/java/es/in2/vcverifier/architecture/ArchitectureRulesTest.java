@@ -191,6 +191,15 @@ class ArchitectureRulesTest {
         }
 
         @Test
+        @DisplayName("No production class should depend on GPL Base58")
+        void noProductionClassShouldDependOnGplBase58() {
+            noClasses()
+                    .that().resideInAPackage("es.in2.vcverifier..")
+                    .should().dependOnClassesThat().resideInAPackage("io.github.novacrypto..")
+                    .check(importedClasses);
+        }
+
+        @Test
         @DisplayName("Util classes should not depend on service layer")
         void utilShouldNotDependOnService() {
             noClasses()
