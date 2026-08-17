@@ -15,13 +15,12 @@ env:
   APP_NAME: verifier-core
   REGION_CODE: ew1
 
-permissions:
-  contents: read
-
 jobs:
   sonar:
     name: SonarCloud Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -55,6 +54,8 @@ jobs:
   ci:
     name: Build > Tag > Push
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.metadata.outputs.version }}
     env:
@@ -128,6 +129,7 @@ jobs:
     name: Deploy to Staging
     needs: ci
     runs-on: ubuntu-latest
+    permissions: {}
     environment:
       name: stg
     env:
