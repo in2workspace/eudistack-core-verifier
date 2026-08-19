@@ -268,7 +268,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                     }
                 }
             });
-        } catch (SQLException e) {
+        } catch (SQLException _) {
             recordFailure();
             return Optional.empty();
         }
@@ -300,7 +300,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                     }
                 }
             });
-        } catch (SQLException e) {
+        } catch (SQLException _) {
             recordFailure();
             return Optional.empty();
         }

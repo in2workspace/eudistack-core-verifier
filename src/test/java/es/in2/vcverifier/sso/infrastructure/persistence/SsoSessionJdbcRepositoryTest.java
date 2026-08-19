@@ -205,10 +205,11 @@ class SsoSessionJdbcRepositoryTest {
         void updateLastUsedAt_rollsBackAndThrowsRepositoryException_onFailure() throws SQLException {
             // Arrange
             when(preparedStatement.executeUpdate()).thenThrow(new SQLException("timeout", "57014"));
+            SsoSessionId sessionId = SsoSessionId.generate();
+            Instant lastUsedAt = Instant.now(FIXED_CLOCK);
 
             // Act / Assert
-            assertThatThrownBy(() ->
-                    repository.updateLastUsedAt(SsoSessionId.generate(), TENANT, Instant.now(FIXED_CLOCK)))
+            assertThatThrownBy(() -> repository.updateLastUsedAt(sessionId, TENANT, lastUsedAt))
                     .isInstanceOf(SsoSessionRepositoryException.class);
 
             verify(connection).rollback();
@@ -224,10 +225,10 @@ class SsoSessionJdbcRepositoryTest {
         void recordClientActivity_swallowsExceptionWithoutThrowing_onFailure() throws SQLException {
             // Arrange
             when(preparedStatement.executeUpdate()).thenThrow(new SQLException("connection reset", "08006"));
+            SsoSessionId sessionId = SsoSessionId.generate();
 
             // Act / Assert — best-effort tracking must never break establish/reuse
-            assertDoesNotThrow(() ->
-                    repository.recordClientActivity(SsoSessionId.generate(), TENANT, "client-a"));
+            assertDoesNotThrow(() -> repository.recordClientActivity(sessionId, TENANT, "client-a"));
 
             verify(connection).rollback();
         }
