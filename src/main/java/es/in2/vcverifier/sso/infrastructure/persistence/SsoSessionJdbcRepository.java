@@ -92,15 +92,17 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
      * as queries could hit the wrong schema (cross-tenant data leak risk).
      */
     private void setTenantSearchPath(Connection c, String tenant) throws SQLException {
-        String sql = "SET LOCAL search_path = \"" + tenant + "\", public";
+        String sql = "SELECT set_config('search_path', ?, true)";
         try (PreparedStatement s = c.prepareStatement(sql)) {
+            s.setString(1, "\"" + tenant + "\", public");
             s.execute();
         }
     }
 
     private void setStatementTimeout(Connection c) throws SQLException {
-        try (PreparedStatement s = c.prepareStatement(
-                "SET LOCAL statement_timeout = " + statementTimeoutMs)) {
+        String sql = "SELECT set_config('statement_timeout', ?, true)";
+        try (PreparedStatement s = c.prepareStatement(sql)) {
+            s.setString(1, String.valueOf(statementTimeoutMs));
             s.execute();
         }
     }
