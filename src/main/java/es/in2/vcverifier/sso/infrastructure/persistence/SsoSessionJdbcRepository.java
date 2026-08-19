@@ -109,12 +109,12 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
     // =========================================================
     // TENANT-SCOPED TRANSACTION
-    // `SET LOCAL` (search_path / statement_timeout) only persists within an active
-    // transaction — a connection with autocommit=true reverts it before the business
-    // statement runs, silently breaking schema-per-tenant isolation. Every method below
-    // must run its business statement inside the same transaction as the `SET LOCAL` calls.
-    // Never replace `SET LOCAL` with `SET SESSION`: with HikariCP that would leak the
-    // setting into the pooled physical connection.
+    // `set_config(..., true)` (is_local=true, search_path / statement_timeout) only persists
+    // within an active transaction — a connection with autocommit=true reverts it before the
+    // business statement runs, silently breaking schema-per-tenant isolation. Every method
+    // below must run its business statement inside the same transaction as these calls.
+    // Never pass is_local=false (the SET SESSION equivalent): with HikariCP that would leak
+    // the setting into the pooled physical connection.
     // =========================================================
 
     @FunctionalInterface

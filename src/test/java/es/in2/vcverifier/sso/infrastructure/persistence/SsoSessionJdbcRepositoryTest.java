@@ -74,8 +74,8 @@ class SsoSessionJdbcRepositoryTest {
 
             // Assert
             assertThat(saved).isEqualTo(session);
-            verify(connection).prepareStatement(contains("SET LOCAL search_path"));
-            verify(connection).prepareStatement(contains("\"" + TENANT + "\""));
+            verify(connection).prepareStatement(contains("set_config('search_path'"));
+            verify(preparedStatement).setString(1, "\"" + TENANT + "\", public");
 
             InOrder order = inOrder(connection, preparedStatement);
             order.verify(connection).setAutoCommit(false);
@@ -192,7 +192,7 @@ class SsoSessionJdbcRepositoryTest {
             // Assert
             assertThat(result).isEmpty();
             verify(connection, never()).prepareStatement(contains("search_path"));
-            verify(connection).prepareStatement(contains("SET LOCAL statement_timeout"));
+            verify(connection).prepareStatement(contains("set_config('statement_timeout'"));
             verify(connection).commit();
         }
     }
