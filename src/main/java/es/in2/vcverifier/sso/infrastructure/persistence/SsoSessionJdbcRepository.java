@@ -139,7 +139,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 T result = op.execute(c);
                 c.commit();
                 return result;
-            } catch (SQLException e) {
+            } catch (SQLException | RuntimeException e) {
                 c.rollback();
                 throw e;
             } finally {

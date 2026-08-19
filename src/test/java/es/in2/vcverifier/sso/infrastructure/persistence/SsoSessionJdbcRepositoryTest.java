@@ -119,6 +119,21 @@ class SsoSessionJdbcRepositoryTest {
             verify(connection).commit();
             verify(connection, never()).rollback();
         }
+
+        @Test
+        void save_rollsBack_whenInsertThrowsUnexpectedRuntimeException() throws SQLException {
+            // Arrange
+            SsoSession session = SsoSession.establish(TENANT, HOLDER_HASH, Duration.ofHours(1));
+            when(preparedStatement.executeUpdate()).thenThrow(new IllegalStateException("unexpected"));
+
+            // Act / Assert
+            assertThatThrownBy(() -> repository.save(session))
+                    .isInstanceOf(IllegalStateException.class);
+
+            verify(connection).rollback();
+            verify(connection).setAutoCommit(true);
+            verify(connection, never()).commit();
+        }
     }
 
     @Nested
