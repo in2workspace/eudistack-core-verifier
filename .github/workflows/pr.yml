@@ -175,6 +175,14 @@ jobs:
       - name: Build Docker image
         run: docker build --build-arg SKIP_TESTS=true -t eudistack-core-verifier:pr .
 
+      # SPRING_FLYWAY_USER/PASSWORD: this repo is the only backend with
+      # spring.flyway.enabled=true (issuer/wallet-ebw disable it — see their own
+      # application.yaml comments — precisely to avoid this). Setting
+      # spring.flyway.url makes Spring Boot open a SEPARATE datasource for
+      # Flyway using spring.flyway.user/password, ignoring spring.datasource.*
+      # entirely. Without them it connects with no password, and postgres:17
+      # (SCRAM auth) rejects it outright.
+      #
       # LOCALFILES_*: LocalClientRegistryProvider (and the SSO/trusted-issuers
       # equivalents) fail hard at startup if clients.yaml doesn't resolve on
       # either the external path or the classpath — this repo has neither in
@@ -191,6 +199,8 @@ jobs:
             -e SPRING_DATASOURCE_USERNAME=verifier \
             -e SPRING_DATASOURCE_PASSWORD=verifier \
             -e SPRING_FLYWAY_URL=jdbc:postgresql://localhost:5432/verifier \
+            -e SPRING_FLYWAY_USER=verifier \
+            -e SPRING_FLYWAY_PASSWORD=verifier \
             -e VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH=/etc/eudistack/verifier/clients.yaml \
             -e VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH=/etc/eudistack/verifier/trusted-issuers.yaml \
             -e VERIFIER_BACKEND_LOCALFILES_SSOCONFIGPATH=/etc/eudistack/verifier/sso-config.yaml \
