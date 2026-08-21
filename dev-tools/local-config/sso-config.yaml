@@ -1,0 +1,42 @@
+# Local dev SSO config for the verifier — EUDISTACK-543/546 (SSO multi-application / reuse).
+# Mounted at /etc/eudistack/verifier/sso-config.yaml (see compose.yaml verifier volumes).
+#
+# rootDomain = domain the SSO session cookie is scoped to. All local tenants live at
+# <tenant>.127.0.0.1.nip.io, so scoping the cookie to the shared parent 127.0.0.1.nip.io
+# lets an SSO session (e.g. a sandbox sysadmin login) be reused across every tenant
+# subdomain — the cross-tenant access expected in local/dev. In production each tenant
+# scopes to its own real domain (see the classpath default template in the verifier repo).
+#
+# Tenants mirror postgres/seed-tenants.sql. ssoEnabled=true + non-blank rootDomain is
+# required, otherwise SSO fails closed (event=sso_config_inconsistent).
+tenants:
+  - tenant: "sandbox"
+    rootDomain: "127.0.0.1.nip.io"
+    ssoEnabled: true
+    eligibleClients:
+      - clientId: "vc-auth-client-sandbox"
+
+  - tenant: "cgcom"
+    rootDomain: "127.0.0.1.nip.io"
+    ssoEnabled: true
+    eligibleClients:
+      - clientId: "vc-auth-client-cgcom"
+
+  - tenant: "kpmg"
+    rootDomain: "127.0.0.1.nip.io"
+    ssoEnabled: true
+    eligibleClients:
+      - clientId: "vc-auth-client-kpmg"
+
+  - tenant: "dome"
+    rootDomain: "127.0.0.1.nip.io"
+    ssoEnabled: true
+    eligibleClients:
+      - clientId: "vc-auth-client-dome"
+      - clientId: "vc-auth-client-dome-custom"
+
+  - tenant: "platform"
+    rootDomain: "127.0.0.1.nip.io"
+    ssoEnabled: true
+    eligibleClients:
+      - clientId: "vc-auth-client-platform"
