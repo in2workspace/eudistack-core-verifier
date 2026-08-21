@@ -168,8 +168,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # SKIP_TESTS=true: the `build` job (above) already ran the full test suite
+      # for the quality gate — re-running tests inside the Docker build here would
+      # duplicate that work and risks failing this job on a test issue unrelated
+      # to DAST (e.g. a test needing infra this container's build stage lacks).
       - name: Build Docker image
-        run: docker build -t eudistack-core-verifier:pr .
+        run: docker build --build-arg SKIP_TESTS=true -t eudistack-core-verifier:pr .
 
       - name: Run container
         run: |
@@ -192,20 +196,21 @@ jobs:
           docker logs verifier-service
           exit 1
 
-      # FAIL/WARN/IGNORE ruleset vendored from eudistack-platform-dev's
-      # dev-tools/testing/baseline/zap/zap-baseline.conf (single source of truth
-      # per convention §5.3) — copied here to avoid a cross-repo read token.
+      # Rules file: dev-tools/testing/zap/zap-baseline.conf (this repo), vendored
+      # from eudistack-platform-dev's dev-tools/testing/baseline/zap/zap-baseline.conf
+      # (single source of truth per convention §5.3) — copied here to avoid a
+      # cross-repo read token. Update the source there, then re-copy here.
+      #
+      # ZAP_AUTH_HEADER sends X-Tenant: sandbox on every scan request so
+      # TenantDomainFilter resolves a real tenant instead of "localhost".
       - name: ZAP Baseline Scan
         uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        env:
+          ZAP_AUTH_HEADER: X-Tenant
+          ZAP_AUTH_HEADER_VALUE: sandbox
         with:
           target: 'http://localhost:8080/verifier'
           rules_file_name: 'dev-tools/testing/zap/zap-baseline.conf'
+          artifact_name: 'zap-report'
           fail_action: false
           allow_issue_writing: false
-
-      - name: Upload ZAP Report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: zap-report
-          path: report_html.html
