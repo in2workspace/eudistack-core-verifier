@@ -1,0 +1,357 @@
+# ---------------------------------------------------------------------------
+# OIDC Client Registry for EUDIStack local development (Atlassian-style)
+#
+# One client per tenant. Client ID pattern: vc-auth-client-{tenant}
+# URLs follow Atlassian-style: {tenant}.127.0.0.1.nip.io:4443/issuer/
+# ---------------------------------------------------------------------------
+
+clients:
+  # ── Platform (sysAdmin) ──
+  - clientId: "vc-auth-client-platform"
+    url: "https://platform.127.0.0.1.nip.io:4443/issuer"
+    tenant: "platform"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://platform.127.0.0.1.nip.io:4443/issuer/"
+      - "https://platform.127.0.0.1.nip.io:4443/cert"
+    postLogoutRedirectUris:
+      - "https://platform.127.0.0.1.nip.io:4443/issuer/"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+
+  # ── Sandbox (testing) ──
+  - clientId: "vc-auth-client-sandbox"
+    url: "https://sandbox.127.0.0.1.nip.io:4443/issuer"
+    tenant: "sandbox"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://sandbox.127.0.0.1.nip.io:4443/issuer/"
+      - "https://custom.127.0.0.1.nip.io:4443/issuer/"
+      - "https://sandbox.127.0.0.1.nip.io:4443/cert"
+    postLogoutRedirectUris:
+      - "https://sandbox.127.0.0.1.nip.io:4443/issuer/"
+      - "https://custom.127.0.0.1.nip.io:4443/issuer/"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+    clientMetadata:
+      vpFormatsSupported:
+        "dc+sd-jwt":
+          sdJwtAlgValues: [ "ES256" ]
+          kbJwtAlgValues: [ "ES256" ]
+        "jwt_vc_json":
+          algValuesSupported: [ "ES256" ]
+      clientName: "EUDIStack"
+      logoUri: "/assets/tenants/sandbox/logo.svg"
+      logoDarkUri: "/assets/tenants/sandbox/logo-dark.svg"
+      clientUri: "https://docs.eudistack.net/"
+      localizedClaims:
+        clientUri#en: "https://docs.eudistack.net/en/"
+
+
+  # ── DOME (client) ──
+  - clientId: "vc-auth-client-dome"
+    url: "https://dome.127.0.0.1.nip.io:4443/issuer"
+    tenant: "dome"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://dome.127.0.0.1.nip.io:4443/issuer/"
+      - "https://custom.127.0.0.1.nip.io:4443/issuer/"
+      - "https://dome.127.0.0.1.nip.io:4443/cert"
+    postLogoutRedirectUris:
+      - "https://dome.127.0.0.1.nip.io:4443/issuer/"
+      - "https://custom.127.0.0.1.nip.io:4443/issuer/"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+    clientMetadata:
+      vpFormatsSupported:
+        "dc+sd-jwt":
+          sdJwtAlgValues: [ "ES256" ]
+          kbJwtAlgValues: [ "ES256" ]
+        "jwt_vc_json":
+          algValuesSupported: [ "ES256" ]
+      clientName: "DOME Marketplace"
+      logoUri: "/assets/tenants/dome/logo.png"
+      logoDarkUri: "/assets/tenants/dome/logo-dark.svg"
+      clientUri: "https://dome-marketplace.eu/dashboard"
+      policyUri: "https://dome-marketplace.eu/assets/documents/privacy.pdf"
+      tosUri: "https://dome-marketplace.eu/assets/documents/terms.pdf"
+
+  # ── DOME (client custom, for custom URLs) ──
+  - clientId: "vc-auth-client-dome-custom"
+    url: "https://issuer-dome.127.0.0.1.nip.io:4443"
+    tenant: "dome"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://dome.127.0.0.1.nip.io:4443/issuer/"
+      - "https://custom.127.0.0.1.nip.io:4443/issuer/"
+      - "https://issuer-dome.127.0.0.1.nip.io:4443/issuer/"
+      - "https://dome.127.0.0.1.nip.io:4443/cert"
+    postLogoutRedirectUris:
+      - "https://dome.127.0.0.1.nip.io:4443/issuer"
+      - "https://custom.127.0.0.1.nip.io:4443/issuer"
+      - "https://issuer-dome.127.0.0.1.nip.io:4443/issuer"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+    clientMetadata:
+      vpFormatsSupported:
+        "dc+sd-jwt":
+          sdJwtAlgValues: [ "ES256" ]
+          kbJwtAlgValues: [ "ES256" ]
+        "jwt_vc_json":
+          algValuesSupported: [ "ES256" ]
+      clientName: "DOME Marketplace"
+      logoUri: "/assets/tenants/dome/logo.png"
+      logoDarkUri: "/assets/tenants/dome/logo-dark.svg"
+      clientUri: "https://dome-marketplace.eu/dashboard"
+      policyUri: "https://dome-marketplace.eu/assets/documents/privacy.pdf"
+      tosUri: "https://dome-marketplace.eu/assets/documents/terms.pdf"
+
+  # ── KPMG (client) ──
+  - clientId: "vc-auth-client-kpmg"
+    url: "https://kpmg.127.0.0.1.nip.io:4443/issuer"
+    tenant: "kpmg"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://kpmg.127.0.0.1.nip.io:4443/issuer/"
+      - "https://kpmg.127.0.0.1.nip.io:4443/cert"
+    postLogoutRedirectUris:
+      - "https://kpmg.127.0.0.1.nip.io:4443/issuer/"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+    clientMetadata:
+      vpFormatsSupported:
+        "dc+sd-jwt":
+          sdJwtAlgValues: [ "ES256" ]
+          kbJwtAlgValues: [ "ES256" ]
+        "jwt_vc_json":
+          algValuesSupported: [ "ES256" ]
+      clientName: "KPMG"
+      logoUri: "/assets/tenants/kpmg/logo.svg"
+      logoDarkUri: "/assets/tenants/kpmg/logo-dark.svg"
+      clientUri: "https://kpmg.com/es/es.html"
+
+  # ── CGCOM (client) ──
+  - clientId: "vc-auth-client-cgcom"
+    url: "https://cgcom.127.0.0.1.nip.io:4443/issuer"
+    tenant: "cgcom"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://cgcom.127.0.0.1.nip.io:4443/issuer/"
+      - "https://cgcom.127.0.0.1.nip.io:4443/issuance-portal/"
+      # DoctorID: la pantalla de autenticación se movió de cert-identifier
+      # (redirect_uri antiguo: /cert) a issuance-portal (ruta 'identify').
+      - "https://cgcom.127.0.0.1.nip.io:4443/issuance-portal/identify"
+      # DoctorID: login desde eudistack-demo-client-portal (landing "Iniciar Sesión").
+      - "https://cgcom.127.0.0.1.nip.io:4443/demo/corp-portal/home"
+      - "https://cgcom.127.0.0.1.nip.io:4443/cert"
+      - "https://cgcom.127.0.0.1.nip.io:4443/demo/rp-portal/login"
+      - "http://localhost:3001/"
+    postLogoutRedirectUris:
+      - "https://cgcom.127.0.0.1.nip.io:4443/issuer/"
+      - "https://cgcom.127.0.0.1.nip.io:4443/issuance-portal/"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+      - "doctorid"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+    clientMetadata:
+      vpFormatsSupported:
+        "dc+sd-jwt":
+          sdJwtAlgValues: [ "ES256" ]
+          kbJwtAlgValues: [ "ES256" ]
+        "jwt_vc_json":
+          algValuesSupported: [ "ES256" ]
+      clientName: "CGCOM"
+      logoUri: "/assets/tenants/cgcom/logo.png"
+      logoDarkUri: "/assets/tenants/cgcom/logo.png"
+      clientUri: "https://cgcom.com/es/es.html"
+
+  # ── Proximity Verifier PWA (cross-device verification) ──
+  - clientId: "proximity-verifier-pwa"
+    url: "https://platform.127.0.0.1.nip.io:4443/proximity/"
+    tenant: "platform"
+    loginPageUri: "https://platform.127.0.0.1.nip.io:4443/proximity/login"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://platform.127.0.0.1.nip.io:4443/proximity/login"
+    postLogoutRedirectUris:
+      - "https://platform.127.0.0.1.nip.io:4443/proximity/"
+    scopes:
+      - "openid"
+      - "learcredential"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+
+  - clientId: "proximity-verifier-pwa-sandbox"
+    url: "https://sandbox.127.0.0.1.nip.io:4443/proximity/"
+    tenant: "sandbox"
+    loginPageUri: "https://sandbox.127.0.0.1.nip.io:4443/proximity/login"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://sandbox.127.0.0.1.nip.io:4443/proximity/login"
+    postLogoutRedirectUris:
+      - "https://sandbox.127.0.0.1.nip.io:4443/proximity/"
+    scopes:
+      - "openid"
+      - "learcredential"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+
+  - clientId: "proximity-verifier-pwa-kpmg"
+    url: "https://kpmg.127.0.0.1.nip.io:4443/proximity/"
+    tenant: "kpmg"
+    loginPageUri: "https://kpmg.127.0.0.1.nip.io:4443/proximity/login"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://kpmg.127.0.0.1.nip.io:4443/proximity/login"
+    postLogoutRedirectUris:
+      - "https://kpmg.127.0.0.1.nip.io:4443/proximity/"
+    scopes:
+      - "openid"
+      - "learcredential"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+
+  - clientId: "proximity-verifier-pwa-dome"
+    url: "https://dome.127.0.0.1.nip.io:4443/proximity/"
+    tenant: "dome"
+    loginPageUri: "https://dome.127.0.0.1.nip.io:4443/proximity/login"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://dome.127.0.0.1.nip.io:4443/proximity/login"
+    postLogoutRedirectUris:
+      - "https://dome.127.0.0.1.nip.io:4443/proximity/"
+    scopes:
+      - "openid"
+      - "learcredential"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+
+  # ── Calidalia (client) ──
+  - clientId: "vc-auth-client-calidalia"
+    url: "https://calidalia.127.0.0.1.nip.io:4443/issuer"
+    tenant: "calidalia"
+    clientAuthenticationMethods:
+      - "none"
+    authorizationGrantTypes:
+      - "authorization_code"
+    redirectUris:
+      - "https://calidalia.127.0.0.1.nip.io:4443/issuer/"
+      - "https://calidalia.127.0.0.1.nip.io:4443/cert"
+    postLogoutRedirectUris:
+      - "https://calidalia.127.0.0.1.nip.io:4443/issuer/"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+    clientMetadata:
+      vpFormatsSupported:
+        "dc+sd-jwt":
+          sdJwtAlgValues: [ "ES256" ]
+          kbJwtAlgValues: [ "ES256" ]
+        "jwt_vc_json":
+          algValuesSupported: [ "ES256" ]
+      clientName: "Calidalia"
+      logoUri: "/assets/tenants/calidalia/logo.png"
+      logoDarkUri: "/assets/tenants/calidalia/logo-dark.png"
+      clientUri: "https://calidalia.com/"
+
+  # ── DOME Adapter client ──
+  - clientId: "did:key:zDnaerJXcceNhgJp7JJJ4zdfG1wgvmcM1nsSqrKwKdh5HkGtt"
+    url: "https://sandbox.127.0.0.1.nip.io:4443/vci"
+    tenant: "sandbox"
+    clientAuthenticationMethods:
+      - "private_key_jwt"
+    authorizationGrantTypes:
+      - "authorization_code"
+      - "refresh_token"
+    redirectUris:
+      - "https://sandbox.127.0.0.1.nip.io:4443/vci/"
+    postLogoutRedirectUris:
+      - "https://sandbox.127.0.0.1.nip.io:4443/vci/"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+      - "offline_access"
+      - "learcredential"
+      - "role"
+    requireAuthorizationConsent: false
+    requireProofKey: true
+    jwkSetUrl: "https://sandbox.127.0.0.1.nip.io:4443/verifier/oidc/did/did:key:zDnaerJXcceNhgJp7JJJ4zdfG1wgvmcM1nsSqrKwKdh5HkGtt"
+    tokenEndpointAuthenticationSigningAlgorithm: "ES256"
