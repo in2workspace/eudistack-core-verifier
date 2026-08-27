@@ -46,7 +46,7 @@ dependencies {
 
     // --- Cryptography ---
     implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.85.2'
 
     // --- Validation ---
     implementation 'com.networknt:json-schema-validator:1.5.6'
@@ -82,7 +82,7 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
-    testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.84'
+    testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.85.2'
 
     testImplementation platform("org.testcontainers:testcontainers-bom:1.20.4")
 
