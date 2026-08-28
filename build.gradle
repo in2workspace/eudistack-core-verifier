@@ -84,7 +84,7 @@ dependencies {
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
     testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.85'
 
-    testImplementation platform("org.testcontainers:testcontainers-bom:1.20.4")
+    testImplementation platform("org.testcontainers:testcontainers-bom:2.0.5")
 
     testImplementation "org.testcontainers:testcontainers"
     testImplementation "org.testcontainers:junit-jupiter"
