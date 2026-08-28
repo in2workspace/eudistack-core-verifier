@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# Trusted Issuers for EUDIStack local development
+#
+# Each key is the issuer identifier (must match the "iss" claim in the VC).
+# Each issuer lists the credential types it is authorized to emit.
+# ---------------------------------------------------------------------------
+
+trustedIssuers:
+  "VATES-B60645900":
+    # EUDIStack (current) — signed via Digitel QTSP seal certificate
+    - credentialsType: "learcredential.employee.w3c.4"
+    - credentialsType: "learcredential.machine.w3c.3"
+    - credentialsType: "gx.labelcredential.w3c.2"
+    # DOME legacy (read/validate only)
+    - credentialsType: "LEARCredentialEmployee"
+    - credentialsType: "LEARCredentialMachine"
+    - credentialsType: "gx.labelcredential.w3c.1"
+
+  "VATES-A15456585":
+    # EUDIStack (current)
+    - credentialsType: "learcredential.employee.w3c.4"
+    - credentialsType: "learcredential.employee.sd.1"
+    - credentialsType: "learcredential.machine.w3c.3"
+    - credentialsType: "learcredential.machine.sd.1"
+    - credentialsType: "urn:es.cgcom:doctorid:1"
+    - credentialsType: "gx.labelcredential.w3c.2"
+    # DOME legacy (read/validate only)
+    - credentialsType: "LEARCredentialEmployee"
+    - credentialsType: "LEARCredentialMachine"
+    - credentialsType: "gx.labelcredential.w3c.1"
+  "VATES-Q0000000J":
+    # EUDIStack (current)
+    - credentialsType: "learcredential.employee.w3c.4"
+    - credentialsType: "learcredential.employee.sd.1"
+    - credentialsType: "learcredential.machine.w3c.3"
+    - credentialsType: "learcredential.machine.sd.1"
+    - credentialsType: "gx.labelcredential.w3c.2"

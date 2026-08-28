@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# DCQL Profiles — Scope-to-credential query mapping
+#
+# Maps OIDC scopes (requested by Relying Parties) to DCQL credential queries
+# that the wallet understands. Each profile defines the credential formats
+# and metadata the verifier will accept for that scope.
+#
+# Mount path: /etc/eudistack/verifier/dcql-profiles.yaml
+# Env var:    VERIFIER_BACKEND_LOCALFILES_DCQLPATH
+# ---------------------------------------------------------------------------
+
+verifier:
+  dcql:
+    profiles:
+      learcredential:
+        credentials:
+          - id: lear_employee_sd_jwt
+            format: dc+sd-jwt
+            meta:
+              vct-values:
+                - learcredential.employee.sd.1
+          # - id: lear_machine_sd_jwt
+          #   format: dc+sd-jwt
+          #   meta:
+          #     vct-values:
+          #       - learcredential.machine.sd.1
+          - id: lear_employee_jwt_vc
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - learcredential.employee.w3c.4
+          - id: lear_employee_jwt_vc_legacy
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - LEARCredentialEmployee
+          # - id: lear_machine_jwt_vc
+          #   format: jwt_vc_json
+          #   meta:
+          #     credential-definition:
+          #       type:
+          #         - VerifiableCredential
+          #         - learcredential.machine.w3c.3
+      doctorid:
+        credentials:
+          - id: doctorid_sd_jwt
+            format: dc+sd-jwt
+            meta:
+              vct-values:
+                - urn:es.cgcom:doctorid:1
+            claims:
+              - path: ["registrationNumber"]

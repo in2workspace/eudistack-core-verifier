@@ -94,7 +94,7 @@ jobs:
           echo "Release ${TAG} does not exist — proceeding."
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -125,6 +125,16 @@ jobs:
           docker push "${ECR_LATEST}"
           docker push "${ECR_VERSION}"
           docker push "${ECR_SHA}"
+
+      - name: Generate CycloneDX SBOM
+        run: ./gradlew cyclonedxBom
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-v${{ env.VERSION }}
+          path: build/reports/sbom/sbom.json
+          retention-days: 90
   cd-stg:
     name: Deploy to Staging
     needs: ci
@@ -136,7 +146,7 @@ jobs:
       ENVIRONMENT: stg
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -194,7 +204,7 @@ jobs:
       ENVIRONMENT: pro
     steps:
       - name: Configure AWS credentials (${{ env.FROM_ENV }})
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STG }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}
@@ -216,7 +226,7 @@ jobs:
           docker pull "${STG_IMAGE}"
 
       - name: Configure AWS credentials (Production)
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PRO }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRO }}
@@ -298,6 +308,27 @@ jobs:
 
           echo "### ✅ Deployment successful" >> $GITHUB_STEP_SUMMARY
 
+      - name: Checkout license gate
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
+
+      - name: Download SBOM Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-v${{ needs.ci.outputs.version }}
+          path: ./sbom-artifact
+
+      - name: Validate the published SBOM
+        run: node .github/scripts/license-gate.mjs --sbom-path ./sbom-artifact/sbom.json --expect-version ${{ needs.ci.outputs.version }}
+
+      - name: Prepare SBOM Release Asset
+        run: |
+          set -euo pipefail
+          TAG="v${{ needs.ci.outputs.version }}"
+          cp ./sbom-artifact/sbom.json "./sbom-${TAG}.cdx.json"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -305,7 +336,8 @@ jobs:
           set -euo pipefail
           TAG="v${{ needs.ci.outputs.version }}"
           gh release create "${TAG}" \
+            "./sbom-${TAG}.cdx.json#CycloneDX SBOM (${TAG})" \
             --repo "${{ github.repository }}" \
             --title "${TAG}" \
             --generate-notes
-          echo "### 🏷️ GitHub Release published: ${TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏷️ GitHub Release published: ${TAG} with attached SBOM" >> $GITHUB_STEP_SUMMARY

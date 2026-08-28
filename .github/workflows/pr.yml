@@ -140,3 +140,146 @@ jobs:
         with:
           name: trivy-report
           path: build/reports/trivy-report.json
+
+  dast-baseline:
+    name: ZAP DAST Baseline
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    # G2 (conv-infrastructure-testing.md §6.3): passive scan, non-blocking.
+    # WARN-level findings are surfaced only via the uploaded HTML report.
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: verifier
+          POSTGRES_USER: verifier
+          POSTGRES_PASSWORD: verifier
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U verifier -d verifier"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # SKIP_TESTS=true: the `build` job (above) already ran the full test suite
+      # for the quality gate — re-running tests inside the Docker build here would
+      # duplicate that work and risks failing this job on a test issue unrelated
+      # to DAST (e.g. a test needing infra this container's build stage lacks).
+      - name: Build Docker image
+        run: docker build --build-arg SKIP_TESTS=true -t eudistack-core-verifier:pr .
+
+      # SPRING_FLYWAY_USER/PASSWORD: this repo is the only backend with
+      # spring.flyway.enabled=true (issuer/wallet-ebw disable it — see their own
+      # application.yaml comments — precisely to avoid this). Setting
+      # spring.flyway.url makes Spring Boot open a SEPARATE datasource for
+      # Flyway using spring.flyway.user/password, ignoring spring.datasource.*
+      # entirely. Without them it connects with no password, and postgres:17
+      # (SCRAM auth) rejects it outright.
+      #
+      # LOCALFILES_*: LocalClientRegistryProvider (and the SSO/trusted-issuers
+      # equivalents) fail hard at startup if clients.yaml doesn't resolve on
+      # either the external path or the classpath — this repo has neither in
+      # its production jar. Production/STG mount these from eudistack-platform-dev's
+      # dev-tools/verifier/ (see its compose.yaml); vendored read-only here at
+      # dev-tools/local-config/ for the same reason as zap-baseline.conf (no
+      # cross-repo read token).
+      - name: Run container
+        run: |
+          docker run -d --name verifier-service \
+            --network host \
+            -e SERVER_PORT=8080 \
+            -e SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/verifier \
+            -e SPRING_DATASOURCE_USERNAME=verifier \
+            -e SPRING_DATASOURCE_PASSWORD=verifier \
+            -e SPRING_FLYWAY_URL=jdbc:postgresql://localhost:5432/verifier \
+            -e SPRING_FLYWAY_USER=verifier \
+            -e SPRING_FLYWAY_PASSWORD=verifier \
+            -e VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH=/etc/eudistack/verifier/clients.yaml \
+            -e VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH=/etc/eudistack/verifier/trusted-issuers.yaml \
+            -e VERIFIER_BACKEND_LOCALFILES_SSOCONFIGPATH=/etc/eudistack/verifier/sso-config.yaml \
+            -e VERIFIER_BACKEND_LOCALFILES_DCQLPATH=/etc/eudistack/verifier/dcql-profiles.yaml \
+            -v "$(pwd)/dev-tools/local-config:/etc/eudistack/verifier:ro" \
+            eudistack-core-verifier:pr
+
+      - name: Wait for service health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/verifier/health; then exit 0; fi
+            sleep 2
+          done
+          echo "Service did not become healthy in time"
+          docker logs verifier-service
+          exit 1
+
+      # Rules file: dev-tools/testing/zap/zap-baseline.conf (this repo), vendored
+      # from eudistack-platform-dev's dev-tools/testing/baseline/zap/zap-baseline.conf
+      # (single source of truth per convention §5.3) — copied here to avoid a
+      # cross-repo read token. Update the source there, then re-copy here.
+      #
+      # ZAP_AUTH_HEADER sends X-Tenant: sandbox on every scan request so
+      # TenantDomainFilter resolves a real tenant instead of "localhost".
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        env:
+          ZAP_AUTH_HEADER: X-Tenant
+          ZAP_AUTH_HEADER_VALUE: sandbox
+        with:
+          target: 'http://localhost:8080/verifier'
+          rules_file_name: 'dev-tools/testing/zap/zap-baseline.conf'
+          artifact_name: 'zap-report'
+          fail_action: false
+          allow_issue_writing: false
+
+      # The `zap-report` artifact is a ZIP with 90-day retention, so reading it
+      # means downloading it first. Dumping ZAP's markdown report into the job
+      # summary makes it readable on the run page itself, which is what a PR
+      # actually needs. A published HTML report with history belongs to the
+      # nightly authenticated DAST (see the delivery-cycle quality gates), not
+      # to this gate. action-baseline writes report_md.md to GITHUB_WORKSPACE.
+      - name: Publish ZAP report in the job summary
+        if: always()
+        run: |
+          if [ -f report_md.md ]; then
+            {
+              echo '## ZAP DAST Baseline'
+              echo
+              cat report_md.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '## ZAP DAST Baseline'
+              echo
+              echo 'The scan produced no markdown report — check the step above.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # High/Critical gate. `fail_action: false` above deliberately keeps Low and
+      # Informational findings from failing anything — on a passive baseline they
+      # are noise. Anything at riskcode >= 3 fails the job instead: that is what
+      # turns the run red and triggers GitHub's failure notification. ZAP's risk
+      # scale tops out at 3 (High) today, so >= 3 also covers a future Critical.
+      - name: Fail on High/Critical findings
+        if: always()
+        run: |
+          if [ ! -f report_json.json ]; then
+            echo "::warning::No ZAP JSON report to evaluate."
+            exit 0
+          fi
+          high=$(jq '[.site[]?.alerts[]? | select(((.riskcode // "0") | tonumber) >= 3)] | length' report_json.json)
+          echo "High/Critical alerts: ${high}"
+          if [ "${high}" -gt 0 ]; then
+            {
+              echo
+              echo "### Blocking: ${high} High/Critical finding(s)"
+              jq -r '.site[]?.alerts[]? | select(((.riskcode // "0") | tonumber) >= 3) | "- \(.riskdesc) — \(.name) (\(.count) instance(s))"' report_json.json
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::ZAP reported ${high} High/Critical alert(s)."
+            exit 1
+          fi
