@@ -152,18 +152,47 @@ class CertificateChainValidatorImplTest {
     }
 
     @Test
-    @DisplayName("Chain whose last cert is not self-signed throws")
-    void validateChain_rootNotSelfSigned_throws() throws Exception {
+    @DisplayName("Chain whose top cert is not self-signed is accepted unpinned (regression: HAIP §6.1 forbids issuers from including the root)")
+    void validateChain_topNotSelfSigned_acceptedUnpinned() throws Exception {
         KeyPair rootKp = generateEc();
         KeyPair someOtherKp = generateEc();
         KeyPair leafKp = generateEc();
 
-        // "root" is actually signed by someOtherKp — not self-signed
-        X509Certificate fakeRoot = buildCert(rootKp, "CN=Root CA", someOtherKp, "CN=Other CA", true, past(), future());
+        // Top cert is signed by someOtherKp, not by itself — not self-signed, but the leaf's
+        // signature still verifies against its public key, so it's still a valid anchor.
+        X509Certificate notSelfSigned = buildCert(rootKp, "CN=Root CA", someOtherKp, "CN=Other CA", true, past(), future());
         X509Certificate leaf = buildCert(leafKp, "CN=Leaf", rootKp, "CN=Root CA", false, past(), future());
 
-        assertThrows(CertificateChainValidationException.class,
-                () -> validator.validateSelfContainedChain(List.of(leaf, fakeRoot)));
+        assertDoesNotThrow(() -> validator.validateSelfContainedChain(List.of(leaf, notSelfSigned)));
+    }
+
+    @Test
+    @DisplayName("Two-cert chain with no root at all (issuer stopped including it, HAIP §6.1) validates")
+    void validateChain_noRootAtAll_succeeds() throws Exception {
+        KeyPair caKp = generateEc();
+        KeyPair someOtherKp = generateEc();
+        KeyPair leafKp = generateEc();
+
+        // Intermediate CA cert, signed by a throwaway "other" key rather than itself — never
+        // self-signed and the resolver is a passthrough, so nothing chases it to a root either.
+        // Matches the real shape of a conformant issuer that trimmed the root out of x5c.
+        X509Certificate intermediate = buildCert(caKp, "CN=Intermediate CA", someOtherKp, "CN=Other", true, past(), future());
+        X509Certificate leaf = buildCert(leafKp, "CN=Leaf", caKp, "CN=Intermediate CA", false, past(), future());
+
+        assertDoesNotThrow(() -> validator.validateSelfContainedChain(List.of(leaf, intermediate)));
+    }
+
+    @Test
+    @DisplayName("Single non-self-signed certificate (root trimmed down to just the leaf) validates on validity alone")
+    void validateChain_singleNonSelfSignedLeaf_succeeds() throws Exception {
+        KeyPair caKp = generateEc();
+        KeyPair leafKp = generateEc();
+
+        // Same shape as a 2-cert [leaf, root] response with the root trimmed - only the leaf
+        // is left, and it is not self-signed (it was never meant to be).
+        X509Certificate leaf = buildCert(leafKp, "CN=Leaf", caKp, "CN=Intermediate CA", false, past(), future());
+
+        assertDoesNotThrow(() -> validator.validateSelfContainedChain(List.of(leaf)));
     }
 
     @Test

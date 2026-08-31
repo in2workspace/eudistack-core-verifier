@@ -14,8 +14,10 @@ import java.util.Set;
 /**
  * PKIX chain validator for x5c headers (RFC 7515 §4.1.6).
  * Completes incomplete chains via AIA {@code caIssuers} fetching (see
- * {@link AiaCertificateChainResolver}), then validates that the full chain
- * is internally consistent and terminates in a self-signed root.
+ * {@link AiaCertificateChainResolver}), then validates that the full chain is internally
+ * consistent up to its top-most certificate. That top cert is trusted as the anchor whether
+ * or not it is self-signed - HAIP §6.1 forbids a conformant issuer from including the
+ * self-signed root at all, so requiring one here would reject every conformant chain.
  * Revocation (OCSP/CRL) intentionally disabled — Q3 roadmap per EUDISTACK-10 SRS §5.3 NFR-S-05.
  */
 @Slf4j
@@ -33,42 +35,50 @@ public class CertificateChainValidatorImpl implements CertificateChainValidator 
 
         List<X509Certificate> chain = aiaResolver.completeChain(rawChain);
 
-        X509Certificate root = chain.get(chain.size() - 1);
+        X509Certificate top = chain.get(chain.size() - 1);
 
-        if (!isSelfSigned(root)) {
-            throw new CertificateChainValidationException(
-                    "x5c chain does not terminate in a self-signed root. Top cert subject: "
-                    + root.getSubjectX500Principal().getName());
+        // HAIP §6.1 forbids a conformant issuer from including the self-signed root in x5c -
+        // the relying party is expected to already trust it out-of-band. Rejecting a chain for
+        // NOT carrying the root would break every conformant issuer, so the top cert is now
+        // accepted as an unpinned trust anchor when it isn't self-signed either - same weak-
+        // but-functional stance AiaCertificateChainResolver already takes when AIA chasing
+        // can't reach a self-signed root. Configure a trust store to restrict accepted anchors
+        // (EUDISTACK roadmap) - until then this stays backward compatible with chains that do
+        // still carry the root (already-issued credentials, other issuers).
+        if (!isSelfSigned(top)) {
+            log.warn("x5c chain does not terminate in a self-signed root - accepted WITHOUT " +
+                     "trust-anchor pinning (weaker security). Top cert subject: {}",
+                     top.getSubjectX500Principal().getName());
         }
 
         if (chain.size() == 1) {
-            validateSelfSignedLeaf(root);
+            validateSingleCertificate(top);
             return;
         }
 
-        validatePkixChain(chain, root);
+        validatePkixChain(chain, top);
     }
 
-    private void validateSelfSignedLeaf(X509Certificate cert) {
+    private void validateSingleCertificate(X509Certificate cert) {
         try {
             cert.checkValidity();
         } catch (GeneralSecurityException e) {
             throw new CertificateChainValidationException(
-                    "x5c self-signed certificate is not valid: " + e.getMessage(), e);
+                    "x5c certificate is not valid: " + e.getMessage(), e);
         }
-        log.debug("x5c single self-signed certificate validated");
+        log.debug("x5c single certificate validated (no chain to check)");
     }
 
-    private void validatePkixChain(List<X509Certificate> chain, X509Certificate root) {
+    private void validatePkixChain(List<X509Certificate> chain, X509Certificate anchorCert) {
         try {
             // PKIX does not validate the trust anchor itself — check validity explicitly
-            root.checkValidity();
+            anchorCert.checkValidity();
 
-            TrustAnchor anchor = new TrustAnchor(root, null);
+            TrustAnchor anchor = new TrustAnchor(anchorCert, null);
             CertPathValidator validator = CertPathValidator.getInstance("PKIX");
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
 
-            // CertPath = leaf + intermediates (all certs except the root/anchor), leaf-first
+            // CertPath = leaf + intermediates (all certs except the anchor), leaf-first
             List<X509Certificate> pathCerts = new ArrayList<>(chain.subList(0, chain.size() - 1));
             CertPath certPath = cf.generateCertPath(pathCerts);
 
@@ -76,7 +86,7 @@ public class CertificateChainValidatorImpl implements CertificateChainValidator 
             params.setRevocationEnabled(false);
 
             validator.validate(certPath, params);
-            log.debug("x5c chain of {} certs validated to self-contained root", chain.size());
+            log.debug("x5c chain of {} certs validated to its top-most anchor", chain.size());
 
         } catch (CertPathValidatorException e) {
             throw new CertificateChainValidationException(
