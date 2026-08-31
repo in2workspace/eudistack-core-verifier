@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -34,6 +35,8 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
+import java.util.zip.Inflater;
+import java.util.zip.InflaterInputStream;
 
 /**
  * Verifies credential revocation using Token Status List (draft-ietf-oauth-status-list).
@@ -41,7 +44,7 @@ import java.util.zip.GZIPInputStream;
  *
  * Token Status List JWT format:
  * - Header typ: "statuslist+jwt"
- * - Payload: { "status_list": { "bits": 1, "lst": "<base64url-gzip>" } }
+ * - Payload: { "status_list": { "bits": 1, "lst": "<base64url(zlib-deflate(bitstring))>" } }
  * - No multibase prefix on lst (unlike BitstringStatusList)
  */
 @Slf4j
@@ -224,32 +227,63 @@ public class TokenStatusListVerifier implements CredentialStatusVerifier {
     }
 
     /**
-     * Decodes the lst field: base64url → gzip → raw bytes.
+     * Decodes the lst field: base64url → decompress → raw bytes.
      * No multibase prefix (unlike BitstringStatusList encodedList).
      */
-    private byte[] decodeLst(String lst) {
-        final byte[] gzipped;
+    byte[] decodeLst(String lst) {
+        final byte[] compressed;
         try {
-            gzipped = Base64.getUrlDecoder().decode(lst.trim());
+            compressed = Base64.getUrlDecoder().decode(lst.trim());
         } catch (IllegalArgumentException e) {
             throw new StatusListCredentialException("lst is not valid base64url: " + e.getMessage());
         }
-        return gunzip(gzipped);
+        return decompressLst(compressed);
     }
 
-    private byte[] gunzip(byte[] input) {
+    private static final int GZIP_MAGIC_BYTE_0 = 0x1F;
+    private static final int GZIP_MAGIC_BYTE_1 = 0x8B;
+
+    /**
+     * draft-ietf-oauth-status-list §4.1 mandates DEFLATE (RFC 1951) in the ZLIB (RFC 1950)
+     * data format — a 2-byte header plus an Adler-32 trailer around the deflate stream.
+     * Two non-conformant encodings are accepted as fallbacks so that lists produced before
+     * issuers converged on the spec framing stay readable:
+     * GZIP (RFC 1952, detected by its magic bytes) and header-less raw DEFLATE.
+     */
+    private byte[] decompressLst(byte[] input) {
+        if (isGzip(input)) {
+            log.warn("Token Status List lst is GZIP-framed; draft-ietf-oauth-status-list §4.1 requires zlib DEFLATE");
+            return inflate(input, true, false);
+        }
+        try {
+            return inflate(input, false, false);
+        } catch (StatusListCredentialException e) {
+            log.warn("Token Status List lst is not zlib-framed; retrying as raw DEFLATE");
+            return inflate(input, false, true);
+        }
+    }
+
+    private boolean isGzip(byte[] input) {
+        return input.length >= 2
+                && (input[0] & 0xFF) == GZIP_MAGIC_BYTE_0
+                && (input[1] & 0xFF) == GZIP_MAGIC_BYTE_1;
+    }
+
+    private byte[] inflate(byte[] input, boolean gzip, boolean rawDeflate) {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(input);
-             GZIPInputStream gzip = new GZIPInputStream(bais);
+             InputStream decompressor = gzip
+                     ? new GZIPInputStream(bais)
+                     : new InflaterInputStream(bais, new Inflater(rawDeflate));
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
             byte[] buffer = new byte[8 * 1024];
             int read;
-            while ((read = gzip.read(buffer)) != -1) {
+            while ((read = decompressor.read(buffer)) != -1) {
                 baos.write(buffer, 0, read);
             }
             return baos.toByteArray();
         } catch (IOException e) {
-            throw new StatusListCredentialException("Failed to gunzip Token Status List content", e);
+            throw new StatusListCredentialException("Failed to decompress Token Status List content", e);
         }
     }
 
