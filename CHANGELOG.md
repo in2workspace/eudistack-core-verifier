@@ -6,7 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **EUD-38 — allowlist de licencias unificada**: `.github/license-policy.json` es ahora la transcripción íntegra de `conv-quality-security-gates.md` §16.1, idéntica en los trece repositorios con gate. Añade `LGPL-2.1-only`, la grafía SPDX vigente del mismo permiso que `LGPL-2.1`, que ya estaba admitido: `logback` 1.5.34 la declara así y el gate la bloqueaba por la grafía, no por la licencia.
+
 ### Added
+
+- **EUD-220 — SBOM CycloneDX and License Gate**: Added CycloneDX 1.6 SBOM generation (`cyclonedxBom`), CI license compliance gate (`license-gate.yml`), and automated SBOM asset attachment to GitHub Releases. The evaluator is vendored at `.github/scripts/license-gate.mjs` with its own `node --test` suite, which the gate workflow runs before evaluating anything: this repository verifies itself without depending on any other one. Free-text upstream license names resolve through a reviewed SPDX equivalence table instead of piling up as expiring exceptions, and the `CODEOWNERS` rules that protect the policy, the exception register and the evaluator sit at the END of the file, because GitHub applies the last matching pattern.
+
+- **CI — Dependabot para el control de composición de software (SCA)**
+  - Configuración de actualizaciones de seguridad para `gradle`, `github-actions` y las imágenes base de Docker, alineada con `eudistack-core-issuer`. Complementa el escaneo Trivy que ya corre en `pr.yml`: Trivy detecta, Dependabot propone el arreglo.
 
 ### Removed
 
@@ -19,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - In the OID4VP flow the `configuration_id` is only known once the credential schema dispatcher's decision is resolved; a `verificationLogged` flag + `finally` guarantees exactly one log line per call, and failures that happen *after* a successful verification (unregistered client, persistence, SSE) are correctly **not** double-logged as verification errors — pre-dispatch failures fall back to `configurationId=unknown` since the wallet-asserted type cannot be trusted before signature verification passes.
   - **Replaces** the previous Micrometer counter `business.credential.verified` (finding H-06 of the verifier observability review) — the port `CredentialVerificationMetricsPort` and adapter `CredentialVerificationMetricsRecorder` (`verifier/infrastructure/metrics`), along with its `AtomicBoolean` one-shot failure-log guard, are removed; a plain `log.info`/`log.warn` call cannot throw the way `MeterRegistry.counter(...)` could on a meter-type collision. `dome_verifier_dispatcher_total`, `verifier_sso_established_total`, `dome_verifier_dispatcher_duration_ms` and `http.server.requests` are unaffected.
   - Tests: `CredentialVerificationLoggerTest` (new, Logback `ListAppender`: event/tenant/outcome/errorType content, `unknown` fallbacks), `AuthorizationResponseProcessorServiceImplTest` and `ClientCredentialsValidationWorkflowTest` (`verify()` on the mocked `CredentialVerificationLoggerPort` instead of counter assertions).
+
+### Fixed
+
+- **`SsoSessionJdbcRepository` silently broke schema-per-tenant isolation (tech debt)**: every method opened its JDBC connection with `autoCommit=true`, so `SET LOCAL search_path`/`statement_timeout` reverted before the business statement ran — reads/writes could silently fall back to the connection's default schema instead of the tenant's. Extracted a shared `inTransaction(tenant, op)` helper (`setAutoCommit(false)` + explicit `commit()`/`rollback()`) and applied it to all 9 affected methods (`save`, `findActiveByTenantAndHolder`, `findActiveById`, `findById`, `updateLastUsedAt`, `supersedeActive`, `terminateActive`, `findClientsBySession`, `recordClientActivity`); `revokeAllByTenant` (already fixed inline in a prior PR) was migrated onto the same shared helper to remove duplication. `save()`'s supersede-and-retry-on-unique-violation path now runs inside the same transaction/connection instead of opening a second one, closing an atomicity gap between the two statements. Existing per-method fail-open/fail-closed/best-effort exception semantics preserved. Tests: `SsoSessionJdbcRepositoryTest` (new, unit, Mockito — commit/rollback ordering and the single-connection supersede+retry path).
 
 ## [3.3.2] - 2026-08-03
 

@@ -13,10 +13,14 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Base64;
+import java.util.zip.Deflater;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,6 +50,74 @@ class TokenStatusListVerifierTest {
     void supports_otherType_returnsFalse() {
         assertFalse(verifier.supports("BitstringStatusListEntry"));
         assertFalse(verifier.supports("unknown"));
+    }
+
+    // --- lst decompression (draft-ietf-oauth-status-list §4.1) ---
+
+    @Test
+    void decodeLst_zlibDeflate_returnsRawBitstring() {
+        byte[] raw = {0x01, 0x02, (byte) 0xFF, 0x00};
+
+        byte[] decoded = verifier.decodeLst(base64Url(deflate(raw, false)));
+
+        assertArrayEquals(raw, decoded);
+    }
+
+    @Test
+    void decodeLst_gzip_returnsRawBitstring() {
+        byte[] raw = {0x0A, 0x0B, 0x0C};
+
+        byte[] decoded = verifier.decodeLst(base64Url(gzip(raw)));
+
+        assertArrayEquals(raw, decoded);
+    }
+
+    @Test
+    void decodeLst_rawDeflateWithoutZlibHeader_returnsRawBitstring() {
+        byte[] raw = {0x7F, 0x00, 0x42};
+
+        byte[] decoded = verifier.decodeLst(base64Url(deflate(raw, true)));
+
+        assertArrayEquals(raw, decoded);
+    }
+
+    @Test
+    void decodeLst_notBase64Url_throwsStatusListCredentialException() {
+        assertThrows(StatusListCredentialException.class, () -> verifier.decodeLst("not base64!!"));
+    }
+
+    @Test
+    void decodeLst_notCompressed_throwsStatusListCredentialException() {
+        String garbage = base64Url(new byte[]{0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+
+        assertThrows(StatusListCredentialException.class, () -> verifier.decodeLst(garbage));
+    }
+
+    private static String base64Url(byte[] bytes) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static byte[] deflate(byte[] input, boolean nowrap) {
+        try (Deflater deflater = new Deflater(Deflater.BEST_COMPRESSION, nowrap)) {
+            deflater.setInput(input);
+            deflater.finish();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[256];
+            while (!deflater.finished()) {
+                out.write(buffer, 0, deflater.deflate(buffer));
+            }
+            return out.toByteArray();
+        }
+    }
+
+    private static byte[] gzip(byte[] input) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
+            gzip.write(input);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+        return out.toByteArray();
     }
 
     // --- Input validation ---
