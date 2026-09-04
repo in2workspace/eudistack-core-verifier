@@ -137,9 +137,10 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         TenantSsoCatalog catalog = configPort.resolveEligibleClients(tenantSlug);
 
         TenantSsoPolicy policy = new TenantSsoPolicy(clock, ttl.absolute().toSeconds());
+        Long maxAgeSeconds = ctx != null ? ctx.maxAge() : null;
         ReuseDecision decision = policy.evaluate(
                 session.getTenant(), tenantSlug, session.getEstablishedAt(),
-                clientRegistered, catalog, clientId
+                clientRegistered, catalog, clientId, maxAgeSeconds
         );
 
         if (decision == ReuseDecision.REJECT_CATALOG) {

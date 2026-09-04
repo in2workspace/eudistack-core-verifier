@@ -549,6 +549,7 @@ class CustomAuthorizationRequestConverterTest {
         when(request.getParameter(NONCE)).thenReturn(clientNonce);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(codeChallenge);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(codeChallengeMethod);
+        when(request.getParameter("max_age")).thenReturn(null);
 
         RegisteredClient registeredClient = RegisteredClient.withId("1234")
                 .clientId(clientId)
@@ -601,6 +602,7 @@ class CustomAuthorizationRequestConverterTest {
         when(request.getParameter(NONCE)).thenReturn(clientNonce);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
+        when(request.getParameter("max_age")).thenReturn(null);
 
         RegisteredClient registeredClient = RegisteredClient.withId("1234")
                 .clientId(clientId)
@@ -850,6 +852,7 @@ class CustomAuthorizationRequestConverterTest {
     private void stubPkceParamsNull(HttpServletRequest request) {
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
+        when(request.getParameter("max_age")).thenReturn(null);
     }
 
     private void stubPortalUrlHeaders(HttpServletRequest request, String scheme, String host) {

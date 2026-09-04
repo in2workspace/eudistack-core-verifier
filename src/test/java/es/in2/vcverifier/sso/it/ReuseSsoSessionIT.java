@@ -68,6 +68,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   AC-02  Sin sesión: ID en cookie sin fila en BD → LOGIN_REQUIRED.
  *   AC-03  RP no elegible: sesión existe pero clientA no está en eligibleClientIds.
  *   AC-04  Cross-tenant: sesión de tenant-a accedida desde tenant-b → SSO_CROSS_TENANT_ATTEMPT.
+ *   AC-09  max_age menor que la antigüedad de la sesión → login_required (REJECT_MAX_AGE);
+ *          max_age mayor → reutilización permitida.
  *   EC-01  Sesión expirada: fila ACTIVE con expires_at pasado → filtro SQL la excluye.
  *   EC-02  Sesión SUPERSEDED: fila con state='SUPERSEDED' → filtro SQL la excluye.
  *   ES-01  Fallo de almacén (fail-closed): spy lanza RuntimeException → SSO_PERSIST_ERROR.
@@ -410,6 +412,46 @@ class ReuseSsoSessionIT {
     }
 
     // =========================================================
+    // AC-09 max_age MENOR QUE LA ANTIGÜEDAD DE LA SESIÓN → login_required
+    // Sesión ACTIVA y vigente (dentro del TTL absoluto), pero el cliente exige
+    // explícitamente una autenticación más reciente que la de la sesión.
+    // =========================================================
+    @Test
+    void should_reject_reuse_when_max_age_smaller_than_session_age() throws Exception {
+        String sessionId = insertActiveSessionEstablishedSecondsAgo(TENANT, "holder-hash-maxage", 60);
+
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none")
+                        .param("max_age", "10"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("code="))));
+
+        verify(auditPort, atLeastOnce()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "REJECT_MAX_AGE".equals(event.getOutcome())));
+    }
+
+    // =========================================================
+    // AC-09 max_age MAYOR QUE LA ANTIGÜEDAD DE LA SESIÓN → reutilización permitida
+    // =========================================================
+    @Test
+    void should_allow_reuse_when_max_age_greater_than_session_age() throws Exception {
+        String sessionId = insertActiveSessionEstablishedSecondsAgo(TENANT, "holder-hash-maxage-ok", 5);
+
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none")
+                        .param("max_age", "3600"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("code=")));
+
+        verify(auditPort, times(1)).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED
+                        && "REUSED".equals(e.getOutcome())));
+    }
+
+    // =========================================================
     // COEXISTENCIA: prompt=login → rama SSO no se activa;
     // el flujo OID4VP estándar produce 3xx hacia la wallet.
     // =========================================================
@@ -494,6 +536,29 @@ class ReuseSsoSessionIT {
         );
         // Snapshot de credencial que un establecimiento real habría dejado — necesario para que
         // la ruta ALLOWED emita el code en vez de caer a LOGIN_REQUIRED (ver ReuseSsoSessionWorkflowImpl).
+        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
+        ssoSessionCredentialCache.add(id, fakeCredential);
+        return id;
+    }
+
+    /**
+     * AC-09: como {@link #insertActiveSession}, pero permite controlar la antigüedad de
+     * {@code established_at} para ejercitar el rechazo por {@code max_age}. La sesión sigue
+     * ACTIVA y dentro del TTL absoluto (1h) — solo cambia su "auth_time".
+     */
+    private String insertActiveSessionEstablishedSecondsAgo(String tenant, String holderHash, long ageSeconds) {
+        String id = SsoSessionId.generate().getValue();
+        OffsetDateTime establishedAt = OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(ageSeconds);
+        jdbcTemplate.update("""
+                INSERT INTO sso_session
+                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
+                """,
+                id, tenant, holderHash,
+                establishedAt,
+                establishedAt.plusHours(1),
+                establishedAt
+        );
         JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
         ssoSessionCredentialCache.add(id, fakeCredential);
         return id;

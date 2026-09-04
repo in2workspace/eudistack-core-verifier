@@ -57,6 +57,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
     private static final String SSO_COOKIE_PREFIX = "__Secure-sso-";
+    private static final String MAX_AGE_PARAMETER = "max_age";
 
     private final DIDService didService;
     private final JWTService jwtService;
@@ -97,6 +98,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .scope(scope)
                 .portalUrl(portalUrl)
                 .contextPath(contextPath)
+                .maxAge(parseMaxAge(request.getParameter(MAX_AGE_PARAMETER)))
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
@@ -166,6 +168,28 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                    : "");
         OAuth2Error error = new OAuth2Error(errorCode, null, location);
         throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+    }
+
+    /**
+     * FR-21/AC-09: parsea el {@code max_age} OIDC (segundos, entero no negativo). Un valor
+     * ausente o inválido se ignora (log warn) en vez de romper la petición — max_age es un
+     * refinamiento de frescura sobre el flujo estándar, no una condición de seguridad dura.
+     */
+    private Long parseMaxAge(String rawMaxAge) {
+        if (rawMaxAge == null || rawMaxAge.isBlank()) {
+            return null;
+        }
+        try {
+            long maxAge = Long.parseLong(rawMaxAge.trim());
+            if (maxAge < 0) {
+                log.warn("event=sso_max_age_invalid reason=negative value={}", rawMaxAge);
+                return null;
+            }
+            return maxAge;
+        } catch (NumberFormatException e) {
+            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", rawMaxAge);
+            return null;
+        }
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {
