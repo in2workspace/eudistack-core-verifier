@@ -140,7 +140,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // browser. Cookie value itself is never logged, only whether one was found.
         log.debug("event=sso_cookie_lookup tenant={} expectedCookieName={} found={}",
                 tenant, SSO_COOKIE_PREFIX + tenant, cookieValue != null);
-        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
+        String correlationId = UUID.randomUUID().toString();
+        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, correlationId);
     }
 
     private void handleSsoReuseResult(ReuseSsoSessionWorkflow.Result result, AuthorizationContext ctx) {

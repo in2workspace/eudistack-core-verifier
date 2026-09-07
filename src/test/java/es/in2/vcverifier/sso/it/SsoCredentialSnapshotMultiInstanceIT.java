@@ -216,7 +216,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
                 .state("xyz")
                 .build();
 
-        return workflow.reuse(TENANT, sessionId, ctx, CLIENT_ID);
+        return workflow.reuse(TENANT, sessionId, ctx, CLIENT_ID, "corr-" + sessionId);
     }
 
     private static BackendConfig backendConfigWithKey(String base64Key) {

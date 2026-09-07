@@ -299,7 +299,7 @@ class SsoSessionClientTrackingIT {
                 .build();
 
         ReuseSsoSessionWorkflow.Result result = workflow.reuse(
-                tenant, session.getId().getValue(), ctx, calleeClientId);
+                tenant, session.getId().getValue(), ctx, calleeClientId, "corr-" + session.getId().getValue());
 
         assertThat(result.status()).isEqualTo(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
 

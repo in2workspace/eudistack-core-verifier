@@ -77,7 +77,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             String tenantSlug,
             String ssoCookieValue,
             AuthorizationContext ctx,
-            String clientId
+            String clientId,
+            String correlationId
     ) {
         Instant now = Instant.now(clock);
 
@@ -107,6 +108,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .tenant(tenantSlug)
                             .clientId(clientId)
                             .outcome("REPOSITORY_FAILURE")
+                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -122,7 +124,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                                     .eventType(SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT)
                                     .tenant(tenantSlug)
                                     .clientId(clientId)
+                                    .holderHash(s.getHolderHash())
                                     .outcome("CROSS_TENANT_BLOCKED")
+                                    .correlationId(correlationId)
                                     .occurredAt(now)
                                     .build()
                     ));
@@ -155,7 +159,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
+                            .holderHash(session.getHolderHash())
                             .outcome("CATALOG_REJECTED")
+                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -169,7 +175,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
+                            .holderHash(session.getHolderHash())
                             .outcome(decision.name())
+                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -206,7 +214,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
+                            .holderHash(session.getHolderHash())
                             .outcome("CREDENTIAL_SNAPSHOT_MISSING")
+                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -229,7 +239,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
+                            .holderHash(session.getHolderHash())
                             .outcome("REDIRECT_URI_MISMATCH")
+                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -257,7 +269,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                         .eventType(SsoAuditEvent.EventType.SSO_SESSION_REUSED)
                         .tenant(tenantSlug)
                         .clientId(clientId)
+                        .holderHash(session.getHolderHash())
                         .outcome("REUSED")
+                        .correlationId(correlationId)
                         .occurredAt(now)
                         .build()
         );

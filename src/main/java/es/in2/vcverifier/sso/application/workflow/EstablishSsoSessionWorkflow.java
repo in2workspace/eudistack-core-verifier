@@ -101,12 +101,15 @@ public class EstablishSsoSessionWorkflow {
             return null; // fail-closed
         }
 
-        // B7: holderHash field in SsoAuditEvent always carries raw sub; SsoAuditAdapter applies SHA-256.
+        // NFR-S-149-01/AC-10: holderHash field in SsoAuditEvent always carries the already-hashed
+        // holder identifier (SHA-256 of sub), never the raw sub — SsoAuditAdapter's prefix() (used
+        // for the holderHashPrefix log field) truncates without re-hashing, so passing the raw sub
+        // here would leak its first 8 characters in clear in every establishment log line.
         auditPort.publish(new SsoAuditEvent(
                 SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
                 command.tenant(),
                 command.clientId(),
-                command.sub(),
+                holderHash,
                 "SUCCESS",
                 command.correlationId(),
                 now

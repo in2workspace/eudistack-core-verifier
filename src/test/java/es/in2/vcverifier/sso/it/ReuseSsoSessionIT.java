@@ -216,9 +216,14 @@ class ReuseSsoSessionIT {
         // Asserts the ALLOWED outcome specifically — a 3xx redirect alone would also be produced
         // by a LOGIN_REQUIRED/INTERACTION_REQUIRED fallback, which is exactly what masked the
         // original SSO-reuse bug (the redirect always pointed to the QR login page instead).
+        // Regresión (auditoría en vacío 2026-09-07): ReuseSsoSessionWorkflowImpl publicaba
+        // este evento sin holderHash ni correlationId — AC-06/AC-10 exigen ambos en todo
+        // evento de sesión, incluida la reutilización exitosa, no solo el establecimiento.
         verify(auditPort, times(1)).publish(argThat(e ->
                 e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED
-                        && "REUSED".equals(e.getOutcome())));
+                        && "REUSED".equals(e.getOutcome())
+                        && "holder-hash-01".equals(e.getHolderHash())
+                        && e.getCorrelationId() != null && !e.getCorrelationId().isBlank()));
     }
 
     // =========================================================
@@ -301,7 +306,9 @@ class ReuseSsoSessionIT {
                 .andExpect(status().is3xxRedirection());
 
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED));
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "holder-hash-03".equals(event.getHolderHash())
+                        && event.getCorrelationId() != null && !event.getCorrelationId().isBlank()));
     }
 
     // =========================================================
@@ -332,8 +339,13 @@ class ReuseSsoSessionIT {
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
 
+        // Regresión (auditoría en vacío 2026-09-07): el intento cross-tenant se detecta vía
+        // findById sin filtro de tenant precisamente para poder auditar la sesión ajena
+        // (holder_hash + tenant real) — el bug lo descartaba y publicaba el evento sin él.
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT));
+                event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT
+                        && "holder-hash-ct".equals(event.getHolderHash())
+                        && event.getCorrelationId() != null && !event.getCorrelationId().isBlank()));
     }
 
     // =========================================================
@@ -394,7 +406,8 @@ class ReuseSsoSessionIT {
         verify(sessionRepository, atLeastOnce())
                 .findActiveById(any(SsoSessionId.class), anyString());
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR));
+                event.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR
+                        && event.getCorrelationId() != null && !event.getCorrelationId().isBlank()));
     }
 
     // =========================================================
