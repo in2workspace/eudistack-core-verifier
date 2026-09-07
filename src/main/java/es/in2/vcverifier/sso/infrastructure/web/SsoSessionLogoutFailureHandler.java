@@ -11,21 +11,34 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.web.authentication.OAuth2ErrorAuthenticationFailureHandler;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.time.Instant;
 import java.util.UUID;
+
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
+import static es.in2.vcverifier.shared.domain.util.Constants.SESSION_EXPIRED;
 
 /**
  * US-06 (Single Logout, ES-01): se invoca cuando la validación estándar de
  * {@code id_token_hint}/{@code post_logout_redirect_uri} (Spring AS
  * {@code OidcLogoutAuthenticationProvider}) falla ANTES de llegar a
  * {@link SsoSessionLogoutHandler}. Emite {@code sso_logout_rejected} sin invalidar ni
- * notificar nada (la sesión SSO, si existe, permanece intacta) y delega siempre al
- * comportamiento de error estándar ({@link OAuth2ErrorAuthenticationFailureHandler}).
+ * notificar nada (la sesión SSO, si existe, permanece intacta).
+ * <p>
+ * Si la request identifica un cliente registrado (parámetro {@code client_id}, estándar en
+ * OIDC RP-Initiated Logout) con {@code loginPageUri} configurada, redirige ahí con
+ * {@code ?error=session_expired} en vez de exponer el {@link org.springframework.security.oauth2.core.OAuth2Error}
+ * como JSON crudo. {@code loginPageUri} es configuración del propio servidor (no viene de la
+ * request), así que no hay riesgo de open-redirect por reutilizar {@code client_id} como clave
+ * de búsqueda. Si no hay cliente resuelto o no tiene página de login propia, se mantiene el
+ * comportamiento estándar ({@link OAuth2ErrorAuthenticationFailureHandler}).
  */
 @Slf4j
 @Component
@@ -33,6 +46,7 @@ import java.util.UUID;
 public class SsoSessionLogoutFailureHandler implements AuthenticationFailureHandler {
 
     private final SsoAuditPort auditPort;
+    private final RegisteredClientRepository registeredClientRepository;
     private final AuthenticationFailureHandler delegate = new OAuth2ErrorAuthenticationFailureHandler();
 
     @Override
@@ -42,9 +56,10 @@ public class SsoSessionLogoutFailureHandler implements AuthenticationFailureHand
             AuthenticationException exception
     ) throws IOException, ServletException {
 
+        String clientId = request.getParameter("client_id");
+
         try {
             String tenant = TenantDomainFilter.getCurrentTenant(request);
-            String clientId = request.getParameter("client_id");
 
             auditPort.publish(SsoAuditEvent.builder()
                     .eventType(SsoAuditEvent.EventType.SSO_LOGOUT_REJECTED)
@@ -59,7 +74,36 @@ public class SsoSessionLogoutFailureHandler implements AuthenticationFailureHand
             log.warn("sso_logout_rejected_audit_error: {}", e.getMessage(), e);
         }
 
+        String sessionExpiredRedirect = resolveSessionExpiredRedirect(clientId);
+        if (sessionExpiredRedirect != null) {
+            response.sendRedirect(sessionExpiredRedirect);
+            return;
+        }
+
         delegate.onAuthenticationFailure(request, response, exception);
+    }
+
+    private String resolveSessionExpiredRedirect(String clientId) {
+        if (clientId == null || clientId.isBlank()) {
+            return null;
+        }
+        try {
+            RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
+            if (registeredClient == null) {
+                return null;
+            }
+            String loginPageUri = registeredClient.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_PAGE_URI);
+            if (loginPageUri == null || loginPageUri.isBlank()) {
+                return null;
+            }
+            return UriComponentsBuilder.fromHttpUrl(loginPageUri)
+                    .queryParam("error", SESSION_EXPIRED)
+                    .build()
+                    .toUriString();
+        } catch (Exception e) {
+            log.warn("sso_logout_session_expired_redirect_error: {}", e.getMessage(), e);
+            return null;
+        }
     }
 
     /**
