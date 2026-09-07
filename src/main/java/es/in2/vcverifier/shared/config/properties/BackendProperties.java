@@ -20,7 +20,8 @@ public record BackendProperties(
         TokenExpiration tokenExpiration,
         Long loginTimeoutSeconds,
         Boolean fapiNonceRequired,
-        X5cChainValidation x5cChainValidation
+        X5cChainValidation x5cChainValidation,
+        Sso sso
 ) {
 
     public record Identity(
@@ -54,6 +55,13 @@ public record BackendProperties(
     public record X5cChainValidation(Boolean bypass, AiaChasing aiaChasing) {}
 
     public record AiaChasing(Boolean enabled) {}
+
+    /**
+     * EUD-149 production-readiness: clave AES-256 (base64, 32 bytes) para cifrar el snapshot de
+     * credencial persistido en {@code sso_session.credential_snapshot}. Vacío/ausente en dev
+     * genera una clave efímera por proceso (ver {@code AesGcmSsoCredentialCipherAdapter}).
+     */
+    public record Sso(String credentialEncryptionKey) {}
 
     /**
      * Optional external filesystem paths. When set, the corresponding local provider

@@ -101,7 +101,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://Verifier.Example.com:443",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getTrustedVerifierOrigins())
@@ -113,7 +113,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getStaticUrl()).isEqualTo("https://verifier.example.com");
@@ -124,7 +124,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net", "https://dome.example.com"),
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getAllUrls())

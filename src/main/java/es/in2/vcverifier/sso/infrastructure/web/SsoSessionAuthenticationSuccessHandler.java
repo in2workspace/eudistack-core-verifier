@@ -2,7 +2,6 @@ package es.in2.vcverifier.sso.infrastructure.web;
 
 
 import com.fasterxml.jackson.databind.JsonNode;
-import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
@@ -32,21 +31,18 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
     private final SsoSessionCookieFactory cookieFactory;
     private final SsoAuditPort auditPort;
     private final TenantSsoConfigPort tenantSsoConfigPort;
-    private final CacheStore<JsonNode> ssoSessionCredentialCache;
 
 
     public SsoSessionAuthenticationSuccessHandler(
             EstablishSsoSessionWorkflow establishSsoSessionWorkflow,
             SsoSessionCookieFactory cookieFactory,
             SsoAuditPort auditPort,
-            TenantSsoConfigPort tenantSsoConfigPort,
-            CacheStore<JsonNode> ssoSessionCredentialCache
+            TenantSsoConfigPort tenantSsoConfigPort
     ) {
         this.establishSsoSessionWorkflow = establishSsoSessionWorkflow;
         this.cookieFactory = cookieFactory;
         this.auditPort = auditPort;
         this.tenantSsoConfigPort = tenantSsoConfigPort;
-        this.ssoSessionCredentialCache = ssoSessionCredentialCache;
     }
 
     @Override
@@ -68,7 +64,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 vpData.tenant(),
                 vpData.holderHash(),
                 vpData.clientId(),
-                correlationId
+                correlationId,
+                vpData.credentialJson() != null ? vpData.credentialJson().toString() : null
         );
 
         try {
@@ -103,13 +100,6 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                         vpData.tenant(), cookie.getName(), cookie.getDomain(), cookie.getSameSite(),
                         cookie.isSecure(), cookie.getPath());
                 response.addHeader("Set-Cookie", cookie.toString());
-
-                // Snapshot the resolved credential claims keyed by session id, so a later SSO
-                // reuse (prompt=none, no VP re-presentation) can still mint a valid id_token —
-                // see ReuseSsoSessionWorkflowImpl / cacheStoreForSsoSessionCredential.
-                if (vpData.credentialJson() != null) {
-                    ssoSessionCredentialCache.add(sessionDescriptor.value(), vpData.credentialJson());
-                }
 
                 auditPort.publish(new SsoAuditEvent(
                         SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,

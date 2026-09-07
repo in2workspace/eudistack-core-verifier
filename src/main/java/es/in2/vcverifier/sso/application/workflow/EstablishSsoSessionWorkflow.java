@@ -9,6 +9,7 @@ import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ public class EstablishSsoSessionWorkflow {
     private final SsoMetricsPort metricsPort;
     private final HashingService hashingService;
     private final Clock clock;
+    private final SsoCredentialCipherPort credentialCipherPort;
 
 
     public EstablishSsoSessionWorkflow(
@@ -40,7 +42,8 @@ public class EstablishSsoSessionWorkflow {
             SsoAuditPort auditPort,
             SsoMetricsPort metricsPort,
             HashingService hashingService,
-            Clock clock
+            Clock clock,
+            SsoCredentialCipherPort credentialCipherPort
     ) {
         this.tenantSsoConfigPort = tenantSsoConfigPort;
         this.sessionRepositoryPort = sessionRepositoryPort;
@@ -48,6 +51,7 @@ public class EstablishSsoSessionWorkflow {
         this.metricsPort = metricsPort;
         this.hashingService = hashingService;
         this.clock = clock;
+        this.credentialCipherPort = credentialCipherPort;
     }
 
     public SsoSessionCookieDescriptor execute(SsoSessionCommand command) {
@@ -71,6 +75,8 @@ public class EstablishSsoSessionWorkflow {
                     holderHash,
                     ttl.absolute()
             );
+
+            attachCredentialSnapshot(session, command);
 
             sessionRepositoryPort.save(session);
 
@@ -113,6 +119,28 @@ public class EstablishSsoSessionWorkflow {
                 session.getId().getValue().toString(),
                 session.getExpiresAt()
         );
+    }
+
+    /**
+     * EUD-149: cifra las claims de la credencial (si las hay) y las adjunta a {@code session}
+     * antes de persistir, en la misma fila/transacción — sustituye la caché local no
+     * distribuida. Fail-open aquí (log + continuar sin snapshot): un fallo de cifrado no debe
+     * impedir el establecimiento de la sesión; una reutilización posterior simplemente
+     * encontrará {@code credentialSnapshotCiphertext == null} y caerá a login_required
+     * (ver ReuseSsoSessionWorkflowImpl), el mismo fail-closed que ya regía para un cache miss.
+     */
+    private void attachCredentialSnapshot(SsoSession session, SsoSessionCommand command) {
+        String credentialJson = command.credentialJson();
+        if (credentialJson == null || credentialJson.isBlank()) {
+            return;
+        }
+        try {
+            byte[] ciphertext = credentialCipherPort.encrypt(
+                    command.tenant(), session.getId().getValue(), credentialJson);
+            session.attachCredentialSnapshot(ciphertext);
+        } catch (Exception ex) {
+            log.warn("event=sso_credential_snapshot_encrypt_failed tenant={}", command.tenant(), ex);
+        }
     }
 
     private void validateTenantSsoConfiguration(SsoSessionCommand command) {

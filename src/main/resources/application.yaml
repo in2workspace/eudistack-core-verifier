@@ -169,6 +169,16 @@ verifier:
     local-files:
       sso-config-path: ${VERIFIER_BACKEND_SSO_CONFIG_PATH:}
 
+    sso:
+      # AES-256 key (base64, 32 raw bytes) encrypting the SSO credential snapshot persisted in
+      # sso_session.credential_snapshot (EUD-149 production-readiness — replaces the previous
+      # non-distributed in-memory cache). MUST be the SAME value across every Verifier replica
+      # sharing a tenant's database: a reuse landing on a different instance than the one that
+      # established the session needs to decrypt what that other instance encrypted.
+      # Leave empty to auto-generate an ephemeral per-process key (dev only, single instance —
+      # SSO reuse fails closed to login_required across restarts/replicas without a shared key).
+      credential-encryption-key: ${VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY:}
+
   dome:
     legacy-read-enabled: ${VERIFIER_DOME_LEGACY_READ_ENABLED:true}
     bumped-read-enabled: ${VERIFIER_DOME_BUMPED_READ_ENABLED:true}
