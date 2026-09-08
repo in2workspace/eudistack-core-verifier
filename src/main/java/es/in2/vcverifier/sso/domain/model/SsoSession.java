@@ -29,9 +29,11 @@ public class SsoSession {
     // EUD-149 production-readiness: snapshot cifrado (AES-256-GCM) de las claims de la
     // credencial verificada en el establecimiento, persistido en la misma fila/transacción de
     // sso_session (sustituye la caché local no distribuida CacheStore<JsonNode>, que fallaba en
-    // silencio cuando el establecimiento y la reutilización caían en réplicas distintas). Null si
-    // el establecimiento no tenía credencial que snapshotear, o si el cifrado falló (fail-open al
-    // establecer, fail-closed a login_required al reutilizar — ver ReuseSsoSessionWorkflowImpl).
+    // silencio cuando el establecimiento y la reutilización caían en réplicas distintas). W2
+    // (review): un fallo al cifrar ya NO deja esto en null con la sesión igualmente persistida —
+    // EstablishSsoSessionWorkflow.attachCredentialSnapshot falla cerrado (ni sesión ni cookie) si
+    // no puede producir un snapshot. @ToString.Exclude: nunca volcar ciphertext crudo a logs.
+    @ToString.Exclude
     private byte[] credentialSnapshotCiphertext;
 
     private SsoSession(
