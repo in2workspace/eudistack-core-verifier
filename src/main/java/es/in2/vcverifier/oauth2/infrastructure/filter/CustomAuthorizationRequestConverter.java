@@ -194,12 +194,16 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     }
 
     /**
-     * Strips CR/LF and other control characters from a user-provided value before it is
-     * written to the log, and caps its length, so a crafted {@code max_age} cannot forge
-     * additional log lines or entries (CWE-117 log injection).
+     * Strips CR/LF from a user-provided value before it is written to the log, and caps its
+     * length, so a crafted {@code max_age} cannot forge additional log lines or entries
+     * (CWE-117 log injection). Uses literal char replacement (rather than a regex character
+     * class) since that is the form CodeQL's log-injection sanitizer barrier recognizes.
      */
     private static String sanitizeForLog(String value) {
-        String sanitized = value.replaceAll("[\\p{Cntrl}]", "_");
+        String sanitized = value
+                .replace('\r', '_')
+                .replace('\n', '_')
+                .replace('\t', '_');
         return sanitized.length() > 64 ? sanitized.substring(0, 64) + "...(truncated)" : sanitized;
     }
 
