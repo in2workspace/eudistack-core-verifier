@@ -4,6 +4,7 @@ import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -99,8 +100,18 @@ public final class TenantSsoPolicy {
 
         // FR-21/AC-09: autenticación fresca forzada — sesión vigente pero más antigua que lo
         // que el cliente exige explícitamente vía max_age.
-        if (maxAgeSeconds != null && now.isAfter(sessionEstablishedAt.plusSeconds(maxAgeSeconds))) {
-            return REJECT_MAX_AGE;
+        // W3 (review): plusSeconds overflows (ArithmeticException/DateTimeException) for a
+        // pathological maxAgeSeconds. The caller (CustomAuthorizationRequestConverter) already
+        // caps it, but this is pure domain logic reachable from any future caller — fail closed
+        // to "force fresh auth" rather than let an unchecked overflow surface as a 500.
+        if (maxAgeSeconds != null) {
+            try {
+                if (now.isAfter(sessionEstablishedAt.plusSeconds(maxAgeSeconds))) {
+                    return REJECT_MAX_AGE;
+                }
+            } catch (ArithmeticException | DateTimeException overflow) {
+                return REJECT_MAX_AGE;
+            }
         }
 
         // AD-2 condición (3): cliente en el catálogo SSO del tenant

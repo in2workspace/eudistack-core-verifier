@@ -218,10 +218,11 @@ class SsoSessionClientTrackingIT {
 
         EstablishSsoSessionWorkflow workflow = new EstablishSsoSessionWorkflow(
                 tenantSsoConfigPort, repository, auditPort, metricsPort, hashingService, Clock.systemUTC(),
-                new AesGcmSsoCredentialCipherAdapter(fixedKeyBackendConfig()));
+                new AesGcmSsoCredentialCipherAdapter(fixedKeyBackendConfig(), mock(TenantSsoConfigPort.class)));
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor =
-                workflow.execute(new SsoSessionCommand(tenant, "sub-value", "initiator-client", "corr-1"));
+                workflow.execute(new SsoSessionCommand(tenant, "sub-value", "initiator-client", "corr-1",
+                        "{\"sub\":\"sub-value\"}"));
 
         assertThat(descriptor).isNotNull();
 
@@ -258,7 +259,7 @@ class SsoSessionClientTrackingIT {
         // encrypted alongside the row, not cached in memory) — seed it directly since this
         // test bypasses the real establish flow.
         AesGcmSsoCredentialCipherAdapter credentialCipherPort =
-                new AesGcmSsoCredentialCipherAdapter(fixedKeyBackendConfig());
+                new AesGcmSsoCredentialCipherAdapter(fixedKeyBackendConfig(), mock(TenantSsoConfigPort.class));
         JsonNode fakeCredential = new ObjectMapper().createObjectNode().put("sub", "holder-hash-reuse");
         session.attachCredentialSnapshot(credentialCipherPort.encrypt(
                 tenant, session.getId().getValue(), fakeCredential.toString()));

@@ -227,6 +227,25 @@ class TenantSsoPolicyTest {
         assertEquals(ReuseDecision.REJECT_SESSION, result);
     }
 
+    // ─── W3 (review): maxAgeSeconds overflowing Instant.plusSeconds must not crash ──────────
+
+    @Test
+    void evaluate_shouldReturnREJECT_MAX_AGE_notThrow_whenMaxAgeSecondsOverflowsInstant() {
+        // Defense in depth: the real caller (CustomAuthorizationRequestConverter) already caps
+        // max_age, but this pure domain method must not blow up with an ArithmeticException
+        // (surfacing as a 500) if some other/future caller ever passes a pathological value.
+        ReuseDecision result = policy.evaluate(
+                "tenant-a", "tenant-a",
+                SESSION_VALID,
+                true,
+                CATALOG_WITH_A,
+                "client-a",
+                Long.MAX_VALUE
+        );
+
+        assertEquals(ReuseDecision.REJECT_MAX_AGE, result);
+    }
+
     // ─── NFR-S-550-01: catalog null → excepción explícita ────────────────────
 
     @Test

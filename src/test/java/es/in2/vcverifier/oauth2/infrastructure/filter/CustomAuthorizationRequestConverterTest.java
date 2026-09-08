@@ -943,6 +943,60 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
+    void convert_standardRequestWithMaxAgeAboveMaxTtlCeiling_shouldIgnoreItAndLogWarning() {
+        // W3 (review): max_age=Long.MAX_VALUE used to reach TenantSsoPolicy.evaluate and
+        // overflow Instant.plusSeconds (ArithmeticException -> 500 instead of login_required).
+        // It must now be treated as invalid at parse time, same as a negative value.
+        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            HttpServletRequest request = mock(HttpServletRequest.class);
+            String clientId = "test-client-id";
+            String state = "test-state";
+            String scope = "learcredential";
+            String redirectUri = "https://client.example.com/callback";
+            String clientName = "Test Client";
+            String clientNonce = "test-nonce";
+            stubPkceParamsNull(request);
+
+            when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+            when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state&max_age=9223372036854775807");
+            when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+            when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+            when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+            when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+            when(request.getParameter(NONCE)).thenReturn(clientNonce);
+            when(request.getParameter(REQUEST_URI)).thenReturn(null);
+            when(request.getParameter("request")).thenReturn(null);
+            when(request.getParameter("max_age")).thenReturn(String.valueOf(Long.MAX_VALUE));
+
+            RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                    .clientId(clientId)
+                    .clientName(clientName)
+                    .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                    .redirectUri(redirectUri)
+                    .build();
+
+            when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+            when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
+                    "signed-jwt", "openid4vp://...", "nonce-max-age-overflow", clientName);
+            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
+
+            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+
+            assertTrue(appender.list.stream().anyMatch(event ->
+                    event.getFormattedMessage().equals(
+                            "event=sso_max_age_invalid reason=exceeds_max_ttl value=9223372036854775807")));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
     void convert_standardRequestWithNonNumericMaxAgeContainingCrlf_shouldIgnoreItAndLogSanitizedTruncatedWarning() {
         Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();

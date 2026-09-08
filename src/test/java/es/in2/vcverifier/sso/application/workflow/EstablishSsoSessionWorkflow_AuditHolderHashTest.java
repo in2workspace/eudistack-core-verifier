@@ -63,7 +63,8 @@ class EstablishSsoSessionWorkflow_AuditHolderHashTest {
                 configPort, sessionRepositoryPort, auditPort, metricsPort,
                 hashingService, Clock.systemUTC(), credentialCipherPort);
 
-        SsoSessionCommand command = new SsoSessionCommand(TENANT, RAW_SUB, "client-a", "corr-1");
+        SsoSessionCommand command = new SsoSessionCommand(TENANT, RAW_SUB, "client-a", "corr-1",
+                "{\"sub\":\"" + RAW_SUB + "\"}");
 
         workflow.execute(command);
 

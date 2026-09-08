@@ -4,6 +4,7 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,8 +33,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * EUD-149: cubre {@code attachCredentialSnapshot} — el cifrado (fail-open) de las claims de la
- * credencial verificada antes de persistir la sesión SSO.
+ * EUD-149/W2 (review): cubre {@code attachCredentialSnapshot} — el cifrado de las claims de la
+ * credencial verificada antes de persistir la sesión SSO, y su contrato fail-closed (ES-02):
+ * sin un snapshot cifrado no hay sesión ni cookie, exactamente igual que un fallo de persistencia.
  */
 class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
 
@@ -72,17 +75,22 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
     }
 
     @Test
-    void execute_blankCredentialJson_skipsEncryptionAndSavesSessionWithoutSnapshot() {
+    void execute_blankCredentialJson_failsClosed_noSessionNoCookie() {
+        // W2 (review): no production caller ever reaches here without a verified credential —
+        // treat its absence as an anomaly (same as a persistence failure), not a legitimate
+        // "session without SSO reuse support" flow.
         SsoSessionCommand command = new SsoSessionCommand(TENANT, SUB, "client-a", "corr-1", "   ");
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor result = workflow.execute(command);
 
-        assertNotNull(result);
+        assertNull(result, "Missing credential snapshot must fail closed: no session, no cookie");
         verify(credentialCipherPort, never()).encrypt(anyString(), anyString(), anyString());
+        verify(sessionRepositoryPort, never()).save(any());
 
-        ArgumentCaptor<SsoSession> sessionCaptor = ArgumentCaptor.forClass(SsoSession.class);
-        verify(sessionRepositoryPort).save(sessionCaptor.capture());
-        assertNull(sessionCaptor.getValue().getCredentialSnapshotCiphertext());
+        ArgumentCaptor<SsoAuditEvent> eventCaptor = ArgumentCaptor.forClass(SsoAuditEvent.class);
+        verify(auditPort).publish(eventCaptor.capture());
+        assertEquals(SsoAuditEvent.EventType.SSO_PERSIST_ERROR, eventCaptor.getValue().getEventType());
+        assertEquals(HASHED_SUB, eventCaptor.getValue().getHolderHash());
     }
 
     @Test
@@ -103,7 +111,10 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
     }
 
     @Test
-    void execute_encryptionThrows_failsOpenAndSavesSessionWithoutSnapshot() {
+    void execute_encryptionThrows_failsClosed_noSessionNoCookie() {
+        // W2 (review): a cipher failure must be as fail-closed as a DB persistence failure —
+        // never persist a session + issue a cookie the Holder believes enables SSO when the
+        // next silent reuse attempt is guaranteed to miss on CREDENTIAL_SNAPSHOT_MISSING.
         when(credentialCipherPort.encrypt(anyString(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("boom"));
 
@@ -111,10 +122,11 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor result = workflow.execute(command);
 
-        assertNotNull(result, "A credential-snapshot encryption failure must not block session establishment");
+        assertNull(result, "A credential-snapshot encryption failure must fail closed, not establish a session");
+        verify(sessionRepositoryPort, never()).save(any());
 
-        ArgumentCaptor<SsoSession> sessionCaptor = ArgumentCaptor.forClass(SsoSession.class);
-        verify(sessionRepositoryPort).save(sessionCaptor.capture());
-        assertNull(sessionCaptor.getValue().getCredentialSnapshotCiphertext());
+        ArgumentCaptor<SsoAuditEvent> eventCaptor = ArgumentCaptor.forClass(SsoAuditEvent.class);
+        verify(auditPort).publish(eventCaptor.capture());
+        assertEquals(SsoAuditEvent.EventType.SSO_PERSIST_ERROR, eventCaptor.getValue().getEventType());
     }
 }

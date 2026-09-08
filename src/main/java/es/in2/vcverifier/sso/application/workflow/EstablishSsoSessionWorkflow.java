@@ -86,7 +86,7 @@ public class EstablishSsoSessionWorkflow {
 
         } catch (Exception ex) {
 
-            log.error("Error persisting SSO session for tenant={}", command.tenant(), ex);
+            log.error("Failed to establish SSO session for tenant={}", command.tenant(), ex);
 
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_PERSIST_ERROR,
@@ -125,25 +125,28 @@ public class EstablishSsoSessionWorkflow {
     }
 
     /**
-     * EUD-149: cifra las claims de la credencial (si las hay) y las adjunta a {@code session}
+     * EUD-149/W2 (review): cifra las claims de la credencial y las adjunta a {@code session}
      * antes de persistir, en la misma fila/transacción — sustituye la caché local no
-     * distribuida. Fail-open aquí (log + continuar sin snapshot): un fallo de cifrado no debe
-     * impedir el establecimiento de la sesión; una reutilización posterior simplemente
-     * encontrará {@code credentialSnapshotCiphertext == null} y caerá a login_required
-     * (ver ReuseSsoSessionWorkflowImpl), el mismo fail-closed que ya regía para un cache miss.
+     * distribuida. Fail-closed (ES-02): ninguna llamada de producción llega aquí sin una
+     * credencial verificada — {@code Oid4vpController.buildSsoAuthentication} siempre la pone
+     * tras una VP válida — así que su ausencia, igual que un fallo de cifrado, es una condición
+     * anómala, no un flujo legítimo. Antes se tragaba en silencio (log + continuar sin
+     * snapshot): la sesión quedaba persistida y la cookie se emitía igualmente, así que el
+     * Holder creía tener SSO activo cuando el primer {@code prompt=none} iba a caer siempre en
+     * {@code login_required} por snapshot ausente — opaco tanto para el Holder como para
+     * observabilidad. Lanzar aquí hace que el {@code catch} de {@link #execute} trate esto
+     * exactamente como un fallo de persistencia: publica {@code SSO_PERSIST_ERROR} y no
+     * establece sesión ni cookie.
      */
     private void attachCredentialSnapshot(SsoSession session, SsoSessionCommand command) {
         String credentialJson = command.credentialJson();
         if (credentialJson == null || credentialJson.isBlank()) {
-            return;
+            throw new IllegalStateException(
+                    "Cannot establish an SSO session without verified credential claims to snapshot");
         }
-        try {
-            byte[] ciphertext = credentialCipherPort.encrypt(
-                    command.tenant(), session.getId().getValue(), credentialJson);
-            session.attachCredentialSnapshot(ciphertext);
-        } catch (Exception ex) {
-            log.warn("event=sso_credential_snapshot_encrypt_failed tenant={}", command.tenant(), ex);
-        }
+        byte[] ciphertext = credentialCipherPort.encrypt(
+                command.tenant(), session.getId().getValue(), credentialJson);
+        session.attachCredentialSnapshot(ciphertext);
     }
 
     private void validateTenantSsoConfiguration(SsoSessionCommand command) {

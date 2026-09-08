@@ -119,7 +119,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
 
         // ── "Instancia A" — establece la sesión ──────────────────────────────
         SsoSessionJdbcRepository repositoryOnA = new SsoSessionJdbcRepository(dataSource, Clock.systemUTC());
-        SsoCredentialCipherPort cipherOnA = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(sharedKey));
+        SsoCredentialCipherPort cipherOnA = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(sharedKey), mock(TenantSsoConfigPort.class));
         EstablishSsoSessionWorkflow establishWorkflow = buildEstablishWorkflow(repositoryOnA, cipherOnA);
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor = establishWorkflow.execute(
@@ -130,7 +130,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
 
         // ── "Instancia B" — objetos completamente nuevos, misma clave compartida ────────────
         SsoSessionJdbcRepository repositoryOnB = new SsoSessionJdbcRepository(dataSource, Clock.systemUTC());
-        SsoCredentialCipherPort cipherOnB = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(sharedKey));
+        SsoCredentialCipherPort cipherOnB = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(sharedKey), mock(TenantSsoConfigPort.class));
         ReuseSsoSessionWorkflow.Result result = reuseOn(repositoryOnB, cipherOnB, descriptor.value());
 
         assertThat(result.status()).isEqualTo(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
@@ -146,7 +146,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
     @Test
     void reuseOnDifferentInstance_withDifferentKey_failsClosedToLoginRequired() {
         SsoSessionJdbcRepository repositoryOnA = new SsoSessionJdbcRepository(dataSource, Clock.systemUTC());
-        SsoCredentialCipherPort cipherOnA = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(randomBase64Key()));
+        SsoCredentialCipherPort cipherOnA = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(randomBase64Key()), mock(TenantSsoConfigPort.class));
         EstablishSsoSessionWorkflow establishWorkflow = buildEstablishWorkflow(repositoryOnA, cipherOnA);
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor = establishWorkflow.execute(
@@ -156,7 +156,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
         assertThat(descriptor).isNotNull();
 
         SsoSessionJdbcRepository repositoryOnB = new SsoSessionJdbcRepository(dataSource, Clock.systemUTC());
-        SsoCredentialCipherPort cipherOnB = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(randomBase64Key()));
+        SsoCredentialCipherPort cipherOnB = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(randomBase64Key()), mock(TenantSsoConfigPort.class));
         ReuseSsoSessionWorkflow.Result result = reuseOn(repositoryOnB, cipherOnB, descriptor.value());
 
         assertThat(result.status()).isEqualTo(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);

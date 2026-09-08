@@ -7,6 +7,7 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
@@ -184,6 +185,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             long maxAge = Long.parseLong(rawMaxAge.trim());
             if (maxAge < 0) {
                 log.warn("event=sso_max_age_invalid reason=negative value={}", sanitizeForLog(rawMaxAge));
+                return null;
+            }
+            // W3 (review): an unbounded max_age (e.g. Long.MAX_VALUE) overflows
+            // Instant.plusSeconds(...) in TenantSsoPolicy — ArithmeticException there would
+            // surface as a 500 instead of login_required. Cap at the system's own max session
+            // TTL: no session can ever be older than that anyway, so anything beyond it can
+            // never actually force freshness and is treated the same as an absent max_age.
+            if (maxAge > SsoTtlRange.MAX_ABSOLUTE.toSeconds()) {
+                log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitizeForLog(rawMaxAge));
                 return null;
             }
             return maxAge;
