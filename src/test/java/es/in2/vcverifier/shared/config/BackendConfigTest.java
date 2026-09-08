@@ -136,6 +136,29 @@ class BackendConfigTest {
         assertThat(backendConfig.getAllUrls()).containsExactly("https://raw.githubusercontent.com");
     }
 
+    @Test
+    void getSsoCredentialEncryptionKey_ssoConfigured_returnsKey() {
+        BackendProperties properties = new BackendProperties(
+                "https://verifier.example.com",
+                List.of(),
+                null, null, null, null, null, null, null,
+                new BackendProperties.Sso("base64-encoded-key"));
+        BackendConfig config = new BackendConfig(properties);
+
+        assertThat(config.getSsoCredentialEncryptionKey()).isEqualTo("base64-encoded-key");
+    }
+
+    @Test
+    void getSsoCredentialEncryptionKey_ssoNotConfigured_returnsNull() {
+        BackendProperties properties = new BackendProperties(
+                "https://verifier.example.com",
+                List.of(),
+                null, null, null, null, null, null, null, null);
+        BackendConfig config = new BackendConfig(properties);
+
+        assertThat(config.getSsoCredentialEncryptionKey()).isNull();
+    }
+
     @Configuration
     @EnableConfigurationProperties(BackendProperties.class)
     static class TestConfig {

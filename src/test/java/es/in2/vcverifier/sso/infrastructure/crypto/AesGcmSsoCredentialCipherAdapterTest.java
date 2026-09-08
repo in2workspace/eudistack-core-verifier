@@ -95,6 +95,15 @@ class AesGcmSsoCredentialCipherAdapterTest {
     }
 
     @Test
+    void constructor_withNullKey_generatesEphemeralKey_stillRoundTrips() {
+        AesGcmSsoCredentialCipherAdapter cipher = new AesGcmSsoCredentialCipherAdapter(backendConfigWithKey(null));
+
+        byte[] ciphertext = cipher.encrypt(TENANT, SESSION_ID, "{\"sub\":\"holder-1\"}");
+
+        assertThat(cipher.decrypt(TENANT, SESSION_ID, ciphertext)).contains("{\"sub\":\"holder-1\"}");
+    }
+
+    @Test
     void constructor_withWrongLengthKey_throwsImmediately() {
         String tooShort = Base64.getEncoder().encodeToString(new byte[16]);
 
