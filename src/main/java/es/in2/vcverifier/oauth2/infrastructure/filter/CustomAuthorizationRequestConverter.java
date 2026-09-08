@@ -183,14 +183,24 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         try {
             long maxAge = Long.parseLong(rawMaxAge.trim());
             if (maxAge < 0) {
-                log.warn("event=sso_max_age_invalid reason=negative value={}", rawMaxAge);
+                log.warn("event=sso_max_age_invalid reason=negative value={}", sanitizeForLog(rawMaxAge));
                 return null;
             }
             return maxAge;
         } catch (NumberFormatException e) {
-            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", rawMaxAge);
+            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", sanitizeForLog(rawMaxAge));
             return null;
         }
+    }
+
+    /**
+     * Strips CR/LF and other control characters from a user-provided value before it is
+     * written to the log, and caps its length, so a crafted {@code max_age} cannot forge
+     * additional log lines or entries (CWE-117 log injection).
+     */
+    private static String sanitizeForLog(String value) {
+        String sanitized = value.replaceAll("[\\p{Cntrl}]", "_");
+        return sanitized.length() > 64 ? sanitized.substring(0, 64) + "...(truncated)" : sanitized;
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {
