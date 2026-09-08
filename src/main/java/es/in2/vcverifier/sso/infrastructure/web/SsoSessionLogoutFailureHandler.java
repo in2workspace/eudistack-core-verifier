@@ -93,7 +93,11 @@ public class SsoSessionLogoutFailureHandler implements AuthenticationFailureHand
                 return null;
             }
             String loginPageUri = registeredClient.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_PAGE_URI);
-            if (loginPageUri == null || loginPageUri.isBlank()) {
+            // ClientLoaderConfig enforces HTTPS at registration time, so this is a defensive
+            // check, not the primary one: UriComponentsBuilder.fromHttpUrl doesn't reject a
+            // schemeless string, it happily builds one, which would turn into a broken
+            // sendRedirect() below instead of falling back to the standard error handler.
+            if (loginPageUri == null || !loginPageUri.startsWith("https://")) {
                 return null;
             }
             return UriComponentsBuilder.fromHttpUrl(loginPageUri)
