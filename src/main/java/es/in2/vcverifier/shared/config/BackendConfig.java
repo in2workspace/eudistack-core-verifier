@@ -80,6 +80,10 @@ public class BackendConfig {
         return properties.identity() != null ? properties.identity().certificate() : null;
     }
 
+    public String getSsoCredentialEncryptionKey() {
+        return properties.sso() != null ? properties.sso().credentialEncryptionKey() : null;
+    }
+
     public boolean hasIdentityConfigured() {
         return properties.identity() != null
                 && properties.identity().privateKey() != null

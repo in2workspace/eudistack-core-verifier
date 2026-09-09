@@ -159,8 +159,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
         String insertSql = """
             INSERT INTO sso_session
-             (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+             (id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """;
 
         try {
@@ -202,6 +202,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         ps.setObject(5, session.getExpiresAt().atOffset(ZoneOffset.UTC));
         ps.setObject(6, session.getLastUsedAt().atOffset(ZoneOffset.UTC));
         ps.setString(7, session.getState().name());
+        ps.setBytes(8, session.getCredentialSnapshotCiphertext());
     }
 
     @Override
@@ -210,7 +211,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-        SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state
+        SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot
         FROM sso_session
         WHERE tenant = ?
           AND holder_hash = ?
@@ -247,7 +248,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state
+            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot
             FROM sso_session
             WHERE id = ?
               AND tenant = ?
@@ -283,7 +284,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state
+            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot
             FROM sso_session
             WHERE id = ?
             LIMIT 1
@@ -572,7 +573,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         OffsetDateTime lastUsedAtDb = rs.getObject("last_used_at", OffsetDateTime.class);
         Instant lastUsedAt = (lastUsedAtDb != null) ? lastUsedAtDb.toInstant() : established;
 
-        return SsoSession.reconstitute(
+        SsoSession session = SsoSession.reconstitute(
                 SsoSessionId.of(id),
                 tenant,
                 holderHash,
@@ -581,5 +582,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 lastUsedAt,
                 SsoSessionState.valueOf(state)
         );
+        session.attachCredentialSnapshot(rs.getBytes("credential_snapshot"));
+        return session;
     }
 }

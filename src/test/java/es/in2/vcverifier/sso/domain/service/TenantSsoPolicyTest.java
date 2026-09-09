@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * AC-02  REJECT_CATALOG cuando el cliente no figura en el catálogo SSO (interaction_required).
  * AC-03  REJECT_CATALOG cuando el catálogo está vacío — fail-closed.
  * AC-05  REJECT_SESSION cuando el cliente no está registrado en el servidor OAuth (login_required).
+ * AC-09  REJECT_MAX_AGE cuando el cliente exige explícitamente autenticación fresca vía
+ *        max_age y la sesión, aunque vigente, es más antigua que lo solicitado.
  * EC-01  REJECT_SESSION cuando la sesión ha expirado, aunque el cliente esté en catálogo (login_required).
  * EC-03  CROSS_TENANT cuando el tenant de la sesión y el de la solicitud difieren.
  * NFR-S-550-01  NullPointerException al pasar catálogo null — el contrato no admite null.
@@ -161,6 +163,87 @@ class TenantSsoPolicyTest {
         );
 
         assertEquals(ReuseDecision.REJECT_UNREGISTERED_CLIENT, result);
+    }
+
+    // ─── AC-09: max_age fuerza autenticación fresca pese a sesión vigente ────
+
+    @Test
+    void evaluate_shouldReturnREJECT_MAX_AGE_whenSessionOlderThanRequestedMaxAge() {
+        // Sesión establecida 60s antes de NOW, pero el cliente pide max_age=30s
+        ReuseDecision result = policy.evaluate(
+                "tenant-a", "tenant-a",
+                SESSION_VALID,
+                true,
+                CATALOG_WITH_A,
+                "client-a",
+                30L
+        );
+
+        assertEquals(ReuseDecision.REJECT_MAX_AGE, result);
+    }
+
+    @Test
+    void evaluate_shouldReturnALLOWED_whenSessionYoungerThanRequestedMaxAge() {
+        // Sesión establecida 60s antes de NOW, cliente admite hasta 120s de antigüedad
+        ReuseDecision result = policy.evaluate(
+                "tenant-a", "tenant-a",
+                SESSION_VALID,
+                true,
+                CATALOG_WITH_A,
+                "client-a",
+                120L
+        );
+
+        assertEquals(ReuseDecision.ALLOWED, result);
+    }
+
+    @Test
+    void evaluate_shouldReturnALLOWED_whenMaxAgeIsNull_sameAsSixParamOverload() {
+        // maxAgeSeconds null → comportamiento idéntico al overload de 6 parámetros (AC-01)
+        ReuseDecision result = policy.evaluate(
+                "tenant-a", "tenant-a",
+                SESSION_VALID,
+                true,
+                CATALOG_WITH_A,
+                "client-a",
+                null
+        );
+
+        assertEquals(ReuseDecision.ALLOWED, result);
+    }
+
+    @Test
+    void evaluate_shouldReturnREJECT_SESSION_notREJECT_MAX_AGE_whenAbsoluteTtlAlreadyExpired() {
+        // AD-2: la condición (2) — TTL absoluto — se evalúa antes que max_age
+        ReuseDecision result = policy.evaluate(
+                "tenant-a", "tenant-a",
+                SESSION_EXPIRED,
+                true,
+                CATALOG_WITH_A,
+                "client-a",
+                30L
+        );
+
+        assertEquals(ReuseDecision.REJECT_SESSION, result);
+    }
+
+    // ─── W3 (review): maxAgeSeconds overflowing Instant.plusSeconds must not crash ──────────
+
+    @Test
+    void evaluate_shouldReturnREJECT_MAX_AGE_notThrow_whenMaxAgeSecondsOverflowsInstant() {
+        // Defense in depth: the real caller (CustomAuthorizationRequestConverter) already caps
+        // max_age, but this pure domain method must not blow up with an ArithmeticException
+        // (surfacing as a 500) if some other/future caller ever passes a pathological value.
+        ReuseDecision result = policy.evaluate(
+                "tenant-a", "tenant-a",
+                SESSION_VALID,
+                true,
+                CATALOG_WITH_A,
+                "client-a",
+                Long.MAX_VALUE
+        );
+
+        assertEquals(ReuseDecision.REJECT_MAX_AGE, result);
     }
 
     // ─── NFR-S-550-01: catalog null → excepción explícita ────────────────────

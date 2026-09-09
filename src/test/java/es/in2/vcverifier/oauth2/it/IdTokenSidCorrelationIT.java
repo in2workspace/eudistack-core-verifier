@@ -82,6 +82,7 @@ class IdTokenSidCorrelationIT {
 
         try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
             // Mirrors V3__create_sso_session.sql + V5__add_last_used_at_sso_session.sql
+            // + V8__add_credential_snapshot_sso_session.sql
             s.execute("""
                 CREATE TABLE IF NOT EXISTS sso_session (
                     id             TEXT        PRIMARY KEY,
@@ -90,7 +91,8 @@ class IdTokenSidCorrelationIT {
                     established_at TIMESTAMPTZ NOT NULL,
                     expires_at     TIMESTAMPTZ NOT NULL,
                     last_used_at   TIMESTAMPTZ NOT NULL,
-                    state          VARCHAR(32) NOT NULL
+                    state          VARCHAR(32) NOT NULL,
+                    credential_snapshot BYTEA
                 )
                 """);
         }

@@ -65,7 +65,7 @@ class SsoAuditLegacyTenantIT {
         when(configPort.getByTenant("legacy-tenant")).thenReturn(Optional.of(legacy));
 
         ReuseSsoSessionWorkflow.Result result =
-                reuseWorkflow.reuse("legacy-tenant", "cookie-value", null, "legacy-client");
+                reuseWorkflow.reuse("legacy-tenant", "cookie-value", null, "legacy-client", "corr-legacy-tenant");
 
         assertThat(result.status()).isEqualTo(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
 
