@@ -190,6 +190,10 @@ jobs:
       # dev-tools/verifier/ (see its compose.yaml); vendored read-only here at
       # dev-tools/local-config/ for the same reason as zap-baseline.conf (no
       # cross-repo read token).
+      #
+      # SSO_CREDENTIAL_ENCRYPTION_KEY: sso-config.yaml above has every tenant at
+      # ssoEnabled=true, so AesGcmSsoCredentialCipherAdapter refuses to start
+      # without this (EUD-149) — same dev key as eudistack-platform-dev's compose.yaml.
       - name: Run container
         run: |
           docker run -d --name verifier-service \
@@ -205,6 +209,7 @@ jobs:
             -e VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH=/etc/eudistack/verifier/trusted-issuers.yaml \
             -e VERIFIER_BACKEND_LOCALFILES_SSOCONFIGPATH=/etc/eudistack/verifier/sso-config.yaml \
             -e VERIFIER_BACKEND_LOCALFILES_DCQLPATH=/etc/eudistack/verifier/dcql-profiles.yaml \
+            -e VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY=3Cm+63BqBWB7Y/HTa47aD0ZZvsPRIIyxUiGJubKQJR4= \
             -v "$(pwd)/dev-tools/local-config:/etc/eudistack/verifier:ro" \
             eudistack-core-verifier:pr
 
