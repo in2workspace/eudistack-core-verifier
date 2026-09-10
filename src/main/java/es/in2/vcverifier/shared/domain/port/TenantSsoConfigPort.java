@@ -23,4 +23,12 @@ public interface TenantSsoConfigPort {
      * o no tiene clientes configurados.
      */
     TenantSsoCatalog resolveEligibleClients(String tenant);
+
+    /**
+     * W1 (review): true si al menos un tenant configurado tiene {@code ssoEnabled=true}.
+     * Usado por {@code AesGcmSsoCredentialCipherAdapter} para negarse a arrancar con una clave
+     * de cifrado efímera cuando el SSO está realmente activo en algún tenant — una clave por
+     * proceso rompería la reutilización en cuanto haya más de una réplica, de forma opaca.
+     */
+    boolean hasAnyTenantSsoEnabled();
 }

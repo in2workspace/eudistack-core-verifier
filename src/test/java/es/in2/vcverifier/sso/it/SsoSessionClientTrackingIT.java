@@ -3,7 +3,7 @@ package es.in2.vcverifier.sso.it;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
-import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
@@ -17,6 +17,7 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
+import es.in2.vcverifier.sso.infrastructure.crypto.AesGcmSsoCredentialCipherAdapter;
 import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
@@ -88,7 +89,8 @@ class SsoSessionClientTrackingIT {
                     established_at TIMESTAMPTZ NOT NULL,
                     expires_at     TIMESTAMPTZ NOT NULL,
                     last_used_at   TIMESTAMPTZ NOT NULL,
-                    state          VARCHAR(32) NOT NULL
+                    state          VARCHAR(32) NOT NULL,
+                    credential_snapshot BYTEA
                 )
                 """);
             // Mirrors V6__create_sso_session_client.sql
@@ -120,6 +122,21 @@ class SsoSessionClientTrackingIT {
 
     private SsoSessionJdbcRepository newRepository() {
         return new SsoSessionJdbcRepository(dataSource, Clock.systemUTC());
+    }
+
+    /**
+     * A fixed 32-byte AES key shared by every {@link AesGcmSsoCredentialCipherAdapter} built in
+     * this test, standing in for {@code VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY} configured
+     * identically across replicas — what makes an encrypted snapshot written by one adapter
+     * instance decryptable by another.
+     */
+    private static BackendConfig fixedKeyBackendConfig() {
+        byte[] key32Bytes = new byte[32];
+        java.util.Arrays.fill(key32Bytes, (byte) 0x42);
+        BackendConfig backendConfig = mock(BackendConfig.class);
+        when(backendConfig.getSsoCredentialEncryptionKey())
+                .thenReturn(java.util.Base64.getEncoder().encodeToString(key32Bytes));
+        return backendConfig;
     }
 
     // =========================================================
@@ -200,10 +217,12 @@ class SsoSessionClientTrackingIT {
         when(hashingService.sha256(anyString())).thenReturn("holder-hash-established");
 
         EstablishSsoSessionWorkflow workflow = new EstablishSsoSessionWorkflow(
-                tenantSsoConfigPort, repository, auditPort, metricsPort, hashingService, Clock.systemUTC());
+                tenantSsoConfigPort, repository, auditPort, metricsPort, hashingService, Clock.systemUTC(),
+                new AesGcmSsoCredentialCipherAdapter(fixedKeyBackendConfig(), mock(TenantSsoConfigPort.class)));
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor =
-                workflow.execute(new SsoSessionCommand(tenant, "sub-value", "initiator-client", "corr-1"));
+                workflow.execute(new SsoSessionCommand(tenant, "sub-value", "initiator-client", "corr-1",
+                        "{\"sub\":\"sub-value\"}"));
 
         assertThat(descriptor).isNotNull();
 
@@ -235,6 +254,16 @@ class SsoSessionClientTrackingIT {
                 SsoSessionId.generate(), tenant, "holder-hash-reuse",
                 establishedAt, now.plus(Duration.ofHours(1)), lastUsedAt,
                 es.in2.vcverifier.sso.domain.model.SsoSessionState.ACTIVE);
+
+        // ALLOWED requires a credential snapshot from establishment (EUD-149: persisted
+        // encrypted alongside the row, not cached in memory) — seed it directly since this
+        // test bypasses the real establish flow.
+        AesGcmSsoCredentialCipherAdapter credentialCipherPort =
+                new AesGcmSsoCredentialCipherAdapter(fixedKeyBackendConfig(), mock(TenantSsoConfigPort.class));
+        JsonNode fakeCredential = new ObjectMapper().createObjectNode().put("sub", "holder-hash-reuse");
+        session.attachCredentialSnapshot(credentialCipherPort.encrypt(
+                tenant, session.getId().getValue(), fakeCredential.toString()));
+
         repository.save(session);
 
         TenantSsoConfigPort configPort = mock(TenantSsoConfigPort.class);
@@ -256,18 +285,13 @@ class SsoSessionClientTrackingIT {
         when(registeredClient.getRedirectUris()).thenReturn(Set.of(redirectUri));
         when(registeredClientRepository.findByClientId(calleeClientId)).thenReturn(registeredClient);
 
-        // ALLOWED now requires a credential snapshot from establishment (US-06 reuse-completion
-        // fix) — seed it directly since this test bypasses the real establish flow.
-        CacheStore<JsonNode> ssoSessionCredentialCache = new CacheStore<>(1, TimeUnit.HOURS);
-        JsonNode fakeCredential = new ObjectMapper().createObjectNode().put("sub", "holder-hash-reuse");
-        ssoSessionCredentialCache.add(session.getId().getValue(), fakeCredential);
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
                 anyString(), anyString(), any(), anyString(), any(), any(), any(), any()))
                 .thenReturn(redirectUri + "?code=fake-code&state=xyz");
 
         ReuseSsoSessionWorkflowImpl workflow = new ReuseSsoSessionWorkflowImpl(
                 configPort, repository, Clock.systemUTC(), auditPort, metricsPort, registeredClientRepository,
-                authorizationResponseProcessorService, ssoSessionCredentialCache);
+                authorizationResponseProcessorService, credentialCipherPort, new ObjectMapper());
 
         AuthorizationContext ctx = AuthorizationContext.builder()
                 .redirectUri(redirectUri)
@@ -276,7 +300,7 @@ class SsoSessionClientTrackingIT {
                 .build();
 
         ReuseSsoSessionWorkflow.Result result = workflow.reuse(
-                tenant, session.getId().getValue(), ctx, calleeClientId);
+                tenant, session.getId().getValue(), ctx, calleeClientId, "corr-" + session.getId().getValue());
 
         assertThat(result.status()).isEqualTo(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
 

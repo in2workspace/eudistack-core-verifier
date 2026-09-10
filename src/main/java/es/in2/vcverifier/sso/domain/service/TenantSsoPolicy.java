@@ -4,10 +4,12 @@ import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.Objects;
 
 import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_CATALOG;
+import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_MAX_AGE;
 import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_SESSION;
 import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_UNREGISTERED_CLIENT;
 
@@ -53,6 +55,28 @@ public final class TenantSsoPolicy {
             TenantSsoCatalog catalog,
             String clientId
     ) {
+        return evaluate(sessionTenant, requestTenant, sessionEstablishedAt, clientRegistered, catalog, clientId, null);
+    }
+
+    /**
+     * AD-2 + FR-21/AC-09: overload que además evalúa la autenticación fresca forzada por
+     * {@code max_age}. Idéntico al de 6 parámetros salvo por una condición adicional evaluada
+     * junto a (2): la sesión puede seguir vigente por TTL absoluto y aun así no satisfacer la
+     * petición si el cliente exige una autenticación más reciente que {@code maxAgeSeconds}.
+     *
+     * @param maxAgeSeconds {@code max_age} del request OIDC en segundos, o {@code null} si el
+     *                      cliente no lo ha solicitado — en ese caso el comportamiento es
+     *                      idéntico al overload de 6 parámetros.
+     */
+    public ReuseDecision evaluate(
+            String sessionTenant,
+            String requestTenant,
+            Instant sessionEstablishedAt,
+            boolean clientRegistered,
+            TenantSsoCatalog catalog,
+            String clientId,
+            Long maxAgeSeconds
+    ) {
         Objects.requireNonNull(catalog, "catalog must not be null");
 
         if (sessionTenant != null && requestTenant != null
@@ -69,8 +93,25 @@ public final class TenantSsoPolicy {
         if (sessionEstablishedAt == null) {
             return REJECT_SESSION;
         }
-        if (Instant.now(clock).isAfter(sessionEstablishedAt.plusSeconds(sessionTtlSeconds))) {
+        Instant now = Instant.now(clock);
+        if (now.isAfter(sessionEstablishedAt.plusSeconds(sessionTtlSeconds))) {
             return REJECT_SESSION;
+        }
+
+        // FR-21/AC-09: autenticación fresca forzada — sesión vigente pero más antigua que lo
+        // que el cliente exige explícitamente vía max_age.
+        // W3 (review): plusSeconds overflows (ArithmeticException/DateTimeException) for a
+        // pathological maxAgeSeconds. The caller (CustomAuthorizationRequestConverter) already
+        // caps it, but this is pure domain logic reachable from any future caller — fail closed
+        // to "force fresh auth" rather than let an unchecked overflow surface as a 500.
+        if (maxAgeSeconds != null) {
+            try {
+                if (now.isAfter(sessionEstablishedAt.plusSeconds(maxAgeSeconds))) {
+                    return REJECT_MAX_AGE;
+                }
+            } catch (ArithmeticException | DateTimeException overflow) {
+                return REJECT_MAX_AGE;
+            }
         }
 
         // AD-2 condición (3): cliente en el catálogo SSO del tenant

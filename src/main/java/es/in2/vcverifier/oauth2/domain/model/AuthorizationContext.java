@@ -13,6 +13,11 @@ public record AuthorizationContext(
         String codeChallenge,
         String codeChallengeMethod,
         String portalUrl,
-        String contextPath
+        String contextPath,
+        /**
+         * FR-21/AC-09: {@code max_age} del request OIDC, en segundos. {@code null} si el
+         * parámetro está ausente o no es un entero no negativo válido.
+         */
+        Long maxAge
 ) {
 }
