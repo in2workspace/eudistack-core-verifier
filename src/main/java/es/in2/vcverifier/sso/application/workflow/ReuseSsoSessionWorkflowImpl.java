@@ -154,6 +154,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
 
         if (decision == ReuseDecision.REJECT_CATALOG) {
             // AC-03 / US-05: cliente no figura en catálogo SSO → interaction_required
+            // AC-05: el contrato de la Story exige explícitamente reason=client_not_eligible
+            // en este evento (además de outcome, que ya distinguía el motivo internamente).
             auditPort.publish(
                     SsoAuditEvent.builder()
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
@@ -161,6 +163,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .clientId(clientId)
                             .holderHash(session.getHolderHash())
                             .outcome("CATALOG_REJECTED")
+                            .reason("client_not_eligible")
                             .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
