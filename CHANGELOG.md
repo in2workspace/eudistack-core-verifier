@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **EUD-149 — AC-05: `reason=client_not_eligible` on catalog-reject SSO audit event**: `ReuseSsoSessionWorkflowImpl`'s `REJECT_CATALOG` branch now sets `reason="client_not_eligible"` on the published `SsoAuditEvent` (previously only `outcome=CATALOG_REJECTED` distinguished the cause internally; `SsoAuditAdapter` already emitted `reason` when set, so this was a producer-side gap). Test: `ReuseSsoSessionIT.should_return_interaction_required_when_client_not_eligible` now asserts `outcome` and `reason` in addition to `eventType`.
+- **EUD-149 — reverted a Flyway `table` default from `application.yaml`**: a prior local-verification commit set `spring.flyway.table: flyway_schema_history_verifier` here to resolve a `public.flyway_schema_history` collision with `eudistack-core-wallet-ebw` — but that collision only happens in local Docker Compose (shared `POSTGRES_DB`/`public` schema). STG/DEV already isolate Flyway migrations in the `verifier` schema (`SPRING_FLYWAY_DEFAULT_SCHEMA=verifier` via IAC), with history in `verifier.flyway_schema_history`; shipping the renamed table as an app default would have pointed Flyway at an empty table, baselined at `0`, and reapplied `V1..V8` onto objects that already exist, failing the Verifier at startup. The override now lives only in `eudistack-platform-dev/compose.yaml` (`SPRING_FLYWAY_TABLE`, PR #154) as a local-only env var — see [in2workspace/eudistack-platform-dev#154](https://github.com/in2workspace/eudistack-platform-dev/pull/154).
+
 ## [3.3.5] - 2026-09-08
 
 ### Changed

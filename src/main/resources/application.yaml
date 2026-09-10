@@ -20,18 +20,6 @@ spring:
     url: ${SPRING_FLYWAY_URL:jdbc:postgresql://localhost:5432/verifier}
     locations: classpath:db/tenant
     default-schema: ${SPRING_FLYWAY_DEFAULT_SCHEMA:public}
-    # H-10 follow-up (EUD-149 verification, 2026-09-09): the shared local/dev/stg
-    # database also hosts eudistack-core-wallet-ebw's own independent Flyway
-    # history (TenantSchemaFlywayMigrator.migratePublicSchema, also targeting
-    # `public` with the library default table name). Two independent migration
-    # chains writing to the same `public.flyway_schema_history` collide —
-    # whichever service migrates first stamps that table with its own version
-    # sequence, and the other's lower-numbered migration is then rejected as
-    # out-of-order, crashing that service at startup. Reproduced against a
-    # freshly reset local stack: verifier's SSO migrations (V2..V8) land first,
-    # wallet-ebw-service then fails FlywayValidateException on its own V1.
-    # A dedicated table name isolates this service's own migration history.
-    table: flyway_schema_history_verifier
     baseline-on-migrate: true
     baseline-version: "0"
 
