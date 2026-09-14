@@ -53,9 +53,11 @@ import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGI
  * {@link es.in2.vcverifier.sso.infrastructure.web.SsoSessionLogoutHandler} se invoque:
  * ninguna invalidación, ningún dispatch. {@code SsoSessionLogoutFailureHandler} emite
  * {@code sso_logout_rejected} y, cuando el cliente resuelto vía {@code client_id} tiene
- * {@code loginPageUri} configurada, redirige ahí con {@code ?error=session_expired}; en
- * caso contrario delega en {@code OAuth2ErrorAuthenticationFailureHandler}
- * (400 Bad Request estándar, verificado por bytecode — mismo rigor que Task 8/14).
+ * {@code loginPageUri} configurada, redirige ahí con {@code ?error=session_expired}; si no,
+ * intenta el {@code post_logout_redirect_uri} de la request cuando coincide con uno ya
+ * registrado para ese cliente; en caso contrario delega en
+ * {@code OAuth2ErrorAuthenticationFailureHandler} (400 Bad Request estándar, verificado
+ * por bytecode — mismo rigor que Task 8/14).
  */
 @SpringBootTest
 @Testcontainers
@@ -196,6 +198,30 @@ class SingleLogoutValidationIT {
                         .param("client_id", CLIENT_ID))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl(loginPageUri + "?error=session_expired"));
+
+        assertThat(sessionState(sessionId)).isEqualTo("ACTIVE");
+        verify(auditPort, timeout(2000)).publish(argThatRejected());
+    }
+
+    // =========================================================
+    // ES-01: cliente SIN loginPageUri (p. ej. el Issuer UI, que delega su login en el
+    // mfe-login compartido) pero con post_logout_redirect_uri ya registrado — redirige ahí
+    // con ?error=session_expired en vez de exponer el JSON crudo. Cubre el caso que
+    // loginPageUri por sí solo no puede resolver sin romper el login normal de ese cliente.
+    // =========================================================
+    @Test
+    void singleLogout_redirectsToRegisteredPostLogoutRedirectUri_whenClientHasNoLoginPage() throws Exception {
+        String sessionId = insertActiveSession();
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(client);
+
+        mockMvc.perform(post("/oidc/logout")
+                        .header(Constants.X_TENANT_HEADER, TENANT)
+                        .cookie(new Cookie("__Secure-sso-" + TENANT, sessionId))
+                        .param("id_token_hint", "not-a-known-token")
+                        .param("post_logout_redirect_uri", POST_LOGOUT_REDIRECT_URI)
+                        .param("client_id", CLIENT_ID))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl(POST_LOGOUT_REDIRECT_URI + "?error=session_expired"));
 
         assertThat(sessionState(sessionId)).isEqualTo("ACTIVE");
         verify(auditPort, timeout(2000)).publish(argThatRejected());

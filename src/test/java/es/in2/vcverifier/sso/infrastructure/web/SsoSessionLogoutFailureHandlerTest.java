@@ -30,7 +30,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit — verifies {@link SsoSessionLogoutFailureHandler} redirects to the resolved client's
- * {@code loginPageUri} with {@code error=session_expired} when one is known, and otherwise
+ * {@code loginPageUri} with {@code error=session_expired} when one is known, falls back to a
+ * registered {@code postLogoutRedirectUri} when there is no {@code loginPageUri}, and otherwise
  * falls back to the standard {@code OAuth2ErrorAuthenticationFailureHandler} (raw JSON) behavior
  * unchanged. The audit event must be published regardless of which path is taken.
  */
@@ -84,6 +85,75 @@ class SsoSessionLogoutFailureHandlerTest {
             verify(auditPort).publish(argThat(event ->
                     event.getEventType() == SsoAuditEvent.EventType.SSO_LOGOUT_REJECTED
                             && CLIENT_ID.equals(event.getClientId())));
+        }
+    }
+
+    @Nested
+    @DisplayName("when the client has no loginPageUri but the request's post_logout_redirect_uri is registered")
+    class WhenOnlyPostLogoutRedirectUriIsRegistered {
+
+        private static final String POST_LOGOUT_REDIRECT_URI = "https://issuer.example.com/issuer/";
+
+        @Test
+        void onAuthenticationFailure_withRegisteredPostLogoutRedirectUri_redirectsWithSessionExpiredError() throws Exception {
+            // Arrange
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setParameter("client_id", CLIENT_ID);
+            request.setParameter("post_logout_redirect_uri", POST_LOGOUT_REDIRECT_URI);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            when(registeredClientRepository.findByClientId(CLIENT_ID))
+                    .thenReturn(clientWithPostLogoutRedirectUri(POST_LOGOUT_REDIRECT_URI));
+            SsoSessionLogoutFailureHandler handler =
+                    new SsoSessionLogoutFailureHandler(auditPort, registeredClientRepository);
+
+            // Act
+            handler.onAuthenticationFailure(request, response, exception);
+
+            // Assert
+            assertThat(response.getRedirectedUrl()).isEqualTo(POST_LOGOUT_REDIRECT_URI + "?error=session_expired");
+        }
+
+        @Test
+        void onAuthenticationFailure_withUnregisteredPostLogoutRedirectUri_delegatesToStandardErrorHandler() throws Exception {
+            // Arrange
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setParameter("client_id", CLIENT_ID);
+            request.setParameter("post_logout_redirect_uri", "https://not-registered.example.com/");
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            when(registeredClientRepository.findByClientId(CLIENT_ID))
+                    .thenReturn(clientWithPostLogoutRedirectUri(POST_LOGOUT_REDIRECT_URI));
+            SsoSessionLogoutFailureHandler handler =
+                    new SsoSessionLogoutFailureHandler(auditPort, registeredClientRepository);
+
+            // Act
+            handler.onAuthenticationFailure(request, response, exception);
+
+            // Assert
+            assertThat(response.getRedirectedUrl()).isNull();
+            assertThat(response.getStatus()).isEqualTo(400);
+        }
+
+        @Test
+        void onAuthenticationFailure_withLoginPageAndRegisteredPostLogoutRedirectUriBoth_prefersLoginPage() throws Exception {
+            // Arrange
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setParameter("client_id", CLIENT_ID);
+            request.setParameter("post_logout_redirect_uri", POST_LOGOUT_REDIRECT_URI);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            RegisteredClient clientWithBoth = RegisteredClient.from(clientWithPostLogoutRedirectUri(POST_LOGOUT_REDIRECT_URI))
+                    .clientSettings(ClientSettings.builder()
+                            .setting(CLIENT_SETTING_LOGIN_PAGE_URI, LOGIN_PAGE_URI)
+                            .build())
+                    .build();
+            when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(clientWithBoth);
+            SsoSessionLogoutFailureHandler handler =
+                    new SsoSessionLogoutFailureHandler(auditPort, registeredClientRepository);
+
+            // Act
+            handler.onAuthenticationFailure(request, response, exception);
+
+            // Assert
+            assertThat(response.getRedirectedUrl()).isEqualTo(LOGIN_PAGE_URI + "?error=session_expired");
         }
     }
 
@@ -225,6 +295,16 @@ class SsoSessionLogoutFailureHandlerTest {
                 .clientSecret("{noop}secret")
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .redirectUri("https://client-es01.example.com/callback")
+                .build();
+    }
+
+    private static RegisteredClient clientWithPostLogoutRedirectUri(String postLogoutRedirectUri) {
+        return RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId(CLIENT_ID)
+                .clientSecret("{noop}secret")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://client-es01.example.com/callback")
+                .postLogoutRedirectUri(postLogoutRedirectUri)
                 .build();
     }
 }
