@@ -20,7 +20,7 @@ jobs:
       container_image: 'verifier-core-service'
       container_name: 'verifier-core-service'
       smoke_url: 'http://localhost:8080/verifier/health'
-      zap_target_url: 'http://localhost:8080/verifier'
+      zap_target_url: 'http://localhost:8080/verifier/health'
       dast_start_script: 'dev-tools/testing/start-dast-container.sh'
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
