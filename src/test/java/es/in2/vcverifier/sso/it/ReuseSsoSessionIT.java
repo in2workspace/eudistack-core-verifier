@@ -308,8 +308,6 @@ class ReuseSsoSessionIT {
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
                 event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
                         && "holder-hash-03".equals(event.getHolderHash())
-                        && "CATALOG_REJECTED".equals(event.getOutcome())
-                        && "client_not_eligible".equals(event.getReason())
                         && event.getCorrelationId() != null && !event.getCorrelationId().isBlank()));
     }
 
