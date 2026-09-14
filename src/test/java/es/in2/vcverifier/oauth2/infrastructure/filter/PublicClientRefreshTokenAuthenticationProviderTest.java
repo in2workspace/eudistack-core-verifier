@@ -72,7 +72,9 @@ class PublicClientRefreshTokenAuthenticationProviderTest {
 
         assertInstanceOf(OAuth2ClientAuthenticationToken.class, result);
         OAuth2ClientAuthenticationToken authenticated = (OAuth2ClientAuthenticationToken) result;
-        assertEquals(registeredClient, authenticated.getPrincipal());
+        // OAuth2ClientAuthenticationToken's authenticated (RegisteredClient-based) constructor
+        // exposes the client id as the principal, not the RegisteredClient object itself.
+        assertEquals(CLIENT_ID, authenticated.getPrincipal());
         assertTrue(authenticated.isAuthenticated());
     }
 

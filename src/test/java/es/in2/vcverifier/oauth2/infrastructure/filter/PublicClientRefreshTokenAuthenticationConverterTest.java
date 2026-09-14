@@ -70,7 +70,10 @@ class PublicClientRefreshTokenAuthenticationConverterTest {
 
     @Test
     void convert_notRefreshTokenGrant_returnsNull() {
-        HttpServletRequest request = requestFor("POST", "authorization_code", CLIENT_ID);
+        // client_id is intentionally NOT stubbed here: convert() returns before ever reading it
+        // (short-circuits on the grant_type check), so stubbing it would trip Mockito's strict
+        // unnecessary-stubbing check.
+        HttpServletRequest request = requestFor("POST", "authorization_code", null);
 
         assertNull(converter.convert(request));
     }
