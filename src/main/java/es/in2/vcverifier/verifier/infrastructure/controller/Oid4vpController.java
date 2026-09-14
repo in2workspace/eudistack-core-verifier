@@ -57,7 +57,7 @@ public class Oid4vpController {
     @ApiResponse(responseCode = "404", description = "Authorization request not found or expired")
     @GetMapping("/auth-request/{id}")
     @ResponseStatus(HttpStatus.OK)
-    // SEC-F1: Input validation on path/request parameters. Next step: ensure proper error handling for invalid inputs.
+    // SEC-F1: Input validation on path/request parameters.
     public String getAuthorizationRequest(
             @Parameter(description = "Authorization request nonce (from QR code)", required = true)
             @PathVariable @NotBlank @Size(max = 256) String id) {
