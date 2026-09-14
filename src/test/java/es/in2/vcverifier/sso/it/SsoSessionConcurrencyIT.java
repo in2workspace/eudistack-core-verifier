@@ -7,7 +7,6 @@ import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
-import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.junit.jupiter.api.Test;
@@ -36,7 +35,6 @@ class SsoSessionConcurrencyIT {
     @Mock private SsoMetricsPort metricsPort;
     @Mock private HashingService hashingService;
     @Mock private Clock clock;
-    @Mock private SsoCredentialCipherPort credentialCipherPort;
 
     @Test
     void shouldKeepOnlyOneActiveSession_whenTwoEstablishRunConcurrently() throws Exception {
@@ -62,13 +60,10 @@ class SsoSessionConcurrencyIT {
             when(sessionRepositoryPort.save(any()))
                     .thenAnswer(inv -> inv.getArgument(0));
 
-            when(credentialCipherPort.encrypt(anyString(), anyString(), anyString()))
-                    .thenReturn(new byte[]{1, 2, 3});
-
             CountDownLatch startLatch = new CountDownLatch(1);
 
-            SsoSessionCommand c1 = new SsoSessionCommand(tenant, holderHash, "client", "c1", "{\"sub\":\"holder-xyz\"}");
-            SsoSessionCommand c2 = new SsoSessionCommand(tenant, holderHash, "client", "c2", "{\"sub\":\"holder-xyz\"}");
+            SsoSessionCommand c1 = new SsoSessionCommand(tenant, holderHash, "client", "c1");
+            SsoSessionCommand c2 = new SsoSessionCommand(tenant, holderHash, "client", "c2");
 
             Future<?> f1 = executor.submit(() -> {
                 startLatch.await();

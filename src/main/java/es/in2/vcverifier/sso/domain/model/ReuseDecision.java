@@ -31,14 +31,5 @@ public enum ReuseDecision {
      * EC-01: sesión válida pero el cliente no figura en el catálogo SSO del tenant.
      * El workflow lo mapea a error OIDC {@code interaction_required}.
      */
-    REJECT_CATALOG,
-
-    /**
-     * AC-09/FR-21: la sesión sigue ACTIVA y dentro del TTL absoluto, pero el cliente ha
-     * solicitado explícitamente autenticación fresca ({@code max_age} menor que la
-     * antigüedad de la autenticación de la sesión). El workflow lo mapea a
-     * {@code login_required} — igual que {@link #REJECT_SESSION}, pero distinguible en
-     * auditoría como motivo de rechazo distinto (la sesión en sí es válida).
-     */
-    REJECT_MAX_AGE
+    REJECT_CATALOG
 }

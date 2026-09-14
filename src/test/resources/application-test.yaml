@@ -15,12 +15,6 @@ verifier:
       privateKey: "0x73e509a7681d4a395b1ced75681c4dc4020dbab02da868512276dd766733d5b5"
     login-timeout-seconds: 120
     fapi-nonce-required: true
-    # W1 (review): AesGcmSsoCredentialCipherAdapter now fails fast at startup when some tenant
-    # has ssoEnabled=true (the classpath sso-config.yaml's "dome" tenant is) and no key is
-    # configured — a fixed key here keeps the full Spring context loadable in tests, exactly
-    # like a real deployment must provision one before enabling SSO for any real tenant.
-    sso:
-      credential-encryption-key: "u8K5UhnTC0hcuBXlTp6nAizeKV5eJGyOdZZgzuq9LQc="
     trustFrameworks:
       - name: DOME
         trustedIssuersListUrl: https://raw.githubusercontent.com

@@ -9,7 +9,6 @@ import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
-import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.slf4j.Logger;
@@ -33,7 +32,6 @@ public class EstablishSsoSessionWorkflow {
     private final SsoMetricsPort metricsPort;
     private final HashingService hashingService;
     private final Clock clock;
-    private final SsoCredentialCipherPort credentialCipherPort;
 
 
     public EstablishSsoSessionWorkflow(
@@ -42,8 +40,7 @@ public class EstablishSsoSessionWorkflow {
             SsoAuditPort auditPort,
             SsoMetricsPort metricsPort,
             HashingService hashingService,
-            Clock clock,
-            SsoCredentialCipherPort credentialCipherPort
+            Clock clock
     ) {
         this.tenantSsoConfigPort = tenantSsoConfigPort;
         this.sessionRepositoryPort = sessionRepositoryPort;
@@ -51,7 +48,6 @@ public class EstablishSsoSessionWorkflow {
         this.metricsPort = metricsPort;
         this.hashingService = hashingService;
         this.clock = clock;
-        this.credentialCipherPort = credentialCipherPort;
     }
 
     public SsoSessionCookieDescriptor execute(SsoSessionCommand command) {
@@ -76,8 +72,6 @@ public class EstablishSsoSessionWorkflow {
                     ttl.absolute()
             );
 
-            attachCredentialSnapshot(session, command);
-
             sessionRepositoryPort.save(session);
 
             // ADR-108/DELTA-02: registra el aplicativo iniciador como primer callee conocido
@@ -86,7 +80,7 @@ public class EstablishSsoSessionWorkflow {
 
         } catch (Exception ex) {
 
-            log.error("Failed to establish SSO session for tenant={}", command.tenant(), ex);
+            log.error("Error persisting SSO session for tenant={}", command.tenant(), ex);
 
             auditPort.publish(new SsoAuditEvent(
                     SsoAuditEvent.EventType.SSO_PERSIST_ERROR,
@@ -101,15 +95,12 @@ public class EstablishSsoSessionWorkflow {
             return null; // fail-closed
         }
 
-        // NFR-S-149-01/AC-10: holderHash field in SsoAuditEvent always carries the already-hashed
-        // holder identifier (SHA-256 of sub), never the raw sub — SsoAuditAdapter's prefix() (used
-        // for the holderHashPrefix log field) truncates without re-hashing, so passing the raw sub
-        // here would leak its first 8 characters in clear in every establishment log line.
+        // B7: holderHash field in SsoAuditEvent always carries raw sub; SsoAuditAdapter applies SHA-256.
         auditPort.publish(new SsoAuditEvent(
                 SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
                 command.tenant(),
                 command.clientId(),
-                holderHash,
+                command.sub(),
                 "SUCCESS",
                 command.correlationId(),
                 now
@@ -122,31 +113,6 @@ public class EstablishSsoSessionWorkflow {
                 session.getId().getValue().toString(),
                 session.getExpiresAt()
         );
-    }
-
-    /**
-     * EUD-149/W2 (review): cifra las claims de la credencial y las adjunta a {@code session}
-     * antes de persistir, en la misma fila/transacción — sustituye la caché local no
-     * distribuida. Fail-closed (ES-02): ninguna llamada de producción llega aquí sin una
-     * credencial verificada — {@code Oid4vpController.buildSsoAuthentication} siempre la pone
-     * tras una VP válida — así que su ausencia, igual que un fallo de cifrado, es una condición
-     * anómala, no un flujo legítimo. Antes se tragaba en silencio (log + continuar sin
-     * snapshot): la sesión quedaba persistida y la cookie se emitía igualmente, así que el
-     * Holder creía tener SSO activo cuando el primer {@code prompt=none} iba a caer siempre en
-     * {@code login_required} por snapshot ausente — opaco tanto para el Holder como para
-     * observabilidad. Lanzar aquí hace que el {@code catch} de {@link #execute} trate esto
-     * exactamente como un fallo de persistencia: publica {@code SSO_PERSIST_ERROR} y no
-     * establece sesión ni cookie.
-     */
-    private void attachCredentialSnapshot(SsoSession session, SsoSessionCommand command) {
-        String credentialJson = command.credentialJson();
-        if (credentialJson == null || credentialJson.isBlank()) {
-            throw new IllegalStateException(
-                    "Cannot establish an SSO session without verified credential claims to snapshot");
-        }
-        byte[] ciphertext = credentialCipherPort.encrypt(
-                command.tenant(), session.getId().getValue(), credentialJson);
-        session.attachCredentialSnapshot(ciphertext);
     }
 
     private void validateTenantSsoConfiguration(SsoSessionCommand command) {

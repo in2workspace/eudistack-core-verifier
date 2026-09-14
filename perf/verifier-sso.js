@@ -342,26 +342,22 @@ function checkEstablish(res) {
 export function measureEstablishOverhead() {
 
     // Baseline: POST /auth-response without an active SSO session (stub token)
-    // NOTE: k6's http.post signature is (url, body, params) — state/vp_token are FORM FIELDS,
-    // so they belong in the urlencoded body (2nd arg), never in params (3rd arg, headers/tags/
-    // redirects only). Passing them as params silently drops them: the server then receives a
-    // POST with no state/vp_token and Spring rejects it with a 500 (MissingServletRequestParameterException)
-    // before ever reaching the SSO/OID4VP logic this scenario is meant to measure.
     const t0   = Date.now();
-    const base = http.post(`${BASE_URL}/oid4vp/auth-response`,
-        'state=baseline-state&vp_token=dummy-vp-token', {
+    const base = http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
         headers:   { 'Content-Type': 'application/x-www-form-urlencoded' },
+        params:    { state: 'baseline-state', vp_token: 'dummy-vp-token' },
         redirects: 0,
     });
     const baseMs = Date.now() - t0;
 
     // SSO flow: POST /auth-response with a real OIDC state (or the configured stub)
     const t1  = Date.now();
-    const ssoState   = __ENV.SSO_STATE    || 'test-state';
-    const ssoVpToken = __ENV.SSO_VP_TOKEN || 'dummy-vp-token';
-    const sso = http.post(`${BASE_URL}/oid4vp/auth-response`,
-        `state=${encodeURIComponent(ssoState)}&vp_token=${encodeURIComponent(ssoVpToken)}`, {
+    const sso = http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
         headers:   { 'Content-Type': 'application/x-www-form-urlencoded' },
+        params:    {
+            state:    __ENV.SSO_STATE    || 'test-state',
+            vp_token: __ENV.SSO_VP_TOKEN || 'dummy-vp-token',
+        },
         redirects: 0,
     });
     const ssoMs = Date.now() - t1;
@@ -612,23 +608,22 @@ export function logoutScenario() {
 export default function () {
 
     // 1. OID4VP baseline (no SSO)
-    // NOTE: see measureEstablishOverhead() above — state/vp_token are form fields and MUST go
-    // in the body (2nd arg), not params (3rd arg), or the server 500s on a missing parameter.
     const t0   = Date.now();
-    http.post(`${BASE_URL}/oid4vp/auth-response`,
-        'state=baseline-state&vp_token=dummy-vp-token', {
+    http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
         headers:   { 'Content-Type': 'application/x-www-form-urlencoded' },
+        params:    { state: 'baseline-state', vp_token: 'dummy-vp-token' },
         redirects: 0,
     });
     const baseMs = Date.now() - t0;
 
     // 2. SSO establish
     const t1  = Date.now();
-    const defaultSsoState   = __ENV.SSO_STATE    || 'test-state';
-    const defaultSsoVpToken = __ENV.SSO_VP_TOKEN || 'dummy-vp-token';
-    const sso = http.post(`${BASE_URL}/oid4vp/auth-response`,
-        `state=${encodeURIComponent(defaultSsoState)}&vp_token=${encodeURIComponent(defaultSsoVpToken)}`, {
+    const sso = http.post(`${BASE_URL}/oid4vp/auth-response`, null, {
         headers:   { 'Content-Type': 'application/x-www-form-urlencoded' },
+        params:    {
+            state:    __ENV.SSO_STATE    || 'test-state',
+            vp_token: __ENV.SSO_VP_TOKEN || 'dummy-vp-token',
+        },
         redirects: 0,
     });
     const ssoMs = Date.now() - t1;

@@ -2,9 +2,9 @@ package es.in2.vcverifier.sso.infrastructure.web;
 
 
 import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
-import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
@@ -32,7 +32,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
     private final SsoSessionCookieFactory cookieFactory;
     private final SsoAuditPort auditPort;
     private final TenantSsoConfigPort tenantSsoConfigPort;
-    private final HashingService hashingService;
+    private final CacheStore<JsonNode> ssoSessionCredentialCache;
 
 
     public SsoSessionAuthenticationSuccessHandler(
@@ -40,13 +40,13 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
             SsoSessionCookieFactory cookieFactory,
             SsoAuditPort auditPort,
             TenantSsoConfigPort tenantSsoConfigPort,
-            HashingService hashingService
+            CacheStore<JsonNode> ssoSessionCredentialCache
     ) {
         this.establishSsoSessionWorkflow = establishSsoSessionWorkflow;
         this.cookieFactory = cookieFactory;
         this.auditPort = auditPort;
         this.tenantSsoConfigPort = tenantSsoConfigPort;
-        this.hashingService = hashingService;
+        this.ssoSessionCredentialCache = ssoSessionCredentialCache;
     }
 
     @Override
@@ -60,14 +60,6 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
 
         String correlationId = UUID.randomUUID().toString();
 
-        // B2 (review): vpData.holderHash() is actually the RAW sub (see extractVpData) — the
-        // workflow hashes it itself before persisting/auditing. Every audit event published
-        // directly from THIS handler must use the SAME hashed value, never the raw sub:
-        // SsoAuditAdapter.prefix() truncates holderHash for the holderHashPrefix log field
-        // WITHOUT re-hashing, so passing the raw value here leaked its first 8 characters in
-        // clear on every establishment failure/success (NFR-S-149-01).
-        String holderHash = hashingService.sha256(vpData.holderHash());
-
         String rootDomain = tenantSsoConfigPort.getByTenant(vpData.tenant())
                 .map(config -> config.rootDomain() != null ? config.rootDomain() : "")
                 .orElse("");
@@ -76,8 +68,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 vpData.tenant(),
                 vpData.holderHash(),
                 vpData.clientId(),
-                correlationId,
-                vpData.credentialJson() != null ? vpData.credentialJson().toString() : null
+                correlationId
         );
 
         try {
@@ -91,7 +82,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                         SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                         vpData.tenant(),
                         vpData.clientId(),
-                        holderHash,
+                        vpData.holderHash(),
                         "FAILURE",
                         correlationId,
                         java.time.Instant.now()
@@ -113,9 +104,22 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                         cookie.isSecure(), cookie.getPath());
                 response.addHeader("Set-Cookie", cookie.toString());
 
-                // B2 (review): SSO_SESSION_ESTABLISHED is NOT published here — EstablishSsoSessionWorkflow
-                // already publishes it (correctly hashed) in the same transaction as the persisted row.
-                // Publishing it again here was a straight duplicate that also happened to leak the raw sub.
+                // Snapshot the resolved credential claims keyed by session id, so a later SSO
+                // reuse (prompt=none, no VP re-presentation) can still mint a valid id_token —
+                // see ReuseSsoSessionWorkflowImpl / cacheStoreForSsoSessionCredential.
+                if (vpData.credentialJson() != null) {
+                    ssoSessionCredentialCache.add(sessionDescriptor.value(), vpData.credentialJson());
+                }
+
+                auditPort.publish(new SsoAuditEvent(
+                        SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED,
+                        vpData.tenant(),
+                        vpData.clientId(),
+                        vpData.holderHash(),
+                        "SUCCESS",
+                        correlationId,
+                        java.time.Instant.now()
+                ));
             }
 
         } catch (SsoDisabledForTenantException e) {
@@ -129,7 +133,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                     vpData.tenant(),
                     vpData.clientId(),
-                    holderHash,
+                    vpData.holderHash(),
                     "FAILURE",
                     correlationId,
                     java.time.Instant.now()
@@ -140,7 +144,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED,
                     vpData.tenant(),
                     vpData.clientId(),
-                    holderHash,
+                    vpData.holderHash(),
                     "FAILURE",
                     correlationId,
                     java.time.Instant.now()
