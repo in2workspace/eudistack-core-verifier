@@ -114,12 +114,6 @@ class LegacyConvivenciaIT {
         when(hashingService.sha256(any())).thenReturn("hashed-user");
         when(tenantSsoConfigPort.resolveTtl(anyString()))
                 .thenReturn(SsoSessionTtl.systemDefault());
-        // W2 (review): establishment is now fail-closed without a verified credential snapshot
-        // to encrypt — mirror what a real VP verification returns instead of leaving this mock
-        // unstubbed/null, otherwise every establishment in this suite would fail closed.
-        when(authorizationResponseProcessorService.handleAuthResponse(any(), any()))
-                .thenReturn(new com.fasterxml.jackson.databind.ObjectMapper()
-                        .createObjectNode().put("sub", "test-holder"));
     }
 
     // ---- helpers -----------------------------------------------------------

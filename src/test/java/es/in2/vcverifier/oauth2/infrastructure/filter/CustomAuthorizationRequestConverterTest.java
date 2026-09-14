@@ -1,8 +1,5 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
@@ -30,7 +27,6 @@ import org.springframework.security.oauth2.server.authorization.authentication.O
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -553,7 +549,6 @@ class CustomAuthorizationRequestConverterTest {
         when(request.getParameter(NONCE)).thenReturn(clientNonce);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(codeChallenge);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(codeChallengeMethod);
-        when(request.getParameter("max_age")).thenReturn(null);
 
         RegisteredClient registeredClient = RegisteredClient.withId("1234")
                 .clientId(clientId)
@@ -606,7 +601,6 @@ class CustomAuthorizationRequestConverterTest {
         when(request.getParameter(NONCE)).thenReturn(clientNonce);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
-        when(request.getParameter("max_age")).thenReturn(null);
 
         RegisteredClient registeredClient = RegisteredClient.withId("1234")
                 .clientId(clientId)
@@ -853,213 +847,9 @@ class CustomAuthorizationRequestConverterTest {
                 "Error redirect must not contain the hardcoded /verifier/error path");
     }
 
-    @Test
-    void convert_standardRequestWithValidMaxAge_shouldProceedWithoutWarning() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        String clientId = "test-client-id";
-        String state = "test-state";
-        String scope = "learcredential";
-        String redirectUri = "https://client.example.com/callback";
-        String clientName = "Test Client";
-        String clientNonce = "test-nonce";
-        stubPkceParamsNull(request);
-
-        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
-        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state&max_age=120");
-        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
-        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
-        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
-        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
-        when(request.getParameter(NONCE)).thenReturn(clientNonce);
-        when(request.getParameter(REQUEST_URI)).thenReturn(null);
-        when(request.getParameter("request")).thenReturn(null);
-        when(request.getParameter("max_age")).thenReturn("120");
-
-        RegisteredClient registeredClient = RegisteredClient.withId("1234")
-                .clientId(clientId)
-                .clientName(clientName)
-                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
-                .redirectUri(redirectUri)
-                .build();
-
-        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
-
-        AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://...", "nonce-max-age-valid", clientName);
-        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
-
-        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
-    }
-
-    @Test
-    void convert_standardRequestWithNegativeMaxAge_shouldIgnoreItAndLogSanitizedWarning() {
-        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        try {
-            HttpServletRequest request = mock(HttpServletRequest.class);
-            String clientId = "test-client-id";
-            String state = "test-state";
-            String scope = "learcredential";
-            String redirectUri = "https://client.example.com/callback";
-            String clientName = "Test Client";
-            String clientNonce = "test-nonce";
-            stubPkceParamsNull(request);
-
-            when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
-            when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state&max_age=-5");
-            when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
-            when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
-            when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
-            when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
-            when(request.getParameter(NONCE)).thenReturn(clientNonce);
-            when(request.getParameter(REQUEST_URI)).thenReturn(null);
-            when(request.getParameter("request")).thenReturn(null);
-            when(request.getParameter("max_age")).thenReturn("-5");
-
-            RegisteredClient registeredClient = RegisteredClient.withId("1234")
-                    .clientId(clientId)
-                    .clientName(clientName)
-                    .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
-                    .redirectUri(redirectUri)
-                    .build();
-
-            when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-            when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
-
-            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-negative", clientName);
-            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
-
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
-
-            assertTrue(appender.list.stream().anyMatch(event ->
-                    event.getFormattedMessage().equals("event=sso_max_age_invalid reason=negative value=-5")));
-        } finally {
-            logger.detachAppender(appender);
-        }
-    }
-
-    @Test
-    void convert_standardRequestWithMaxAgeAboveMaxTtlCeiling_shouldIgnoreItAndLogWarning() {
-        // W3 (review): max_age=Long.MAX_VALUE used to reach TenantSsoPolicy.evaluate and
-        // overflow Instant.plusSeconds (ArithmeticException -> 500 instead of login_required).
-        // It must now be treated as invalid at parse time, same as a negative value.
-        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        try {
-            HttpServletRequest request = mock(HttpServletRequest.class);
-            String clientId = "test-client-id";
-            String state = "test-state";
-            String scope = "learcredential";
-            String redirectUri = "https://client.example.com/callback";
-            String clientName = "Test Client";
-            String clientNonce = "test-nonce";
-            stubPkceParamsNull(request);
-
-            when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
-            when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state&max_age=9223372036854775807");
-            when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
-            when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
-            when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
-            when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
-            when(request.getParameter(NONCE)).thenReturn(clientNonce);
-            when(request.getParameter(REQUEST_URI)).thenReturn(null);
-            when(request.getParameter("request")).thenReturn(null);
-            when(request.getParameter("max_age")).thenReturn(String.valueOf(Long.MAX_VALUE));
-
-            RegisteredClient registeredClient = RegisteredClient.withId("1234")
-                    .clientId(clientId)
-                    .clientName(clientName)
-                    .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
-                    .redirectUri(redirectUri)
-                    .build();
-
-            when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-            when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
-
-            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-overflow", clientName);
-            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
-
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
-
-            assertTrue(appender.list.stream().anyMatch(event ->
-                    event.getFormattedMessage().equals(
-                            "event=sso_max_age_invalid reason=exceeds_max_ttl value=9223372036854775807")));
-        } finally {
-            logger.detachAppender(appender);
-        }
-    }
-
-    @Test
-    void convert_standardRequestWithNonNumericMaxAgeContainingCrlf_shouldIgnoreItAndLogSanitizedTruncatedWarning() {
-        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        try {
-            // Crafted value: not a number, embeds CR/LF/TAB (log forging attempt) and is longer
-            // than the 64-char cap, to exercise every branch of sanitizeForLog.
-            String maliciousMaxAge = "not-a-number\r\nevent=forged_log_line\tvalue=" + "x".repeat(40);
-
-            HttpServletRequest request = mock(HttpServletRequest.class);
-            String clientId = "test-client-id";
-            String state = "test-state";
-            String scope = "learcredential";
-            String redirectUri = "https://client.example.com/callback";
-            String clientName = "Test Client";
-            String clientNonce = "test-nonce";
-            stubPkceParamsNull(request);
-
-            when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
-            when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=test-state");
-            when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
-            when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
-            when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
-            when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
-            when(request.getParameter(NONCE)).thenReturn(clientNonce);
-            when(request.getParameter(REQUEST_URI)).thenReturn(null);
-            when(request.getParameter("request")).thenReturn(null);
-            when(request.getParameter("max_age")).thenReturn(maliciousMaxAge);
-
-            RegisteredClient registeredClient = RegisteredClient.withId("1234")
-                    .clientId(clientId)
-                    .clientName(clientName)
-                    .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
-                    .redirectUri(redirectUri)
-                    .build();
-
-            when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-            when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
-
-            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-crlf", clientName);
-            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
-
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
-
-            assertTrue(appender.list.stream().anyMatch(event -> {
-                String message = event.getFormattedMessage();
-                return message.startsWith("event=sso_max_age_invalid reason=not_a_number value=")
-                        && !message.contains("\r")
-                        && !message.contains("\n")
-                        && !message.contains("\t")
-                        && message.contains("...(truncated)");
-            }), "Expected a sanitized, truncated warning with no raw CR/LF/TAB from the attacker-controlled value");
-        } finally {
-            logger.detachAppender(appender);
-        }
-    }
-
     private void stubPkceParamsNull(HttpServletRequest request) {
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
-        when(request.getParameter("max_age")).thenReturn(null);
     }
 
     private void stubPortalUrlHeaders(HttpServletRequest request, String scheme, String host) {

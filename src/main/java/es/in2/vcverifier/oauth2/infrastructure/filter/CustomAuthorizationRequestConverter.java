@@ -7,7 +7,6 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
-import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
@@ -58,7 +57,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
     private static final String SSO_COOKIE_PREFIX = "__Secure-sso-";
-    private static final String MAX_AGE_PARAMETER = "max_age";
 
     private final DIDService didService;
     private final JWTService jwtService;
@@ -99,7 +97,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .scope(scope)
                 .portalUrl(portalUrl)
                 .contextPath(contextPath)
-                .maxAge(parseMaxAge(request.getParameter(MAX_AGE_PARAMETER)))
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
@@ -141,8 +138,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // browser. Cookie value itself is never logged, only whether one was found.
         log.debug("event=sso_cookie_lookup tenant={} expectedCookieName={} found={}",
                 tenant, SSO_COOKIE_PREFIX + tenant, cookieValue != null);
-        String correlationId = UUID.randomUUID().toString();
-        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, correlationId);
+        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId);
     }
 
     private void handleSsoReuseResult(ReuseSsoSessionWorkflow.Result result, AuthorizationContext ctx) {
@@ -170,51 +166,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                    : "");
         OAuth2Error error = new OAuth2Error(errorCode, null, location);
         throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
-    }
-
-    /**
-     * FR-21/AC-09: parsea el {@code max_age} OIDC (segundos, entero no negativo). Un valor
-     * ausente o inválido se ignora (log warn) en vez de romper la petición — max_age es un
-     * refinamiento de frescura sobre el flujo estándar, no una condición de seguridad dura.
-     */
-    private Long parseMaxAge(String rawMaxAge) {
-        if (rawMaxAge == null || rawMaxAge.isBlank()) {
-            return null;
-        }
-        try {
-            long maxAge = Long.parseLong(rawMaxAge.trim());
-            if (maxAge < 0) {
-                log.warn("event=sso_max_age_invalid reason=negative value={}", sanitizeForLog(rawMaxAge));
-                return null;
-            }
-            // W3 (review): an unbounded max_age (e.g. Long.MAX_VALUE) overflows
-            // Instant.plusSeconds(...) in TenantSsoPolicy — ArithmeticException there would
-            // surface as a 500 instead of login_required. Cap at the system's own max session
-            // TTL: no session can ever be older than that anyway, so anything beyond it can
-            // never actually force freshness and is treated the same as an absent max_age.
-            if (maxAge > SsoTtlRange.MAX_ABSOLUTE.toSeconds()) {
-                log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitizeForLog(rawMaxAge));
-                return null;
-            }
-            return maxAge;
-        } catch (NumberFormatException e) {
-            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", sanitizeForLog(rawMaxAge));
-            return null;
-        }
-    }
-
-    /**
-     * Strips CR/LF from a user-provided value before it is written to the log, and caps its
-     * length, so a crafted {@code max_age} cannot forge additional log lines or entries
-     * (CWE-117 log injection). Uses literal char replacement (rather than a regex character
-     * class) since that is the form CodeQL's log-injection sanitizer barrier recognizes.
-     */
-    private static String sanitizeForLog(String value) {
-        String sanitized = value
-                .replace('\r', '_')
-                .replace('\n', '_')
-                .replace('\t', '_');
-        return sanitized.length() > 64 ? sanitized.substring(0, 64) + "...(truncated)" : sanitized;
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {

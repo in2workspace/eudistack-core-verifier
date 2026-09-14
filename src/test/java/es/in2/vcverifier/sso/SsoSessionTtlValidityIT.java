@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -14,7 +15,6 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
-import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -112,7 +112,7 @@ class SsoSessionTtlValidityIT {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private SsoCredentialCipherPort credentialCipherPort;
+    private CacheStore<JsonNode> ssoSessionCredentialCache;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -335,22 +335,20 @@ class SsoSessionTtlValidityIT {
         String id = SsoSessionId.generate().getValue();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         OffsetDateTime established = now.minusMinutes(30);
-        // Snapshot de credencial que un establecimiento real habría dejado, cifrado y persistido
-        // en la propia fila (EUD-149) — necesario para que la ruta ALLOWED emita el code
-        // (ver ReuseSsoSessionWorkflowImpl).
-        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
-        byte[] credentialSnapshot = credentialCipherPort.encrypt(tenant, id, fakeCredential.toString());
         jdbcTemplate.update("""
                 INSERT INTO sso_session
-                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot)
-                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
                 """,
                 id, tenant, holderHash,
                 established,
                 established.plusHours(8), // expiresAt calculado con el TTL original de 8h
-                now.minusMinutes(5),        // last_used_at: 5 min atrás (idle OK)
-                credentialSnapshot
+                now.minusMinutes(5)        // last_used_at: 5 min atrás (idle OK)
         );
+        // Snapshot de credencial que un establecimiento real habría dejado — necesario para que
+        // la ruta ALLOWED emita el code (ver ReuseSsoSessionWorkflowImpl).
+        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
+        ssoSessionCredentialCache.add(id, fakeCredential);
         return id;
     }
 }

@@ -140,15 +140,6 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                 .thenReturn("hashed-user");
 
         // -----------------------------
-        // 2b. CREDENTIAL CLAIMS (W2 review: establishment is now fail-closed without a
-        // verified credential snapshot to encrypt — mirror what a real VP verification
-        // returns instead of leaving this mock unstubbed/null).
-        // -----------------------------
-        when(authorizationResponseProcessorService.handleAuthResponse(any(), any()))
-                .thenReturn(new com.fasterxml.jackson.databind.ObjectMapper()
-                        .createObjectNode().put("sub", "test-holder"));
-
-        // -----------------------------
         // 3. PRIMERA PETICIÓN
         // -----------------------------
         mockMvc.perform(post("/oid4vp/auth-response")

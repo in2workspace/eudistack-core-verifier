@@ -101,8 +101,7 @@ class ReuseSsoSessionStoreFailureIT {
                 "tenantA",
                 sessionId,
                 ctx,
-                "clientA",
-                "corr-" + sessionId
+                "clientA"
         );
 
         assertNotNull(result);

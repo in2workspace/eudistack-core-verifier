@@ -68,11 +68,6 @@ public class TenantSsoConfigYamlAdapter implements TenantSsoConfigPort, SsoCatal
     }
 
     @Override
-    public boolean hasAnyTenantSsoEnabled() {
-        return cache.get().values().stream().anyMatch(TenantSsoConfig::ssoEnabled);
-    }
-
-    @Override
     public TenantSsoCatalog resolveEligibleClients(String tenant) {
         return getByTenant(tenant)
                 .map(config -> {

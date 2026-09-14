@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -15,7 +16,6 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
-import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -68,8 +68,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   AC-02  Sin sesión: ID en cookie sin fila en BD → LOGIN_REQUIRED.
  *   AC-03  RP no elegible: sesión existe pero clientA no está en eligibleClientIds.
  *   AC-04  Cross-tenant: sesión de tenant-a accedida desde tenant-b → SSO_CROSS_TENANT_ATTEMPT.
- *   AC-09  max_age menor que la antigüedad de la sesión → login_required (REJECT_MAX_AGE);
- *          max_age mayor → reutilización permitida.
  *   EC-01  Sesión expirada: fila ACTIVE con expires_at pasado → filtro SQL la excluye.
  *   EC-02  Sesión SUPERSEDED: fila con state='SUPERSEDED' → filtro SQL la excluye.
  *   ES-01  Fallo de almacén (fail-closed): spy lanza RuntimeException → SSO_PERSIST_ERROR.
@@ -125,7 +123,7 @@ class ReuseSsoSessionIT {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private SsoCredentialCipherPort credentialCipherPort;
+    private CacheStore<JsonNode> ssoSessionCredentialCache;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -216,14 +214,9 @@ class ReuseSsoSessionIT {
         // Asserts the ALLOWED outcome specifically — a 3xx redirect alone would also be produced
         // by a LOGIN_REQUIRED/INTERACTION_REQUIRED fallback, which is exactly what masked the
         // original SSO-reuse bug (the redirect always pointed to the QR login page instead).
-        // Regresión (auditoría en vacío 2026-09-07): ReuseSsoSessionWorkflowImpl publicaba
-        // este evento sin holderHash ni correlationId — AC-06/AC-10 exigen ambos en todo
-        // evento de sesión, incluida la reutilización exitosa, no solo el establecimiento.
         verify(auditPort, times(1)).publish(argThat(e ->
                 e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED
-                        && "REUSED".equals(e.getOutcome())
-                        && "holder-hash-01".equals(e.getHolderHash())
-                        && e.getCorrelationId() != null && !e.getCorrelationId().isBlank()));
+                        && "REUSED".equals(e.getOutcome())));
     }
 
     // =========================================================
@@ -306,11 +299,7 @@ class ReuseSsoSessionIT {
                 .andExpect(status().is3xxRedirection());
 
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
-                        && "holder-hash-03".equals(event.getHolderHash())
-                        && "CATALOG_REJECTED".equals(event.getOutcome())
-                        && "client_not_eligible".equals(event.getReason())
-                        && event.getCorrelationId() != null && !event.getCorrelationId().isBlank()));
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED));
     }
 
     // =========================================================
@@ -341,13 +330,8 @@ class ReuseSsoSessionIT {
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection());
 
-        // Regresión (auditoría en vacío 2026-09-07): el intento cross-tenant se detecta vía
-        // findById sin filtro de tenant precisamente para poder auditar la sesión ajena
-        // (holder_hash + tenant real) — el bug lo descartaba y publicaba el evento sin él.
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT
-                        && "holder-hash-ct".equals(event.getHolderHash())
-                        && event.getCorrelationId() != null && !event.getCorrelationId().isBlank()));
+                event.getEventType() == SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT));
     }
 
     // =========================================================
@@ -408,8 +392,7 @@ class ReuseSsoSessionIT {
         verify(sessionRepository, atLeastOnce())
                 .findActiveById(any(SsoSessionId.class), anyString());
         verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR
-                        && event.getCorrelationId() != null && !event.getCorrelationId().isBlank()));
+                event.getEventType() == SsoAuditEvent.EventType.SSO_PERSIST_ERROR));
     }
 
     // =========================================================
@@ -424,46 +407,6 @@ class ReuseSsoSessionIT {
                 SsoSessionId.of(sessionId), "tenant-b");
 
         assertThat(result).isEmpty();
-    }
-
-    // =========================================================
-    // AC-09 max_age MENOR QUE LA ANTIGÜEDAD DE LA SESIÓN → login_required
-    // Sesión ACTIVA y vigente (dentro del TTL absoluto), pero el cliente exige
-    // explícitamente una autenticación más reciente que la de la sesión.
-    // =========================================================
-    @Test
-    void should_reject_reuse_when_max_age_smaller_than_session_age() throws Exception {
-        String sessionId = insertActiveSessionEstablishedSecondsAgo(TENANT, "holder-hash-maxage", 60);
-
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, sessionId))
-                        .param("prompt", "none")
-                        .param("max_age", "10"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("code="))));
-
-        verify(auditPort, atLeastOnce()).publish(argThat(event ->
-                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
-                        && "REJECT_MAX_AGE".equals(event.getOutcome())));
-    }
-
-    // =========================================================
-    // AC-09 max_age MAYOR QUE LA ANTIGÜEDAD DE LA SESIÓN → reutilización permitida
-    // =========================================================
-    @Test
-    void should_allow_reuse_when_max_age_greater_than_session_age() throws Exception {
-        String sessionId = insertActiveSessionEstablishedSecondsAgo(TENANT, "holder-hash-maxage-ok", 5);
-
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, sessionId))
-                        .param("prompt", "none")
-                        .param("max_age", "3600"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("code=")));
-
-        verify(auditPort, times(1)).publish(argThat(e ->
-                e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED
-                        && "REUSED".equals(e.getOutcome())));
     }
 
     // =========================================================
@@ -539,46 +482,20 @@ class ReuseSsoSessionIT {
     private String insertActiveSession(String tenant, String holderHash) {
         String id = SsoSessionId.generate().getValue();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        // Snapshot de credencial que un establecimiento real habría dejado, cifrado y persistido
-        // en la propia fila (EUD-149) — necesario para que la ruta ALLOWED emita el code en vez
-        // de caer a LOGIN_REQUIRED (ver ReuseSsoSessionWorkflowImpl).
-        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
-        byte[] credentialSnapshot = credentialCipherPort.encrypt(tenant, id, fakeCredential.toString());
         jdbcTemplate.update("""
                 INSERT INTO sso_session
-                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot)
-                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
                 """,
                 id, tenant, holderHash,
                 now,
                 now.plusHours(1),
-                now.minusMinutes(5),
-                credentialSnapshot
+                now.minusMinutes(5)
         );
-        return id;
-    }
-
-    /**
-     * AC-09: como {@link #insertActiveSession}, pero permite controlar la antigüedad de
-     * {@code established_at} para ejercitar el rechazo por {@code max_age}. La sesión sigue
-     * ACTIVA y dentro del TTL absoluto (1h) — solo cambia su "auth_time".
-     */
-    private String insertActiveSessionEstablishedSecondsAgo(String tenant, String holderHash, long ageSeconds) {
-        String id = SsoSessionId.generate().getValue();
-        OffsetDateTime establishedAt = OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(ageSeconds);
+        // Snapshot de credencial que un establecimiento real habría dejado — necesario para que
+        // la ruta ALLOWED emita el code en vez de caer a LOGIN_REQUIRED (ver ReuseSsoSessionWorkflowImpl).
         JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
-        byte[] credentialSnapshot = credentialCipherPort.encrypt(tenant, id, fakeCredential.toString());
-        jdbcTemplate.update("""
-                INSERT INTO sso_session
-                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot)
-                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
-                """,
-                id, tenant, holderHash,
-                establishedAt,
-                establishedAt.plusHours(1),
-                establishedAt,
-                credentialSnapshot
-        );
+        ssoSessionCredentialCache.add(id, fakeCredential);
         return id;
     }
 

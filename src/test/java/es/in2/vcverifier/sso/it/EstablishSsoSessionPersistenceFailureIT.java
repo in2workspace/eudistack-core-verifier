@@ -10,7 +10,6 @@ import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
-import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -50,7 +49,6 @@ class EstablishSsoSessionPersistenceFailureIT {
     @Mock private TenantSsoConfigPort tenantSsoConfigPort;
     @Mock private HashingService hashingService;
     @Mock private Clock clock;
-    @Mock private SsoCredentialCipherPort credentialCipherPort;
 
     @Test
     void shouldFailClosed_whenPersistenceFails_andEmitPersistErrorEvent() {
@@ -59,11 +57,8 @@ class EstablishSsoSessionPersistenceFailureIT {
                 "tenant-a",
                 "holder-xyz",
                 "client-test",
-                "corr-123",
-                "{\"sub\":\"holder-xyz\"}"
+                "corr-123"
         );
-
-        when(credentialCipherPort.encrypt(any(), any(), any())).thenReturn(new byte[]{1, 2, 3});
 
         // CONFIG MOCK CORRECTO
         TenantSsoConfig config = mock(TenantSsoConfig.class);

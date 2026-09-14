@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -14,7 +15,6 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
-import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -117,7 +117,7 @@ class TenantSsoCatalogReuseIT {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private SsoCredentialCipherPort credentialCipherPort;
+    private CacheStore<JsonNode> ssoSessionCredentialCache;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -408,25 +408,24 @@ class TenantSsoCatalogReuseIT {
 
     /**
      * Sesión ACTIVE con expires_at futuro y last_used_at reciente (idle OK). Además siembra el
-     * snapshot de credencial cifrado (credential_snapshot, EUD-149) que un establecimiento real
+     * snapshot de credencial (cacheStoreForSsoSessionCredential) que un establecimiento real
      * habría dejado, para que las rutas ALLOWED puedan emitir el code (ver ReuseSsoSessionWorkflowImpl).
      */
     private String insertActiveSession(String tenant, String holderHash) {
         String id = SsoSessionId.generate().getValue();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
-        byte[] credentialSnapshot = credentialCipherPort.encrypt(tenant, id, fakeCredential.toString());
         jdbcTemplate.update("""
                 INSERT INTO sso_session
-                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot)
-                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+                    (id, tenant, holder_hash, established_at, expires_at, last_used_at, state)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
                 """,
                 id, tenant, holderHash,
                 now.minusMinutes(30),
                 now.plusMinutes(30),
-                now.minusMinutes(2),
-                credentialSnapshot
+                now.minusMinutes(2)
         );
+        JsonNode fakeCredential = objectMapper.createObjectNode().put("sub", holderHash);
+        ssoSessionCredentialCache.add(id, fakeCredential);
         return id;
     }
 

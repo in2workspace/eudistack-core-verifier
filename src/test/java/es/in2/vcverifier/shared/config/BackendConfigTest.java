@@ -101,7 +101,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://Verifier.Example.com:443",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getTrustedVerifierOrigins())
@@ -113,7 +113,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getStaticUrl()).isEqualTo("https://verifier.example.com");
@@ -124,7 +124,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net", "https://dome.example.com"),
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getAllUrls())
@@ -134,29 +134,6 @@ class BackendConfigTest {
     @Test
     void getAllUrls_noAdditionalUrls_returnsOnlyCanonicalUrl() {
         assertThat(backendConfig.getAllUrls()).containsExactly("https://raw.githubusercontent.com");
-    }
-
-    @Test
-    void getSsoCredentialEncryptionKey_ssoConfigured_returnsKey() {
-        BackendProperties properties = new BackendProperties(
-                "https://verifier.example.com",
-                List.of(),
-                null, null, null, null, null, null, null,
-                new BackendProperties.Sso("base64-encoded-key"));
-        BackendConfig config = new BackendConfig(properties);
-
-        assertThat(config.getSsoCredentialEncryptionKey()).isEqualTo("base64-encoded-key");
-    }
-
-    @Test
-    void getSsoCredentialEncryptionKey_ssoNotConfigured_returnsNull() {
-        BackendProperties properties = new BackendProperties(
-                "https://verifier.example.com",
-                List.of(),
-                null, null, null, null, null, null, null, null);
-        BackendConfig config = new BackendConfig(properties);
-
-        assertThat(config.getSsoCredentialEncryptionKey()).isNull();
     }
 
     @Configuration

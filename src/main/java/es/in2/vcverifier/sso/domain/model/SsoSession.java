@@ -26,16 +26,6 @@ public class SsoSession {
     // US-06: instante de terminación (Single Logout). Null hasta que terminate() transiciona la sesión.
     private Instant terminatedAt;
 
-    // EUD-149 production-readiness: snapshot cifrado (AES-256-GCM) de las claims de la
-    // credencial verificada en el establecimiento, persistido en la misma fila/transacción de
-    // sso_session (sustituye la caché local no distribuida CacheStore<JsonNode>, que fallaba en
-    // silencio cuando el establecimiento y la reutilización caían en réplicas distintas). W2
-    // (review): un fallo al cifrar ya NO deja esto en null con la sesión igualmente persistida —
-    // EstablishSsoSessionWorkflow.attachCredentialSnapshot falla cerrado (ni sesión ni cookie) si
-    // no puede producir un snapshot. @ToString.Exclude: nunca volcar ciphertext crudo a logs.
-    @ToString.Exclude
-    private byte[] credentialSnapshotCiphertext;
-
     private SsoSession(
             SsoSessionId id,
             String tenant,
@@ -164,16 +154,6 @@ public class SsoSession {
      */
     public void touch(Instant now) {
         this.lastUsedAt = now;
-    }
-
-    /**
-     * EUD-149: adjunta el snapshot cifrado de credencial antes de persistir (establecimiento) o
-     * lo repuebla al reconstituir desde BD (lectura). {@code null} es un valor válido — sesiones
-     * sin credencial que snapshotear, o previas a esta migración, simplemente no permiten
-     * reutilización (fail-closed en {@code ReuseSsoSessionWorkflowImpl}).
-     */
-    public void attachCredentialSnapshot(byte[] ciphertext) {
-        this.credentialSnapshotCiphertext = ciphertext;
     }
 
     // =========================

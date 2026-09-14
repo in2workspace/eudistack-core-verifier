@@ -1,9 +1,8 @@
 package es.in2.vcverifier.sso.application.workflow;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
@@ -15,7 +14,6 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
-import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
 import es.in2.vcverifier.sso.domain.port.SsoMetricsPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
@@ -47,8 +45,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
     private final SsoMetricsPort metricsPort;
     private final RegisteredClientRepository registeredClientRepository;
     private final AuthorizationResponseProcessorService authorizationResponseProcessorService;
-    private final SsoCredentialCipherPort credentialCipherPort;
-    private final ObjectMapper objectMapper;
+    private final CacheStore<JsonNode> ssoSessionCredentialCache;
 
     public ReuseSsoSessionWorkflowImpl(
             TenantSsoConfigPort configPort,
@@ -58,8 +55,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             SsoMetricsPort metricsPort,
             RegisteredClientRepository registeredClientRepository,
             AuthorizationResponseProcessorService authorizationResponseProcessorService,
-            SsoCredentialCipherPort credentialCipherPort,
-            ObjectMapper objectMapper
+            CacheStore<JsonNode> ssoSessionCredentialCache
     ) {
         this.configPort = configPort;
         this.sessionRepository = sessionRepository;
@@ -68,8 +64,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         this.metricsPort = metricsPort;
         this.registeredClientRepository = registeredClientRepository;
         this.authorizationResponseProcessorService = authorizationResponseProcessorService;
-        this.credentialCipherPort = credentialCipherPort;
-        this.objectMapper = objectMapper;
+        this.ssoSessionCredentialCache = ssoSessionCredentialCache;
     }
 
     @Override
@@ -77,8 +72,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             String tenantSlug,
             String ssoCookieValue,
             AuthorizationContext ctx,
-            String clientId,
-            String correlationId
+            String clientId
     ) {
         Instant now = Instant.now(clock);
 
@@ -108,7 +102,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .tenant(tenantSlug)
                             .clientId(clientId)
                             .outcome("REPOSITORY_FAILURE")
-                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -124,9 +117,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                                     .eventType(SsoAuditEvent.EventType.SSO_CROSS_TENANT_ATTEMPT)
                                     .tenant(tenantSlug)
                                     .clientId(clientId)
-                                    .holderHash(s.getHolderHash())
                                     .outcome("CROSS_TENANT_BLOCKED")
-                                    .correlationId(correlationId)
                                     .occurredAt(now)
                                     .build()
                     ));
@@ -146,25 +137,19 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         TenantSsoCatalog catalog = configPort.resolveEligibleClients(tenantSlug);
 
         TenantSsoPolicy policy = new TenantSsoPolicy(clock, ttl.absolute().toSeconds());
-        Long maxAgeSeconds = ctx != null ? ctx.maxAge() : null;
         ReuseDecision decision = policy.evaluate(
                 session.getTenant(), tenantSlug, session.getEstablishedAt(),
-                clientRegistered, catalog, clientId, maxAgeSeconds
+                clientRegistered, catalog, clientId
         );
 
         if (decision == ReuseDecision.REJECT_CATALOG) {
             // AC-03 / US-05: cliente no figura en catálogo SSO → interaction_required
-            // AC-05: el contrato de la Story exige explícitamente reason=client_not_eligible
-            // en este evento (además de outcome, que ya distinguía el motivo internamente).
             auditPort.publish(
                     SsoAuditEvent.builder()
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
-                            .holderHash(session.getHolderHash())
                             .outcome("CATALOG_REJECTED")
-                            .reason("client_not_eligible")
-                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -178,9 +163,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
-                            .holderHash(session.getHolderHash())
                             .outcome(decision.name())
-                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -204,22 +187,18 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         }
 
         // 7. COMPLETE THE AUTHORIZATION — no VP is re-presented on reuse, so the credential
-        // claims come from the encrypted snapshot persisted alongside the session row at
-        // establishment time (EUD-149: EstablishSsoSessionWorkflow / sso_session.credential_snapshot
-        // — replaces the previous non-distributed in-memory cache, which failed closed whenever
-        // establishment and reuse landed on different replicas). A missing/undecryptable
-        // snapshot (session predates this migration, wrong/rotated key, tampered ciphertext)
-        // fails closed to LOGIN_REQUIRED rather than issuing a code without claims.
-        JsonNode credentialJson = decryptCredentialSnapshot(tenantSlug, sessionId, session.getCredentialSnapshotCiphertext());
+        // claims come from the snapshot cached at establishment time (see
+        // SsoSessionAuthenticationSuccessHandler / cacheStoreForSsoSessionCredential). A cache
+        // miss (eviction, cold restart, session established before this cache existed) fails
+        // closed to LOGIN_REQUIRED rather than issuing a code without claims.
+        JsonNode credentialJson = ssoSessionCredentialCache.getIfPresent(sessionId.getValue());
         if (credentialJson == null) {
             auditPort.publish(
                     SsoAuditEvent.builder()
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
-                            .holderHash(session.getHolderHash())
                             .outcome("CREDENTIAL_SNAPSHOT_MISSING")
-                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -242,9 +221,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
                             .tenant(tenantSlug)
                             .clientId(clientId)
-                            .holderHash(session.getHolderHash())
                             .outcome("REDIRECT_URI_MISMATCH")
-                            .correlationId(correlationId)
                             .occurredAt(now)
                             .build()
             );
@@ -272,9 +249,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                         .eventType(SsoAuditEvent.EventType.SSO_SESSION_REUSED)
                         .tenant(tenantSlug)
                         .clientId(clientId)
-                        .holderHash(session.getHolderHash())
                         .outcome("REUSED")
-                        .correlationId(correlationId)
                         .occurredAt(now)
                         .build()
         );
@@ -283,29 +258,5 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         metricsPort.recordOid4vpAvoided(tenantSlug);
 
         return new Result(Result.Status.ALLOWED, redirectUrl);
-    }
-
-    /**
-     * EUD-149: descifra el snapshot persistido en {@code sso_session.credential_snapshot}.
-     * {@code null} en cualquiera de estos casos (nunca lanza, todos fail-closed en el caller):
-     * ciphertext ausente, clave incorrecta/rotada, ciphertext corrupto, o JSON descifrado
-     * pero no parseable.
-     */
-    private JsonNode decryptCredentialSnapshot(String tenant, SsoSessionId sessionId, byte[] ciphertext) {
-        if (ciphertext == null) {
-            return null;
-        }
-        return credentialCipherPort.decrypt(tenant, sessionId.getValue(), ciphertext)
-                .map(json -> {
-                    try {
-                        return objectMapper.readTree(json);
-                    } catch (JsonProcessingException e) {
-                        log.warn("event=sso_credential_snapshot_corrupt tenant={} session={}",
-                                tenant, sessionId.getValue().length() <= 8
-                                        ? sessionId.getValue() : sessionId.getValue().substring(0, 8));
-                        return null;
-                    }
-                })
-                .orElse(null);
     }
 }
