@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 @Slf4j
@@ -229,6 +230,11 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         additionalParameters.put(OAuth2ParameterNames.CLIENT_ID, clientId);
         additionalParameters.put("vc", refreshTokenDataCache.verifiableCredential());
         additionalParameters.put(OAuth2ParameterNames.AUDIENCE, clientId);
+        // Carries the ORIGINAL login's auth_time through so the new id_token reuses it instead of
+        // stamping "now" — see RefreshTokenDataCache.authTimeEpochSeconds.
+        if (refreshTokenDataCache.authTimeEpochSeconds() != null) {
+            additionalParameters.put(AUTH_TIME_PARAM, refreshTokenDataCache.authTimeEpochSeconds());
+        }
         Authentication clientPrincipal = SecurityContextHolder.getContext().getAuthentication();
 
         log.info("Refresh token grant successfully handled");

@@ -26,6 +26,7 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -204,6 +205,57 @@ class TokenGenerationWorkflowTest {
             assertThat(buildContext.tenant()).isNull();
             assertThat(buildContext.additionalParameters()).containsEntry("custom", "value");
             assertThat(buildContext.credentialConfigurationId()).isEqualTo("learcredential.employee.w3c.4");
+        }
+
+        @Test
+        @DisplayName("auth_time claim defaults to now when no override is supplied (original login)")
+        void authTimeDefaultsToNowOnOriginalLogin() {
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
+            ExtractedClaims claims = ExtractedClaims.builder()
+                    .subject("did:key:z6MkSubject")
+                    .scope("openid learcredential")
+                    .idTokenClaims(Map.of())
+                    .accessTokenClaims(Map.of())
+                    .build();
+
+            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
+            when(claimsExtractor.extract(credential)).thenReturn(claims);
+            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
+
+            Instant before = Instant.now();
+            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(
+                    credential, "did:key:client", Map.of(), true, "altia");
+            Instant after = Instant.now();
+
+            assertThat(result.authTime()).isBetween(before.minusSeconds(1), after.plusSeconds(1));
+        }
+
+        @Test
+        @DisplayName("auth_time claim reuses the original login's value on refresh (OIDC Core 12.2 / EUD refresh_token support)")
+        void authTimeReusesOriginalValueOnRefresh() {
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
+            ExtractedClaims claims = ExtractedClaims.builder()
+                    .subject("did:key:z6MkSubject")
+                    .scope("openid learcredential")
+                    .idTokenClaims(Map.of())
+                    .accessTokenClaims(Map.of())
+                    .build();
+
+            when(claimsExtractor.supports("learcredential.employee.w3c.4")).thenReturn(true);
+            when(claimsExtractor.extract(credential)).thenReturn(claims);
+            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
+
+            Instant originalAuthTime = Instant.now().minusSeconds(300);
+            Map<String, Object> additionalParams = Map.of("auth_time", originalAuthTime.getEpochSecond());
+
+            TokenGenerationWorkflow.Result result = workflow.issueAccessToken(
+                    credential, "did:key:client", additionalParams, true, "altia");
+
+            assertThat(result.authTime().getEpochSecond()).isEqualTo(originalAuthTime.getEpochSecond());
         }
 
         @Test
