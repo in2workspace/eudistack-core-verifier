@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>OIDC endpoints ({@code /oidc/*}) restrict origins to registered clients via
  * {@code RegisteredClientsCorsConfig}. Those CORS rules are tested at the unit level in
  * {@code RegisteredClientsCorsConfigTest} because the Authorization Server filter chain's
- * request matcher does not intercept OPTIONS preflight requests in MockMvc.
+ * request matcher does not intercept OPTIONS preflight requests in MockMvc
  */
 @SpringBootTest(
         properties = {
