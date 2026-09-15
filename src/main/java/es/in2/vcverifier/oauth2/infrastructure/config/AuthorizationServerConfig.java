@@ -126,7 +126,7 @@ public class AuthorizationServerConfig {
                                 // correctly, is appended AFTER Spring's default), so the built-in one would
                                 // win the race. Remove it so ours is the only one that ever runs.
                                 .authenticationProviders(providers ->
-                                        providers.removeIf(provider -> provider instanceof OAuth2RefreshTokenAuthenticationProvider))
+                                        providers.removeIf(OAuth2RefreshTokenAuthenticationProvider.class::isInstance))
                 )
                 // Override the client_assertion aud validation: the request-derived issuer includes the
                 // /verifier context-path, but legacy clients sign the assertion with the clean public URL.
