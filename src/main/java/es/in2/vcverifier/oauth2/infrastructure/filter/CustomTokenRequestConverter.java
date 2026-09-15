@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 @Slf4j
@@ -222,6 +223,15 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
             log.error("Refresh token not found or expired");
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_TOKEN);
         }
+        // SEC: the refresh token must be redeemed by the SAME client it was issued to — otherwise a
+        // token stolen/leaked from one tenant's client could be replayed against another tenant's
+        // client_id, minting a token whose aud/scoping reflects the wrong tenant while still
+        // carrying the original holder's real VC-derived identity claims.
+        if (!refreshTokenDataCache.clientId().equals(clientId)) {
+            log.error("Refresh token client_id mismatch: token issued to '{}', requested by '{}'",
+                    refreshTokenDataCache.clientId(), clientId);
+            throw OAuth2ErrorTranslator.invalidGrant();
+        }
         // SEC-F10: Invalidate used refresh token immediately (one-time use / rotation).
         refreshTokenDataCacheCacheStore.delete(refreshTokenValue);
 
@@ -229,6 +239,11 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         additionalParameters.put(OAuth2ParameterNames.CLIENT_ID, clientId);
         additionalParameters.put("vc", refreshTokenDataCache.verifiableCredential());
         additionalParameters.put(OAuth2ParameterNames.AUDIENCE, clientId);
+        // Carries the ORIGINAL login's auth_time through so the new id_token reuses it instead of
+        // stamping "now" — see RefreshTokenDataCache.authTimeEpochSeconds.
+        if (refreshTokenDataCache.authTimeEpochSeconds() != null) {
+            additionalParameters.put(AUTH_TIME_PARAM, refreshTokenDataCache.authTimeEpochSeconds());
+        }
         Authentication clientPrincipal = SecurityContextHolder.getContext().getAuthentication();
 
         log.info("Refresh token grant successfully handled");

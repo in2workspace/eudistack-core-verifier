@@ -94,6 +94,11 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             }
         }
 
+        // For refresh_token, CustomTokenRequestConverter.handleRefreshTokenGrant already looked up
+        // the credential cached against this refresh token (and deleted that cache entry as part of
+        // SEC-F10's one-time-use rotation) and placed it in additionalParameters — so the plain
+        // getJsonCredential lookup below already works for every grant type without needing a
+        // second, now-stale cache read here.
         JsonNode credentialJson = getJsonCredential(authentication);
 
         // Resolve audience
@@ -222,6 +227,9 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                 .refreshToken(oAuth2RefreshToken)
                 .clientId(clientId)
                 .verifiableCredential(credentialJson)
+                // Carries the id_token's auth_time forward so the NEXT refresh (if any) also
+                // reuses the original login's auth_time instead of this grant's own issue time.
+                .authTimeEpochSeconds(tokenResult.authTime() != null ? tokenResult.authTime().getEpochSecond() : null)
                 .build();
 
         cacheStoreForRefreshTokenData.add(oAuth2RefreshToken.getTokenValue(), refreshTokenDataCache);
