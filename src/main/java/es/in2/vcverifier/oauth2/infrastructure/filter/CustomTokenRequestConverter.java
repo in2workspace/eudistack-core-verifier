@@ -223,6 +223,15 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
             log.error("Refresh token not found or expired");
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_TOKEN);
         }
+        // SEC: the refresh token must be redeemed by the SAME client it was issued to — otherwise a
+        // token stolen/leaked from one tenant's client could be replayed against another tenant's
+        // client_id, minting a token whose aud/scoping reflects the wrong tenant while still
+        // carrying the original holder's real VC-derived identity claims.
+        if (!refreshTokenDataCache.clientId().equals(clientId)) {
+            log.error("Refresh token client_id mismatch: token issued to '{}', requested by '{}'",
+                    refreshTokenDataCache.clientId(), clientId);
+            throw OAuth2ErrorTranslator.invalidGrant();
+        }
         // SEC-F10: Invalidate used refresh token immediately (one-time use / rotation).
         refreshTokenDataCacheCacheStore.delete(refreshTokenValue);
 

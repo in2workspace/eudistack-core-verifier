@@ -199,6 +199,30 @@ class CustomTokenRequestConverterTest {
         }
 
         @Test
+        @DisplayName("refresh token redeemed by a different client_id than it was issued to throws invalid_grant")
+        void convert_refreshTokenGrant_clientIdMismatch_throwsInvalidGrant() {
+            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+
+            MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+            parameters.add(OAuth2ParameterNames.GRANT_TYPE, "refresh_token");
+            parameters.add(OAuth2ParameterNames.REFRESH_TOKEN, REFRESH_TOKEN_VALUE);
+            parameters.add(OAuth2ParameterNames.CLIENT_ID, "a-different-client");
+            when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+
+            RefreshTokenDataCache cached = RefreshTokenDataCache.builder()
+                    .clientId(CLIENT_ID)
+                    .verifiableCredential(buildMachineCredentialJsonNode())
+                    .build();
+            when(refreshTokenDataCacheCacheStore.get(REFRESH_TOKEN_VALUE)).thenReturn(cached);
+
+            OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                    () -> customTokenRequestConverter.convert(mockRequest));
+
+            assertEquals(OAuth2ErrorCodes.INVALID_GRANT, exception.getError().getErrorCode());
+            verify(refreshTokenDataCacheCacheStore, never()).delete(anyString());
+        }
+
+        @Test
         @DisplayName("unknown refresh token throws invalid_token")
         void convert_refreshTokenGrant_unknownToken_throwsInvalidToken() {
             HttpServletRequest mockRequest = mock(HttpServletRequest.class);
