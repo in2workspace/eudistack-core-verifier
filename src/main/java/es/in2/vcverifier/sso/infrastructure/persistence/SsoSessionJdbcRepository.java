@@ -86,19 +86,6 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     // DB CONFIG
     // =========================================================
 
-    /**
-     * Sets search_path to the quoted tenant schema + public.
-     * Fail-closed: if this fails, we must NOT continue with unqualified SQL
-     * as queries could hit the wrong schema (cross-tenant data leak risk).
-     */
-    private void setTenantSearchPath(Connection c, String tenant) throws SQLException {
-        String sql = "SELECT set_config('search_path', ?, true)";
-        try (PreparedStatement s = c.prepareStatement(sql)) {
-            s.setString(1, "\"" + tenant + "\", public");
-            s.execute();
-        }
-    }
-
     private void setStatementTimeout(Connection c) throws SQLException {
         String sql = "SELECT set_config('statement_timeout', ?, true)";
         try (PreparedStatement s = c.prepareStatement(sql)) {
@@ -108,13 +95,24 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     // =========================================================
-    // TENANT-SCOPED TRANSACTION
-    // `set_config(..., true)` (is_local=true, search_path / statement_timeout) only persists
-    // within an active transaction — a connection with autocommit=true reverts it before the
-    // business statement runs, silently breaking schema-per-tenant isolation. Every method
-    // below must run its business statement inside the same transaction as these calls.
-    // Never pass is_local=false (the SET SESSION equivalent): with HikariCP that would leak
-    // the setting into the pooled physical connection.
+    // TRANSACTION
+    // `set_config(..., true)` (is_local=true, statement_timeout) only persists within an
+    // active transaction — a connection with autocommit=true reverts it before the business
+    // statement runs. Every method below must run its business statement inside the same
+    // transaction as this call.
+    //
+    // Tenant isolation is enforced entirely by the `WHERE tenant = ?` filter already present
+    // in every query below (see NFR-S-149/H-10) — this class does NOT switch `search_path`
+    // per tenant. A prior version did (`SET LOCAL search_path = "<tenant>", public`), on the
+    // assumption that each tenant gets its own Postgres schema. That assumption only holds
+    // locally (Flyway targets `public` there, always in the effective search_path). In DEV/
+    // STG/PROD, IaC deploys the Verifier against ONE shared schema named `verifier`
+    // (`SPRING_FLYWAY_DEFAULT_SCHEMA=verifier`, `SPRING_DATASOURCE_URL` carries
+    // `currentSchema=verifier`) — no schema is ever created per tenant. Switching
+    // `search_path` to `"<tenant>", public` there shadows that connection-level default and
+    // makes every unqualified `sso_session`/`sso_session_client` reference resolve to
+    // nothing, failing every SSO establish/reuse with `SsoSessionRepositoryException`. See
+    // EUD-149 incident 2026-09-16.
     // =========================================================
 
     @FunctionalInterface
@@ -122,19 +120,11 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         T execute(Connection c) throws SQLException;
     }
 
-    /**
-     * Runs {@code op} inside a real transaction so `search_path` (when {@code tenant} is
-     * given) and `statement_timeout` apply to the business statement. A {@code null} tenant
-     * skips the search_path fix — used by {@link #findById} which intentionally queries
-     * without a tenant filter (AC-04 cross-tenant detection).
-     */
-    private <T> T inTransaction(String tenant, SqlOperation<T> op) throws SQLException {
+    /** Runs {@code op} inside a real transaction so `statement_timeout` applies to the business statement. */
+    private <T> T inTransaction(SqlOperation<T> op) throws SQLException {
         try (Connection c = dataSource.getConnection()) {
             c.setAutoCommit(false);
             try {
-                if (tenant != null) {
-                    setTenantSearchPath(c, tenant);
-                }
                 setStatementTimeout(c);
                 T result = op.execute(c);
                 c.commit();
@@ -164,7 +154,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            return inTransaction(session.getTenant(), c -> {
+            return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(insertSql)) {
                     bindSession(ps, session);
                     ps.executeUpdate();
@@ -220,7 +210,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     """;
 
         try {
-            return inTransaction(tenant, c -> {
+            return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setString(1, tenant);
                     ps.setString(2, holderHash);
@@ -258,7 +248,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            return inTransaction(tenant, c -> {
+            return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setObject(1, sessionId.getValue());
                     ps.setString(2, tenant);
@@ -291,7 +281,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            return inTransaction(null, c -> {
+            return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setObject(1, sessionId.getValue());
 
@@ -337,7 +327,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            inTransaction(tenant, c -> {
+            inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setObject(1, OffsetDateTime.ofInstant(lastUsedAt, ZoneOffset.UTC));
                     ps.setObject(2, sessionId.getValue());
@@ -371,7 +361,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         try {
-            inTransaction(tenant, c -> {
+            inTransaction(c -> {
                 supersedeActiveInConnection(c, tenant, holderHash);
                 recordSuccess();
                 return null;
@@ -419,7 +409,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            return inTransaction(tenant, c -> {
+            return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setObject(1, OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC));
                     ps.setObject(2, sessionId.getValue());
@@ -457,7 +447,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            return inTransaction(tenant, c -> {
+            return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setObject(1, sessionId.getValue());
                     ps.setString(2, tenant);
@@ -500,7 +490,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            inTransaction(tenant, c -> {
+            inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     OffsetDateTime now = OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC);
                     ps.setObject(1, sessionId.getValue());
@@ -536,7 +526,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         """;
 
         try {
-            return inTransaction(tenant, c -> {
+            return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setString(1, tenant);
                     int deleted = ps.executeUpdate();
