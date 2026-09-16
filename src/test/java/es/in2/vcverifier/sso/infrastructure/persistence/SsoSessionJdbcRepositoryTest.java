@@ -64,7 +64,7 @@ class SsoSessionJdbcRepositoryTest {
     class SaveTests {
 
         @Test
-        void save_commitsWithinSameTransactionAsSearchPath_whenInsertSucceeds() throws SQLException {
+        void save_commitsInSingleTransaction_whenInsertSucceeds() throws SQLException {
             // Arrange
             SsoSession session = SsoSession.establish(TENANT, HOLDER_HASH, Duration.ofHours(1));
             when(preparedStatement.executeUpdate()).thenReturn(1);
@@ -74,12 +74,13 @@ class SsoSessionJdbcRepositoryTest {
 
             // Assert
             assertThat(saved).isEqualTo(session);
-            verify(connection).prepareStatement(contains("set_config('search_path'"));
-            verify(preparedStatement).setString(1, "\"" + TENANT + "\", public");
+            // No per-tenant search_path switch: isolation comes from the `tenant` column
+            // filter already present in every query, not from a schema-per-tenant search_path.
+            verify(connection, never()).prepareStatement(contains("search_path"));
 
             InOrder order = inOrder(connection, preparedStatement);
             order.verify(connection).setAutoCommit(false);
-            order.verify(preparedStatement, times(2)).execute();
+            order.verify(preparedStatement).execute();
             order.verify(preparedStatement).executeUpdate();
             order.verify(connection).commit();
             order.verify(connection).setAutoCommit(true);
@@ -175,9 +176,9 @@ class SsoSessionJdbcRepositoryTest {
 
         @Test
         void findActiveById_returnsEmptyAndRollsBack_whenSqlExceptionOccurs() throws SQLException {
-            // Arrange
+            // Arrange: 1st prepareStatement is the statement_timeout set_config, 2nd is the
+            // business SELECT (no per-tenant search_path statement anymore — see NFR-S-149/H-10).
             when(connection.prepareStatement(anyString()))
-                    .thenReturn(preparedStatement)
                     .thenReturn(preparedStatement)
                     .thenThrow(new SQLException("connection reset", "08006"));
 
@@ -196,7 +197,7 @@ class SsoSessionJdbcRepositoryTest {
     class FindByIdTests {
 
         @Test
-        void findById_skipsSearchPath_butStillAppliesStatementTimeoutAndCommits() throws SQLException {
+        void findById_appliesStatementTimeoutAndCommits_withNoTenantFilter() throws SQLException {
             // Arrange
             when(preparedStatement.executeQuery()).thenReturn(resultSet);
             when(resultSet.next()).thenReturn(false);
