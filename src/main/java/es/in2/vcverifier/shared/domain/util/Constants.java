@@ -36,5 +36,8 @@ public class Constants {
     // JTI cache TTL: 2x access token lifetime (900s) to ensure replay window coverage
     public static final long JTI_CACHE_TTL_SECONDS = 1800L;
     public static final String X_TENANT_HEADER = "X-Tenant";
+    // Carries the original login's auth_time (epoch seconds) across a refresh_token grant so the
+    // new id_token reuses it instead of stamping "now" — see RefreshTokenDataCache.
+    public static final String AUTH_TIME_PARAM = "auth_time";
 
 }

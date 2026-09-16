@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 /**
@@ -57,10 +58,13 @@ public class TokenGenerationWorkflow {
             String idTokenJwt,
             Map<String, Object> idTokenClaims,
             String scope,
-            String subject
+            String subject,
+            // The id_token's auth_time — original login instant, carried forward unchanged across
+            // refreshes. Null when no id_token was generated (client_credentials/M2M).
+            Instant authTime
     ) {}
 
-    private record IdTokenBuildResult(String jwt, Map<String, Object> claims) {}
+    private record IdTokenBuildResult(String jwt, Map<String, Object> claims, Instant authTime) {}
 
     /**
      * Generates an access token (and optionally an ID token) from a validated credential.
@@ -99,13 +103,15 @@ public class TokenGenerationWorkflow {
 
         String idTokenJwt = null;
         Map<String, Object> idTokenClaims = null;
+        Instant authTime = null;
         if (generateIdToken) {
             IdTokenBuildResult idTokenResult = buildIdToken(credentialJson, extractedClaims, subject, audience, additionalParameters, tenant);
             idTokenJwt = idTokenResult.jwt();
             idTokenClaims = idTokenResult.claims();
+            authTime = idTokenResult.authTime();
         }
 
-        return new Result(accessTokenJwt, issueTime, expirationTime, idTokenJwt, idTokenClaims, extractedClaims.scope(), subject);
+        return new Result(accessTokenJwt, issueTime, expirationTime, idTokenJwt, idTokenClaims, extractedClaims.scope(), subject, authTime);
     }
 
     public String extractCredentialType(JsonNode credentialJson) {
@@ -160,13 +166,23 @@ public class TokenGenerationWorkflow {
             throw new JsonConversionException("Error converting Verifiable Credential to JSON: " + e.getMessage());
         }
 
+        // OIDC Core 12.2: on a refresh, auth_time MUST stay identical to the original
+        // authentication's value, not be re-stamped as "now" — angular-auth-oidc-client's
+        // pre/post id_token claims check rejects the refresh outright otherwise. The original
+        // value is carried through additionalParameters by CustomTokenRequestConverter
+        // (see RefreshTokenDataCache.authTimeEpochSeconds); absent it, this IS the original
+        // authentication, so "now" is correct.
+        Instant authTime = additionalParameters.containsKey(AUTH_TIME_PARAM)
+                ? Instant.ofEpochSecond(((Number) additionalParameters.get(AUTH_TIME_PARAM)).longValue())
+                : issueTime;
+
         JWTClaimsSet.Builder idTokenClaimsBuilder = new JWTClaimsSet.Builder()
                 .subject(subject)
                 .issuer(backendConfig.getUrl())
                 .audience(audience)
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
-                .claim("auth_time", Date.from(issueTime))
+                .claim("auth_time", Date.from(authTime))
                 .claim("acr", "0")
                 .claim("credential_type", extractCredentialType(credentialJson))
                 .claim("vc_json", verifiableCredentialJson);
@@ -187,7 +203,7 @@ public class TokenGenerationWorkflow {
 
         JWTClaimsSet idTokenClaims = idTokenClaimsBuilder.build();
         String jwt = jwtService.issueJWT(idTokenClaims.toString());
-        return new IdTokenBuildResult(jwt, idTokenClaims.toJSONObject());
+        return new IdTokenBuildResult(jwt, idTokenClaims.toJSONObject(), authTime);
     }
 
     /**

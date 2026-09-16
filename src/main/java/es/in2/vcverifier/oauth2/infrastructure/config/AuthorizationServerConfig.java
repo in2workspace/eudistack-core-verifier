@@ -17,6 +17,8 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthenticationProvid
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthorizationRequestConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomTokenRequestConverter;
+import es.in2.vcverifier.oauth2.infrastructure.filter.PublicClientRefreshTokenAuthenticationConverter;
+import es.in2.vcverifier.oauth2.infrastructure.filter.PublicClientRefreshTokenAuthenticationProvider;
 import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationProvider;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
@@ -41,6 +43,7 @@ import org.springframework.security.oauth2.server.authorization.OAuth2Authorizat
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.authentication.JwtClientAssertionAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.authentication.JwtClientAssertionDecoderFactory;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2RefreshTokenAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
@@ -92,6 +95,14 @@ public class AuthorizationServerConfig {
                                 // clients are untouched — Spring's built-in converters/providers still handle them.
                                 .authenticationConverter(new UnregisteredM2MClientAuthenticationConverter(registeredClientRepository))
                                 .authenticationProvider(new UnregisteredM2MClientAuthenticationProvider())
+                                // Same idea, for a PRE-registered PUBLIC client (no secret, PKCE-login)
+                                // making a refresh_token request: Spring's built-in "none"-method
+                                // converter/provider only cover the authorization_code grant (PKCE
+                                // validation doesn't apply to refresh), so without this such a client
+                                // is rejected with a bare 401 before ever reaching
+                                // CustomTokenRequestConverter / CustomAuthenticationProvider.
+                                .authenticationConverter(new PublicClientRefreshTokenAuthenticationConverter(registeredClientRepository))
+                                .authenticationProvider(new PublicClientRefreshTokenAuthenticationProvider(registeredClientRepository))
                 )
                 .authorizationEndpoint(authorizationEndpoint ->
                         authorizationEndpoint
@@ -105,6 +116,17 @@ public class AuthorizationServerConfig {
                         tokenEndpoint
                                 .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore, oAuth2M2MAuditPort))
                                 .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService, tokenGenerationWorkflow, schemaProfileRegistry, oAuth2M2MAuditPort))
+                                // Refresh tokens are also registered in OAuth2AuthorizationService (needed
+                                // for RP-Initiated Logout's id_token_hint lookup — see getOAuth2RefreshToken),
+                                // which means Spring's own built-in OAuth2RefreshTokenAuthenticationProvider
+                                // would ALSO find and happily process a refresh_token grant for it — using
+                                // generic token issuance with none of our VC-derived claims, tenant scoping,
+                                // or one-time-use rotation check. Provider list order is append-only via this
+                                // DSL (CustomAuthenticationProvider, which already handles this token type
+                                // correctly, is appended AFTER Spring's default), so the built-in one would
+                                // win the race. Remove it so ours is the only one that ever runs.
+                                .authenticationProviders(providers ->
+                                        providers.removeIf(OAuth2RefreshTokenAuthenticationProvider.class::isInstance))
                 )
                 // Override the client_assertion aud validation: the request-derived issuer includes the
                 // /verifier context-path, but legacy clients sign the assertion with the clean public URL.

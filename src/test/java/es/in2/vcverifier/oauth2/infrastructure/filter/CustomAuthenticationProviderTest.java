@@ -127,7 +127,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                "signed-id-jwt", Map.of("sub", "did:key:zDnaeTest123"), "openid learcredential", "did:key:zDnaeTest123");
+                "signed-id-jwt", Map.of("sub", "did:key:zDnaeTest123"), "openid learcredential", "did:key:zDnaeTest123", Instant.now());
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true), any()))
                 .thenReturn(tokenResult);
         when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
@@ -165,7 +165,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123", null);
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), any()))
                 .thenReturn(tokenResult);
 
@@ -217,6 +217,34 @@ class CustomAuthenticationProviderTest {
     }
 
     @Test
+    void authenticate_validRefreshTokenGrant_withCredentialSuppliedByConverter_success() {
+        // Mirrors what CustomTokenRequestConverter.handleRefreshTokenGrant actually hands this
+        // provider: the cache lookup/deletion already happened upstream, "vc" is already populated.
+        JsonNode vcJson = buildEmployeeCredentialV1();
+
+        TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
+                "signed-access-jwt-2", Instant.now(), Instant.now().plusSeconds(3600),
+                "signed-id-jwt-2", Map.of("sub", "did:key:zDnaeTest123"), "openid learcredential", "did:key:zDnaeTest123", Instant.now());
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResult);
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+        additionalParams.put(OAuth2ParameterNames.AUDIENCE, "https://rp.example.com");
+
+        OAuth2RefreshTokenAuthenticationToken authToken = new OAuth2RefreshTokenAuthenticationToken(
+                "opaque-refresh-token", mock(Authentication.class), null, additionalParams);
+
+        Authentication result = provider.authenticate(authToken);
+
+        assertNotNull(result);
+        assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
+        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true), any());
+    }
+
+    @Test
     void authenticate_unsupportedGrantType_throwsException() {
         Authentication unsupported = mock(Authentication.class);
         assertThrows(OAuth2AuthenticationException.class, () -> provider.authenticate(unsupported));
@@ -257,7 +285,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123", null);
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);
 
@@ -283,7 +311,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123", null);
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), isNull()))
                 .thenReturn(tokenResult);
 
@@ -311,7 +339,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123", null);
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);
 
@@ -349,7 +377,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123", null);
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);
 
@@ -400,7 +428,7 @@ class CustomAuthenticationProviderTest {
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
                 "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
-                null, null, "machine learcredential", "did:key:zDnaeMachine123");
+                null, null, "machine learcredential", "did:key:zDnaeMachine123", null);
         // Canonicalized to the request-resolved tenant ("dome"), not the credential's original casing.
         when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), eq("dome")))
                 .thenReturn(tokenResult);

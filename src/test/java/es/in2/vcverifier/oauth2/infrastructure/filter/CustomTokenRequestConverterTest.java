@@ -37,6 +37,7 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientCredentialsAuthenticationToken;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2RefreshTokenAuthenticationToken;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
@@ -130,6 +131,115 @@ class CustomTokenRequestConverterTest {
         assertEquals(clientId, additionalParameters.get(OAuth2ParameterNames.CLIENT_ID));
 
         verify(oAuth2M2MAuditPort, never()).publish(any());
+    }
+
+    @Nested
+    @DisplayName("refresh_token grant")
+    class RefreshTokenGrantTests {
+
+        private static final String REFRESH_TOKEN_VALUE = "opaque-refresh-token";
+        private static final String CLIENT_ID = "vc-auth-client-sandbox";
+
+        @Test
+        @DisplayName("carries the cached auth_time forward when present")
+        void convert_refreshTokenGrant_withCachedAuthTime_includesAuthTimeParam() {
+            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+            Authentication clientPrincipal = mock(Authentication.class);
+            SecurityContextHolder.getContext().setAuthentication(clientPrincipal);
+
+            MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+            parameters.add(OAuth2ParameterNames.GRANT_TYPE, "refresh_token");
+            parameters.add(OAuth2ParameterNames.REFRESH_TOKEN, REFRESH_TOKEN_VALUE);
+            parameters.add(OAuth2ParameterNames.CLIENT_ID, CLIENT_ID);
+            when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+
+            JsonNode vc = buildMachineCredentialJsonNode();
+            RefreshTokenDataCache cached = RefreshTokenDataCache.builder()
+                    .clientId(CLIENT_ID)
+                    .verifiableCredential(vc)
+                    .authTimeEpochSeconds(1_700_000_000L)
+                    .build();
+            when(refreshTokenDataCacheCacheStore.get(REFRESH_TOKEN_VALUE)).thenReturn(cached);
+
+            Authentication result = customTokenRequestConverter.convert(mockRequest);
+
+            assertInstanceOf(OAuth2RefreshTokenAuthenticationToken.class, result);
+            OAuth2RefreshTokenAuthenticationToken token = (OAuth2RefreshTokenAuthenticationToken) result;
+            assertEquals(REFRESH_TOKEN_VALUE, token.getRefreshToken());
+            assertEquals(vc, token.getAdditionalParameters().get("vc"));
+            assertEquals(CLIENT_ID, token.getAdditionalParameters().get(OAuth2ParameterNames.CLIENT_ID));
+            assertEquals(1_700_000_000L, token.getAdditionalParameters().get("auth_time"));
+            verify(refreshTokenDataCacheCacheStore).delete(REFRESH_TOKEN_VALUE);
+        }
+
+        @Test
+        @DisplayName("omits auth_time when the cached entry predates it")
+        void convert_refreshTokenGrant_withoutCachedAuthTime_omitsAuthTimeParam() {
+            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+            Authentication clientPrincipal = mock(Authentication.class);
+            SecurityContextHolder.getContext().setAuthentication(clientPrincipal);
+
+            MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+            parameters.add(OAuth2ParameterNames.GRANT_TYPE, "refresh_token");
+            parameters.add(OAuth2ParameterNames.REFRESH_TOKEN, REFRESH_TOKEN_VALUE);
+            parameters.add(OAuth2ParameterNames.CLIENT_ID, CLIENT_ID);
+            when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+
+            RefreshTokenDataCache cached = RefreshTokenDataCache.builder()
+                    .clientId(CLIENT_ID)
+                    .verifiableCredential(buildMachineCredentialJsonNode())
+                    .authTimeEpochSeconds(null)
+                    .build();
+            when(refreshTokenDataCacheCacheStore.get(REFRESH_TOKEN_VALUE)).thenReturn(cached);
+
+            Authentication result = customTokenRequestConverter.convert(mockRequest);
+
+            OAuth2RefreshTokenAuthenticationToken token = (OAuth2RefreshTokenAuthenticationToken) result;
+            assertFalse(token.getAdditionalParameters().containsKey("auth_time"));
+        }
+
+        @Test
+        @DisplayName("refresh token redeemed by a different client_id than it was issued to throws invalid_grant")
+        void convert_refreshTokenGrant_clientIdMismatch_throwsInvalidGrant() {
+            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+
+            MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+            parameters.add(OAuth2ParameterNames.GRANT_TYPE, "refresh_token");
+            parameters.add(OAuth2ParameterNames.REFRESH_TOKEN, REFRESH_TOKEN_VALUE);
+            parameters.add(OAuth2ParameterNames.CLIENT_ID, "a-different-client");
+            when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+
+            RefreshTokenDataCache cached = RefreshTokenDataCache.builder()
+                    .clientId(CLIENT_ID)
+                    .verifiableCredential(buildMachineCredentialJsonNode())
+                    .build();
+            when(refreshTokenDataCacheCacheStore.get(REFRESH_TOKEN_VALUE)).thenReturn(cached);
+
+            OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                    () -> customTokenRequestConverter.convert(mockRequest));
+
+            assertEquals(OAuth2ErrorCodes.INVALID_GRANT, exception.getError().getErrorCode());
+            verify(refreshTokenDataCacheCacheStore, never()).delete(anyString());
+        }
+
+        @Test
+        @DisplayName("unknown refresh token throws invalid_token")
+        void convert_refreshTokenGrant_unknownToken_throwsInvalidToken() {
+            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+
+            MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+            parameters.add(OAuth2ParameterNames.GRANT_TYPE, "refresh_token");
+            parameters.add(OAuth2ParameterNames.REFRESH_TOKEN, "unknown-token");
+            parameters.add(OAuth2ParameterNames.CLIENT_ID, CLIENT_ID);
+            when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+            when(refreshTokenDataCacheCacheStore.get("unknown-token")).thenReturn(null);
+
+            OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                    () -> customTokenRequestConverter.convert(mockRequest));
+
+            assertEquals(OAuth2ErrorCodes.INVALID_TOKEN, exception.getError().getErrorCode());
+            verify(refreshTokenDataCacheCacheStore, never()).delete(anyString());
+        }
     }
 
     @Test
