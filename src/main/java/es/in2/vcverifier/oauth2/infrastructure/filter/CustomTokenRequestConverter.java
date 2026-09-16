@@ -2,6 +2,7 @@ package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.util.LogSanitizer;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
 import es.in2.vcverifier.oauth2.application.workflow.ClientCredentialsValidationWorkflow;
 import es.in2.vcverifier.oauth2.domain.exception.InvalidProofOfPossessionException;
@@ -229,7 +230,7 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         // carrying the original holder's real VC-derived identity claims.
         if (!refreshTokenDataCache.clientId().equals(clientId)) {
             log.error("Refresh token client_id mismatch: token issued to '{}', requested by '{}'",
-                    refreshTokenDataCache.clientId(), clientId);
+                    LogSanitizer.sanitize(refreshTokenDataCache.clientId()), LogSanitizer.sanitize(clientId));
             throw OAuth2ErrorTranslator.invalidGrant();
         }
         // SEC-F10: Invalidate used refresh token immediately (one-time use / rotation).
