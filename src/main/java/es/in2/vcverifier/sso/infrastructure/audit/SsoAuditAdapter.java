@@ -1,5 +1,6 @@
 package es.in2.vcverifier.sso.infrastructure.audit;
 
+import es.in2.vcverifier.shared.domain.util.LogSanitizer;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import lombok.extern.slf4j.Slf4j;
@@ -57,14 +58,14 @@ public class SsoAuditAdapter implements SsoAuditPort {
         }
 
         logEvent.put("eventType", event.getEventType().name());
-        logEvent.put("tenant", tenant);
-        logEvent.put("clientId", event.getClientId());
-        logEvent.put("outcome", outcome);
-        logEvent.put("correlationId", event.getCorrelationId());
+        logEvent.put("tenant", LogSanitizer.sanitize(tenant));
+        logEvent.put("clientId", LogSanitizer.sanitize(event.getClientId()));
+        logEvent.put("outcome", LogSanitizer.sanitize(outcome));
+        logEvent.put("correlationId", LogSanitizer.sanitize(event.getCorrelationId()));
         logEvent.put("occurredAt", event.getOccurredAt());
 
         if (event.getReason() != null) {
-            logEvent.put("reason", event.getReason());
+            logEvent.put("reason", LogSanitizer.sanitize(event.getReason()));
         }
 
         // NFR-S-547-01 / NFR-S-552-01: never log sub in clear — SHA-256 one-way hash
@@ -91,9 +92,9 @@ public class SsoAuditAdapter implements SsoAuditPort {
 
         Map<String, Object> logEvent = new LinkedHashMap<>();
         logEvent.put("eventType", "CATALOG_CHANGE");
-        logEvent.put("tenant",    event.getTenant());
+        logEvent.put("tenant",    LogSanitizer.sanitize(event.getTenant()));
         logEvent.put("operation", operation);
-        logEvent.put("clientId",  event.getClientId());
+        logEvent.put("clientId",  LogSanitizer.sanitize(event.getClientId()));
         logEvent.put("timestamp", event.getOccurredAt());
 
         log.info("SSO_AUDIT_EVENT {}", logEvent);
@@ -106,10 +107,10 @@ public class SsoAuditAdapter implements SsoAuditPort {
     private void emitEmergencyRevokeEvent(SsoAuditEvent event) {
         Map<String, Object> logEvent = new LinkedHashMap<>();
         logEvent.put("eventType",      "sso_emergency_revoke");
-        logEvent.put("tenant",         event.getTenant());
+        logEvent.put("tenant",         LogSanitizer.sanitize(event.getTenant()));
         logEvent.put("countRevoked",   event.getCountRevoked());
-        logEvent.put("correlationId",  event.getCorrelationId());
-        logEvent.put("outcome",        event.getOutcome());
+        logEvent.put("correlationId",  LogSanitizer.sanitize(event.getCorrelationId()));
+        logEvent.put("outcome",        LogSanitizer.sanitize(event.getOutcome()));
         logEvent.put("occurredAt",     event.getOccurredAt());
 
         log.info("SSO_AUDIT_EVENT {}", logEvent);
@@ -157,7 +158,7 @@ public class SsoAuditAdapter implements SsoAuditPort {
     }
 
     private static String safeCorrelation(SsoAuditEvent event) {
-        return event == null ? UNKNOWN : defaultIfBlank(event.getCorrelationId(), UNKNOWN);
+        return event == null ? UNKNOWN : LogSanitizer.sanitize(defaultIfBlank(event.getCorrelationId(), UNKNOWN));
     }
 
 }
