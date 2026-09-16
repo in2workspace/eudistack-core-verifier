@@ -17,6 +17,7 @@ public class Constants {
     public static final String INVALID_CLIENT_AUTHENTICATION = "invalid_client_authentication";
     public static final String LOGIN_REQUIRED = "login_required";
     public static final String INTERACTION_REQUIRED = "interaction_required";
+    public static final String SESSION_EXPIRED = "session_expired";
     public static final String LOG_ERROR_FORMAT = "{} - {}";
     public static final String OID4VP_TYPE = "oauth-authz-req+jwt";
     // US-06 [W3]: OIDC Back-Channel Logout 1.0 §2.4/§5 RECOMMENDS typ=logout+jwt to prevent
