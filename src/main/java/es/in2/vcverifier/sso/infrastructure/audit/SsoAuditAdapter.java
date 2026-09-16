@@ -19,6 +19,7 @@ import java.util.Map;
 public class SsoAuditAdapter implements SsoAuditPort {
 
     private static final String UNKNOWN = "unknown";
+    private static final String TENANT_FIELD = "tenant";
 
     @Override
     public void publish(SsoAuditEvent event) {
@@ -58,7 +59,7 @@ public class SsoAuditAdapter implements SsoAuditPort {
         }
 
         logEvent.put("eventType", event.getEventType().name());
-        logEvent.put("tenant", LogSanitizer.sanitize(tenant));
+        logEvent.put(TENANT_FIELD, LogSanitizer.sanitize(tenant));
         logEvent.put("clientId", LogSanitizer.sanitize(event.getClientId()));
         logEvent.put("outcome", LogSanitizer.sanitize(outcome));
         logEvent.put("correlationId", LogSanitizer.sanitize(event.getCorrelationId()));
@@ -92,7 +93,7 @@ public class SsoAuditAdapter implements SsoAuditPort {
 
         Map<String, Object> logEvent = new LinkedHashMap<>();
         logEvent.put("eventType", "CATALOG_CHANGE");
-        logEvent.put("tenant",    LogSanitizer.sanitize(event.getTenant()));
+        logEvent.put(TENANT_FIELD, LogSanitizer.sanitize(event.getTenant()));
         logEvent.put("operation", operation);
         logEvent.put("clientId",  LogSanitizer.sanitize(event.getClientId()));
         logEvent.put("timestamp", event.getOccurredAt());
@@ -107,7 +108,7 @@ public class SsoAuditAdapter implements SsoAuditPort {
     private void emitEmergencyRevokeEvent(SsoAuditEvent event) {
         Map<String, Object> logEvent = new LinkedHashMap<>();
         logEvent.put("eventType",      "sso_emergency_revoke");
-        logEvent.put("tenant",         LogSanitizer.sanitize(event.getTenant()));
+        logEvent.put(TENANT_FIELD,     LogSanitizer.sanitize(event.getTenant()));
         logEvent.put("countRevoked",   event.getCountRevoked());
         logEvent.put("correlationId",  LogSanitizer.sanitize(event.getCorrelationId()));
         logEvent.put("outcome",        LogSanitizer.sanitize(event.getOutcome()));
