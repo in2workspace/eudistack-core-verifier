@@ -178,6 +178,30 @@ class SsoAuditAdapterTest {
     }
 
     @Test
+    void SsoAuditAdapter_publish_clientIdWithCrLf_sanitizesItInsteadOfForgingLogLines() {
+        // Arrange
+        String maliciousClientId = "legit-client\r\nSSO_AUDIT_EVENT {eventType=FORGED}\tvalue";
+
+        // Act
+        adapter.publish(SsoAuditEvent.builder()
+                .eventType(SsoAuditEvent.EventType.SSO_LOGOUT_REJECTED)
+                .tenant("tenantA")
+                .clientId(maliciousClientId)
+                .outcome("rejected")
+                .correlationId("corr-crlf")
+                .occurredAt(Instant.now())
+                .build());
+
+        // Assert
+        String line = singleAuditEvent();
+        assertThat(line)
+                .doesNotContain("\r")
+                .doesNotContain("\n")
+                .doesNotContain("\t")
+                .contains("clientId=legit-client__SSO_AUDIT_EVENT {eventType=FORGED}_value");
+    }
+
+    @Test
     void SsoAuditAdapter_publish_loggingFailure_doesNotPropagate() {
         SsoAuditEvent faulty = mock(SsoAuditEvent.class);
         when(faulty.getEventType()).thenReturn(SsoAuditEvent.EventType.SSO_SESSION_ESTABLISHED);

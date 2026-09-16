@@ -50,6 +50,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
 @Slf4j
@@ -184,7 +185,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         try {
             long maxAge = Long.parseLong(rawMaxAge.trim());
             if (maxAge < 0) {
-                log.warn("event=sso_max_age_invalid reason=negative value={}", sanitizeForLog(rawMaxAge));
+                log.warn("event=sso_max_age_invalid reason=negative value={}", sanitize(rawMaxAge));
                 return null;
             }
             // W3 (review): an unbounded max_age (e.g. Long.MAX_VALUE) overflows
@@ -193,28 +194,14 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             // TTL: no session can ever be older than that anyway, so anything beyond it can
             // never actually force freshness and is treated the same as an absent max_age.
             if (maxAge > SsoTtlRange.MAX_ABSOLUTE.toSeconds()) {
-                log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitizeForLog(rawMaxAge));
+                log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitize(rawMaxAge));
                 return null;
             }
             return maxAge;
         } catch (NumberFormatException e) {
-            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", sanitizeForLog(rawMaxAge));
+            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", sanitize(rawMaxAge));
             return null;
         }
-    }
-
-    /**
-     * Strips CR/LF from a user-provided value before it is written to the log, and caps its
-     * length, so a crafted {@code max_age} cannot forge additional log lines or entries
-     * (CWE-117 log injection). Uses literal char replacement (rather than a regex character
-     * class) since that is the form CodeQL's log-injection sanitizer barrier recognizes.
-     */
-    private static String sanitizeForLog(String value) {
-        String sanitized = value
-                .replace('\r', '_')
-                .replace('\n', '_')
-                .replace('\t', '_');
-        return sanitized.length() > 64 ? sanitized.substring(0, 64) + "...(truncated)" : sanitized;
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {
