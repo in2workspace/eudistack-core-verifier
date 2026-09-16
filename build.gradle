@@ -81,7 +81,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.0'
     testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.85'
 
     testImplementation platform("org.testcontainers:testcontainers-bom:2.0.5")
