@@ -5,10 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -61,18 +63,15 @@ class SseEmitterStoreTest {
     // client's EventSource surfaces as a connection error racing the client's
     // own 120s countdown instead of a clean stream close.
     @Test
-    void onTimeout_completesEmitterAndRemovesIt() throws java.io.IOException {
+    void onTimeout_completesEmitterAndRemovesIt() throws IOException {
         AtomicReference<Runnable> capturedOnTimeout = new AtomicReference<>();
 
-        try (MockedConstruction<SseEmitter> mocked = mockConstruction(SseEmitter.class,
-                (mock, context) -> {
-                    // Nothing to stub: onTimeout/onCompletion/onError just need to
-                    // record the Runnable passed by SseEmitterStore.create().
-                })) {
+        try (MockedConstruction<SseEmitter> mockedConstruction = mockConstruction(SseEmitter.class)) {
             SseEmitter emitter = store.create("state-1", 60000L);
+            assertThat(mockedConstruction.constructed()).containsExactly(emitter);
 
             // Capture the Runnable SseEmitterStore registered via emitter.onTimeout(...).
-            org.mockito.Mockito.verify(emitter).onTimeout(org.mockito.ArgumentMatchers.argThat(runnable -> {
+            verify(emitter).onTimeout(argThat(runnable -> {
                 capturedOnTimeout.set(runnable);
                 return true;
             }));
