@@ -25,7 +25,14 @@ public class SseEmitterStore {
         SseEmitter emitter = new SseEmitter(timeoutMs);
         emitters.put(state, emitter);
         emitter.onCompletion(() -> emitters.remove(state));
-        emitter.onTimeout(() -> emitters.remove(state));
+        // Without an explicit complete() here, Spring's default async-timeout handling
+        // completes the request with a raw 503, which the client's EventSource surfaces
+        // as a connection error (racing the client's own independent countdown instead
+        // of the expected clean stream close).
+        emitter.onTimeout(() -> {
+            emitters.remove(state);
+            emitter.complete();
+        });
         emitter.onError(e -> emitters.remove(state));
         log.debug("SSE emitter created for state={}, timeout={}ms", state, timeoutMs);
         return emitter;

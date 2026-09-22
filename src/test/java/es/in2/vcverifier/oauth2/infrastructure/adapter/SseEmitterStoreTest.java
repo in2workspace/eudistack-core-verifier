@@ -2,9 +2,16 @@ package es.in2.vcverifier.oauth2.infrastructure.adapter;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 class SseEmitterStoreTest {
 
@@ -47,5 +54,37 @@ class SseEmitterStoreTest {
         store.create("state-1", 60000L);
         SseEmitter replacement = store.create("state-1", 60000L);
         assertThat(replacement).isNotNull();
+    }
+
+    // Regression: without an explicit complete() in onTimeout, Spring's default
+    // async-timeout handling completes the request with a raw 503, which the
+    // client's EventSource surfaces as a connection error racing the client's
+    // own 120s countdown instead of a clean stream close.
+    @Test
+    void onTimeout_completesEmitterAndRemovesIt() throws java.io.IOException {
+        AtomicReference<Runnable> capturedOnTimeout = new AtomicReference<>();
+
+        try (MockedConstruction<SseEmitter> mocked = mockConstruction(SseEmitter.class,
+                (mock, context) -> {
+                    // Nothing to stub: onTimeout/onCompletion/onError just need to
+                    // record the Runnable passed by SseEmitterStore.create().
+                })) {
+            SseEmitter emitter = store.create("state-1", 60000L);
+
+            // Capture the Runnable SseEmitterStore registered via emitter.onTimeout(...).
+            org.mockito.Mockito.verify(emitter).onTimeout(org.mockito.ArgumentMatchers.argThat(runnable -> {
+                capturedOnTimeout.set(runnable);
+                return true;
+            }));
+
+            // Simulate the servlet container invoking the timeout callback.
+            capturedOnTimeout.get().run();
+
+            verify(emitter).complete();
+
+            // The emitter must already be removed from the store — send() finds nothing.
+            store.send("state-1", "http://redirect.example.com");
+            verify(emitter, never()).send(any(SseEmitter.SseEventBuilder.class));
+        }
     }
 }
