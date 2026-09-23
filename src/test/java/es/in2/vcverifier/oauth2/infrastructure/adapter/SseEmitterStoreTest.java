@@ -129,7 +129,7 @@ class SseEmitterStoreTest {
                 }),
                 any(Instant.class), any(Duration.class));
 
-        try (MockedConstruction<SseEmitter> _ = mockConstruction(SseEmitter.class)) {
+        try (var _ = mockConstruction(SseEmitter.class)) {
             SseEmitter emitter = store.create("state-1", 60000L);
 
             capturedHeartbeat.get().run();
@@ -148,7 +148,7 @@ class SseEmitterStoreTest {
                 }),
                 any(Instant.class), any(Duration.class));
 
-        try (MockedConstruction<SseEmitter> _ = mockConstruction(SseEmitter.class,
+        try (var _ = mockConstruction(SseEmitter.class,
                 (mock, context) -> doThrow(new IOException("client disconnected"))
                         .when(mock).send(any(SseEmitter.SseEventBuilder.class)))) {
             store.create("state-1", 60000L);
