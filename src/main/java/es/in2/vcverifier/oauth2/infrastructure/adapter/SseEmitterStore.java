@@ -12,6 +12,8 @@ import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -122,7 +124,7 @@ public class SseEmitterStore {
         try {
             emitter.send(SseEmitter.event().comment("keep-alive"));
         } catch (IOException | IllegalStateException e) {
-            log.debug("Heartbeat failed for state={}, stopping: {}", state, e.getMessage());
+            log.debug("Heartbeat failed for state={}, stopping: {}", sanitize(state), sanitize(e.getMessage()));
             cancelHeartbeat(state);
         }
     }
