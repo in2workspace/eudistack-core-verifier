@@ -19,7 +19,8 @@ public record DcqlProfileProperties(
     public record CredentialEntry(
             String id,
             String format,
-            CredentialMeta meta
+            CredentialMeta meta,
+            List<ClaimEntry> claims
     ) {}
 
     public record CredentialMeta(
@@ -29,5 +30,17 @@ public record DcqlProfileProperties(
 
     public record CredentialDefinition(
             List<String> type
+    ) {}
+
+    /**
+     * A claim constraint for a credential entry. {@code path} segments use the literal
+     * string {@code "*"} to mean "match against every element of the array at this
+     * position" (e.g. {@code ["mandate", "power", "*", "function"]}) — a plain string is
+     * used instead of a null path segment because Spring's relaxed YAML binding does not
+     * reliably preserve null elements inside a bound List.
+     */
+    public record ClaimEntry(
+            List<String> path,
+            List<String> values
     ) {}
 }

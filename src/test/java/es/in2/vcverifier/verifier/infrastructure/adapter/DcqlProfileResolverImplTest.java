@@ -12,6 +12,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 class DcqlProfileResolverImplTest {
 
@@ -24,19 +25,22 @@ class DcqlProfileResolverImplTest {
                         new DcqlProfileProperties.CredentialEntry(
                                 "lear_employee_sd_jwt", "dc+sd-jwt",
                                 new DcqlProfileProperties.CredentialMeta(
-                                        List.of("eu.europa.ec.eudi.lce.1"), null))
+                                        List.of("eu.europa.ec.eudi.lce.1"), null),
+                                null)
                 )),
                 "learcredential.machine", new DcqlProfileProperties.DcqlProfile(List.of(
                         new DcqlProfileProperties.CredentialEntry(
                                 "lear_machine_sd_jwt", "dc+sd-jwt",
                                 new DcqlProfileProperties.CredentialMeta(
-                                        List.of("eu.europa.ec.eudi.lcm.1"), null)),
+                                        List.of("eu.europa.ec.eudi.lcm.1"), null),
+                                null),
                         new DcqlProfileProperties.CredentialEntry(
                                 "lear_machine_jwt_vc", "jwt_vc_json",
                                 new DcqlProfileProperties.CredentialMeta(
                                         null,
                                         new DcqlProfileProperties.CredentialDefinition(
-                                                List.of("VerifiableCredential", "LEARCredentialMachine"))))
+                                                List.of("VerifiableCredential", "LEARCredentialMachine"))),
+                                null)
                 ))
         ));
         resolver = new DcqlProfileResolverImpl(properties);
@@ -121,5 +125,49 @@ class DcqlProfileResolverImplTest {
         DcqlQuery result = resolver.resolve("learcredential.employee");
 
         assertThat(result.credentials()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("resolve() copies configured claims into the resolved credential query")
+    void resolve_includesClaimsWhenConfigured() {
+        // Arrange
+        DcqlProfileProperties.ClaimEntry onboardingFunction = new DcqlProfileProperties.ClaimEntry(
+                List.of("mandate", "power", "*", "function"), List.of("Onboarding"));
+        DcqlProfileProperties.ClaimEntry executeAction = new DcqlProfileProperties.ClaimEntry(
+                List.of("mandate", "power", "*", "action"), List.of("Execute"));
+        DcqlProfileProperties properties = new DcqlProfileProperties(Map.of(
+                "issuer_access", new DcqlProfileProperties.DcqlProfile(List.of(
+                        new DcqlProfileProperties.CredentialEntry(
+                                "issuer_access_employee_sd_jwt", "dc+sd-jwt",
+                                new DcqlProfileProperties.CredentialMeta(
+                                        List.of("learcredential.employee.sd.1"), null),
+                                List.of(onboardingFunction, executeAction))
+                ))
+        ));
+        DcqlProfileResolverImpl resolverWithClaims = new DcqlProfileResolverImpl(properties);
+
+        // Act
+        DcqlQuery result = resolverWithClaims.resolve("issuer_access");
+
+        // Assert
+        assertThat(result.credentials()).hasSize(1);
+        assertThat(result.credentials().get(0).claims())
+                .extracting("path", "values")
+                .containsExactly(
+                        tuple(List.of("mandate", "power", "*", "function"), List.of("Onboarding")),
+                        tuple(List.of("mandate", "power", "*", "action"), List.of("Execute"))
+                );
+    }
+
+    @Test
+    @DisplayName("resolve() leaves claims null when the profile entry declares none")
+    void resolve_leavesClaimsNullWhenNotConfigured() {
+        // Arrange — reuse the shared resolver, whose profiles declare no claims.
+
+        // Act
+        DcqlQuery result = resolver.resolve("learcredential.employee");
+
+        // Assert
+        assertThat(result.credentials().get(0).claims()).isNull();
     }
 }
