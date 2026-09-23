@@ -1,6 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.verifier.domain.model.dcql.ClaimQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -70,6 +71,9 @@ public class DcqlProfileResolverImpl implements DcqlProfileResolver {
             }
             meta = new CredentialQuery.CredentialMeta(entry.meta().vctValues(), credDef);
         }
-        return new CredentialQuery(entry.id(), entry.format(), meta, null);
+        List<ClaimQuery> claims = entry.claims() == null ? null : entry.claims().stream()
+                .map(claimEntry -> new ClaimQuery(claimEntry.path(), claimEntry.values(), null))
+                .toList();
+        return new CredentialQuery(entry.id(), entry.format(), meta, claims);
     }
 }

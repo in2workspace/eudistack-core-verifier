@@ -45,6 +45,99 @@ verifier:
           #       type:
           #         - VerifiableCredential
           #         - learcredential.machine.w3c.3
+
+      # Issuer console login only (vc-auth-client-* clients). Unlike
+      # "learcredential" (shared with Proximity Verifier and the DOME
+      # Adapter), entry requires mandate.power[] to contain EITHER an
+      # Onboarding/Execute power OR the SysAdmin power (System/Administration,
+      # domain EUDISTACK) — the same "isSysAdmin() || hasPower(...)" pattern
+      # PoliciesService.checkOnboardingPolicy applies in the Issuer console.
+      # Each alternative is a separate credential entry (the wallet unions
+      # matches across entries), and machine credentials are excluded —
+      # otherwise the wallet offers a credential that can't actually get in.
+      issuer_access:
+        credentials:
+          - id: issuer_access_employee_sd_jwt
+            format: dc+sd-jwt
+            meta:
+              vct-values:
+                - learcredential.employee.sd.1
+            claims:
+              - path: ["mandate", "power", "*", "function"]
+                values: ["Onboarding"]
+              - path: ["mandate", "power", "*", "action"]
+                values: ["Execute"]
+          - id: issuer_access_sysadmin_sd_jwt
+            format: dc+sd-jwt
+            meta:
+              vct-values:
+                - learcredential.employee.sd.1
+            claims:
+              - path: ["mandate", "power", "*", "type"]
+                values: ["organization"]
+              - path: ["mandate", "power", "*", "domain"]
+                values: ["EUDISTACK"]
+              - path: ["mandate", "power", "*", "function"]
+                values: ["System"]
+              - path: ["mandate", "power", "*", "action"]
+                values: ["Administration"]
+          - id: issuer_access_employee_jwt_vc
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - learcredential.employee.w3c.4
+            claims:
+              - path: ["credentialSubject", "mandate", "power", "*", "function"]
+                values: ["Onboarding"]
+              - path: ["credentialSubject", "mandate", "power", "*", "action"]
+                values: ["Execute"]
+          - id: issuer_access_sysadmin_jwt_vc
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - learcredential.employee.w3c.4
+            claims:
+              - path: ["credentialSubject", "mandate", "power", "*", "type"]
+                values: ["organization"]
+              - path: ["credentialSubject", "mandate", "power", "*", "domain"]
+                values: ["EUDISTACK"]
+              - path: ["credentialSubject", "mandate", "power", "*", "function"]
+                values: ["System"]
+              - path: ["credentialSubject", "mandate", "power", "*", "action"]
+                values: ["Administration"]
+          - id: issuer_access_employee_jwt_vc_legacy
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - LEARCredentialEmployee
+            claims:
+              - path: ["credentialSubject", "mandate", "power", "*", "function"]
+                values: ["Onboarding"]
+              - path: ["credentialSubject", "mandate", "power", "*", "action"]
+                values: ["Execute"]
+          - id: issuer_access_sysadmin_jwt_vc_legacy
+            format: jwt_vc_json
+            meta:
+              credential-definition:
+                type:
+                  - VerifiableCredential
+                  - LEARCredentialEmployee
+            claims:
+              - path: ["credentialSubject", "mandate", "power", "*", "type"]
+                values: ["organization"]
+              - path: ["credentialSubject", "mandate", "power", "*", "domain"]
+                values: ["EUDISTACK"]
+              - path: ["credentialSubject", "mandate", "power", "*", "function"]
+                values: ["System"]
+              - path: ["credentialSubject", "mandate", "power", "*", "action"]
+                values: ["Administration"]
+
       doctorid:
         credentials:
           - id: doctorid_sd_jwt

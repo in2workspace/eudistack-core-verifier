@@ -26,6 +26,7 @@ clients:
       - "email"
       - "offline_access"
       - "learcredential"
+      - "issuer_access"
       - "role"
     requireAuthorizationConsent: false
     requireProofKey: true
@@ -52,6 +53,7 @@ clients:
       - "email"
       - "offline_access"
       - "learcredential"
+      - "issuer_access"
       - "role"
     requireAuthorizationConsent: false
     requireProofKey: true
@@ -92,6 +94,7 @@ clients:
       - "email"
       - "offline_access"
       - "learcredential"
+      - "issuer_access"
       - "role"
     requireAuthorizationConsent: false
     requireProofKey: true
@@ -133,6 +136,7 @@ clients:
       - "email"
       - "offline_access"
       - "learcredential"
+      - "issuer_access"
       - "role"
     requireAuthorizationConsent: false
     requireProofKey: true
@@ -170,6 +174,7 @@ clients:
       - "email"
       - "offline_access"
       - "learcredential"
+      - "issuer_access"
       - "role"
     requireAuthorizationConsent: false
     requireProofKey: true
@@ -214,6 +219,7 @@ clients:
       - "email"
       - "offline_access"
       - "learcredential"
+      - "issuer_access"
       - "role"
       - "doctorid"
     requireAuthorizationConsent: false
@@ -323,6 +329,7 @@ clients:
       - "email"
       - "offline_access"
       - "learcredential"
+      - "issuer_access"
       - "role"
     requireAuthorizationConsent: false
     requireProofKey: true
