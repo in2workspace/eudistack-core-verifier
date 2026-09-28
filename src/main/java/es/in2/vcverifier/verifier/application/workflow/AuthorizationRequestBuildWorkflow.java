@@ -49,17 +49,17 @@ public class AuthorizationRequestBuildWorkflow {
     private final DcqlProfileResolver dcqlProfileResolver;
     private final ObjectMapper objectMapper;
 
-    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String homeUri) {}
+    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce) {}
 
     /**
      * Resolves the scope to a DCQL query, builds the JWT payload for an OID4VP
      * authorization request, signs it, generates the openid4vp:// redirect URL,
      * and caches the JWT.
      *
-     * @param registeredClient   the registered client's name (used as homeUri)
+     * @param registeredClient   the requesting client, used to resolve client_metadata
      * @param scope        the requested scope (e.g. "openid learcredential.employee")
      * @param state        the OAuth2 state parameter
-     * @return a Result with the signed JWT, openid4vp URL, nonce and homeUri
+     * @return a Result with the signed JWT, openid4vp URL and nonce
      */
     public Result buildAuthorizationRequest(RegisteredClient registeredClient, String scope, String state) {
         DcqlQuery dcqlQuery = dcqlProfileResolver.resolve(scope);
@@ -77,7 +77,7 @@ public class AuthorizationRequestBuildWorkflow {
 
         String openid4vpUrl = generateOpenId4VpUrl(qrNonce);
 
-        return new Result(signedJwt, openid4vpUrl, qrNonce, registeredClient.getClientId());
+        return new Result(signedJwt, openid4vpUrl, qrNonce);
     }
 
     private String buildJwtPayload(String scope, String state, String nonce, DcqlQuery dcqlQuery, RegisteredClient registeredClient) {
