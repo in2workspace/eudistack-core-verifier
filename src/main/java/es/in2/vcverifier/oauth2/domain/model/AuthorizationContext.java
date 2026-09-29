@@ -18,6 +18,11 @@ public record AuthorizationContext(
          * FR-21/AC-09: {@code max_age} del request OIDC, en segundos. {@code null} si el
          * parámetro está ausente o no es un entero no negativo válido.
          */
-        Long maxAge
+        Long maxAge,
+        /**
+         * {@code access_profile} of the request: names a named restriction applied on top of the
+         * scope's DCQL query (e.g. {@code issuer_access}). {@code null} when absent.
+         */
+        String accessProfile
 ) {
 }

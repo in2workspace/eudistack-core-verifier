@@ -10,6 +10,7 @@ import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.model.oid4vp.ClientMetadata;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
+import es.in2.vcverifier.verifier.domain.service.IssuerAccessDcqlPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -25,6 +26,7 @@ import java.util.*;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_RESPONSE_ENDPOINT;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIENT_METADATA;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
 /**
  * Builds the OID4VP authorization request: resolves scopes to a DCQL query,
@@ -59,10 +61,12 @@ public class AuthorizationRequestBuildWorkflow {
      * @param registeredClient   the registered client's name (used as homeUri)
      * @param scope        the requested scope (e.g. "openid learcredential.employee")
      * @param state        the OAuth2 state parameter
+     * @param accessProfile optional named restriction applied on top of the scope's DCQL query
+     *                      (e.g. {@code issuer_access}); null or blank leaves the query untouched
      * @return a Result with the signed JWT, openid4vp URL, nonce and homeUri
      */
-    public Result buildAuthorizationRequest(RegisteredClient registeredClient, String scope, String state) {
-        DcqlQuery dcqlQuery = dcqlProfileResolver.resolve(scope);
+    public Result buildAuthorizationRequest(RegisteredClient registeredClient, String scope, String state, String accessProfile) {
+        DcqlQuery dcqlQuery = applyAccessProfile(dcqlProfileResolver.resolve(scope), accessProfile);
 
         String nonce = UUID.randomUUID().toString();
         String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery, registeredClient);
@@ -78,6 +82,17 @@ public class AuthorizationRequestBuildWorkflow {
         String openid4vpUrl = generateOpenId4VpUrl(qrNonce);
 
         return new Result(signedJwt, openid4vpUrl, qrNonce, registeredClient.getClientId());
+    }
+
+    private DcqlQuery applyAccessProfile(DcqlQuery dcqlQuery, String accessProfile) {
+        if (accessProfile == null || accessProfile.isBlank()) {
+            return dcqlQuery;
+        }
+        if (IssuerAccessDcqlPolicy.ACCESS_PROFILE.equals(accessProfile.trim())) {
+            return IssuerAccessDcqlPolicy.restrict(dcqlQuery);
+        }
+        log.warn("event=access_profile_unknown value={}", sanitize(accessProfile));
+        return dcqlQuery;
     }
 
     private String buildJwtPayload(String scope, String state, String nonce, DcqlQuery dcqlQuery, RegisteredClient registeredClient) {
