@@ -72,7 +72,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
         RegisteredClient client = createDummyClient("My Client");
-        AuthorizationRequestBuildWorkflow.Result result = workflow.buildAuthorizationRequest(client, "openid learcredential", "state-123");
+        AuthorizationRequestBuildWorkflow.Result result = workflow.buildAuthorizationRequest(client, "openid learcredential", "state-123", null);
 
         assertThat(result.signedAuthRequestJwt()).isEqualTo("signed-jwt-content");
         assertThat(result.openid4vpUrl()).startsWith("openid4vp://");
@@ -104,9 +104,86 @@ class AuthorizationRequestBuildWorkflowTest {
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
         RegisteredClient client = createDummyClient("Client");
-        workflow.buildAuthorizationRequest(client, "openid learcredential.employee", "my-state");
+        workflow.buildAuthorizationRequest(client, "openid learcredential.employee", "my-state", null);
 
         verify(dcqlProfileResolver).resolve("openid learcredential.employee");
+    }
+
+    @Test
+    @DisplayName("buildAuthorizationRequest() restricts the DCQL query when access_profile is issuer_access")
+    void buildAuthorizationRequest_issuerAccessProfile_restrictsDcqlQuery() throws Exception {
+        // Arrange
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("learcredential.employee.sd.1"), null), null),
+                new CredentialQuery("lear_machine_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("learcredential.machine.sd.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
+        when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        // Act
+        workflow.buildAuthorizationRequest(createDummyClient("Client"), "openid learcredential", "state-ia", "issuer_access");
+
+        // Assert
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+        JsonNode credentials = objectMapper.readTree(payloadCaptor.getValue()).get("dcql_query").get("credentials");
+        assertThat(credentials).hasSize(2);
+        assertThat(credentials.get(0).get("id").asText()).isEqualTo("lear_employee_sd_jwt_onboarding_execute");
+        assertThat(credentials.get(0).get("claims")).isNotNull();
+        assertThat(credentials.get(1).get("id").asText()).isEqualTo("lear_employee_sd_jwt_sysadmin");
+    }
+
+    @Test
+    @DisplayName("buildAuthorizationRequest() leaves the DCQL query untouched when access_profile is unknown")
+    void buildAuthorizationRequest_unknownAccessProfile_leavesDcqlQueryUntouched() throws Exception {
+        // Arrange
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("learcredential.employee.sd.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
+        when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        // Act
+        workflow.buildAuthorizationRequest(createDummyClient("Client"), "openid learcredential", "state-unk", "something_else");
+
+        // Assert
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+        JsonNode credentials = objectMapper.readTree(payloadCaptor.getValue()).get("dcql_query").get("credentials");
+        assertThat(credentials).hasSize(1);
+        assertThat(credentials.get(0).get("id").asText()).isEqualTo("lear_employee_sd_jwt");
+        assertThat(credentials.get(0).has("claims")).isFalse();
+    }
+
+    @Test
+    @DisplayName("buildAuthorizationRequest() leaves the DCQL query untouched when access_profile is blank")
+    void buildAuthorizationRequest_blankAccessProfile_leavesDcqlQueryUntouched() throws Exception {
+        // Arrange
+        DcqlQuery dcqlQuery = new DcqlQuery(List.of(
+                new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("learcredential.employee.sd.1"), null), null)
+        ));
+        when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
+        when(cryptoComponent.getClientId()).thenReturn("did:key:testkey");
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
+
+        // Act
+        workflow.buildAuthorizationRequest(createDummyClient("Client"), "openid learcredential", "state-blank", "  ");
+
+        // Assert
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
+        JsonNode credentials = objectMapper.readTree(payloadCaptor.getValue()).get("dcql_query").get("credentials");
+        assertThat(credentials).hasSize(1);
+        assertThat(credentials.get(0).has("claims")).isFalse();
     }
 
     @Test
@@ -122,7 +199,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
         RegisteredClient client = createDummyClient("Client");
-        workflow.buildAuthorizationRequest(client, "openid learcredential", "my-state");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "my-state", null);
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -152,7 +229,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
         RegisteredClient client = createDummyClient("Client");
-        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-1");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-1", null);
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -175,7 +252,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
         RegisteredClient client = createDummyClient("Client");
-        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-2");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-2", null);
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -198,7 +275,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed");
 
         RegisteredClient client = createDummyClient("Client");
-        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-3");
+        workflow.buildAuthorizationRequest(client, "openid learcredential", "state-3", null);
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());

@@ -60,6 +60,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
     private static final String SSO_COOKIE_PREFIX = "__Secure-sso-";
     private static final String MAX_AGE_PARAMETER = "max_age";
+    private static final String ACCESS_PROFILE_PARAMETER = "access_profile";
 
     private final DIDService didService;
     private final JWTService jwtService;
@@ -101,6 +102,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .portalUrl(portalUrl)
                 .contextPath(contextPath)
                 .maxAge(parseMaxAge(request.getParameter(MAX_AGE_PARAMETER)))
+                .accessProfile(request.getParameter(ACCESS_PROFILE_PARAMETER))
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
@@ -244,7 +246,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient, authorizationContext.scope(), authorizationContext.state());
+                registeredClient, authorizationContext.scope(), authorizationContext.state(),
+                authorizationContext.accessProfile());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -263,7 +266,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient, authorizationContext.scope(), authorizationContext.state());
+                registeredClient, authorizationContext.scope(), authorizationContext.state(),
+                authorizationContext.accessProfile());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
