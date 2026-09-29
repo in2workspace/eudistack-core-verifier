@@ -52,6 +52,7 @@ class IssuerAccessDcqlPolicyTest {
 
         // Assert
         assertThat(result.credentials()).extracting(CredentialQuery::id)
+                .hasSize(2)
                 .noneMatch(id -> id.contains("machine"));
     }
 
@@ -82,10 +83,12 @@ class IssuerAccessDcqlPolicyTest {
         DcqlQuery result = IssuerAccessDcqlPolicy.restrict(new DcqlQuery(List.of(employee)));
 
         // Assert
-        assertThat(result.credentials()).allSatisfy(entry -> {
-            assertThat(entry.format()).isEqualTo(employee.format());
-            assertThat(entry.meta()).isEqualTo(employee.meta());
-        });
+        assertThat(result.credentials())
+                .hasSize(2)
+                .allSatisfy(entry -> {
+                    assertThat(entry.format()).isEqualTo(employee.format());
+                    assertThat(entry.meta()).isEqualTo(employee.meta());
+                });
     }
 
     @Test
@@ -175,6 +178,7 @@ class IssuerAccessDcqlPolicyTest {
 
         // Assert
         assertThat(result.credentials()).extracting(CredentialQuery::id)
+                .hasSize(2)
                 .noneMatch(id -> id.startsWith("no_meta"));
     }
 }
