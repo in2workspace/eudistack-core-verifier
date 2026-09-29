@@ -283,7 +283,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         String redirectUrl;
         if (loginPageUri != null) {
-            // Custom login pages manage their own post-authentication navigation; homeUri is only for the default MFE Login
             redirectUrl = String.format(
                     "%s?authRequest=%s&state=%s",
                     loginPageUri,
@@ -292,12 +291,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             );
         } else {
             redirectUrl = String.format(
-                    "%s%s/login?authRequest=%s&state=%s&homeUri=%s",
+                    "%s%s/login?authRequest=%s&state=%s",
                     portalUrl,
                     nullSafeContextPath(contextPath),
                     URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
-                    URLEncoder.encode(state, StandardCharsets.UTF_8),
-                    URLEncoder.encode(result.homeUri(), StandardCharsets.UTF_8)
+                    URLEncoder.encode(state, StandardCharsets.UTF_8)
             );
         }
 
