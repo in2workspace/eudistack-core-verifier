@@ -134,7 +134,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // Mock the workflow to return a result
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://?client_id=key-id&request_uri=https%3A%2F%2Fauth.server.com", "nonce-123", clientName);
+                "signed-jwt", "openid4vp://?client_id=key-id&request_uri=https%3A%2F%2Fauth.server.com", "nonce-123");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         // Act & Assert
@@ -153,7 +153,7 @@ class CustomAuthorizationRequestConverterTest {
         assertTrue(redirectUrl.contains("/login?"));
         assertTrue(redirectUrl.contains("authRequest="));
         assertTrue(redirectUrl.contains("state="));
-        assertTrue(redirectUrl.contains("homeUri="));
+        assertFalse(redirectUrl.contains("homeUri="), "Redirect should not contain homeUri param — the login logo is no longer clickable");
     }
 
     @Test
@@ -308,7 +308,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // Mock the workflow
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-auth-jwt", "openid4vp://...", "nonce-456", clientName);
+                "signed-auth-jwt", "openid4vp://...", "nonce-456");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
@@ -376,7 +376,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-auth-jwt", "openid4vp://...", "nonce-456", clientName);
+                "signed-auth-jwt", "openid4vp://...", "nonce-456");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
@@ -566,7 +566,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://...", "nonce-789", clientName);
+                "signed-jwt", "openid4vp://...", "nonce-789");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
@@ -619,7 +619,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://...", "nonce-000", clientName);
+                "signed-jwt", "openid4vp://...", "nonce-000");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
@@ -675,7 +675,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://...", "nonce-123", clientName);
+                "signed-jwt", "openid4vp://...", "nonce-123");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
@@ -695,7 +695,7 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
-    void convert_standardRequest_withoutLoginPageUri_shouldRedirectToPortalWithHomeUri() {
+    void convert_standardRequest_withoutLoginPageUri_shouldRedirectToPortal() {
         HttpServletRequest request = mock(HttpServletRequest.class);
         String clientId = "test-client-id";
         String state = "test-state";
@@ -728,7 +728,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://...", "nonce-123", clientName);
+                "signed-jwt", "openid4vp://...", "nonce-123");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
@@ -744,7 +744,7 @@ class CustomAuthorizationRequestConverterTest {
         assertTrue(resultUrl.startsWith("https://kpmg.example.com:4443/verifier/login?"), "Redirect should use tenant portal URL derived from request");
         assertTrue(resultUrl.contains("authRequest="), "Redirect should contain authRequest param");
         assertTrue(resultUrl.contains("state="), "Redirect should contain state param");
-        assertTrue(resultUrl.contains("homeUri="), "Redirect should contain homeUri param");
+        assertFalse(resultUrl.contains("homeUri="), "Redirect should NOT contain homeUri param — the login logo is no longer clickable");
     }
 
     @Test
@@ -783,7 +783,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://...", "nonce-ctx", clientName);
+                "signed-jwt", "openid4vp://...", "nonce-ctx");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
@@ -886,7 +886,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                "signed-jwt", "openid4vp://...", "nonce-max-age-valid", clientName);
+                "signed-jwt", "openid4vp://...", "nonce-max-age-valid");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
         assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
@@ -930,7 +930,7 @@ class CustomAuthorizationRequestConverterTest {
             when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
             AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-negative", clientName);
+                    "signed-jwt", "openid4vp://...", "nonce-max-age-negative");
             when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
             assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
@@ -983,7 +983,7 @@ class CustomAuthorizationRequestConverterTest {
             when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
             AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-overflow", clientName);
+                    "signed-jwt", "openid4vp://...", "nonce-max-age-overflow");
             when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
             assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
@@ -1038,7 +1038,7 @@ class CustomAuthorizationRequestConverterTest {
             when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
             AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-crlf", clientName);
+                    "signed-jwt", "openid4vp://...", "nonce-max-age-crlf");
             when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state)).thenReturn(workflowResult);
 
             assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
