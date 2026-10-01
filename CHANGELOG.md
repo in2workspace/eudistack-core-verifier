@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [3.3.7] - 2026-10-01
+
+### Fixed
+- **#1052784** La consulta DCQL pide la credencial completa, no el poder concreto que hace falta. Con el perfil issuer_access el verifier limita la selección a credenciales con el poder Onboarding/Execute o SysAdmin.
+- **#1061303** El logo del login no debe ser clicable. El verifier deja de enviar homeUri en la redirección, porque ese valor no era una URL.
+- **#1057129** La barra de countdown del login QR se quedaba bloqueada. El flujo SSE de login envía un keep-alive para que CloudFront no corte la espera con un 504.
+
 ### Fixed
 
 - **Issuer console login could offer credentials lacking the power required to enter**: the DCQL query for `learcredential` only constrained credential type, so the wallet listed any employee credential and the rejection came afterwards, at the Issuer. The authorization endpoint now accepts an optional `access_profile` parameter; with `issuer_access` the query is narrowed by `IssuerAccessDcqlPolicy` to employee credentials holding the Onboarding/Execute or the SysAdmin power (one entry per accepted power, machine credentials dropped). Requests without the parameter, or with an unknown value, behave exactly as before. No new scope or profile configuration is involved.
