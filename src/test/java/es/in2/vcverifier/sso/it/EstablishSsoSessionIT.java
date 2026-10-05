@@ -1,5 +1,6 @@
 package es.in2.vcverifier.sso.it;
 
+import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
@@ -30,6 +31,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -108,11 +110,17 @@ class EstablishSsoSessionIT {
     EstablishSsoSessionWorkflow establishSsoSessionWorkflow;
     @MockitoBean
     AuthorizationResponseProcessorService authorizationResponseProcessorService;
+    @MockitoSpyBean
+    SseEmitterStore sseEmitterStore;
 
 
     @BeforeEach
     void clean() {
         reset(auditPort);
+        clearInvocations(sseEmitterStore);
+        // EUD-252: browser binding and close handle are compared by hash — a constant keeps the
+        // binding cookie of CrossDeviceLoginTestSupport matching the hash returned below.
+        when(hashingService.sha256(any())).thenReturn("hashed");
 
         jdbcTemplate.execute("""
         CREATE TABLE IF NOT EXISTS sso_session (
@@ -173,7 +181,7 @@ class EstablishSsoSessionIT {
         // AUTH SERVICE
         // -------------------------
         when(authorizationResponseProcessorService.handleAuthResponse(anyString(), anyString()))
-                .thenReturn(null);
+                .thenReturn(CrossDeviceLoginTestSupport.boundResult(null, "test-state", "hashed"));
 
         // -------------------------
         // PRINCIPAL
@@ -211,10 +219,15 @@ class EstablishSsoSessionIT {
                 }
                 """))
                 // EUDISTACK-547 AC-01/AC-04: el POST /oid4vp/auth-response es un ACK 200; el
-                // redirect al redirect_uri se entrega por SSE, no como 302. La cookie SSO viaja
-                // en este 200. (Antes asertaba 3xx → "/" del SavedRequestAware: el bug que en
-                // runtime redirigía a /verifier/ y causaba 504/CORS en el wallet.)
+                // redirect se entrega por SSE, no como 302.
+                // EUD-252: el POST viene del wallet (posiblemente otro dispositivo) — NO lleva
+                // la cookie SSO; ésta se emite en el cierre del navegador que inició el login.
                 .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("Set-Cookie"));
+
+        CrossDeviceLoginTestSupport.closeInBrowser(mockMvc, sseEmitterStore, "test-state",
+                        r -> r.requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a"))
+                .andExpect(status().is3xxRedirection())
                 .andExpect(cookie().exists("__Secure-sso-tenant-a"));
 
         verify(establishSsoSessionWorkflow).execute(any());
@@ -230,6 +243,9 @@ class EstablishSsoSessionIT {
         // por lo que el flujo OID4VP completa con redirect (sin cookie SSO).
         when(establishSsoSessionWorkflow.execute(any()))
                 .thenThrow(new SsoConfigInconsistentException("invalid config"));
+        // Legacy tenant: no SSO config → the login is not browser-bound, the RP URL goes over SSE.
+        when(authorizationResponseProcessorService.handleAuthResponse(anyString(), anyString()))
+                .thenReturn(CrossDeviceLoginTestSupport.boundResult(null, "test-state", null));
 
         mockMvc.perform(post("/oid4vp/auth-response")
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "legacy-tenant")
@@ -240,6 +256,9 @@ class EstablishSsoSessionIT {
                 // completa vía SSE, sin regresión). Antes asertaba 3xx (redirect del bug).
                 .andExpect(status().isOk())
                 .andExpect(header().doesNotExist("Set-Cookie"));
+
+        assertThat(CrossDeviceLoginTestSupport.sseUrlFor(sseEmitterStore, "test-state"))
+                .startsWith(CrossDeviceLoginTestSupport.RP_REDIRECT_URI + "?code=");
 
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sso_session WHERE tenant='legacy-tenant'",

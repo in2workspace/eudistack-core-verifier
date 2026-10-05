@@ -5,6 +5,7 @@ import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.sso.domain.model.PendingSsoLogin;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -52,6 +53,14 @@ public class CacheStoreConfig {
     @Bean
     public CacheStore<AuthorizationCodeData> cacheStoreForAuthorizationCodeData() {
         return new CacheStore<>(10, TimeUnit.MINUTES);
+    }
+
+    // EUD-252: cross-device logins verified by the wallet but not yet closed by the browser that
+    // started them. Short TTL: the browser is already listening on SSE and follows the close URL
+    // within seconds; keyed by SHA-256 of the one-time handle, never by the raw handle.
+    @Bean
+    public CacheStore<PendingSsoLogin> cacheStoreForPendingSsoLogin() {
+        return new CacheStore<>(60, TimeUnit.SECONDS);
     }
 
     // JTI cache TTL: 2x access token lifetime (900s) to cover clock skew and retries

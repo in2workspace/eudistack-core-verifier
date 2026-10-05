@@ -45,6 +45,14 @@ public class CacheStore<T> {
         cache.invalidate(key);
     }
 
+    /**
+     * Atomically removes and returns the value for {@code key} ({@code null} on a miss or expiry):
+     * of several concurrent callers for the same key, at most one gets the value (single use).
+     */
+    public T remove(String key) {
+        return cache.asMap().remove(key);
+    }
+
     public String add(String key, T value) {
         if (key != null && !key.isBlank() && value != null) {
             cache.put(key, value);

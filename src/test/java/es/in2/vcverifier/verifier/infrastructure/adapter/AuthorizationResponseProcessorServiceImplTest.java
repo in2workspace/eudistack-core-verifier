@@ -19,6 +19,7 @@ import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
+import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
@@ -37,6 +38,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequ
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
@@ -47,6 +49,7 @@ import java.util.Date;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -163,19 +166,20 @@ class AuthorizationResponseProcessorServiceImplTest {
         doNothing().when(oAuth2AuthorizationService).save(any(OAuth2Authorization.class));
 
         // Act
-        authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
+        AuthResponseResult result = authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
 
-        // Assert
-        ArgumentCaptor<String> stateCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> redirectUrlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(sseEmitterStore).send(stateCaptor.capture(), redirectUrlCaptor.capture());
-
-        assertEquals(state, stateCaptor.getValue());
-        String redirectUrl = redirectUrlCaptor.getValue();
+        // Assert — EUD-252: the success redirect is returned to the caller, never pushed over SSE here
+        verify(sseEmitterStore, never()).send(anyString(), anyString());
+        assertEquals(state, result.state());
+        String redirectUrl = result.redirectUrl();
         assertNotNull(redirectUrl);
-        assertTrue(redirectUrl.contains("code="));
+        assertTrue(redirectUrl.contains("code=" + result.authorizationCode()));
         assertTrue(redirectUrl.contains("state="));
         assertTrue(redirectUrl.startsWith("https://client.example.com/callback?"));
+        assertEquals("https://client.example.com/callback", result.redirectUri());
+        assertEquals("client-id", result.clientId());
+        assertEquals("https://auth.example.com", result.authorizationServerBaseUrl());
+        assertNull(result.browserBindingHash(), "unbound login (no SSO) carries no binding hash");
 
         verify(oAuth2AuthorizationService).save(any(OAuth2Authorization.class));
         verify(credentialVerificationLogger).logVerifiedOk("test-config-id");
@@ -557,7 +561,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertEquals(chall,  saved.getAttribute(PkceParameterNames.CODE_CHALLENGE));
         assertEquals(method, saved.getAttribute(PkceParameterNames.CODE_CHALLENGE_METHOD));
 
-        verify(sseEmitterStore).send(eq(state), contains("code="));
+        verify(sseEmitterStore, never()).send(anyString(), anyString());
     }
 
     @Test
@@ -612,4 +616,69 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertNull(saved.getAttribute(PkceParameterNames.CODE_CHALLENGE_METHOD));
     }
 
+
+    @Test
+    void handleAuthResponse_browserBoundLogin_returnsBindingHashFromCachedRequest() throws Exception {
+        // Given: /authorize bound this login to a browser (SSO tenant)
+        String state = "state-bound";
+        String nonce = "nonce-bound";
+        String vpToken = createVpToken(nonce);
+        OAuth2AuthorizationRequest req = OAuth2AuthorizationRequest.authorizationCode()
+                .authorizationUri("https://tenant-a.example.com/verifier")
+                .clientId("client-id")
+                .redirectUri("https://client.example.com/callback")
+                .state(state)
+                .additionalParameters(Map.of(
+                        NONCE, nonce,
+                        EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond(),
+                        BROWSER_BINDING_HASH, "binding-hash"))
+                .scope("read")
+                .build();
+        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(req);
+        when(cacheForNonceByState.get(state)).thenReturn(nonce);
+        when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
+                DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
+        when(registeredClientRepository.findByClientId("client-id")).thenReturn(RegisteredClient.withId("client-id")
+                .clientId("client-id")
+                .clientSecret("secret")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://client.example.com/callback")
+                .scope("read")
+                .build());
+
+        // When
+        AuthResponseResult result = authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
+
+        // Then
+        assertEquals("binding-hash", result.browserBindingHash());
+        assertEquals("https://tenant-a.example.com/verifier", result.authorizationServerBaseUrl());
+        assertFalse(result.toString().contains(result.authorizationCode()), "toString must not leak the code");
+    }
+
+    @Test
+    void revokeAuthorizationCode_knownCode_removesAuthorizationAndCodeData() {
+        // Given
+        OAuth2Authorization authorization = mock(OAuth2Authorization.class);
+        when(oAuth2AuthorizationService.findByToken(eq("the-code"), any(OAuth2TokenType.class))).thenReturn(authorization);
+
+        // When
+        authorizationResponseProcessorService.revokeAuthorizationCode("the-code");
+
+        // Then
+        verify(oAuth2AuthorizationService).remove(authorization);
+        verify(cacheStoreForAuthorizationCodeData).delete("the-code");
+    }
+
+    @Test
+    void revokeAuthorizationCode_unknownCode_isNoOpOnAuthorizationService() {
+        // Given
+        when(oAuth2AuthorizationService.findByToken(eq("gone"), any(OAuth2TokenType.class))).thenReturn(null);
+
+        // When
+        authorizationResponseProcessorService.revokeAuthorizationCode("gone");
+
+        // Then
+        verify(oAuth2AuthorizationService, never()).remove(any());
+        verify(cacheStoreForAuthorizationCodeData).delete("gone");
+    }
 }

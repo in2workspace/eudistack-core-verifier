@@ -1,5 +1,6 @@
 package es.in2.vcverifier.sso.it;
 
+import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
@@ -26,6 +27,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -91,6 +93,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
     @MockitoBean
     CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
     @MockitoBean AuthorizationResponseProcessorService authorizationResponseProcessorService;
+    @MockitoSpyBean SseEmitterStore sseEmitterStore;
     @Autowired SsoSessionRepositoryPort sessionRepositoryPort;
 
     @BeforeEach
@@ -109,6 +112,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
 
         jdbcTemplate.execute("DELETE FROM sso_session");
         reset(auditPort);
+        clearInvocations(sseEmitterStore);
         when(tenantSsoConfigPort.resolveTtl(anyString()))
                 .thenReturn(SsoSessionTtl.systemDefault());
     }
@@ -144,9 +148,12 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
         // verified credential snapshot to encrypt — mirror what a real VP verification
         // returns instead of leaving this mock unstubbed/null).
         // -----------------------------
+        // EUD-252: login bound to the browser; "hashed-user" is what the mocked HashingService
+        // returns for the browser-binding cookie too.
         when(authorizationResponseProcessorService.handleAuthResponse(any(), any()))
-                .thenReturn(new com.fasterxml.jackson.databind.ObjectMapper()
-                        .createObjectNode().put("sub", "test-holder"));
+                .thenAnswer(invocation -> CrossDeviceLoginTestSupport.boundResult(
+                        new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("sub", "test-holder"),
+                        invocation.getArgument(0), "hashed-user"));
 
         // -----------------------------
         // 3. PRIMERA PETICIÓN
@@ -157,6 +164,10 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                         .param("vp_token", VP_TOKEN_B64))
                 // EUDISTACK-547: POST /oid4vp/auth-response = ACK 200 (redirect vía SSE), no 302.
                 .andExpect(status().isOk());
+        // EUD-252: the session is established when the browser closes the login.
+        CrossDeviceLoginTestSupport.closeInBrowser(mockMvc, sseEmitterStore, "test-state",
+                        r -> r.requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a"))
+                .andExpect(status().is3xxRedirection());
 
         Integer firstCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sso_session WHERE tenant='tenant-a'",
@@ -172,8 +183,13 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a")
                         .param("state", "test-state-2")
                         .param("vp_token", VP_TOKEN_B64))
-                // EUDISTACK-547: ACK 200 con cookie SSO regenerada (redirect vía SSE), no 302.
+                // EUDISTACK-547: ACK 200 (redirect vía SSE), no 302 — EUD-252: sin cookie para el wallet.
                 .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("Set-Cookie"));
+        // EUD-252: the regenerated SSO cookie goes to the browser that closes the login.
+        CrossDeviceLoginTestSupport.closeInBrowser(mockMvc, sseEmitterStore, "test-state-2",
+                        r -> r.requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, "tenant-a"))
+                .andExpect(status().is3xxRedirection())
                 .andExpect(header().exists("Set-Cookie"));
 
         Integer total = jdbcTemplate.queryForObject(

@@ -12,6 +12,7 @@ import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
+import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
@@ -38,6 +39,7 @@ import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationCode;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.stereotype.Service;
@@ -79,7 +81,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final CredentialVerificationLoggerPort credentialVerificationLogger;
 
     @Override
-    public JsonNode handleAuthResponse(String state, String vpToken){
+    public AuthResponseResult handleAuthResponse(String state, String vpToken){
         log.info("Processing authorization response");
 
         boolean verificationLogged = false;
@@ -169,11 +171,6 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             verificationLogged = true;
             credentialVerificationLogger.logVerifiedOk(configurationId);
 
-            // Generate a code (code)
-            // SEC-S9: Authorization codes must not be logged in full.
-            String code = UUID.randomUUID().toString();
-            log.info("Authorization code generated: {}...", code.substring(0, 8));
-
             RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
 
             if (registeredClient == null) {
@@ -186,7 +183,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallengeMethod = (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD);
             String nonceValue = (String) addl.get(NONCE);
 
-            String redirectUrl = issueAuthorizationCode(
+            IssuedCode issuedCode = issueAuthorizationCode(
                     registeredClient,
                     redirectUri,
                     oAuth2AuthorizationRequest.getScopes(),
@@ -198,12 +195,21 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             );
 
             // SEC-O2: Log redirect target without full authorization code.
-            log.info("Redirecting to: {}", redirectUri);
+            log.info("Authorization code issued for redirect_uri: {}", redirectUri);
 
-            // Send the redirect URL to the browser via SSE
-            sseEmitterStore.send(state, redirectUrl);
-
-            return credentialJson;
+            // EUD-252: the success redirect is NOT pushed over SSE here any more. The caller routes
+            // the browser — directly to the RP, or first through the browser-bound SSO close step.
+            Object browserBindingHash = addl.get(BROWSER_BINDING_HASH);
+            return new AuthResponseResult(
+                    credentialJson,
+                    issuedCode.redirectUrl(),
+                    redirectUri,
+                    state,
+                    registeredClient.getClientId(),
+                    issuedCode.code(),
+                    browserBindingHash instanceof String hash ? hash : null,
+                    oAuth2AuthorizationRequest.getAuthorizationUri()
+            );
 
         } catch (NoSuchElementException e) {
             // State not found in cache (expired or invalid)
@@ -259,10 +265,33 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         if (registeredClient == null) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
-        String redirectUrl = issueAuthorizationCode(
+        IssuedCode issuedCode = issueAuthorizationCode(
                 registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson);
         log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
-        return redirectUrl;
+        return issuedCode.redirectUrl();
+    }
+
+    @Override
+    public void revokeAuthorizationCode(String code) {
+        if (code == null || code.isBlank()) {
+            return;
+        }
+        OAuth2Authorization authorization =
+                oAuth2AuthorizationService.findByToken(code, new OAuth2TokenType(OAuth2ParameterNames.CODE));
+        if (authorization != null) {
+            oAuth2AuthorizationService.remove(authorization);
+        }
+        // CustomTokenRequestConverter reads this entry first — without it the code is unusable.
+        cacheStoreForAuthorizationCodeData.delete(code);
+        log.info("Authorization code revoked before redemption");
+    }
+
+    /** A freshly issued authorization code and the {@code redirectUri?code=...&state=...} URL carrying it. */
+    private record IssuedCode(String code, String redirectUrl) {
+        @Override
+        public String toString() {
+            return "IssuedCode[redacted]";
+        }
     }
 
     /**
@@ -273,7 +302,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
      * path ({@link #issueCodeForReusedSession}) — the only difference between them is where
      * {@code credentialJson} comes from (freshly verified VP vs. cached establishment snapshot).
      */
-    private String issueAuthorizationCode(
+    private IssuedCode issueAuthorizationCode(
             RegisteredClient registeredClient,
             String redirectUri,
             Set<String> scopes,
@@ -352,11 +381,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 
-        return UriComponentsBuilder.fromHttpUrl(redirectUri)
+        String redirectUrl = UriComponentsBuilder.fromHttpUrl(redirectUri)
                 .queryParam("code", code)
                 .queryParam("state", state)
                 .build()
                 .toUriString();
+        return new IssuedCode(code, redirectUrl);
     }
 
     private boolean isSdJwt(String token) {
