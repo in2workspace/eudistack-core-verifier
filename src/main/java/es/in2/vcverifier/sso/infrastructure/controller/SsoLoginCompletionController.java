@@ -63,7 +63,9 @@ public class SsoLoginCompletionController {
 
         switch (ssoLoginCompletionWorkflow.complete(handle, browserBindingValue, tenant)) {
             case SsoLoginCompletionWorkflow.Outcome.Completed completed -> {
-                establishSsoSession(request, response, completed.login());
+                if (completed.login().ssoEligible()) {
+                    establishSsoSession(request, response, completed.login());
+                }
                 response.sendRedirect(completed.login().redirectUrl());
             }
             case SsoLoginCompletionWorkflow.Outcome.Rejected rejected ->

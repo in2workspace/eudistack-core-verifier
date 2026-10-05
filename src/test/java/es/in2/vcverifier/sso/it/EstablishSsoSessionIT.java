@@ -180,7 +180,7 @@ class EstablishSsoSessionIT {
         // -------------------------
         // AUTH SERVICE
         // -------------------------
-        when(authorizationResponseProcessorService.handleAuthResponse(anyString(), anyString()))
+        when(authorizationResponseProcessorService.handleAuthResponse(anyString(), anyString(), any()))
                 .thenReturn(CrossDeviceLoginTestSupport.boundResult(null, "test-state", "hashed"));
 
         // -------------------------
@@ -244,7 +244,7 @@ class EstablishSsoSessionIT {
         when(establishSsoSessionWorkflow.execute(any()))
                 .thenThrow(new SsoConfigInconsistentException("invalid config"));
         // Legacy tenant: no SSO config → the login is not browser-bound, the RP URL goes over SSE.
-        when(authorizationResponseProcessorService.handleAuthResponse(anyString(), anyString()))
+        when(authorizationResponseProcessorService.handleAuthResponse(anyString(), anyString(), any()))
                 .thenReturn(CrossDeviceLoginTestSupport.boundResult(null, "test-state", null));
 
         mockMvc.perform(post("/oid4vp/auth-response")
@@ -279,7 +279,7 @@ class EstablishSsoSessionIT {
         // -------------------------
         doThrow(new SsoConfigInconsistentException("invalid vp"))
                 .when(authorizationResponseProcessorService)
-                .handleAuthResponse(anyString(), anyString());
+                .handleAuthResponse(anyString(), anyString(), any());
 
         // -------------------------
         // CALL

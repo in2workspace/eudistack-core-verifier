@@ -64,9 +64,11 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
+import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -188,7 +190,7 @@ class CrossDeviceSsoLoginIT {
             issuedCodes.put(state, code);
             return new AuthResponseResult(credentialJson, redirectUrl, cached.getRedirectUri(), state,
                     cached.getClientId(), code, (String) addl.get(BROWSER_BINDING_HASH), cached.getAuthorizationUri());
-        }).when(authorizationResponseProcessorService).handleAuthResponse(anyString(), anyString());
+        }).when(authorizationResponseProcessorService).handleAuthResponse(anyString(), anyString(), any());
     }
 
     // =========================================================
@@ -323,6 +325,108 @@ class CrossDeviceSsoLoginIT {
     }
 
     // =========================================================
+    // F1: a state already in flight can't be taken over
+    // =========================================================
+
+    @Test
+    void duplicateStateFromAnotherBrowser_isRejected_andVictimLoginStillCompletes() throws Exception {
+        // Given: the victim's browser starts the login
+        String state = "xd-dup-" + UUID.randomUUID();
+        Cookie victimTx = authorizeInBrowser(state);
+        OAuth2AuthorizationRequest original = cacheStoreForOAuth2AuthorizationRequest.get(state);
+
+        // When: an attacker's browser (no victim cookie) replays /authorize with the same state
+        MvcResult attacker = mockMvc.perform(authorizeRequest(state))
+                .andExpect(status().is3xxRedirection())
+                .andReturn();
+
+        // Then: verifier error page, not the login page; the in-flight login is untouched
+        assertThat(attacker.getResponse().getHeader("Location")).contains("/error?").doesNotContain("/login?");
+        OAuth2AuthorizationRequest after = cacheStoreForOAuth2AuthorizationRequest.get(state);
+        assertThat(after).isSameAs(original);
+        assertThat(after.getAdditionalParameters().get(BROWSER_BINDING_HASH))
+                .isEqualTo(original.getAdditionalParameters().get(BROWSER_BINDING_HASH));
+        assertThat(after.getAdditionalParameters().get(VP_NONCE))
+                .isEqualTo(original.getAdditionalParameters().get(VP_NONCE));
+
+        // ... and the victim's login completes normally in the victim's browser
+        walletPost(state);
+        browserClose(sseUrlFor(state), victimTx)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?code=")))
+                .andExpect(cookie().exists(SSO_COOKIE));
+    }
+
+    @Test
+    void duplicateStateFromSameBrowser_isAcceptedAsRetry() throws Exception {
+        // Given
+        String state = "xd-retry-" + UUID.randomUUID();
+        Cookie tx = authorizeInBrowser(state);
+        Object originalNonce = cacheStoreForOAuth2AuthorizationRequest.get(state).getAdditionalParameters().get(VP_NONCE);
+
+        // When: the same browser (same __Host-sso-tx) retries /authorize
+        MvcResult retry = mockMvc.perform(authorizeRequest(state).cookie(tx))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", containsString("/login?")))
+                .andReturn();
+
+        // Then: same binding value re-emitted, new request (and nonce) replaced the old one
+        assertThat(retry.getResponse().getCookie(TX_COOKIE).getValue()).isEqualTo(tx.getValue());
+        assertThat(cacheStoreForOAuth2AuthorizationRequest.get(state).getAdditionalParameters().get(VP_NONCE))
+                .isNotEqualTo(originalNonce);
+        walletPost(state);
+        browserClose(sseUrlFor(state), tx)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(cookie().exists(SSO_COOKIE));
+    }
+
+    @Test
+    void duplicateStateOnSsoDisabledTenant_isRejected() throws Exception {
+        // Given
+        when(tenantSsoConfigPort.getByTenant(anyString())).thenReturn(Optional.of(config(false)));
+        String state = "legacy-dup-" + UUID.randomUUID();
+        mockMvc.perform(authorizeRequest(state))
+                .andExpect(header().string("Location", containsString("/login?")));
+
+        // When / Then: no binding to prove "same browser" → any duplicate is rejected
+        mockMvc.perform(authorizeRequest(state))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", containsString("/error?")));
+    }
+
+    // =========================================================
+    // W2: a bound login never gets the code over SSE
+    // =========================================================
+
+    @Test
+    void boundLoginWithoutUsableSubject_stillClosesInBrowser_codeWithoutSsoSession() throws Exception {
+        // Given: a VP whose token has neither sub nor iss
+        String state = "xd-nosub-" + UUID.randomUUID();
+        Cookie tx = authorizeInBrowser(state);
+        String vpNoSub = Base64.getEncoder().encodeToString(
+                "eyJhbGciOiJub25lIn0.e30.fakesig".getBytes(StandardCharsets.UTF_8));
+
+        // When
+        mockMvc.perform(post("/oid4vp/auth-response")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT)
+                        .param("state", state)
+                        .param("vp_token", vpNoSub))
+                .andExpect(status().isOk());
+
+        // Then: the SSE still carries the close URL, never the code
+        String closeUrl = sseUrlFor(state);
+        assertThat(closeUrl).contains("/api/login/complete?h=").doesNotContain("code=");
+        // ... and the bound browser gets the code, without an SSO session
+        browserClose(closeUrl, tx)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?code=")))
+                .andExpect(cookie().doesNotExist(SSO_COOKIE));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sso_session WHERE tenant = ?",
+                Integer.class, TENANT)).isZero();
+    }
+
+    // =========================================================
     // EC-07: SSO-disabled tenant keeps the legacy flow
     // =========================================================
 
@@ -368,7 +472,7 @@ class CrossDeviceSsoLoginIT {
         return tx;
     }
 
-    private org.springframework.test.web.servlet.RequestBuilder authorizeRequest(String state) {
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authorizeRequest(String state) {
         return get("/oidc/authorize")
                 .header("X-Forwarded-Proto", "https")
                 .header(X_TENANT, TENANT)

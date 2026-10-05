@@ -12,10 +12,12 @@ public interface AuthorizationResponseProcessorService {
      * notified to the browser over SSE ({@code validation_failed}) by this method; the success
      * redirect is NOT sent here (EUD-252) — the caller decides where the browser must go.
      *
+     * @param tenant tenant resolved on the wallet's request; must match the tenant the login was
+     *               started on at /authorize (EUD-252), otherwise the response is rejected
      * @return the verified credential claims plus everything the caller needs to route the
      * browser: the RP redirect URL, the issued code and the browser-binding hash of the login
      */
-    AuthResponseResult handleAuthResponse(String state, String vpToken);
+    AuthResponseResult handleAuthResponse(String state, String vpToken, String tenant);
 
     /**
      * Issues an authorization code directly for an already-authenticated SSO-reused session — no VP

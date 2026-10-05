@@ -35,7 +35,6 @@ class AuthorizationRequestBuildWorkflowTest {
     @Mock private CryptoComponent cryptoComponent;
     @Mock private BackendConfig backendConfig;
     @Mock private CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
-    @Mock private CacheStore<String> cacheForNonceByState;
     @Mock private DcqlProfileResolver dcqlProfileResolver;
 
     private AuthorizationRequestBuildWorkflow workflow;
@@ -45,7 +44,7 @@ class AuthorizationRequestBuildWorkflowTest {
     void setUp() {
         workflow = new AuthorizationRequestBuildWorkflow(
                 jwtService, cryptoComponent, backendConfig,
-                cacheStoreForAuthorizationRequestJWT, cacheForNonceByState,
+                cacheStoreForAuthorizationRequestJWT,
                 dcqlProfileResolver, objectMapper
         );
     }
@@ -87,8 +86,10 @@ class AuthorizationRequestBuildWorkflowTest {
 
         // Verify JWT was cached
         verify(cacheStoreForAuthorizationRequestJWT).add(eq(result.nonce()), any(AuthorizationRequestJWT.class));
-        // Verify nonce-by-state was cached
-        verify(cacheForNonceByState).add(eq("state-123"), anyString());
+        // EUD-252 (F1): the OID4VP nonce is returned (the caller caches it atomically with the
+        // authorization request), and it is the one embedded in the signed request object
+        assertThat(result.vpNonce()).isNotBlank();
+        assertThat(payload).contains("\"nonce\":\"" + result.vpNonce() + "\"");
     }
 
     @Test

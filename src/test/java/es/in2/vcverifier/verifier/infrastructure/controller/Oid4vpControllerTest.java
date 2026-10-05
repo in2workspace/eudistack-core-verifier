@@ -7,7 +7,7 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.exception.ResourceNotFoundException;
 import es.in2.vcverifier.sso.application.workflow.SsoLoginCompletionWorkflow;
-import es.in2.vcverifier.sso.domain.model.PendingSsoLogin;
+import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -97,88 +98,81 @@ class Oid4vpControllerTest {
             "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig".getBytes(StandardCharsets.UTF_8));
 
     @Test
-    void handleAuthResponse_unboundLogin_sendsRpRedirectOverSse() {
-        // Given: SSO-disabled tenant / no browser binding
+    void handleAuthResponse_sendsWorkflowRedirectOverSse() {
+        // Given: the workflow decides where the browser goes (RP URL or close URL)
         when(request.getAttribute(TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn("tenant-a");
-        when(authorizationResponseProcessorService.handleAuthResponse(STATE, VP_TOKEN)).thenReturn(result(null));
-        when(ssoLoginCompletionWorkflow.requiresBrowserBinding("tenant-a", null)).thenReturn(false);
+        AuthResponseResult result = result("bind-hash");
+        when(authorizationResponseProcessorService.handleAuthResponse(STATE, VP_TOKEN, "tenant-a")).thenReturn(result);
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq("tenant-a"), eq(result), any(), anyString()))
+                .thenReturn("https://tenant-a.example.com/verifier/api/login/complete?h=one-time-handle");
 
         // When
         oid4vpController.handleAuthResponse(STATE, VP_TOKEN, request);
 
-        // Then: unchanged legacy behaviour, nothing parked
-        verify(sseEmitterStore).send(STATE, RP_URL);
-        verify(ssoLoginCompletionWorkflow, never()).registerPendingLogin(any());
-    }
-
-    @Test
-    void handleAuthResponse_ssoBoundLogin_parksLoginAndSendsCloseUrl() {
-        // Given: SSO tenant, login bound to the browser at /authorize
-        when(request.getAttribute(TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn("tenant-a");
-        when(authorizationResponseProcessorService.handleAuthResponse(STATE, VP_TOKEN)).thenReturn(result("bind-hash"));
-        when(ssoLoginCompletionWorkflow.requiresBrowserBinding("tenant-a", "bind-hash")).thenReturn(true);
-        when(ssoLoginCompletionWorkflow.registerPendingLogin(any())).thenReturn("one-time-handle");
-
-        // When
-        oid4vpController.handleAuthResponse(STATE, VP_TOKEN, request);
-
-        // Then: the browser gets the close URL on the /authorize host, never the code
+        // Then: the wallet's tenant is checked by the processor; the browser gets the workflow's URL
         verify(sseEmitterStore).send(STATE, "https://tenant-a.example.com/verifier/api/login/complete?h=one-time-handle");
-        ArgumentCaptor<PendingSsoLogin> pending = ArgumentCaptor.forClass(PendingSsoLogin.class);
-        verify(ssoLoginCompletionWorkflow).registerPendingLogin(pending.capture());
-        assertEquals("tenant-a", pending.getValue().tenant());
-        assertEquals("test-holder", pending.getValue().holderSubject());
-        assertEquals("bind-hash", pending.getValue().browserBindingHash());
-        assertEquals("the-code", pending.getValue().authorizationCode());
-        assertEquals(RP_URL, pending.getValue().redirectUrl());
+        verify(sseEmitterStore, never()).sendValidationFailed(anyString(), anyString(), anyString());
     }
 
     @Test
-    void handleAuthResponse_ssoBoundLoginWithoutUsableSubject_completesWithoutSso() {
+    void handleAuthResponse_subjectSupplier_extractsRawSubFromVpToken() {
+        // Given
+        when(request.getAttribute(TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn("tenant-a");
+        when(authorizationResponseProcessorService.handleAuthResponse(STATE, VP_TOKEN, "tenant-a")).thenReturn(result("h"));
+        ArgumentCaptor<Supplier<String>> subject = ArgumentCaptor.captor();
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq("tenant-a"), any(), subject.capture(), anyString()))
+                .thenReturn("url");
+
+        // When
+        oid4vpController.handleAuthResponse(STATE, VP_TOKEN, request);
+
+        // Then: payload {"sub":"test-holder"}
+        assertEquals("test-holder", subject.getValue().get());
+    }
+
+    @Test
+    void handleAuthResponse_subjectSupplier_noUsableSubject_throwsIllegalState() {
         // Given: VP token whose payload has neither sub nor iss
         String vpTokenNoSub = Base64.getEncoder().encodeToString(
                 "eyJhbGciOiJub25lIn0.e30.fakesig".getBytes(StandardCharsets.UTF_8));
-        when(request.getAttribute(TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn("tenant-a");
-        when(authorizationResponseProcessorService.handleAuthResponse(STATE, vpTokenNoSub)).thenReturn(result("bind-hash"));
-        when(ssoLoginCompletionWorkflow.requiresBrowserBinding("tenant-a", "bind-hash")).thenReturn(true);
+        when(authorizationResponseProcessorService.handleAuthResponse(eq(STATE), eq(vpTokenNoSub), any()))
+                .thenReturn(result("h"));
+        ArgumentCaptor<Supplier<String>> subject = ArgumentCaptor.captor();
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(any(), any(), subject.capture(), anyString()))
+                .thenReturn("url");
 
         // When
         oid4vpController.handleAuthResponse(STATE, vpTokenNoSub, request);
 
-        // Then: login still completes (RP URL), no SSO, audited
-        verify(sseEmitterStore).send(STATE, RP_URL);
-        verify(ssoLoginCompletionWorkflow, never()).registerPendingLogin(any());
-        verify(ssoAuditPort).publish(argThat(e -> e.getEventType() == SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED
-                && "no_usable_subject".equals(e.getReason())));
+        // Then: the workflow is the one deciding what an unusable subject means (B5)
+        assertThrows(IllegalStateException.class, () -> subject.getValue().get());
     }
 
     @Test
-    void handleAuthResponse_ssoRoutingFails_stillSendsRpRedirect() {
-        // Given: tenant SSO config unavailable while routing the browser
-        when(request.getAttribute(TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn("tenant-a");
-        when(authorizationResponseProcessorService.handleAuthResponse(STATE, VP_TOKEN)).thenReturn(result("bind-hash"));
-        when(ssoLoginCompletionWorkflow.requiresBrowserBinding("tenant-a", "bind-hash"))
-                .thenThrow(new RuntimeException("config store down"));
+    void handleAuthResponse_loginCompletionUnavailable_notifiesBrowserAndNeverSendsCode() {
+        // Given: bound login whose close step can't be offered (workflow already revoked + audited)
+        when(authorizationResponseProcessorService.handleAuthResponse(eq(STATE), eq(VP_TOKEN), any()))
+                .thenReturn(result("bind-hash"));
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(any(), any(), any(), anyString()))
+                .thenThrow(new LoginCompletionUnavailableException("unavailable"));
 
-        // When
-        oid4vpController.handleAuthResponse(STATE, VP_TOKEN, request);
-
-        // Then: fail-open — the verified login completes without SSO, and it is audited
-        verify(sseEmitterStore).send(STATE, RP_URL);
-        verify(ssoAuditPort).publish(argThat(e -> e.getEventType() == SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED
-                && "sso_routing_failed".equals(e.getReason())));
+        // When / Then: fail closed
+        assertThrows(LoginCompletionUnavailableException.class,
+                () -> oid4vpController.handleAuthResponse(STATE, VP_TOKEN, request));
+        verify(sseEmitterStore).sendValidationFailed(eq(STATE), eq("LOGIN_COMPLETION_UNAVAILABLE"), anyString());
+        verify(sseEmitterStore, never()).send(anyString(), anyString());
     }
 
     @Test
     void handleAuthResponse_processingFailure_auditsAndRethrows() {
         // Given
-        when(authorizationResponseProcessorService.handleAuthResponse(STATE, VP_TOKEN))
+        when(authorizationResponseProcessorService.handleAuthResponse(eq(STATE), eq(VP_TOKEN), any()))
                 .thenThrow(new IllegalStateException("vp invalid"));
 
         // When / Then (ES-01)
         assertThrows(IllegalStateException.class, () -> oid4vpController.handleAuthResponse(STATE, VP_TOKEN, request));
         verify(ssoAuditPort).publish(argThat(e -> e.getEventType() == SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED));
-        verifyNoInteractions(sseEmitterStore);
+        verifyNoInteractions(sseEmitterStore, ssoLoginCompletionWorkflow);
     }
 
     private static AuthResponseResult result(String bindingHash) {

@@ -8,7 +8,7 @@ import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.exception.ResourceNotFoundException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
 import es.in2.vcverifier.sso.application.workflow.SsoLoginCompletionWorkflow;
-import es.in2.vcverifier.sso.domain.model.PendingSsoLogin;
+import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
@@ -30,8 +30,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
-
-import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_COMPLETION_PATH;
 
 @Slf4j
 @RestController
@@ -93,12 +91,9 @@ public class Oid4vpController {
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         String correlationId = UUID.randomUUID().toString();
 
+        AuthResponseResult result;
         try {
-            AuthResponseResult result = authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
-            // EUD-252: this request comes from the WALLET (possibly another device) — it never gets
-            // the SSO cookie. The browser that started the login is sent, over SSE, either straight
-            // to the RP or through the browser-bound close step that establishes the SSO session.
-            sseEmitterStore.send(state, resolveBrowserRedirect(tenant, vpToken, result, correlationId));
+            result = authorizationResponseProcessorService.handleAuthResponse(state, vpToken, tenant);
         } catch (Exception ex) {
             // ES-01: VP invalid or any processing failure → emit sso_establish_failed audit, then re-throw
             // The existing OID4VP error handling produces the access_denied response.
@@ -113,49 +108,21 @@ public class Oid4vpController {
             ));
             throw ex;
         }
-    }
 
-    /**
-     * SSO tenant with a browser-bound login → park it and hand the browser the one-time close URL
-     * (on the same Verifier host it used at /authorize, so its {@code __Host-sso-tx} cookie is sent).
-     * Anything else → the RP redirect URL directly, exactly as before EUD-252.
-     *
-     * <p>Fail-open, like the SSO establishment it replaces on this request: the VP is verified and
-     * the code issued, so an SSO problem (no usable subject, config unavailable) only costs the SSO
-     * session — the browser still completes the login.
-     */
-    private String resolveBrowserRedirect(String tenant, String vpToken, AuthResponseResult result,
-                                          String correlationId) {
+        // EUD-252: this request comes from the WALLET (possibly another device) — it never gets the
+        // SSO cookie. The browser that started the login is sent, over SSE, straight to the RP
+        // (unbound login) or to the one-time close URL (browser-bound login, always).
+        String browserRedirect;
         try {
-            if (!ssoLoginCompletionWorkflow.requiresBrowserBinding(tenant, result.browserBindingHash())) {
-                return result.redirectUrl();
-            }
-            // B5: extractSubFromVpToken rejects a missing subject (avoids a SHA-256("") collision).
-            String handle = ssoLoginCompletionWorkflow.registerPendingLogin(new PendingSsoLogin(
-                    tenant,
-                    extractSubFromVpToken(vpToken),
-                    result.clientId(),
-                    result.credentialJson(),
-                    result.redirectUrl(),
-                    result.redirectUri(),
-                    result.state(),
-                    result.browserBindingHash(),
-                    result.authorizationCode()
-            ));
-            return result.authorizationServerBaseUrl() + LOGIN_COMPLETION_PATH + "?h=" + handle;
-        } catch (RuntimeException e) {
-            log.warn("event=sso_establish_skipped tenant={} reason={}", tenant, e.getClass().getSimpleName());
-            ssoAuditPort.publish(SsoAuditEvent.builder()
-                    .eventType(SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED)
-                    .tenant(tenant)
-                    .clientId(result.clientId())
-                    .outcome("FAILURE")
-                    .correlationId(correlationId)
-                    .occurredAt(Instant.now())
-                    .reason(e instanceof IllegalStateException ? "no_usable_subject" : "sso_routing_failed")
-                    .build());
-            return result.redirectUrl();
+            browserRedirect = ssoLoginCompletionWorkflow.resolveBrowserRedirect(
+                    tenant, result, () -> extractSubFromVpToken(vpToken), correlationId);
+        } catch (LoginCompletionUnavailableException e) {
+            // Fail closed (code already revoked and audited): tell the browser, never send the code.
+            sseEmitterStore.sendValidationFailed(state, "LOGIN_COMPLETION_UNAVAILABLE",
+                    "The login could not be completed, please try again");
+            throw e;
         }
+        sseEmitterStore.send(state, browserRedirect);
     }
 
     private String extractSubFromVpToken(String vpToken) {

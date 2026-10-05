@@ -150,7 +150,7 @@ class SsoSessionReestablishSupersedesPreviousSessionIT {
         // -----------------------------
         // EUD-252: login bound to the browser; "hashed-user" is what the mocked HashingService
         // returns for the browser-binding cookie too.
-        when(authorizationResponseProcessorService.handleAuthResponse(any(), any()))
+        when(authorizationResponseProcessorService.handleAuthResponse(any(), any(), any()))
                 .thenAnswer(invocation -> CrossDeviceLoginTestSupport.boundResult(
                         new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("sub", "test-holder"),
                         invocation.getArgument(0), "hashed-user"));

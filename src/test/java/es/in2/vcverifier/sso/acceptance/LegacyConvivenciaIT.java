@@ -121,12 +121,14 @@ class LegacyConvivenciaIT {
         // W2 (review): establishment is now fail-closed without a verified credential snapshot
         // to encrypt — mirror what a real VP verification returns instead of leaving this mock
         // unstubbed/null, otherwise every establishment in this suite would fail closed.
-        // EUD-252: every login comes back browser-bound; whether it goes through the browser close
-        // step is decided by the tenant's SSO flag ("hashed-user" = mocked hash of the binding cookie).
-        when(authorizationResponseProcessorService.handleAuthResponse(any(), any()))
+        // EUD-252: mirrors /authorize — a login is browser-bound only if its tenant has SSO enabled
+        // at that moment ("hashed-user" = mocked hash of the binding cookie); legacy logins are not.
+        when(authorizationResponseProcessorService.handleAuthResponse(any(), any(), any()))
                 .thenAnswer(invocation -> CrossDeviceLoginTestSupport.boundResult(
                         new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("sub", "test-holder"),
-                        invocation.getArgument(0), "hashed-user"));
+                        invocation.getArgument(0),
+                        tenantSsoConfigPort.getByTenant(invocation.getArgument(2))
+                                .filter(TenantSsoConfig::ssoEnabled).isPresent() ? "hashed-user" : null));
     }
 
     // ---- helpers -----------------------------------------------------------

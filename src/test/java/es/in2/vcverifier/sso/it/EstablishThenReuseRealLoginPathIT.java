@@ -168,7 +168,7 @@ class EstablishThenReuseRealLoginPathIT {
         org.mockito.Mockito.doAnswer(invocation -> CrossDeviceLoginTestSupport.boundResult(
                         credentialJson, invocation.getArgument(0),
                         hashingService.sha256(CrossDeviceLoginTestSupport.BINDING_VALUE)))
-                .when(authorizationResponseProcessorService).handleAuthResponse(any(), any());
+                .when(authorizationResponseProcessorService).handleAuthResponse(any(), any(), any());
     }
 
     /**

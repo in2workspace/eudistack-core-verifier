@@ -18,6 +18,7 @@ import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
+import es.in2.vcverifier.verifier.domain.exception.LoginTenantMismatchException;
 import es.in2.vcverifier.verifier.domain.exception.LegacyFormatSunsetClosedException;
 import es.in2.vcverifier.verifier.domain.exception.UnknownCredentialFormatException;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
@@ -74,14 +75,13 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final OAuth2AuthorizationService oAuth2AuthorizationService;
     private final SseEmitterStore sseEmitterStore;
     private final BackendConfig backendConfig;
-    private final CacheStore<String> cacheForNonceByState;
     private final CryptoComponent cryptoComponent;
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
     private final CredentialSchemaDispatcher credentialSchemaDispatcher;
     private final CredentialVerificationLoggerPort credentialVerificationLogger;
 
     @Override
-    public AuthResponseResult handleAuthResponse(String state, String vpToken){
+    public AuthResponseResult handleAuthResponse(String state, String vpToken, String tenant){
         log.info("Processing authorization response");
 
         boolean verificationLogged = false;
@@ -94,6 +94,18 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
             // Remove the state from cache after retrieving the Object
             cacheStoreForOAuth2AuthorizationRequest.delete(state);
+
+            // EUD-252 (F1): the wallet must answer through the tenant the login was started on.
+            // Requests cached without a tenant (no tenant resolvable at /authorize) are not checked.
+            Object authorizeTenant = oAuth2AuthorizationRequest.getAdditionalParameters().get(AUTHORIZE_TENANT);
+            if (authorizeTenant != null && !authorizeTenant.equals(tenant)) {
+                sseEmitterStore.sendValidationFailed(state, "TENANT_MISMATCH",
+                        "Authorization response received through a different tenant");
+                throw new LoginTenantMismatchException("Authorization response tenant does not match the login's tenant");
+            }
+            // OID4VP nonce of this login — cached in the same entry by the same /authorize call.
+            Object vpNonceValue = oAuth2AuthorizationRequest.getAdditionalParameters().get(VP_NONCE);
+            String cachedVpNonce = vpNonceValue instanceof String n ? n : null;
 
             Instant issueTime = Instant.now();
 
@@ -123,10 +135,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 if (isSdJwt(resolvedVpToken)) {
                     // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
                     // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
-                    String cachedNonce = cacheForNonceByState.get(state);
                     String expectedAud = cryptoComponent.getClientId();
                     SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
-                            resolvedVpToken, expectedAud, cachedNonce);
+                            resolvedVpToken, expectedAud, cachedVpNonce);
                     credentialJson = objectMapper.valueToTree(result.resolvedClaims());
                     log.info("SD-JWT VC validated successfully. vct={}", result.vct());
 
@@ -139,7 +150,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                     }
                 } else {
                     // JWT VP path
-                    validateVpTokenNonceAndAudience(resolvedVpToken, state);
+                    validateVpTokenNonceAndAudience(resolvedVpToken, state, cachedVpNonce);
                     try {
                         vpService.verifyVerifiablePresentation(resolvedVpToken);
                     } catch (CredentialRevokedException e) {
@@ -211,6 +222,11 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                     oAuth2AuthorizationRequest.getAuthorizationUri()
             );
 
+        } catch (LoginTenantMismatchException e) {
+            // SSE already sent above; must precede NoSuchElementException (its supertype)
+            log.warn("Authorization response tenant mismatch for state: {}", state);
+            verificationFailure = e;
+            throw e;
         } catch (NoSuchElementException e) {
             // State not found in cache (expired or invalid)
             log.error("State not found or expired: {}", state);
@@ -477,7 +493,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         log.info("SD-JWT credential is not revoked");
     }
 
-    private void validateVpTokenNonceAndAudience(String decodedVpToken, String state) {
+    private void validateVpTokenNonceAndAudience(String decodedVpToken, String state, String cachedNonce) {
         if (state == null || state.isBlank()) {
             throw new JWTClaimMissingException("The 'state' claim is missing in the VP token.");
         }
@@ -487,7 +503,6 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             if (vpNonce == null || vpNonce.isBlank()) {
                 throw new JWTClaimMissingException("The 'nonce' claim is missing in the VP token.");
             }
-            String cachedNonce = cacheForNonceByState.get(state);
             if (cachedNonce == null) {
                 throw new JWTClaimMissingException("No nonce found in cache for state=" + state);
             }

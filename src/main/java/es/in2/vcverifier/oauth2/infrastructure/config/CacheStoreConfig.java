@@ -26,10 +26,9 @@ public class CacheStoreConfig {
 
     private final BackendConfig backendConfig;
 
-    @Bean
-    public CacheStore<String> cacheForNonceByState() {
-        return new CacheStore<>(10, TimeUnit.MINUTES);
-    }
+    // EUD-252 (F1): the former cacheForNonceByState bean is gone — the OID4VP nonce now lives in the
+    // cached OAuth2AuthorizationRequest (Constants.VP_NONCE), written atomically with the rest of the
+    // login, so a concurrent /authorize reusing the public state can't swap it independently.
 
     @Bean
     public CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT() {

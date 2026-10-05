@@ -43,6 +43,12 @@ public class Constants {
     // the cached OAuth2AuthorizationRequest so the cross-device close step can prove the browser
     // that finishes the login is the one that started it.
     public static final String BROWSER_BINDING_HASH = "browser_binding_hash";
+    // EUD-252 (F1): the OID4VP nonce of the login, kept in the same cached OAuth2AuthorizationRequest
+    // entry as everything else so request and nonce are always written together, atomically, by the
+    // same /authorize call. Distinct from the client's OIDC "nonce".
+    public static final String VP_NONCE = "vp_nonce";
+    // EUD-252 (F1): tenant resolved at /authorize; the wallet POST must come through the same tenant.
+    public static final String AUTHORIZE_TENANT = "authorize_tenant";
     // EUD-252: browser-side close of a cross-device login (establishes the SSO session in the
     // browser that started the login, then redirects to the RP). Relative to the context path.
     public static final String LOGIN_COMPLETION_PATH = "/api/login/complete";

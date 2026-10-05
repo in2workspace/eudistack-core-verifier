@@ -117,8 +117,24 @@ class SsoLoginCompletionControllerTest {
         verify(ssoSessionHandler, never()).onAuthenticationSuccess(any(), any(), any());
     }
 
+    @Test
+    void complete_bindingVerifiedButNotSsoEligible_redirectsWithCodeWithoutSession() throws Exception {
+        // Given: bound login whose SSO session could not be prepared on the wallet POST
+        when(bindingCookie.readValue(request)).thenReturn(Optional.of("bv"));
+        when(workflow.complete("h", "bv", "tenant-a")).thenReturn(new SsoLoginCompletionWorkflow.Outcome.Completed(
+                new PendingSsoLogin("tenant-a", null, "client-a", null, RP_URL,
+                        "https://rp.example.com/cb", "st", "hash", "c", false)));
+
+        // When
+        controller.complete("h", request, response);
+
+        // Then
+        verify(ssoSessionHandler, never()).onAuthenticationSuccess(any(), any(), any());
+        assertThat(response.getRedirectedUrl()).isEqualTo(RP_URL);
+    }
+
     private static PendingSsoLogin pending() {
         return new PendingSsoLogin("tenant-a", "raw-sub", "client-a", null, RP_URL,
-                "https://rp.example.com/cb", "st", "hash", "c");
+                "https://rp.example.com/cb", "st", "hash", "c", true);
     }
 }

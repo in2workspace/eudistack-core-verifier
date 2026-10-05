@@ -4,9 +4,11 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.sso.domain.model.PendingSsoLogin;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -49,23 +52,144 @@ class SsoLoginCompletionWorkflowTest {
                 authorizationResponseProcessorService);
     }
 
+    // ---- resolveBrowserRedirect (wallet POST → where the browser goes over SSE) ----
+
+    private static final String RP_URL = "https://rp.example.com/cb?code=" + CODE + "&state=st";
+    private static final String BASE_URL = "https://tenant-a.example.com/verifier";
+
     @Test
-    void requiresBrowserBinding_ssoTenantWithHash_isTrue() {
+    void resolveBrowserRedirect_unboundLogin_returnsRpUrlDirectly() {
+        // Given: SSO-disabled tenant at /authorize → no binding hash (EC-07)
+        // When
+        String url = workflow.resolveBrowserRedirect(TENANT, result(null, BASE_URL), () -> "holder-sub", "corr");
+
+        // Then
+        assertThat(url).isEqualTo(RP_URL);
+        verify(authorizationResponseProcessorService, never()).revokeAuthorizationCode(any());
+    }
+
+    @Test
+    void resolveBrowserRedirect_boundSsoLogin_parksEligibleLoginAndReturnsCloseUrl() {
+        // Given
         when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
 
-        assertThat(workflow.requiresBrowserBinding(TENANT, "hash")).isTrue();
+        // When
+        String url = workflow.resolveBrowserRedirect(TENANT, result("bind-hash", BASE_URL), () -> "holder-sub", "corr");
+
+        // Then
+        assertThat(url).startsWith(BASE_URL + "/api/login/complete?h=").doesNotContain("code=");
+        PendingSsoLogin parked = cache.getIfPresent(hashingService.sha256(handleOf(url)));
+        assertThat(parked.ssoEligible()).isTrue();
+        assertThat(parked.holderSubject()).isEqualTo("holder-sub");
+        verify(ssoAuditPort, never()).publish(any());
     }
 
     @Test
-    void requiresBrowserBinding_ssoDisabledTenant_isFalse() {
+    void resolveBrowserRedirect_boundLoginNoUsableSubject_parksIneligibleLoginAndAudits() {
+        // Given
+        when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
+
+        // When
+        String url = workflow.resolveBrowserRedirect(TENANT, result("bind-hash", BASE_URL),
+                () -> { throw new IllegalStateException("no sub"); }, "corr");
+
+        // Then: still the close URL — the code never goes over SSE for a bound login
+        assertThat(url).startsWith(BASE_URL + "/api/login/complete?h=");
+        assertThat(cache.getIfPresent(hashingService.sha256(handleOf(url))).ssoEligible()).isFalse();
+        assertAudited(SsoLoginCompletionWorkflow.REASON_NO_USABLE_SUBJECT);
+    }
+
+    @Test
+    void resolveBrowserRedirect_boundLoginConfigUnreadable_parksIneligibleLoginAndAudits() {
+        // Given
+        when(tenantSsoConfigPort.getByTenant(TENANT)).thenThrow(new IllegalStateException("config store down"));
+
+        // When
+        String url = workflow.resolveBrowserRedirect(TENANT, result("bind-hash", BASE_URL), () -> "holder-sub", "corr");
+
+        // Then
+        assertThat(url).startsWith(BASE_URL + "/api/login/complete?h=");
+        assertThat(cache.getIfPresent(hashingService.sha256(handleOf(url))).ssoEligible()).isFalse();
+        assertAudited(SsoLoginCompletionWorkflow.REASON_SSO_CONFIG_UNAVAILABLE);
+    }
+
+    @Test
+    void resolveBrowserRedirect_boundLoginSsoDisabledMeanwhile_parksIneligibleLoginWithoutAudit() {
+        // Given: SSO switched off between /authorize and the wallet POST
         when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(false)));
 
-        assertThat(workflow.requiresBrowserBinding(TENANT, "hash")).isFalse();
+        // When
+        String url = workflow.resolveBrowserRedirect(TENANT, result("bind-hash", BASE_URL), () -> "holder-sub", "corr");
+
+        // Then
+        assertThat(cache.getIfPresent(hashingService.sha256(handleOf(url))).ssoEligible()).isFalse();
+        verify(ssoAuditPort, never()).publish(any());
     }
 
     @Test
-    void requiresBrowserBinding_unboundLogin_isFalse() {
-        assertThat(workflow.requiresBrowserBinding(TENANT, null)).isFalse();
+    void resolveBrowserRedirect_boundLoginWithoutBaseUrl_failsClosed() {
+        // When / Then
+        assertThatThrownBy(() -> workflow.resolveBrowserRedirect(TENANT, result("bind-hash", null),
+                () -> "holder-sub", "corr")).isInstanceOf(LoginCompletionUnavailableException.class);
+        verify(authorizationResponseProcessorService).revokeAuthorizationCode(CODE);
+        assertAudited(SsoLoginCompletionWorkflow.REASON_LOGIN_COMPLETION_UNAVAILABLE);
+    }
+
+    @Test
+    void resolveBrowserRedirect_boundLoginRegistrationFails_failsClosed() {
+        // Given: a store that can't hold the pending login
+        HashingService brokenHashing = org.mockito.Mockito.mock(HashingService.class);
+        when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
+        SsoLoginCompletionWorkflow brokenWorkflow = new SsoLoginCompletionWorkflow(cache, tenantSsoConfigPort,
+                brokenHashing, ssoAuditPort, authorizationResponseProcessorService);
+
+        // When / Then (null hash key → CacheStore refuses the entry)
+        assertThatThrownBy(() -> brokenWorkflow.resolveBrowserRedirect(TENANT, result("bind-hash", BASE_URL),
+                () -> "holder-sub", "corr")).isInstanceOf(LoginCompletionUnavailableException.class);
+        verify(authorizationResponseProcessorService).revokeAuthorizationCode(CODE);
+    }
+
+    @Test
+    void complete_ineligibleLoginWithMatchingBinding_completesWithoutSsoFlag() {
+        // Given
+        String handle = workflow.registerPendingLogin(new PendingSsoLogin(TENANT, null, "client-a", null, RP_URL,
+                "https://rp.example.com/cb", "st", hashingService.sha256(BINDING_VALUE), CODE, false));
+
+        // When
+        var outcome = workflow.complete(handle, BINDING_VALUE, TENANT);
+
+        // Then: binding still enforced; caller skips the session
+        assertThat(((SsoLoginCompletionWorkflow.Outcome.Completed) outcome).login().ssoEligible()).isFalse();
+    }
+
+    @Test
+    void complete_ineligibleLoginWithWrongBinding_rejectsWithoutHolderHash() {
+        // Given
+        String handle = workflow.registerPendingLogin(new PendingSsoLogin(TENANT, null, "client-a", null, RP_URL,
+                "https://rp.example.com/cb", "st", hashingService.sha256(BINDING_VALUE), CODE, false));
+
+        // When
+        var outcome = workflow.complete(handle, "attacker-browser-value", TENANT);
+
+        // Then
+        assertThat(outcome).isInstanceOf(SsoLoginCompletionWorkflow.Outcome.Rejected.class);
+        verify(authorizationResponseProcessorService).revokeAuthorizationCode(CODE);
+    }
+
+    private void assertAudited(String reason) {
+        ArgumentCaptor<SsoAuditEvent> event = ArgumentCaptor.forClass(SsoAuditEvent.class);
+        verify(ssoAuditPort).publish(event.capture());
+        assertThat(event.getValue().getEventType()).isEqualTo(SsoAuditEvent.EventType.SSO_ESTABLISH_FAILED);
+        assertThat(event.getValue().getReason()).isEqualTo(reason);
+    }
+
+    private static String handleOf(String closeUrl) {
+        return closeUrl.substring(closeUrl.indexOf("?h=") + 3);
+    }
+
+    private static AuthResponseResult result(String bindingHash, String baseUrl) {
+        return new AuthResponseResult(null, RP_URL, "https://rp.example.com/cb", "st", "client-a", CODE,
+                bindingHash, baseUrl);
     }
 
     @Test
@@ -194,7 +318,7 @@ class SsoLoginCompletionWorkflowTest {
     private PendingSsoLogin pending() {
         return new PendingSsoLogin(TENANT, "holder-sub", "client-a", null,
                 "https://rp.example.com/cb?code=" + CODE + "&state=st", "https://rp.example.com/cb", "st",
-                hashingService.sha256(BINDING_VALUE), CODE);
+                hashingService.sha256(BINDING_VALUE), CODE, true);
     }
 
     private static TenantSsoConfig config(boolean ssoEnabled) {
