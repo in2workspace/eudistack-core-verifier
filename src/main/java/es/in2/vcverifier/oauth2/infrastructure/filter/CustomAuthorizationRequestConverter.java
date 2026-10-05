@@ -11,6 +11,7 @@ import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import io.micrometer.common.util.StringUtils;
@@ -42,6 +43,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
@@ -73,6 +75,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
     private final SafeUrlValidator safeUrlValidator;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
+    private final SsoBrowserBindingCookie ssoBrowserBindingCookie;
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -121,11 +124,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 // none of them should fall through to a fresh OID4VP/QR challenge below.
                 handleSsoReuseResult(ssoResult, authorizationContext);
             }
-            return handleOIDCStandardRequest(authorizationContext, registeredClient);
+            // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
+            // carry the login-page browser-binding cookie.
+            return handleOIDCStandardRequest(authorizationContext, registeredClient,
+                    ssoBrowserBindingCookie.bindIfSsoEnabled(request));
         }
 
         // Case 2: FAPI authorization request with a signed JWT object
-        return handleFAPIRequest(authorizationContext, request, registeredClient);
+        return handleFAPIRequest(authorizationContext, request, registeredClient,
+                ssoBrowserBindingCookie.bindIfSsoEnabled(request));
     }
 
     private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
@@ -217,7 +224,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication handleFAPIRequest(AuthorizationContext authorizationContext,
                                              HttpServletRequest request,
-                                             RegisteredClient registeredClient) {
+                                             RegisteredClient registeredClient,
+                                             String browserBindingHash) {
         String jwt = retrieveJwtFromRequestUriOrRequest(
                 authorizationContext.requestUri(), request, registeredClient, authorizationContext.originalRequestURL(),
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -234,15 +242,17 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                     authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
         }
 
-        return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient);
+        return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient, browserBindingHash);
     }
 
     private Authentication handleOIDCStandardRequest(AuthorizationContext authorizationContext,
-                                                     RegisteredClient registeredClient) {
+                                                     RegisteredClient registeredClient,
+                                                     String browserBindingHash) {
         validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null,
                 authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
 
-        cacheAuthorizationRequest(authorizationContext, registeredClient.getClientId(), authorizationContext.redirectUri());
+        cacheAuthorizationRequest(authorizationContext, registeredClient.getClientId(), authorizationContext.redirectUri(),
+                browserBindingHash);
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
@@ -255,14 +265,16 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
                                                     SignedJWT signedJwt,
-                                                    RegisteredClient registeredClient) {
+                                                    RegisteredClient registeredClient,
+                                                    String browserBindingHash) {
         PublicKey publicKey = didService.resolvePublicKeyFromDid(registeredClient.getClientId());
         jwtService.verifyJWTWithECKey(signedJwt.serialize(), publicKey);
 
         cacheAuthorizationRequest(
                 authorizationContext,
                 registeredClient.getClientId(),
-                jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI));
+                jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI),
+                browserBindingHash);
 
         // Delegate JWT building, signing, caching, and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
@@ -395,7 +407,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         }
     }
 
-    private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, String clientId, String redirectUri) {
+    private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, String clientId, String redirectUri,
+                                           String browserBindingHash) {
         OAuth2AuthorizationRequest.Builder builder = OAuth2AuthorizationRequest
                 .authorizationCode()
                 .state(authorizationContext.state())
@@ -418,6 +431,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String codeChallengeMethod = authorizationContext.codeChallengeMethod();
         if (codeChallengeMethod != null && !codeChallengeMethod.isBlank()) {
             additionalParameters.put(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
+        }
+        if (browserBindingHash != null) {
+            additionalParameters.put(BROWSER_BINDING_HASH, browserBindingHash);
         }
 
         builder.additionalParameters(additionalParameters);

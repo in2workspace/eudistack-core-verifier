@@ -11,6 +11,7 @@ import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.*;
@@ -77,6 +79,9 @@ class CustomAuthorizationRequestConverterTest {
     @Mock
     private ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
 
+    @Mock
+    private SsoBrowserBindingCookie ssoBrowserBindingCookie;
+
     private boolean isNonceRequiredOnFapiProfile = true;
     private long loginTimeoutSeconds = 120L;
 
@@ -95,7 +100,8 @@ class CustomAuthorizationRequestConverterTest {
                 httpClient,
                 authorizationRequestBuildWorkflow,
                 safeUrlValidator,
-                reuseSsoSessionWorkflow
+                reuseSsoSessionWorkflow,
+                ssoBrowserBindingCookie
         );
     }
 
@@ -625,6 +631,81 @@ class CustomAuthorizationRequestConverterTest {
 
         assertEquals(codeChallenge, addl.get(PkceParameterNames.CODE_CHALLENGE));
         assertEquals(codeChallengeMethod, addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD));
+    }
+
+    @Test
+    void convert_standardRequest_ssoTenantBrowserBound_shouldCacheBrowserBindingHash() {
+        // Given: a plain OIDC request whose tenant has SSO enabled (binding returns a hash)
+        HttpServletRequest request = mock(HttpServletRequest.class,
+                withSettings().strictness(org.mockito.quality.Strictness.LENIENT));
+        String clientId = "test-client-id";
+        String state = "test-state";
+        String scope = "openid learcredential";
+        String redirectUri = "https://client.example.com/callback";
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+        stubPkceParamsNull(request);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName("Test Client")
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(redirectUri)
+                .build();
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null))
+                .thenReturn(new AuthorizationRequestBuildWorkflow.Result("signed-jwt", "openid4vp://...", "nonce"));
+        when(ssoBrowserBindingCookie.bindIfSsoEnabled(request)).thenReturn("binding-hash");
+
+        // When
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> converter.convert(request)
+        );
+
+        // Then: login-page redirect, and the binding hash travels with the cached request
+        assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
+        ArgumentCaptor<OAuth2AuthorizationRequest> captor = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
+        verify(cacheStoreForOAuth2AuthorizationRequest).add(eq(state), captor.capture());
+        assertEquals("binding-hash", captor.getValue().getAdditionalParameters().get(BROWSER_BINDING_HASH));
+    }
+
+    @Test
+    void convert_promptNoneReuseAllowed_shouldNotBindBrowser() {
+        // Given: prompt=none with a reusable SSO session → ALLOWED redirect straight to the RP
+        HttpServletRequest request = mock(HttpServletRequest.class,
+                withSettings().strictness(org.mockito.quality.Strictness.LENIENT));
+        String clientId = "test-client-id";
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://verifier.example.com/oidc/authorize"));
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn("s");
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn("https://client.example.com/callback");
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+        when(request.getParameter("prompt")).thenReturn("none");
+        when(request.getAttribute(es.in2.vcverifier.shared.config.TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn("tenant-a");
+        stubPkceParamsNull(request);
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(RegisteredClient.withId("1")
+                .clientId(clientId)
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri("https://client.example.com/callback")
+                .build());
+        when(reuseSsoSessionWorkflow.reuse(eq("tenant-a"), any(), any(), eq(clientId), anyString()))
+                .thenReturn(new ReuseSsoSessionWorkflow.Result(ReuseSsoSessionWorkflow.Result.Status.ALLOWED,
+                        "https://client.example.com/callback?code=c&state=s"));
+
+        // When
+        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+
+        // Then: the RP redirect never carries the login-page browser-binding cookie
+        verifyNoInteractions(ssoBrowserBindingCookie);
     }
 
     @Test
