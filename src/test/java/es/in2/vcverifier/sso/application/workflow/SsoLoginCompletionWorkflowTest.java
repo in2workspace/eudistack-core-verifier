@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -128,9 +129,12 @@ class SsoLoginCompletionWorkflowTest {
 
     @Test
     void resolveBrowserRedirect_boundLoginWithoutBaseUrl_failsClosed() {
+        // Given
+        AuthResponseResult withoutBaseUrl = result("bind-hash", null);
+
         // When / Then
-        assertThatThrownBy(() -> workflow.resolveBrowserRedirect(TENANT, result("bind-hash", null),
-                () -> "holder-sub", "corr")).isInstanceOf(LoginCompletionUnavailableException.class);
+        assertThatThrownBy(() -> workflow.resolveBrowserRedirect(TENANT, withoutBaseUrl, () -> "holder-sub", "corr"))
+                .isInstanceOf(LoginCompletionUnavailableException.class);
         verify(authorizationResponseProcessorService).revokeAuthorizationCode(CODE);
         assertAudited(SsoLoginCompletionWorkflow.REASON_LOGIN_COMPLETION_UNAVAILABLE);
     }
@@ -138,14 +142,16 @@ class SsoLoginCompletionWorkflowTest {
     @Test
     void resolveBrowserRedirect_boundLoginRegistrationFails_failsClosed() {
         // Given: a store that can't hold the pending login
-        HashingService brokenHashing = org.mockito.Mockito.mock(HashingService.class);
+        HashingService brokenHashing = mock(HashingService.class);
         when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
         SsoLoginCompletionWorkflow brokenWorkflow = new SsoLoginCompletionWorkflow(cache, tenantSsoConfigPort,
                 brokenHashing, ssoAuditPort, authorizationResponseProcessorService);
 
+        AuthResponseResult bound = result("bind-hash", BASE_URL);
+
         // When / Then (null hash key → CacheStore refuses the entry)
-        assertThatThrownBy(() -> brokenWorkflow.resolveBrowserRedirect(TENANT, result("bind-hash", BASE_URL),
-                () -> "holder-sub", "corr")).isInstanceOf(LoginCompletionUnavailableException.class);
+        assertThatThrownBy(() -> brokenWorkflow.resolveBrowserRedirect(TENANT, bound, () -> "holder-sub", "corr"))
+                .isInstanceOf(LoginCompletionUnavailableException.class);
         verify(authorizationResponseProcessorService).revokeAuthorizationCode(CODE);
     }
 

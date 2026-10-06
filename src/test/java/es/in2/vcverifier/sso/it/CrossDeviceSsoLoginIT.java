@@ -344,10 +344,9 @@ class CrossDeviceSsoLoginIT {
         assertThat(attacker.getResponse().getHeader("Location")).contains("/error?").doesNotContain("/login?");
         OAuth2AuthorizationRequest after = cacheStoreForOAuth2AuthorizationRequest.get(state);
         assertThat(after).isSameAs(original);
-        assertThat(after.getAdditionalParameters().get(BROWSER_BINDING_HASH))
-                .isEqualTo(original.getAdditionalParameters().get(BROWSER_BINDING_HASH));
-        assertThat(after.getAdditionalParameters().get(VP_NONCE))
-                .isEqualTo(original.getAdditionalParameters().get(VP_NONCE));
+        assertThat(after.getAdditionalParameters())
+                .containsEntry(BROWSER_BINDING_HASH, original.getAdditionalParameters().get(BROWSER_BINDING_HASH))
+                .containsEntry(VP_NONCE, original.getAdditionalParameters().get(VP_NONCE));
 
         // ... and the victim's login completes normally in the victim's browser
         walletPost(state);
@@ -372,8 +371,8 @@ class CrossDeviceSsoLoginIT {
 
         // Then: same binding value re-emitted, new request (and nonce) replaced the old one
         assertThat(retry.getResponse().getCookie(TX_COOKIE).getValue()).isEqualTo(tx.getValue());
-        assertThat(cacheStoreForOAuth2AuthorizationRequest.get(state).getAdditionalParameters().get(VP_NONCE))
-                .isNotEqualTo(originalNonce);
+        assertThat(cacheStoreForOAuth2AuthorizationRequest.get(state).getAdditionalParameters())
+                .doesNotContainEntry(VP_NONCE, originalNonce);
         walletPost(state);
         browserClose(sseUrlFor(state), tx)
                 .andExpect(status().is3xxRedirection())

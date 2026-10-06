@@ -93,7 +93,7 @@ class Oid4vpControllerTest {
 
     private static final String STATE = "validState";
     private static final String RP_URL = "https://rp.example.com/cb?code=the-code&state=validState";
-    // The controller receives the vp_token Base64-encoded (mirrors what a wallet sends); payload {"sub":"test-holder"}
+    // Base64-encoded, as a wallet sends it; its JWT payload carries the subject "test-holder".
     private static final String VP_TOKEN = Base64.getEncoder().encodeToString(
             "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0LWhvbGRlciJ9.fakesig".getBytes(StandardCharsets.UTF_8));
 
@@ -126,7 +126,7 @@ class Oid4vpControllerTest {
         // When
         oid4vpController.handleAuthResponse(STATE, VP_TOKEN, request);
 
-        // Then: payload {"sub":"test-holder"}
+        // Then: the subject is read from the VP token payload
         assertEquals("test-holder", subject.getValue().get());
     }
 
@@ -145,7 +145,8 @@ class Oid4vpControllerTest {
         oid4vpController.handleAuthResponse(STATE, vpTokenNoSub, request);
 
         // Then: the workflow is the one deciding what an unusable subject means (B5)
-        assertThrows(IllegalStateException.class, () -> subject.getValue().get());
+        Supplier<String> holderSubject = subject.getValue();
+        assertThrows(IllegalStateException.class, holderSubject::get);
     }
 
     @Test

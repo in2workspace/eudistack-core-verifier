@@ -61,10 +61,12 @@ class SsoLoginCompletionControllerTest {
         // Then: same principal map as the pre-EUD-252 establishment path
         ArgumentCaptor<Authentication> auth = ArgumentCaptor.forClass(Authentication.class);
         verify(ssoSessionHandler).onAuthenticationSuccess(eq(request), eq(response), auth.capture());
-        Map<?, ?> principal = (Map<?, ?>) auth.getValue().getPrincipal();
-        assertThat(principal.get("tenant")).isEqualTo("tenant-a");
-        assertThat(principal.get("holderHash")).isEqualTo("raw-sub");
-        assertThat(principal.get("tenantSlug")).isEqualTo("tenant-a");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> principal = (Map<String, Object>) auth.getValue().getPrincipal();
+        assertThat(principal)
+                .containsEntry("tenant", "tenant-a")
+                .containsEntry("holderHash", "raw-sub")
+                .containsEntry("tenantSlug", "tenant-a");
         assertThat(response.getRedirectedUrl()).isEqualTo(RP_URL);
         assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
     }
