@@ -59,6 +59,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 @Slf4j
@@ -224,12 +225,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         } catch (LoginTenantMismatchException e) {
             // SSE already sent above; must precede NoSuchElementException (its supertype)
-            log.warn("Authorization response tenant mismatch for state: {}", state);
+            log.warn("Authorization response tenant mismatch for state: {}", sanitize(state));
             verificationFailure = e;
             throw e;
         } catch (NoSuchElementException e) {
             // State not found in cache (expired or invalid)
-            log.error("State not found or expired: {}", state);
+            log.error("State not found or expired: {}", sanitize(state));
             sseEmitterStore.sendValidationFailed(state, "INVALID_STATE", "State not found or expired");
             verificationFailure = e;
             throw e;
