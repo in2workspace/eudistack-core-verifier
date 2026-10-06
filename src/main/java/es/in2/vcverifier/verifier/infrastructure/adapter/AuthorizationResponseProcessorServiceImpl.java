@@ -187,9 +187,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
      * propagate untouched (the caller's catch-all reports them); verification errors are reported
      * here with their specific {@code validation_failed} code.
      */
-    private JsonNode verifyPresentation(String state, String vpToken, String cachedVpNonce) {
-        // Decode vpToken from Base64
-        String decodedVpToken = new String(Base64.getDecoder().decode(vpToken), StandardCharsets.UTF_8);
+    private JsonNode verifyPresentation(String state, String encodedPresentation, String cachedVpNonce) {
+        // Decode the presentation from Base64
+        String decodedVpToken = new String(Base64.getDecoder().decode(encodedPresentation), StandardCharsets.UTF_8);
 
         // Detect DCQL format (JSON object) vs legacy format (direct JWT/SD-JWT string)
         String resolvedVpToken = extractVpTokenFromPossibleDcql(decodedVpToken);
@@ -211,12 +211,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
     }
 
-    private JsonNode verifySdJwtPresentation(String state, String resolvedVpToken, String cachedVpNonce) {
+    private JsonNode verifySdJwtPresentation(String state, String presentation, String cachedVpNonce) {
         // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
         // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
         String expectedAud = cryptoComponent.getClientId();
         SdJwtVerificationResult result = sdJwtVerificationService.verifyPresentation(
-                resolvedVpToken, expectedAud, cachedVpNonce);
+                presentation, expectedAud, cachedVpNonce);
         JsonNode credentialJson = objectMapper.valueToTree(result.resolvedClaims());
         log.info("SD-JWT VC validated successfully. vct={}", result.vct());
 
@@ -230,15 +230,15 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         return credentialJson;
     }
 
-    private JsonNode verifyJwtPresentation(String state, String resolvedVpToken, String cachedVpNonce) {
-        validateVpTokenNonceAndAudience(resolvedVpToken, state, cachedVpNonce);
+    private JsonNode verifyJwtPresentation(String state, String presentation, String cachedVpNonce) {
+        validateVpTokenNonceAndAudience(presentation, state, cachedVpNonce);
         try {
-            vpService.verifyVerifiablePresentation(resolvedVpToken);
+            vpService.verifyVerifiablePresentation(presentation);
         } catch (CredentialRevokedException e) {
             sseEmitterStore.sendValidationFailed(state, "CREDENTIAL_REVOKED", "The credential has been revoked");
             throw e;
         }
-        JsonNode credentialJson = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(resolvedVpToken);
+        JsonNode credentialJson = vpService.extractCredentialFromVerifiablePresentationAsJsonNode(presentation);
         log.info("JWT VP Token validated successfully");
         return credentialJson;
     }
