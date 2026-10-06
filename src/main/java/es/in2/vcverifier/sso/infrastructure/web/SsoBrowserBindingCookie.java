@@ -101,7 +101,7 @@ public class SsoBrowserBindingCookie {
     private boolean isSsoEnabled(String tenant) {
         try {
             return tenantSsoConfigPort.getByTenant(tenant).filter(TenantSsoConfig::ssoEnabled).isPresent();
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             // Unreadable config → no binding → no SSO for this login; the OID4VP login itself proceeds.
             log.warn("event=sso_browser_binding_skipped tenant={} reason=config_unavailable", tenant);
             return false;

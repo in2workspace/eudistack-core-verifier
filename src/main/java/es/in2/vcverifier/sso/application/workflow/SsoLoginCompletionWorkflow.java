@@ -85,13 +85,13 @@ public class SsoLoginCompletionWorkflow {
 
         String subject = null;
         String ineligibleReason = null;
-        Boolean ssoEnabled = readSsoEnabled(tenant);
-        if (ssoEnabled == null) {
+        SsoAvailability ssoAvailability = readSsoAvailability(tenant);
+        if (ssoAvailability == SsoAvailability.CONFIG_UNREADABLE) {
             ineligibleReason = REASON_SSO_CONFIG_UNAVAILABLE;
-        } else if (ssoEnabled) {
+        } else if (ssoAvailability == SsoAvailability.ENABLED) {
             try {
                 subject = holderSubject.get();
-            } catch (IllegalStateException e) {
+            } catch (IllegalStateException _) {
                 // B5: no usable subject → no SSO session (avoids a SHA-256("") collision)
                 ineligibleReason = REASON_NO_USABLE_SUBJECT;
             }
@@ -139,15 +139,19 @@ public class SsoLoginCompletionWorkflow {
         return handle;
     }
 
-    /** Whether the tenant has SSO enabled; {@code null} when its configuration can't be read. */
-    private Boolean readSsoEnabled(String tenant) {
+    /** SSO state of a tenant as seen while routing a verified login. */
+    private enum SsoAvailability { ENABLED, DISABLED, CONFIG_UNREADABLE }
+
+    private SsoAvailability readSsoAvailability(String tenant) {
         if (tenant == null || tenant.isBlank()) {
-            return false;
+            return SsoAvailability.DISABLED;
         }
         try {
-            return tenantSsoConfigPort.getByTenant(tenant).filter(TenantSsoConfig::ssoEnabled).isPresent();
-        } catch (RuntimeException e) {
-            return null;
+            return tenantSsoConfigPort.getByTenant(tenant).filter(TenantSsoConfig::ssoEnabled).isPresent()
+                    ? SsoAvailability.ENABLED
+                    : SsoAvailability.DISABLED;
+        } catch (RuntimeException _) {
+            return SsoAvailability.CONFIG_UNREADABLE;
         }
     }
 

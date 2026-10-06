@@ -341,7 +341,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getAdditionalParameters()).thenReturn(
                 Map.of(VP_NONCE, nonce, EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond())
         );
-        when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
         when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
@@ -367,7 +366,6 @@ class AuthorizationResponseProcessorServiceImplTest {
             when(mockOAuth2AuthorizationRequest.getAdditionalParameters()).thenReturn(
                     Map.of(EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond())
             );
-            when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
             String stateKey = "state";
             when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
@@ -391,7 +389,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getAdditionalParameters()).thenReturn(
                 Map.of(VP_NONCE, "test-nonce2", EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond())
         );
-        when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
         when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
@@ -418,7 +415,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockAuthRequest.getAdditionalParameters()).thenReturn(
                 Map.of(EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond())
         );
-        when(mockAuthRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         when(cacheStoreForOAuth2AuthorizationRequest.get(blankState)).thenReturn(mockAuthRequest);
         doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(blankState);
@@ -439,7 +435,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getAdditionalParameters()).thenReturn(
                 Map.of(EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond())
         );
-        when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
         when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
@@ -464,7 +459,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getAdditionalParameters()).thenReturn(
                 Map.of(EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond())
         );
-        when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
         when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
@@ -689,14 +683,15 @@ class AuthorizationResponseProcessorServiceImplTest {
     }
 
     @Test
-    void handleAuthResponse_tenantMismatch_rejectsWithoutIssuingCode() throws Exception {
+    void handleAuthResponse_tenantMismatch_rejectsWithoutIssuingCode() throws JOSEException {
         // Given: login started on tenant-a, wallet answers through tenant-b
         String state = "state-tenant";
+        String vpToken = createVpToken("n");
         when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "n", "tenant-a"));
 
         // When / Then
         assertThrows(LoginTenantMismatchException.class,
-                () -> authorizationResponseProcessorService.handleAuthResponse(state, createVpToken("n"), "tenant-b"));
+                () -> authorizationResponseProcessorService.handleAuthResponse(state, vpToken, "tenant-b"));
         verify(sseEmitterStore).sendValidationFailed(eq(state), eq("TENANT_MISMATCH"), anyString());
         verify(sseEmitterStore, never()).sendValidationFailed(eq(state), eq("INVALID_STATE"), anyString());
         verify(oAuth2AuthorizationService, never()).save(any());
@@ -704,19 +699,20 @@ class AuthorizationResponseProcessorServiceImplTest {
     }
 
     @Test
-    void handleAuthResponse_walletWithoutTenantForTenantBoundLogin_rejects() throws Exception {
+    void handleAuthResponse_walletWithoutTenantForTenantBoundLogin_rejects() throws JOSEException {
         // Given
         String state = "state-no-tenant";
+        String vpToken = createVpToken("n");
         when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "n", "tenant-a"));
 
         // When / Then
         assertThrows(LoginTenantMismatchException.class,
-                () -> authorizationResponseProcessorService.handleAuthResponse(state, createVpToken("n"), null));
+                () -> authorizationResponseProcessorService.handleAuthResponse(state, vpToken, null));
         verify(oAuth2AuthorizationService, never()).save(any());
     }
 
     @Test
-    void handleAuthResponse_sameTenant_issuesCodeUsingNonceFromCachedRequest() throws Exception {
+    void handleAuthResponse_sameTenant_issuesCodeUsingNonceFromCachedRequest() throws JOSEException {
         // Given
         String state = "state-same-tenant";
         when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "vp-n", "tenant-a"));
@@ -740,14 +736,15 @@ class AuthorizationResponseProcessorServiceImplTest {
     }
 
     @Test
-    void handleAuthResponse_vpNonceNotFromThisLogin_rejected() throws Exception {
+    void handleAuthResponse_vpNonceNotFromThisLogin_rejected() throws JOSEException {
         // Given: the VP carries a nonce other than the one cached with this login's request
         String state = "state-other-nonce";
+        String vpToken = createVpToken("attacker-n");
         when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "vp-n", "tenant-a"));
 
         // When / Then
         JWTClaimMissingException e = assertThrows(JWTClaimMissingException.class,
-                () -> authorizationResponseProcessorService.handleAuthResponse(state, createVpToken("attacker-n"), "tenant-a"));
+                () -> authorizationResponseProcessorService.handleAuthResponse(state, vpToken, "tenant-a"));
         assertEquals("VP nonce does not match the cached nonce for the given state.", e.getMessage());
         verify(oAuth2AuthorizationService, never()).save(any());
     }

@@ -62,15 +62,15 @@ public class SsoLoginCompletionController {
         String tenant = TenantDomainFilter.getCurrentTenant(request);
 
         switch (ssoLoginCompletionWorkflow.complete(handle, browserBindingValue, tenant)) {
-            case SsoLoginCompletionWorkflow.Outcome.Completed completed -> {
-                if (completed.login().ssoEligible()) {
-                    establishSsoSession(request, response, completed.login());
+            case SsoLoginCompletionWorkflow.Outcome.Completed(PendingSsoLogin login) -> {
+                if (login.ssoEligible()) {
+                    establishSsoSession(request, response, login);
                 }
-                response.sendRedirect(completed.login().redirectUrl());
+                response.sendRedirect(login.redirectUrl());
             }
-            case SsoLoginCompletionWorkflow.Outcome.Rejected rejected ->
-                    response.sendRedirect(rejected.errorRedirectUrl());
-            case SsoLoginCompletionWorkflow.Outcome.Unknown unknown -> {
+            case SsoLoginCompletionWorkflow.Outcome.Rejected(String errorRedirectUrl) ->
+                    response.sendRedirect(errorRedirectUrl);
+            case SsoLoginCompletionWorkflow.Outcome.Unknown() -> {
                 log.info("event=sso_login_completion_unknown_handle tenant={}", tenant);
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             }
