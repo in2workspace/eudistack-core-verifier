@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`POST /api/login/abort?state=…` — return the user to the client that started an expired QR login**: when the cross-device login timed out, the MFE Login had no way to know which Relying Party initiated it and always sent the user to the Issuer. The new endpoint (`LoginSseController` → `AbortLoginWorkflow`) looks up the pending `OAuth2AuthorizationRequest` by `state`, removes it (a late wallet presentation can no longer complete the login) and returns `{ "redirectUrl": "<redirect_uri>?error=access_denied&error_description=login_timeout&state=…" }` — an RFC 6749 §4.1.2.1 error response built from the cached, already-validated `redirect_uri`, never from request input. Unknown/consumed state → `404`. Covered by the existing public `/api/login/**` security/CORS rules. Tests: `AbortLoginWorkflowTest`, `LoginSseControllerTest`.
+
 ### Fixed
 
 - **Issuer console login could offer credentials lacking the power required to enter**: the DCQL query for `learcredential` only constrained credential type, so the wallet listed any employee credential and the rejection came afterwards, at the Issuer. The authorization endpoint now accepts an optional `access_profile` parameter; with `issuer_access` the query is narrowed by `IssuerAccessDcqlPolicy` to employee credentials holding the Onboarding/Execute or the SysAdmin power (one entry per accepted power, machine credentials dropped). Requests without the parameter, or with an unknown value, behave exactly as before. No new scope or profile configuration is involved.
