@@ -2,10 +2,12 @@ package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
@@ -40,6 +42,12 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
                 String redirectUri = error.getUri();
                 // SEC-S7: Validate redirect URI belongs to a registered client origin to prevent open redirect.
                 if (redirectUri != null && isAllowedRedirectUri(redirectUri)) {
+                    if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION)) {
+                        // EUD-252: login-page redirect of an SSO tenant — bind the login to this
+                        // browser. Always re-emitted (also when reused) to refresh its Max-Age.
+                        SsoBrowserBindingCookie.pendingCookie(request)
+                                .ifPresent(cookie -> response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString()));
+                    }
                     response.sendRedirect(redirectUri);
                     return;
                 }

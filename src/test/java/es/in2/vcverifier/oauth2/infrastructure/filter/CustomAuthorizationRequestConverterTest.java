@@ -11,6 +11,7 @@ import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.*;
@@ -77,6 +79,9 @@ class CustomAuthorizationRequestConverterTest {
     @Mock
     private ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
 
+    @Mock
+    private SsoBrowserBindingCookie ssoBrowserBindingCookie;
+
     private boolean isNonceRequiredOnFapiProfile = true;
     private long loginTimeoutSeconds = 120L;
 
@@ -95,7 +100,8 @@ class CustomAuthorizationRequestConverterTest {
                 httpClient,
                 authorizationRequestBuildWorkflow,
                 safeUrlValidator,
-                reuseSsoSessionWorkflow
+                reuseSsoSessionWorkflow,
+                ssoBrowserBindingCookie
         );
     }
 
@@ -360,7 +366,7 @@ class CustomAuthorizationRequestConverterTest {
         OAuth2Error error = exception.getError();
         assertEquals("required_external_user_authentication", error.getErrorCode());
 
-        verify(cacheStoreForOAuth2AuthorizationRequest).add(eq(state), any(OAuth2AuthorizationRequest.class));
+        verify(cacheStoreForOAuth2AuthorizationRequest).putIfAbsent(eq(state), any(OAuth2AuthorizationRequest.class));
     }
 
     @Test
@@ -477,7 +483,6 @@ class CustomAuthorizationRequestConverterTest {
                 .build();
 
         when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
-        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
         // The workflow will throw InvalidScopeException for unsupported scope
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null))
@@ -487,6 +492,8 @@ class CustomAuthorizationRequestConverterTest {
         // The exception from the workflow propagates - it won't be an OAuth2AuthorizationCodeRequestAuthenticationException anymore
         assertThrows(es.in2.vcverifier.verifier.domain.exception.InvalidScopeException.class,
                 () -> converter.convert(request));
+        // EUD-252 (F1): the request is built before it is cached, so a failed build reserves no state
+        verify(cacheStoreForOAuth2AuthorizationRequest, never()).putIfAbsent(anyString(), any());
     }
 
     @Test
@@ -618,13 +625,232 @@ class CustomAuthorizationRequestConverterTest {
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
 
         ArgumentCaptor<OAuth2AuthorizationRequest> captor = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
-        verify(cacheStoreForOAuth2AuthorizationRequest).add(eq(state), captor.capture());
+        verify(cacheStoreForOAuth2AuthorizationRequest).putIfAbsent(eq(state), captor.capture());
 
         OAuth2AuthorizationRequest cached = captor.getValue();
         Map<String, Object> addl = cached.getAdditionalParameters();
 
         assertEquals(codeChallenge, addl.get(PkceParameterNames.CODE_CHALLENGE));
         assertEquals(codeChallengeMethod, addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD));
+    }
+
+    @Test
+    void convert_standardRequest_ssoTenantBrowserBound_shouldCacheBrowserBindingHash() {
+        // Given: a plain OIDC request whose tenant has SSO enabled (binding returns a hash)
+        HttpServletRequest request = mock(HttpServletRequest.class,
+                withSettings().strictness(org.mockito.quality.Strictness.LENIENT));
+        String clientId = "test-client-id";
+        String state = "test-state";
+        String scope = "openid learcredential";
+        String redirectUri = "https://client.example.com/callback";
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(state);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+        stubPkceParamsNull(request);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName("Test Client")
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(redirectUri)
+                .build();
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null))
+                .thenReturn(new AuthorizationRequestBuildWorkflow.Result("signed-jwt", "openid4vp://...", "nonce"));
+        when(ssoBrowserBindingCookie.bindIfSsoEnabled(request)).thenReturn("binding-hash");
+
+        // When
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> converter.convert(request)
+        );
+
+        // Then: login-page redirect, and the binding hash travels with the cached request
+        assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
+        ArgumentCaptor<OAuth2AuthorizationRequest> captor = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
+        verify(cacheStoreForOAuth2AuthorizationRequest).putIfAbsent(eq(state), captor.capture());
+        assertEquals("binding-hash", captor.getValue().getAdditionalParameters().get(BROWSER_BINDING_HASH));
+    }
+
+    // ---- EUD-252 (F1): a state already in flight can't be taken over by another /authorize ----
+
+    private static final String DUP_STATE = "dup-state";
+    private static final String DUP_REDIRECT_URI = "https://client.example.com/callback";
+
+    /** Plain OIDC /authorize for DUP_STATE, bound with {@code bindingHash} on tenant-a. */
+    private HttpServletRequest duplicateStateRequest(String bindingHash) {
+        HttpServletRequest request = mock(HttpServletRequest.class,
+                withSettings().strictness(org.mockito.quality.Strictness.LENIENT));
+        String clientId = "test-client-id";
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://verifier.example.com/oidc/authorize"));
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(DUP_STATE);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn("openid");
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(DUP_REDIRECT_URI);
+        when(request.getHeader("X-Forwarded-Host")).thenReturn("verifier.example.com");
+        when(request.getHeader("X-Forwarded-Proto")).thenReturn("https");
+        when(request.getAttribute(es.in2.vcverifier.shared.config.TenantDomainFilter.TENANT_ATTRIBUTE))
+                .thenReturn("tenant-a");
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName("Test Client")
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(DUP_REDIRECT_URI)
+                .build();
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        lenient().when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        lenient().when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(any(), any(), any(), any()))
+                .thenReturn(new AuthorizationRequestBuildWorkflow.Result("jwt", "openid4vp://...", "qr", "vp-nonce-new"));
+        lenient().when(ssoBrowserBindingCookie.bindIfSsoEnabled(request)).thenReturn(bindingHash);
+        return request;
+    }
+
+    private static OAuth2AuthorizationRequest inFlight(String bindingHash, String redirectUri) {
+        Map<String, Object> addl = new java.util.HashMap<>();
+        addl.put("vp_nonce", "vp-nonce-original");
+        if (bindingHash != null) {
+            addl.put(BROWSER_BINDING_HASH, bindingHash);
+        }
+        return OAuth2AuthorizationRequest.authorizationCode()
+                .authorizationUri("https://verifier.example.com")
+                .clientId("test-client-id")
+                .redirectUri(redirectUri)
+                .state(DUP_STATE)
+                .additionalParameters(addl)
+                .build();
+    }
+
+    @Test
+    void convert_firstAuthorizeForState_cachesRequestWithVpNonceAndTenant() {
+        // Given
+        HttpServletRequest request = duplicateStateRequest("hash-a");
+
+        // When
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+
+        // Then: one atomic entry carries request, OID4VP nonce and /authorize tenant
+        assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
+        ArgumentCaptor<OAuth2AuthorizationRequest> captor = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
+        verify(cacheStoreForOAuth2AuthorizationRequest).putIfAbsent(eq(DUP_STATE), captor.capture());
+        assertEquals("vp-nonce-new", captor.getValue().getAdditionalParameters().get("vp_nonce"));
+        assertEquals("tenant-a", captor.getValue().getAdditionalParameters().get("authorize_tenant"));
+    }
+
+    @Test
+    void convert_stateInFlightFromAnotherBrowser_isRejectedAndOriginalUntouched() {
+        // Given: the victim login is in flight, bound to another browser
+        HttpServletRequest request = duplicateStateRequest("attacker-hash");
+        when(cacheStoreForOAuth2AuthorizationRequest.putIfAbsent(eq(DUP_STATE), any()))
+                .thenReturn(inFlight("victim-hash", DUP_REDIRECT_URI));
+
+        // When
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+
+        // Then: verifier error page (never the login page), and no replacement
+        assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
+        assertTrue(ex.getError().getUri().startsWith("https://verifier.example.com/error?"));
+        assertTrue(ex.getError().getUri().contains("state+already+in+use"));
+        verify(cacheStoreForOAuth2AuthorizationRequest, never()).replace(anyString(), any(), any());
+    }
+
+    @Test
+    void convert_stateInFlightRetriedBySameBrowser_replacesAtomically() {
+        // Given: same browser (same binding), same client and redirect_uri
+        HttpServletRequest request = duplicateStateRequest("same-hash");
+        OAuth2AuthorizationRequest existing = inFlight("same-hash", DUP_REDIRECT_URI);
+        when(cacheStoreForOAuth2AuthorizationRequest.putIfAbsent(eq(DUP_STATE), any())).thenReturn(existing);
+        when(cacheStoreForOAuth2AuthorizationRequest.replace(eq(DUP_STATE), same(existing), any())).thenReturn(true);
+
+        // When
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+
+        // Then: login page as usual, with the new request (and its nonce) replacing the old one
+        assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
+        ArgumentCaptor<OAuth2AuthorizationRequest> replacement = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
+        verify(cacheStoreForOAuth2AuthorizationRequest).replace(eq(DUP_STATE), same(existing), replacement.capture());
+        assertEquals("vp-nonce-new", replacement.getValue().getAdditionalParameters().get("vp_nonce"));
+    }
+
+    @Test
+    void convert_sameBrowserRetryLosingTheReplaceRace_isRejected() {
+        // Given: the entry changed between putIfAbsent and replace
+        HttpServletRequest request = duplicateStateRequest("same-hash");
+        OAuth2AuthorizationRequest existing = inFlight("same-hash", DUP_REDIRECT_URI);
+        when(cacheStoreForOAuth2AuthorizationRequest.putIfAbsent(eq(DUP_STATE), any())).thenReturn(existing);
+        when(cacheStoreForOAuth2AuthorizationRequest.replace(eq(DUP_STATE), same(existing), any())).thenReturn(false);
+
+        // When / Then
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
+    }
+
+    @Test
+    void convert_sameBindingButDifferentRedirectUri_isRejected() {
+        // Given
+        HttpServletRequest request = duplicateStateRequest("same-hash");
+        when(cacheStoreForOAuth2AuthorizationRequest.putIfAbsent(eq(DUP_STATE), any()))
+                .thenReturn(inFlight("same-hash", "https://client.example.com/other"));
+
+        // When / Then
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
+        verify(cacheStoreForOAuth2AuthorizationRequest, never()).replace(anyString(), any(), any());
+    }
+
+    @Test
+    void convert_unboundDuplicateState_isRejected() {
+        // Given: SSO-disabled tenant, neither request is bound, so "same browser" can't be proven
+        HttpServletRequest request = duplicateStateRequest(null);
+        when(cacheStoreForOAuth2AuthorizationRequest.putIfAbsent(eq(DUP_STATE), any()))
+                .thenReturn(inFlight(null, DUP_REDIRECT_URI));
+
+        // When / Then
+        OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
+                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
+        verify(cacheStoreForOAuth2AuthorizationRequest, never()).replace(anyString(), any(), any());
+    }
+
+    @Test
+    void convert_promptNoneReuseAllowed_shouldNotBindBrowser() {
+        // Given: prompt=none with a reusable SSO session → ALLOWED redirect straight to the RP
+        HttpServletRequest request = mock(HttpServletRequest.class,
+                withSettings().strictness(org.mockito.quality.Strictness.LENIENT));
+        String clientId = "test-client-id";
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://verifier.example.com/oidc/authorize"));
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn("s");
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn("https://client.example.com/callback");
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+        when(request.getParameter("prompt")).thenReturn("none");
+        when(request.getAttribute(es.in2.vcverifier.shared.config.TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn("tenant-a");
+        stubPkceParamsNull(request);
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(RegisteredClient.withId("1")
+                .clientId(clientId)
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri("https://client.example.com/callback")
+                .build());
+        when(reuseSsoSessionWorkflow.reuse(eq("tenant-a"), any(), any(), eq(clientId), anyString()))
+                .thenReturn(new ReuseSsoSessionWorkflow.Result(ReuseSsoSessionWorkflow.Result.Status.ALLOWED,
+                        "https://client.example.com/callback?code=c&state=s"));
+
+        // When
+        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+
+        // Then: the RP redirect never carries the login-page browser-binding cookie
+        verifyNoInteractions(ssoBrowserBindingCookie);
     }
 
     @Test
@@ -672,7 +898,7 @@ class CustomAuthorizationRequestConverterTest {
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
 
         ArgumentCaptor<OAuth2AuthorizationRequest> captor = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
-        verify(cacheStoreForOAuth2AuthorizationRequest).add(eq(state), captor.capture());
+        verify(cacheStoreForOAuth2AuthorizationRequest).putIfAbsent(eq(state), captor.capture());
 
         OAuth2AuthorizationRequest cached = captor.getValue();
         Map<String, Object> addl = cached.getAdditionalParameters();

@@ -11,6 +11,7 @@ import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import io.micrometer.common.util.StringUtils;
@@ -42,6 +43,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
+import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
@@ -50,6 +53,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
+import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
@@ -73,6 +77,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
     private final SafeUrlValidator safeUrlValidator;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
+    private final SsoBrowserBindingCookie ssoBrowserBindingCookie;
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -121,11 +126,22 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 // none of them should fall through to a fresh OID4VP/QR challenge below.
                 handleSsoReuseResult(ssoResult, authorizationContext);
             }
-            return handleOIDCStandardRequest(authorizationContext, registeredClient);
+            // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
+            // carry the login-page browser-binding cookie.
+            return handleOIDCStandardRequest(authorizationContext, registeredClient, bindLogin(request));
         }
 
         // Case 2: FAPI authorization request with a signed JWT object
-        return handleFAPIRequest(authorizationContext, request, registeredClient);
+        return handleFAPIRequest(authorizationContext, request, registeredClient, bindLogin(request));
+    }
+
+    /** Tenant resolved at /authorize + browser binding (null when the tenant has no SSO). */
+    private record LoginBinding(String tenant, String browserBindingHash) {
+    }
+
+    private LoginBinding bindLogin(HttpServletRequest request) {
+        return new LoginBinding(TenantDomainFilter.getCurrentTenant(request),
+                ssoBrowserBindingCookie.bindIfSsoEnabled(request));
     }
 
     private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
@@ -217,7 +233,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication handleFAPIRequest(AuthorizationContext authorizationContext,
                                              HttpServletRequest request,
-                                             RegisteredClient registeredClient) {
+                                             RegisteredClient registeredClient,
+                                             LoginBinding loginBinding) {
         String jwt = retrieveJwtFromRequestUriOrRequest(
                 authorizationContext.requestUri(), request, registeredClient, authorizationContext.originalRequestURL(),
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -234,20 +251,22 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                     authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
         }
 
-        return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient);
+        return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient, loginBinding);
     }
 
     private Authentication handleOIDCStandardRequest(AuthorizationContext authorizationContext,
-                                                     RegisteredClient registeredClient) {
+                                                     RegisteredClient registeredClient,
+                                                     LoginBinding loginBinding) {
         validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null,
                 authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
 
-        cacheAuthorizationRequest(authorizationContext, registeredClient.getClientId(), authorizationContext.redirectUri());
-
-        // Delegate JWT building, signing, caching, and URL generation to the workflow
+        // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient, authorizationContext.scope(), authorizationContext.state(),
                 authorizationContext.accessProfile());
+
+        cacheAuthorizationRequest(authorizationContext, registeredClient, authorizationContext.redirectUri(),
+                loginBinding, result.vpNonce());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -255,19 +274,22 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
                                                     SignedJWT signedJwt,
-                                                    RegisteredClient registeredClient) {
+                                                    RegisteredClient registeredClient,
+                                                    LoginBinding loginBinding) {
         PublicKey publicKey = didService.resolvePublicKeyFromDid(registeredClient.getClientId());
         jwtService.verifyJWTWithECKey(signedJwt.serialize(), publicKey);
 
-        cacheAuthorizationRequest(
-                authorizationContext,
-                registeredClient.getClientId(),
-                jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI));
-
-        // Delegate JWT building, signing, caching, and URL generation to the workflow
+        // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient, authorizationContext.scope(), authorizationContext.state(),
                 authorizationContext.accessProfile());
+
+        cacheAuthorizationRequest(
+                authorizationContext,
+                registeredClient,
+                jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI),
+                loginBinding,
+                result.vpNonce());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -395,11 +417,22 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         }
     }
 
-    private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, String clientId, String redirectUri) {
+    /**
+     * Caches the in-flight login under its {@code state}, together with everything the wallet POST
+     * will check: PKCE, client nonce, the OID4VP nonce, the /authorize tenant and the browser binding.
+     *
+     * <p>EUD-252 (F1): the RP-chosen {@code state} is public, so the write is put-if-absent: a second
+     * /authorize with a state already in flight must not replace the victim's binding, PKCE or nonce
+     * (session takeover, or at least DoS). The only accepted replacement is the same browser retrying
+     * the same client/redirect_uri (equal non-null binding hashes), done with an atomic compare-and-
+     * replace. Request and OID4VP nonce live in this one entry, so they always come from the same call.
+     */
+    private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, RegisteredClient registeredClient,
+                                           String redirectUri, LoginBinding loginBinding, String vpNonce) {
         OAuth2AuthorizationRequest.Builder builder = OAuth2AuthorizationRequest
                 .authorizationCode()
                 .state(authorizationContext.state())
-                .clientId(clientId)
+                .clientId(registeredClient.getClientId())
                 .redirectUri(redirectUri)
                 .scope(authorizationContext.scope())
                 .authorizationUri(backendConfig.getUrl());
@@ -419,9 +452,46 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         if (codeChallengeMethod != null && !codeChallengeMethod.isBlank()) {
             additionalParameters.put(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
         }
+        if (loginBinding.browserBindingHash() != null) {
+            additionalParameters.put(BROWSER_BINDING_HASH, loginBinding.browserBindingHash());
+        }
+        if (vpNonce != null) {
+            additionalParameters.put(VP_NONCE, vpNonce);
+        }
+        if (loginBinding.tenant() != null) {
+            additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());
+        }
 
         builder.additionalParameters(additionalParameters);
-        cacheStoreForOAuth2AuthorizationRequest.add(authorizationContext.state(), builder.build());
+        String state = authorizationContext.state();
+        if (state == null || state.isBlank()) {
+            return; // nothing to key the login by: same as before (CacheStore.add ignored blank keys)
+        }
+        OAuth2AuthorizationRequest candidate = builder.build();
+        OAuth2AuthorizationRequest existing = cacheStoreForOAuth2AuthorizationRequest.putIfAbsent(state, candidate);
+        if (existing == null) {
+            return;
+        }
+        if (isSameBrowserRetry(existing, candidate)
+                && cacheStoreForOAuth2AuthorizationRequest.replace(state, existing, candidate)) {
+            log.info("event=authorize_state_retry_same_browser clientId={}", registeredClient.getClientId());
+            return;
+        }
+        log.warn("event=authorize_state_in_use clientId={} bound={}", registeredClient.getClientId(),
+                loginBinding.browserBindingHash() != null);
+        throwInvalidClientAuthenticationException("invalid_request: state already in use",
+                registeredClient.getClientName(), UUID.randomUUID().toString(),
+                authorizationContext.originalRequestURL(), authorizationContext.portalUrl(),
+                authorizationContext.contextPath());
+    }
+
+    private static boolean isSameBrowserRetry(OAuth2AuthorizationRequest existing, OAuth2AuthorizationRequest candidate) {
+        Object existingBinding = existing.getAdditionalParameters().get(BROWSER_BINDING_HASH);
+        Object candidateBinding = candidate.getAdditionalParameters().get(BROWSER_BINDING_HASH);
+        return existingBinding != null
+                && existingBinding.equals(candidateBinding)
+                && Objects.equals(existing.getClientId(), candidate.getClientId())
+                && Objects.equals(existing.getRedirectUri(), candidate.getRedirectUri());
     }
 
     /**
