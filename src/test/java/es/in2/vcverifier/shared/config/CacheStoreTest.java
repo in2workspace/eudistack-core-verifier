@@ -50,7 +50,7 @@ class CacheStoreTest {
     }
 
     @Test
-    void remove_concurrentCallers_exactlyOneGetsTheValue() throws InterruptedException {
+    void remove_concurrentCallers_exactlyOneGetsTheValue() {
         int callers = 16;
         for (int round = 0; round < 200; round++) {
             cache.add("key1", "value1");
