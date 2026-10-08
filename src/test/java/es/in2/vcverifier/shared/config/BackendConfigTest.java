@@ -85,6 +85,10 @@ class BackendConfigTest {
                 .as("Login timeout should match configured value")
                 .isEqualTo(120L);
 
+        assertThat(backendConfig.getLoginEventStreamTimeoutSeconds())
+                .as("Login SSE stream should outlive the login timeout by the grace period")
+                .isEqualTo(150L);
+
         assertThat(backendConfig.isFapiNonceRequired())
                 .as("FAPI nonce required should match configured value")
                 .isTrue();
