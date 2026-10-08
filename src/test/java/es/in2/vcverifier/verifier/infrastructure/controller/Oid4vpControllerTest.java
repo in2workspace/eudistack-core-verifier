@@ -14,6 +14,8 @@ import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -147,6 +149,62 @@ class Oid4vpControllerTest {
         // Then: the workflow is the one deciding what an unusable subject means (B5)
         Supplier<String> holderSubject = subject.getValue();
         assertThrows(IllegalStateException.class, holderSubject::get);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"~", "~~", "~~~"})
+    void handleAuthResponse_subjectSupplier_degenerateSdJwtSeparators_throwsIllegalState(String degenerateToken) {
+        // Given: String.split("~") would return an empty array for these tokens
+        String vpToken = Base64.getEncoder().encodeToString(degenerateToken.getBytes(StandardCharsets.UTF_8));
+        when(authorizationResponseProcessorService.handleAuthResponse(eq(STATE), eq(vpToken), any()))
+                .thenReturn(result("h"));
+        ArgumentCaptor<Supplier<String>> subject = ArgumentCaptor.captor();
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(any(), any(), subject.capture(), anyString()))
+                .thenReturn("url");
+
+        oid4vpController.handleAuthResponse(STATE, vpToken, request);
+
+        Supplier<String> holderSubject = subject.getValue();
+        assertThrows(IllegalStateException.class, holderSubject::get);
+    }
+
+    @Test
+    void handleAuthResponse_subjectSupplier_sdJwtWithKbJwt_fallsBackToKbJwtIssuer() {
+        // Given: issuer-signed part without sub/iss, holder only identified by the KB-JWT iss
+        String empty = b64Url("{}");
+        String kbJwt = b64Url("{\"alg\":\"none\"}") + "." + b64Url("{\"iss\":\"holder-kb\"}") + ".sig";
+        String sdJwt = b64Url("{\"alg\":\"none\"}") + "." + empty + ".sig~disclosure~" + kbJwt;
+        String vpToken = Base64.getEncoder().encodeToString(sdJwt.getBytes(StandardCharsets.UTF_8));
+        when(authorizationResponseProcessorService.handleAuthResponse(eq(STATE), eq(vpToken), any()))
+                .thenReturn(result("h"));
+        ArgumentCaptor<Supplier<String>> subject = ArgumentCaptor.captor();
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(any(), any(), subject.capture(), anyString()))
+                .thenReturn("url");
+
+        oid4vpController.handleAuthResponse(STATE, vpToken, request);
+
+        assertEquals("holder-kb", subject.getValue().get());
+    }
+
+    @Test
+    void handleAuthResponse_subjectSupplier_sdJwtWithoutKbJwt_throwsIllegalState() {
+        // Given: trailing "~" means no KB-JWT, and the issuer-signed part carries no sub/iss
+        String sdJwt = b64Url("{\"alg\":\"none\"}") + "." + b64Url("{}") + ".sig~disclosure~";
+        String vpToken = Base64.getEncoder().encodeToString(sdJwt.getBytes(StandardCharsets.UTF_8));
+        when(authorizationResponseProcessorService.handleAuthResponse(eq(STATE), eq(vpToken), any()))
+                .thenReturn(result("h"));
+        ArgumentCaptor<Supplier<String>> subject = ArgumentCaptor.captor();
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(any(), any(), subject.capture(), anyString()))
+                .thenReturn("url");
+
+        oid4vpController.handleAuthResponse(STATE, vpToken, request);
+
+        Supplier<String> holderSubject = subject.getValue();
+        assertThrows(IllegalStateException.class, holderSubject::get);
+    }
+
+    private static String b64Url(String json) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
