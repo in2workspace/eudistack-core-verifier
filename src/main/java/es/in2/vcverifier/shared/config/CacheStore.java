@@ -47,10 +47,20 @@ public class CacheStore<T> {
 
     /**
      * Atomically removes and returns the value for {@code key} ({@code null} on a miss or expiry):
-     * of several concurrent callers for the same key, at most one gets the value (single use).
+     * of several concurrent callers for the same key, at most one gets the value (single use) —
+     * unlike {@link #getIfPresent(String)} followed by {@link #delete(String)}, where all may.
      */
     public T remove(String key) {
         return cache.asMap().remove(key);
+    }
+
+    /**
+     * Atomically removes the entry for {@code key} only if it is still {@code expected}.
+     *
+     * @return whether the removal happened
+     */
+    public boolean remove(String key, T expected) {
+        return cache.asMap().remove(key, expected);
     }
 
     /**

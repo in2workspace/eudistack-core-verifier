@@ -5,7 +5,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.NoSuchElementException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -34,6 +38,38 @@ class CacheStoreTest {
         cache.add("key1", "value1");
         cache.delete("key1");
         assertThrows(NoSuchElementException.class, () -> cache.get("key1"));
+    }
+
+    @Test
+    void remove_onlyWhenStillExpected() {
+        cache.add("key1", "fresh");
+        assertFalse(cache.remove("key1", "stale"));
+        assertEquals("fresh", cache.get("key1"));
+        assertTrue(cache.remove("key1", "fresh"));
+        assertNull(cache.getIfPresent("key1"));
+    }
+
+    @Test
+    void remove_concurrentCallers_exactlyOneGetsTheValue() {
+        int callers = 16;
+        for (int round = 0; round < 200; round++) {
+            cache.add("key1", "value1");
+            CountDownLatch start = new CountDownLatch(1);
+            AtomicInteger winners = new AtomicInteger();
+            try (ExecutorService pool = Executors.newFixedThreadPool(callers)) {
+                for (int i = 0; i < callers; i++) {
+                    pool.submit(() -> {
+                        start.await();
+                        if (cache.remove("key1") != null) {
+                            winners.incrementAndGet();
+                        }
+                        return null;
+                    });
+                }
+                start.countDown();
+            } // close() waits for every caller to finish
+            assertEquals(1, winners.get());
+        }
     }
 
     @Test

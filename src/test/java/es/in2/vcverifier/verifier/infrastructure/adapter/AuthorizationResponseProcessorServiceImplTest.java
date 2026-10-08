@@ -152,8 +152,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .build();
 
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
@@ -190,17 +189,14 @@ class AuthorizationResponseProcessorServiceImplTest {
         String state = "invalid-state";
         String vpToken = Base64.getEncoder().encodeToString("valid-vp-token".getBytes(StandardCharsets.UTF_8));
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenThrow(new NoSuchElementException("Value is not present."));
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(null);
 
         // Act & Assert
         NoSuchElementException exception = assertThrows(NoSuchElementException.class, () ->
                 authorizationResponseProcessorService.handleAuthResponse(state, vpToken, null)
         );
 
-        assertEquals("Value is not present.", exception.getMessage());
-
-        // Verify that delete was not called
-        verify(cacheStoreForOAuth2AuthorizationRequest, never()).delete(state);
+        assertEquals("No pending login for this state", exception.getMessage());
     }
 
 
@@ -220,8 +216,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
 
         doThrow(new RuntimeException("Something failed")).when(vpService).verifyVerifiablePresentation(anyString());
@@ -252,8 +247,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
@@ -315,8 +309,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
         LoginTimeoutException exception = assertThrows(LoginTimeoutException.class, () ->
                 authorizationResponseProcessorService.handleAuthResponse(state, vpToken, null)
@@ -324,7 +317,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         assertEquals("Login time has expired", exception.getMessage());
 
-        verify(cacheStoreForOAuth2AuthorizationRequest, times(1)).delete(state);
+        verify(cacheStoreForOAuth2AuthorizationRequest, times(1)).remove(state);
         verify(credentialVerificationLogger).logVerifiedError(isNull(), any(Throwable.class));
     }
 
@@ -343,8 +336,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         );
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
 
 
@@ -368,8 +360,7 @@ class AuthorizationResponseProcessorServiceImplTest {
             );
 
             String stateKey = "state";
-            when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-            doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+            when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
             // Act & Assert
             JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
@@ -391,8 +382,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         );
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
 
 
@@ -416,8 +406,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 Map.of(EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond())
         );
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(blankState)).thenReturn(mockAuthRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(blankState);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(blankState)).thenReturn(mockAuthRequest);
 
         // Act & Assert
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
@@ -437,8 +426,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         );
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
 
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
@@ -461,8 +449,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         );
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
         // Act & Assert
         JWTParsingException exception = assertThrows(JWTParsingException.class, () ->
@@ -526,8 +513,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(req);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
@@ -580,8 +566,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(req);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
@@ -619,7 +604,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                         BROWSER_BINDING_HASH, "binding-hash"))
                 .scope("read")
                 .build();
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(req);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(RegisteredClient.withId("client-id")
@@ -687,7 +672,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         // Given: login started on tenant-a, wallet answers through tenant-b
         String state = "state-tenant";
         String vpToken = createVpToken("n");
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "n", "tenant-a"));
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(tenantBoundRequest(state, "n", "tenant-a"));
 
         // When / Then
         assertThrows(LoginTenantMismatchException.class,
@@ -703,7 +688,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         // Given
         String state = "state-no-tenant";
         String vpToken = createVpToken("n");
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "n", "tenant-a"));
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(tenantBoundRequest(state, "n", "tenant-a"));
 
         // When / Then
         assertThrows(LoginTenantMismatchException.class,
@@ -715,7 +700,7 @@ class AuthorizationResponseProcessorServiceImplTest {
     void handleAuthResponse_sameTenant_issuesCodeUsingNonceFromCachedRequest() throws JOSEException {
         // Given
         String state = "state-same-tenant";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "vp-n", "tenant-a"));
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(tenantBoundRequest(state, "vp-n", "tenant-a"));
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(RegisteredClient.withId("client-id")
@@ -740,7 +725,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         // Given: the VP carries a nonce other than the one cached with this login's request
         String state = "state-other-nonce";
         String vpToken = createVpToken("attacker-n");
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(tenantBoundRequest(state, "vp-n", "tenant-a"));
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(tenantBoundRequest(state, "vp-n", "tenant-a"));
 
         // When / Then
         JWTClaimMissingException e = assertThrows(JWTClaimMissingException.class,

@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class BackendConfig {
 
+    private static final long LOGIN_EVENT_STREAM_GRACE_SECONDS = 30L;
+
     private final BackendProperties properties;
 
     public String getUrl() {
@@ -120,6 +122,17 @@ public class BackendConfig {
 
     public long getLoginTimeoutSeconds() {
         return properties.loginTimeoutSeconds() != null ? properties.loginTimeoutSeconds() : 120L;
+    }
+
+    /**
+     * Lifetime of the login SSE stream: the login timeout plus a grace period. A presentation
+     * accepted just before the timeout may still be under validation (revocation checks, etc.)
+     * when the browser's countdown ends; the browser keeps listening while it aborts the login,
+     * so the redirect carrying the authorization code must still be deliverable. Closing the
+     * stream is also what ends the browser's wait for such a late completion.
+     */
+    public long getLoginEventStreamTimeoutSeconds() {
+        return getLoginTimeoutSeconds() + LOGIN_EVENT_STREAM_GRACE_SECONDS;
     }
 
     public boolean isFapiNonceRequired() {

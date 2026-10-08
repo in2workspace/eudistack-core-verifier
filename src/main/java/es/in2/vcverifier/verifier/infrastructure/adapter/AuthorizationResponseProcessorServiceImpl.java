@@ -154,8 +154,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
      * through the same tenant. Throws {@link NoSuchElementException} for an unknown/expired state.
      */
     private OAuth2AuthorizationRequest consumeCachedRequest(String state, String tenant) {
-        OAuth2AuthorizationRequest oAuth2AuthorizationRequest = cacheStoreForOAuth2AuthorizationRequest.get(state);
-        cacheStoreForOAuth2AuthorizationRequest.delete(state);
+        // Taken atomically: if the browser aborted the login (login timeout) first, this
+        // presentation must not complete it, and vice versa.
+        OAuth2AuthorizationRequest oAuth2AuthorizationRequest = cacheStoreForOAuth2AuthorizationRequest.remove(state);
+        if (oAuth2AuthorizationRequest == null) {
+            throw new NoSuchElementException("No pending login for this state");
+        }
 
         // EUD-252 (F1): the wallet must answer through the tenant the login was started on.
         // Requests cached without a tenant (no tenant resolvable at /authorize) are not checked.
