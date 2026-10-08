@@ -193,7 +193,9 @@ class TokenStatusListVerifierSignatureTest {
                 claims(null, Map.of("bits", 1, "lst", lst(new byte[]{1}))));
         jwt.sign(new ECDSASigner((java.security.interfaces.ECPrivateKey) ecKeyPair.getPrivate()));
 
-        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt.serialize()));
+        String serialized = jwt.serialize();
+
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(serialized));
 
         assertTrue(ex.getMessage().contains("signature verification error"));
     }

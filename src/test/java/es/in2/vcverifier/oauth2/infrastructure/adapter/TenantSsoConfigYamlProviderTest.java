@@ -72,8 +72,9 @@ class TenantSsoConfigYamlProviderTest {
     void retrieve_externalFileWithUnknownKey_throwsSsoConfigLoadingException() throws Exception {
         Path file = writeYaml("other: 1\n");
 
-        assertThrows(SsoConfigLoadingException.class,
-                () -> new TenantSsoConfigYamlProvider(props(file.toString())).retrieve());
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
+
+        assertThrows(SsoConfigLoadingException.class, provider::retrieve);
     }
 
     @Test
@@ -108,8 +109,9 @@ class TenantSsoConfigYamlProviderTest {
     void retrieve_invalidYaml_throwsSsoConfigLoadingException() throws Exception {
         Path file = writeYaml("tenants: [unclosed");
 
-        assertThrows(SsoConfigLoadingException.class,
-                () -> new TenantSsoConfigYamlProvider(props(file.toString())).retrieve());
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
+
+        assertThrows(SsoConfigLoadingException.class, provider::retrieve);
     }
 
     // --- addEligibleClient ---

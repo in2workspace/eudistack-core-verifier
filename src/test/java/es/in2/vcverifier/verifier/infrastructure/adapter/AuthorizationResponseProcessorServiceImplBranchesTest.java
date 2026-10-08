@@ -36,6 +36,8 @@ import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.verifier.domain.service.VpService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
@@ -65,7 +67,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -82,6 +86,8 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     private static final String CLIENT_ID = "did:key:zVerifier";
     private static final String BACKEND_URL = "http://localhost:8080";
     private static final String SD_JWT = "header.payload.sig~disclosure~";
+    private static final String SD_JWT_B64 =
+            Base64.getEncoder().encodeToString(SD_JWT.getBytes(StandardCharsets.UTF_8));
 
     @SuppressWarnings("unchecked")
     private final CacheStore<OAuth2AuthorizationRequest> requestCache = mock(CacheStore.class);
@@ -133,7 +139,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void missingExpiration_sendsInvalidRequestAndThrows() {
         when(requestCache.get(STATE)).thenReturn(requestWithoutExpiration());
 
-        assertThrows(LoginTimeoutException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(LoginTimeoutException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(eq(STATE), eq("INVALID_REQUEST"), anyString());
         verify(verificationLogger).logVerifiedError(any(), any(LoginTimeoutException.class));
@@ -143,7 +149,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void expiredLogin_sendsLoginTimeout() {
         when(requestCache.get(STATE)).thenReturn(request(Instant.now().minusSeconds(5).getEpochSecond()));
 
-        assertThrows(LoginTimeoutException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(LoginTimeoutException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(eq(STATE), eq("LOGIN_TIMEOUT"), anyString());
     }
@@ -152,7 +158,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void unknownState_sendsInvalidState() {
         when(requestCache.get(STATE)).thenThrow(new NoSuchElementException("gone"));
 
-        assertThrows(NoSuchElementException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(NoSuchElementException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "INVALID_STATE", "State not found or expired");
     }
@@ -164,7 +170,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         stubSdJwt(Map.of("status", Map.of("status_list", Map.of("uri", "https://s/1", "idx", 5))));
         when(statusVerifier.isRevoked("https://s/1", "5", "revocation")).thenReturn(false);
 
-        AuthResponseResult result = service.handleAuthResponse(STATE, b64(SD_JWT), TENANT);
+        AuthResponseResult result = service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
         assertNotNull(result.credentialJson());
         assertTrue(result.redirectUrl().startsWith("https://client.example.com/callback?code="));
@@ -178,7 +184,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         stubSdJwt(Map.of("status", Map.of("status_list", Map.of("uri", "https://s/1", "idx", 5))));
         when(statusVerifier.isRevoked("https://s/1", "5", "revocation")).thenReturn(true);
 
-        assertThrows(CredentialRevokedException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(CredentialRevokedException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "CREDENTIAL_REVOKED", "The credential has been revoked");
     }
@@ -188,7 +194,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         service = newService(List.of());
         stubSdJwt(Map.of("status", Map.of("status_list", Map.of("uri", "https://s/1", "idx", 5))));
 
-        assertThrows(CredentialRevokedException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(CredentialRevokedException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
     }
 
     @Test
@@ -196,14 +202,14 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         when(statusVerifier.supports("TokenStatusListEntry")).thenReturn(false);
         stubSdJwt(Map.of("status", Map.of("status_list", Map.of("uri", "https://s/1", "idx", 5))));
 
-        assertThrows(CredentialRevokedException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(CredentialRevokedException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
     }
 
     @Test
     void sdJwt_withoutStatusBlock_skipsRevocationCheck() {
         stubSdJwt(Map.of("name", "x"));
 
-        service.handleAuthResponse(STATE, b64(SD_JWT), TENANT);
+        service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
         verify(statusVerifier, never()).isRevoked(anyString(), anyString(), anyString());
     }
@@ -212,7 +218,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void sdJwt_statusWithoutStatusList_skipsRevocationCheck() {
         stubSdJwt(Map.of("status", Map.of("other", 1)));
 
-        service.handleAuthResponse(STATE, b64(SD_JWT), TENANT);
+        service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
         verify(statusVerifier, never()).isRevoked(anyString(), anyString(), anyString());
     }
@@ -221,7 +227,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void sdJwt_statusListMissingUri_skipsRevocationCheck() {
         stubSdJwt(Map.of("status", Map.of("status_list", Map.of("idx", 1))));
 
-        service.handleAuthResponse(STATE, b64(SD_JWT), TENANT);
+        service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
         verify(statusVerifier, never()).isRevoked(anyString(), anyString(), anyString());
     }
@@ -230,7 +236,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void sdJwt_statusListBlankUri_skipsRevocationCheck() {
         stubSdJwt(Map.of("status", Map.of("status_list", Map.of("uri", " ", "idx", 1))));
 
-        service.handleAuthResponse(STATE, b64(SD_JWT), TENANT);
+        service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
         verify(statusVerifier, never()).isRevoked(anyString(), anyString(), anyString());
     }
@@ -239,7 +245,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void sdJwt_statusListMissingIdx_skipsRevocationCheck() {
         stubSdJwt(Map.of("status", Map.of("status_list", Map.of("uri", "https://s/1"))));
 
-        service.handleAuthResponse(STATE, b64(SD_JWT), TENANT);
+        service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
         verify(statusVerifier, never()).isRevoked(anyString(), anyString(), anyString());
     }
@@ -249,7 +255,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         when(sdJwtService.verifyPresentation(anyString(), anyString(), any()))
                 .thenThrow(new JWTVerificationException("bad sig"));
 
-        assertThrows(JWTVerificationException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(JWTVerificationException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(eq(STATE), eq("SIGNATURE_INVALID"), anyString());
     }
@@ -259,9 +265,9 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         when(sdJwtService.verifyPresentation(anyString(), anyString(), any()))
                 .thenThrow(new IllegalStateException("boom"));
 
-        assertThrows(IllegalStateException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(IllegalStateException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
-        verify(sse, org.mockito.Mockito.times(2)).sendValidationFailed(eq(STATE), eq("VALIDATION_ERROR"), anyString());
+        verify(sse, times(2)).sendValidationFailed(eq(STATE), eq("VALIDATION_ERROR"), anyString());
     }
 
     @Test
@@ -269,7 +275,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         when(sdJwtService.verifyPresentation(anyString(), anyString(), any()))
                 .thenThrow(new CredentialExpiredException("old"));
 
-        assertThrows(CredentialExpiredException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(CredentialExpiredException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "CREDENTIAL_EXPIRED", "The credential has expired");
     }
@@ -279,7 +285,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         when(sdJwtService.verifyPresentation(anyString(), anyString(), any()))
                 .thenThrow(new CredentialNotActiveException("early"));
 
-        assertThrows(CredentialNotActiveException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(CredentialNotActiveException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "CREDENTIAL_NOT_ACTIVE", "The credential is not yet active");
     }
@@ -289,7 +295,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         when(sdJwtService.verifyPresentation(anyString(), anyString(), any()))
                 .thenThrow(new IssuerNotAuthorizedException("nope"));
 
-        assertThrows(IssuerNotAuthorizedException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(IssuerNotAuthorizedException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "ISSUER_NOT_TRUSTED", "The credential issuer is not trusted");
     }
@@ -301,7 +307,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         stubSdJwt(Map.of("name", "x"));
         when(dispatcher.dispatch(any())).thenThrow(new LegacyFormatSunsetClosedException("closed"));
 
-        assertThrows(LegacyFormatSunsetClosedException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(LegacyFormatSunsetClosedException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "FORMAT_GATED", "closed");
     }
@@ -311,7 +317,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         stubSdJwt(Map.of("name", "x"));
         when(dispatcher.dispatch(any())).thenThrow(new BumpedFormatTemporarilyDisabledException("off"));
 
-        assertThrows(BumpedFormatTemporarilyDisabledException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(BumpedFormatTemporarilyDisabledException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "FORMAT_GATED", "off");
     }
@@ -321,7 +327,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         stubSdJwt(Map.of("name", "x"));
         when(dispatcher.dispatch(any())).thenThrow(new UnknownCredentialFormatException("??"));
 
-        assertThrows(UnknownCredentialFormatException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(UnknownCredentialFormatException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "FORMAT_GATED", "??");
     }
@@ -331,7 +337,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         stubSdJwt(Map.of("name", "x"));
         when(clientRepository.findByClientId("client-id")).thenReturn(null);
 
-        assertThrows(OAuth2AuthenticationException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(OAuth2AuthenticationException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(eq(STATE), eq("UNAUTHORIZED_CLIENT"), anyString());
     }
@@ -341,7 +347,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         stubSdJwt(Map.of("name", "x"));
         when(clientRepository.findByClientId("client-id")).thenReturn(null);
 
-        assertThrows(OAuth2AuthenticationException.class, () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+        assertThrows(OAuth2AuthenticationException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(verificationLogger).logVerifiedOk("cfg");
         verify(verificationLogger, never()).logVerifiedError(any(), any());
@@ -349,45 +355,34 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     // --- DCQL ---
 
-    @Test
-    void dcql_arrayEntry_extractsFirstToken() {
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"query_1\":[\"%s\"]}",
+            "{\"query_1\":\"%s\"}",
+            "{\"empty\":[],\"num\":3,\"ok\":[\"%s\"]}"
+    })
+    void dcql_entryShapes_extractVpToken(String dcqlTemplate) {
         stubSdJwt(Map.of("name", "x"));
 
-        service.handleAuthResponse(STATE, b64("{\"query_1\":[\"" + SD_JWT + "\"]}"), TENANT);
-
-        verify(sdJwtService).verifyPresentation(eq(SD_JWT), eq(CLIENT_ID), any());
-    }
-
-    @Test
-    void dcql_textualEntry_extractsToken() {
-        stubSdJwt(Map.of("name", "x"));
-
-        service.handleAuthResponse(STATE, b64("{\"query_1\":\"" + SD_JWT + "\"}"), TENANT);
-
-        verify(sdJwtService).verifyPresentation(eq(SD_JWT), eq(CLIENT_ID), any());
-    }
-
-    @Test
-    void dcql_skipsUnusableEntriesAndTakesNext() {
-        stubSdJwt(Map.of("name", "x"));
-
-        service.handleAuthResponse(STATE, b64("{\"empty\":[],\"num\":3,\"ok\":[\"" + SD_JWT + "\"]}"), TENANT);
+        service.handleAuthResponse(STATE, b64(dcqlTemplate.formatted(SD_JWT)), TENANT);
 
         verify(sdJwtService).verifyPresentation(eq(SD_JWT), eq(CLIENT_ID), any());
     }
 
     @Test
     void dcql_noUsableEntries_throwsParsingException() {
+        String vpToken = b64("{\"empty\":[]}");
         var ex = assertThrows(JWTParsingException.class,
-                () -> service.handleAuthResponse(STATE, b64("{\"empty\":[]}"), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         assertTrue(ex.getMessage().contains("no entries"));
     }
 
     @Test
     void dcql_malformedJson_throwsParsingException() {
+        String vpToken = b64("{not json");
         var ex = assertThrows(JWTParsingException.class,
-                () -> service.handleAuthResponse(STATE, b64("{not json"), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         assertTrue(ex.getMessage().contains("Failed to parse DCQL"));
     }
@@ -416,19 +411,21 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     @Test
     void jwtVp_revokedCredential_sendsCredentialRevoked() throws Exception {
-        org.mockito.Mockito.doThrow(new CredentialRevokedException("revoked"))
+        doThrow(new CredentialRevokedException("revoked"))
                 .when(vpService).verifyVerifiablePresentation(anyString());
 
+        String vpToken = b64(vp("nonce-1", List.of(CLIENT_ID)));
         assertThrows(CredentialRevokedException.class,
-                () -> service.handleAuthResponse(STATE, b64(vp("nonce-1", List.of(CLIENT_ID))), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         verify(sse).sendValidationFailed(STATE, "CREDENTIAL_REVOKED", "The credential has been revoked");
     }
 
     @Test
     void jwtVp_nonceMismatch_throwsClaimMissing() throws Exception {
+        String vpToken = b64(vp("other", List.of(CLIENT_ID)));
         var ex = assertThrows(JWTClaimMissingException.class,
-                () -> service.handleAuthResponse(STATE, b64(vp("other", List.of(CLIENT_ID))), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         assertTrue(ex.getMessage().contains("does not match"));
     }
@@ -439,47 +436,55 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
                 .additionalParameters(Map.of(NONCE, "client-nonce",
                         EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond())).build());
 
+        String vpToken = b64(vp("nonce-1", List.of(CLIENT_ID)));
         var ex = assertThrows(JWTClaimMissingException.class,
-                () -> service.handleAuthResponse(STATE, b64(vp("nonce-1", List.of(CLIENT_ID))), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         assertTrue(ex.getMessage().contains("No nonce found"));
     }
 
     @Test
     void jwtVp_missingAudience_throwsClaimMissing() throws Exception {
+        String vpToken = b64(vp("nonce-1", null));
         var ex = assertThrows(JWTClaimMissingException.class,
-                () -> service.handleAuthResponse(STATE, b64(vp("nonce-1", null)), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         assertTrue(ex.getMessage().contains("'aud' claim is missing"));
     }
 
     @Test
     void jwtVp_audienceMismatch_throwsClaimMissing() throws Exception {
+        String vpToken = b64(vp("nonce-1", List.of("someone-else")));
         var ex = assertThrows(JWTClaimMissingException.class,
-                () -> service.handleAuthResponse(STATE, b64(vp("nonce-1", List.of("someone-else"))), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         assertTrue(ex.getMessage().contains("does not match the verifier"));
     }
 
     @Test
     void jwtVp_unparseable_throwsParsingException() {
-        assertThrows(JWTParsingException.class, () -> service.handleAuthResponse(STATE, b64("not-a-jwt"), TENANT));
+        String vpToken = b64("not-a-jwt");
+        assertThrows(JWTParsingException.class,
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
     }
 
     @Test
     void jwtVp_blankState_throwsClaimMissing() {
         when(requestCache.get(" ")).thenReturn(request(Instant.now().plusSeconds(60).getEpochSecond()));
 
-        assertThrows(JWTClaimMissingException.class, () -> service.handleAuthResponse(" ", b64("a.b.c"), TENANT));
+        String vpToken = b64("a.b.c");
+        assertThrows(JWTClaimMissingException.class,
+                () -> service.handleAuthResponse(" ", vpToken, TENANT));
     }
 
     @Test
     void jwtVp_signatureInvalid_sendsSignatureInvalid() throws Exception {
-        org.mockito.Mockito.doThrow(new JWTVerificationException("bad"))
+        doThrow(new JWTVerificationException("bad"))
                 .when(vpService).verifyVerifiablePresentation(anyString());
 
+        String vpToken = b64(vp("nonce-1", List.of(CLIENT_ID)));
         assertThrows(JWTVerificationException.class,
-                () -> service.handleAuthResponse(STATE, b64(vp("nonce-1", List.of(CLIENT_ID))), TENANT));
+                () -> service.handleAuthResponse(STATE, vpToken, TENANT));
 
         verify(sse).sendValidationFailed(eq(STATE), eq("SIGNATURE_INVALID"), anyString());
     }
@@ -511,8 +516,10 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     void issueCodeForReusedSession_unknownClient_throws() {
         when(clientRepository.findByClientId("missing")).thenReturn(null);
 
+        Set<String> scopes = Set.of();
+
         assertThrows(OAuth2AuthenticationException.class, () -> service.issueCodeForReusedSession("missing",
-                "https://client.example.com/callback", Set.of(), "st", null, null, null, null));
+                "https://client.example.com/callback", scopes, "st", null, null, null, null));
     }
 
     // --- EUD-252: tenant binding, browser binding, code revocation ---
@@ -524,7 +531,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
                 EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond())).build());
 
         assertThrows(LoginTenantMismatchException.class,
-                () -> service.handleAuthResponse(STATE, b64(SD_JWT), TENANT));
+                () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
         verify(sse).sendValidationFailed(eq(STATE), eq("TENANT_MISMATCH"), anyString());
         verify(sdJwtService, never()).verifyPresentation(anyString(), anyString(), any());
@@ -537,7 +544,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
                 NONCE, "client-nonce", VP_NONCE, "nonce-1", AUTHORIZE_TENANT, TENANT, BROWSER_BINDING_HASH, "abc123",
                 EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond())).build());
 
-        AuthResponseResult result = service.handleAuthResponse(STATE, b64(SD_JWT), TENANT);
+        AuthResponseResult result = service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
         assertEquals("abc123", result.browserBindingHash());
         assertNotNull(result.authorizationCode());
