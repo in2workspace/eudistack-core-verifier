@@ -124,7 +124,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
         when(clientRepository.findByClientId("client-id")).thenReturn(client);
         when(dispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("cfg", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
-        when(requestCache.get(STATE)).thenReturn(request(Instant.now().plusSeconds(120).getEpochSecond()));
+        when(requestCache.remove(STATE)).thenReturn(request(Instant.now().plusSeconds(120).getEpochSecond()));
     }
 
     private AuthorizationResponseProcessorServiceImpl newService(List<CredentialStatusVerifier> verifiers) {
@@ -137,7 +137,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     @Test
     void missingExpiration_sendsInvalidRequestAndThrows() {
-        when(requestCache.get(STATE)).thenReturn(requestWithoutExpiration());
+        when(requestCache.remove(STATE)).thenReturn(requestWithoutExpiration());
 
         assertThrows(LoginTimeoutException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
@@ -147,7 +147,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     @Test
     void expiredLogin_sendsLoginTimeout() {
-        when(requestCache.get(STATE)).thenReturn(request(Instant.now().minusSeconds(5).getEpochSecond()));
+        when(requestCache.remove(STATE)).thenReturn(request(Instant.now().minusSeconds(5).getEpochSecond()));
 
         assertThrows(LoginTimeoutException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
@@ -156,7 +156,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     @Test
     void unknownState_sendsInvalidState() {
-        when(requestCache.get(STATE)).thenThrow(new NoSuchElementException("gone"));
+        when(requestCache.remove(STATE)).thenReturn(null);
 
         assertThrows(NoSuchElementException.class, () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
 
@@ -432,7 +432,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     @Test
     void jwtVp_noCachedNonce_throwsClaimMissing() throws Exception {
-        when(requestCache.get(STATE)).thenReturn(baseRequest()
+        when(requestCache.remove(STATE)).thenReturn(baseRequest()
                 .additionalParameters(Map.of(NONCE, "client-nonce",
                         EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond())).build());
 
@@ -470,7 +470,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     @Test
     void jwtVp_blankState_throwsClaimMissing() {
-        when(requestCache.get(" ")).thenReturn(request(Instant.now().plusSeconds(60).getEpochSecond()));
+        when(requestCache.remove(" ")).thenReturn(request(Instant.now().plusSeconds(60).getEpochSecond()));
 
         String vpToken = b64("a.b.c");
         assertThrows(JWTClaimMissingException.class,
@@ -526,7 +526,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
 
     @Test
     void tenantMismatch_sendsTenantMismatchAndThrows() {
-        when(requestCache.get(STATE)).thenReturn(baseRequest().additionalParameters(Map.of(
+        when(requestCache.remove(STATE)).thenReturn(baseRequest().additionalParameters(Map.of(
                 NONCE, "client-nonce", VP_NONCE, "nonce-1", AUTHORIZE_TENANT, "kpmg",
                 EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond())).build());
 
@@ -540,7 +540,7 @@ class AuthorizationResponseProcessorServiceImplBranchesTest {
     @Test
     void matchingTenantAndBrowserBinding_areCarriedInResult() {
         stubSdJwt(Map.of("name", "x"));
-        when(requestCache.get(STATE)).thenReturn(baseRequest().additionalParameters(Map.of(
+        when(requestCache.remove(STATE)).thenReturn(baseRequest().additionalParameters(Map.of(
                 NONCE, "client-nonce", VP_NONCE, "nonce-1", AUTHORIZE_TENANT, TENANT, BROWSER_BINDING_HASH, "abc123",
                 EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond())).build());
 
