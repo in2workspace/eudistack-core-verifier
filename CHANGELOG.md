@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Overall unit coverage raised above the 80% Sonar threshold (test-only, no production code changed)**: overall coverage was 79.2% (lines 83.6%, branches 68.6%) while the new-code gate was already green; the gap was mostly branch coverage in OID4VP and crypto code. New unit tests, all mock-based and Docker-free, target the four largest gaps: `TokenStatusListVerifierSignatureTest` (Token Status List JWT signature via DID and x5c, invalid `status_list`/`bits`/`lst` claims, HTTP 5xx and interruption), `AuthorizationResponseProcessorServiceImplBranchesTest` (SD-JWT path, DCQL `vp_token` extraction, fail-closed revocation checks, SSE event mapping per error type, VP nonce/audience validation, SSO-reuse code issuance), `TenantSsoConfigYamlProviderTest` (YAML load and normalization, add/remove eligible clients, write errors; the class had no tests) and `CryptoComponentCertificateTest` (`x509_hash` mode, `client_id`/`client_id_scheme`, certificate and key errors). Local JaCoCo (`./gradlew test jacocoTestReport`): 1,261 tests, 0 failures, lines+branches 80.6% → 84.9%. Sonar remains the source of truth for the overall figure. Sonar reports 0 open vulnerabilities, so no security work is bundled.
+
 ### Fixed
 
 - **Issuer console login could offer credentials lacking the power required to enter**: the DCQL query for `learcredential` only constrained credential type, so the wallet listed any employee credential and the rejection came afterwards, at the Issuer. The authorization endpoint now accepts an optional `access_profile` parameter; with `issuer_access` the query is narrowed by `IssuerAccessDcqlPolicy` to employee credentials holding the Onboarding/Execute or the SysAdmin power (one entry per accepted power, machine credentials dropped). Requests without the parameter, or with an unknown value, behave exactly as before. No new scope or profile configuration is involved.
