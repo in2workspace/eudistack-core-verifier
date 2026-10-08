@@ -149,7 +149,8 @@ public class Oid4vpController {
             }
 
             // SD-JWT format: header.payload.sig~disclosure~...~KB-JWT → issuer-signed part is first
-            String jwt = resolved.contains("~") ? resolved.split("~")[0] : resolved;
+            // limit -1 keeps trailing empty segments, so a token like "~" never yields an empty array
+            String jwt = resolved.contains("~") ? resolved.split("~", -1)[0] : resolved;
             String[] parts = jwt.split("\\.");
             if (parts.length >= 2) {
                 // Base64url may omit padding — add it before decoding
@@ -172,7 +173,7 @@ public class Oid4vpController {
 
             // SD-JWT only: KB-JWT iss = the holder (last non-empty segment after ~)
             if (resolved.contains("~")) {
-                String[] sdParts = resolved.split("~");
+                String[] sdParts = resolved.split("~", -1);
                 String kbJwt = sdParts[sdParts.length - 1];
                 if (!kbJwt.isBlank()) {
                     String[] kbParts = kbJwt.split("\\.");
