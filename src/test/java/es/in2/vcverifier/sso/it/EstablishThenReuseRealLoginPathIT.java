@@ -2,6 +2,7 @@ package es.in2.vcverifier.sso.it;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
 import es.in2.vcverifier.shared.domain.model.EligibleClientConfig;
@@ -53,6 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
@@ -65,7 +67,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * B1 (review, EUD-149): the existing SSO ITs (e.g. {@code ReuseSsoSessionIT}) insert the
  * encrypted credential snapshot directly via JDBC — none of them exercise the real production
- * entry point, {@code POST /oid4vp/auth-response} -> {@code Oid4vpController.buildSsoAuthentication}
+ * entry point, {@code POST /oid4vp/auth-response} -> (EUD-252) browser close
+ * {@code GET /api/login/complete} -> {@code SsoLoginCompletionController.buildSsoAuthentication}
  * -> {@code SsoSessionAuthenticationSuccessHandler} -> {@code EstablishSsoSessionWorkflow}, so a
  * regression in that specific wiring (credentialJson never reaching the command) would go
  * undetected. This IT closes that gap end-to-end against a real Postgres (Testcontainers) and
@@ -134,11 +137,13 @@ class EstablishThenReuseRealLoginPathIT {
     // full mock would silently return null there and break the reuse half of this test. Only
     // handleAuthResponse (real VP/SD-JWT verification) is stubbed below.
     @MockitoSpyBean private AuthorizationResponseProcessorService authorizationResponseProcessorService;
+    @MockitoSpyBean private SseEmitterStore sseEmitterStore;
 
     @BeforeEach
     void setUp() {
         jdbcTemplate.execute("DELETE FROM sso_session");
         reset(auditPort);
+        clearInvocations(sseEmitterStore);
 
         when(tenantSsoConfigPort.getByTenant(anyString()))
                 .thenReturn(Optional.of(defaultConfig()));
@@ -159,8 +164,11 @@ class EstablishThenReuseRealLoginPathIT {
         JsonNode credentialJson = new ObjectMapper().createObjectNode()
                 .put("sub", RAW_SUB)
                 .put("vc_type", "LEARCredentialEmployee");
-        org.mockito.Mockito.doReturn(credentialJson)
-                .when(authorizationResponseProcessorService).handleAuthResponse(any(), any());
+        // EUD-252: the login was bound at /authorize to the browser holding BINDING_VALUE.
+        org.mockito.Mockito.doAnswer(invocation -> CrossDeviceLoginTestSupport.boundResult(
+                        credentialJson, invocation.getArgument(0),
+                        hashingService.sha256(CrossDeviceLoginTestSupport.BINDING_VALUE)))
+                .when(authorizationResponseProcessorService).handleAuthResponse(any(), any(), any());
     }
 
     /**
@@ -170,15 +178,7 @@ class EstablishThenReuseRealLoginPathIT {
      */
     @Test
     void establishViaRealHttpEndpoint_persistsNonNullEncryptedSnapshot() throws Exception {
-        MvcResult result = mockMvc.perform(post("/oid4vp/auth-response")
-                        .header("X-Forwarded-Proto", "https")
-                        .header(X_TENANT, TENANT)
-                        .param("state", "establish-state-1")
-                        .param("vp_token", VP_TOKEN_B64))
-                // EUDISTACK-547: POST /oid4vp/auth-response is a 200 ACK (redirect via SSE), not a 3xx.
-                .andExpect(status().isOk())
-                .andExpect(cookie().exists(COOKIE_NAME))
-                .andReturn();
+        MvcResult result = establishThroughBrowserClose("establish-state-1");
 
         String sessionId = result.getResponse().getCookie(COOKIE_NAME).getValue();
         String expectedHolderHash = hashingService.sha256(RAW_SUB);
@@ -199,14 +199,7 @@ class EstablishThenReuseRealLoginPathIT {
      */
     @Test
     void establishViaRealHttpEndpoint_thenReuseWithPromptNone_issuesCode() throws Exception {
-        MvcResult establishResult = mockMvc.perform(post("/oid4vp/auth-response")
-                        .header("X-Forwarded-Proto", "https")
-                        .header(X_TENANT, TENANT)
-                        .param("state", "establish-state-2")
-                        .param("vp_token", VP_TOKEN_B64))
-                .andExpect(status().isOk())
-                .andExpect(cookie().exists(COOKIE_NAME))
-                .andReturn();
+        MvcResult establishResult = establishThroughBrowserClose("establish-state-2");
 
         String sessionId = establishResult.getResponse().getCookie(COOKIE_NAME).getValue();
 
@@ -226,6 +219,24 @@ class EstablishThenReuseRealLoginPathIT {
     // =========================================================
     // HELPERS
     // =========================================================
+
+    /** Wallet POST (no cookie for the wallet) + browser close (SSO cookie for the browser). */
+    private MvcResult establishThroughBrowserClose(String state) throws Exception {
+        mockMvc.perform(post("/oid4vp/auth-response")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT)
+                        .param("state", state)
+                        .param("vp_token", VP_TOKEN_B64))
+                // EUDISTACK-547: POST /oid4vp/auth-response is a 200 ACK (redirect via SSE), not a 3xx.
+                .andExpect(status().isOk())
+                .andExpect(cookie().doesNotExist(COOKIE_NAME));
+
+        return CrossDeviceLoginTestSupport.closeInBrowser(mockMvc, sseEmitterStore, state,
+                        r -> r.header("X-Forwarded-Proto", "https").header(X_TENANT, TENANT))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(cookie().exists(COOKIE_NAME))
+                .andReturn();
+    }
 
     private TenantSsoConfig defaultConfig() {
         return new TenantSsoConfig(

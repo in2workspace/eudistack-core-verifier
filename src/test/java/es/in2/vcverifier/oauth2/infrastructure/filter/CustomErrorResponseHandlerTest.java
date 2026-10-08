@@ -1,6 +1,7 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
@@ -16,6 +18,7 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -275,5 +278,78 @@ class CustomErrorResponseHandlerTest {
 
         verify(response).sendRedirect(redirectUri);
         verify(response, never()).sendError(anyInt(), anyString());
+    }
+
+    // ---- EUD-252: browser-binding cookie on the login-page redirect ----
+
+    private static final String BINDING_VALUE = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    @Test
+    void onAuthenticationFailure_loginPageRedirectWithPendingBinding_emitsHostBindingCookie() throws IOException {
+        // Given: the converter bound the login to this browser (SSO tenant)
+        String redirectUri = "https://verifier.example.com/login?state=abc";
+        when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("required_external_user_authentication", "Redirection required", redirectUri), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then: __Host- cookie with the mandated attributes, then the redirect
+        ArgumentCaptor<String> header = ArgumentCaptor.forClass(String.class);
+        verify(response).addHeader(eq("Set-Cookie"), header.capture());
+        assertThat(header.getValue())
+                .startsWith("__Host-sso-tx=" + BINDING_VALUE)
+                .contains("Path=/", "Max-Age=600", "Secure", "HttpOnly", "SameSite=Lax")
+                .doesNotContain("Domain=");
+        verify(response).sendRedirect(redirectUri);
+    }
+
+    @Test
+    void onAuthenticationFailure_loginPageRedirectWithoutPendingBinding_emitsNoCookie() throws IOException {
+        // Given: SSO-disabled tenant → the converter set no binding
+        String redirectUri = "https://verifier.example.com/login?state=abc";
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("required_external_user_authentication", "Redirection required", redirectUri), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).addHeader(eq("Set-Cookie"), anyString());
+        verify(response).sendRedirect(redirectUri);
+    }
+
+    @Test
+    void onAuthenticationFailure_loginRequiredWithPendingBinding_emitsNoCookie() throws IOException {
+        // Given: an OIDC error redirect to the RP, not the login page
+        allowedClientsOrigins.add("https://client.example.com");
+        String redirectUri = "https://client.example.com/callback?error=login_required";
+        lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("login_required", null, redirectUri), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).addHeader(eq("Set-Cookie"), anyString());
+        verify(response).sendRedirect(redirectUri);
+    }
+
+    @Test
+    void onAuthenticationFailure_untrustedLoginPageWithPendingBinding_emitsNoCookie() throws IOException {
+        // Given: SEC-S7 open-redirect guard rejects the target
+        String redirectUri = "https://evil.example.org/login";
+        lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("required_external_user_authentication", "Redirection required", redirectUri), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).addHeader(eq("Set-Cookie"), anyString());
+        verify(response).sendError(eq(400), anyString());
     }
 }

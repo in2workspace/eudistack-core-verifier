@@ -73,4 +73,79 @@ class CacheStoreTest {
         Thread.sleep(1500);
         assertThrows(NoSuchElementException.class, () -> shortCache.get("key1"));
     }
+
+    // ---- EUD-252 (F1): atomic primitives backing the single in-flight login per state ----
+
+    @Test
+    void putIfAbsent_existingEntry_keepsOriginalAndReturnsIt() {
+        assertNull(cache.putIfAbsent("state", "victim"));
+        assertEquals("victim", cache.putIfAbsent("state", "attacker"));
+        assertEquals("victim", cache.get("state"));
+    }
+
+    @Test
+    void replace_onlyWhenStillExpected() {
+        cache.add("state", "first");
+        assertFalse(cache.replace("state", "stale", "other"));
+        assertTrue(cache.replace("state", "first", "retry"));
+        assertEquals("retry", cache.get("state"));
+    }
+
+    @Test
+    void remove_returnsValueOnce() {
+        cache.add("h", "pending");
+        assertEquals("pending", cache.remove("h"));
+        assertNull(cache.remove("h"));
+    }
+
+    @Test
+    void putIfAbsent_concurrentWriters_exactlyOneWins() throws Exception {
+        int writers = 32;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(writers);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger winners = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        for (int i = 0; i < writers; i++) {
+            String value = "browser-" + i;
+            futures.add(pool.submit(() -> {
+                start.await();
+                if (cache.putIfAbsent("contended-state", value) == null) {
+                    winners.incrementAndGet();
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (java.util.concurrent.Future<?> f : futures) {
+            f.get(5, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+        assertEquals(1, winners.get());
+    }
+
+    @Test
+    void replace_concurrentRetriesFromSameOriginal_exactlyOneWins() throws Exception {
+        cache.add("state", "original");
+        int writers = 32;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(writers);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger winners = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        for (int i = 0; i < writers; i++) {
+            String value = "retry-" + i;
+            futures.add(pool.submit(() -> {
+                start.await();
+                if (cache.replace("state", "original", value)) {
+                    winners.incrementAndGet();
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (java.util.concurrent.Future<?> f : futures) {
+            f.get(5, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+        assertEquals(1, winners.get());
+    }
 }

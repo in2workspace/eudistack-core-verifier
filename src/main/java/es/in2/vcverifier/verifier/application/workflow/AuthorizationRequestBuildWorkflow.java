@@ -47,11 +47,22 @@ public class AuthorizationRequestBuildWorkflow {
     private final CryptoComponent cryptoComponent;
     private final BackendConfig backendConfig;
     private final CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
-    private final CacheStore<String> cacheForNonceByState;
     private final DcqlProfileResolver dcqlProfileResolver;
     private final ObjectMapper objectMapper;
 
-    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce) {}
+    /**
+     * @param nonce   id of the cached request object for the QR ({@code /oid4vp/auth-request/{nonce}})
+     * @param vpNonce OID4VP nonce embedded in the request object. EUD-252 (F1): NOT cached here — the
+     *                caller stores it in the same atomic authorization-request entry as the rest of the
+     *                login, so a concurrent /authorize reusing the state can never swap it.
+     */
+    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String vpNonce) {
+
+        /** Convenience for callers that don't need the VP nonce. */
+        public Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce) {
+            this(signedAuthRequestJwt, openid4vpUrl, nonce, null);
+        }
+    }
 
     /**
      * Resolves the scope to a DCQL query, builds the JWT payload for an OID4VP
@@ -81,7 +92,7 @@ public class AuthorizationRequestBuildWorkflow {
 
         String openid4vpUrl = generateOpenId4VpUrl(qrNonce);
 
-        return new Result(signedJwt, openid4vpUrl, qrNonce);
+        return new Result(signedJwt, openid4vpUrl, qrNonce, nonce);
     }
 
     private DcqlQuery applyAccessProfile(DcqlQuery dcqlQuery, String accessProfile) {
@@ -123,10 +134,7 @@ public class AuthorizationRequestBuildWorkflow {
             builder.claim("client_metadata", objectMapper.convertValue(clientMetadata, Map.class));
         }
 
-        JWTClaimsSet payload = builder.build();
-
-        cacheForNonceByState.add(state, nonce);
-        return payload.toString();
+        return builder.build().toString();
     }
 
     private ClientMetadata resolveClientMetadata(RegisteredClient registeredClient) {
