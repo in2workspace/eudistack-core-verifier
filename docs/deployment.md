@@ -487,6 +487,7 @@ VERIFIER_FRONTEND_PORTALURL=https://portal.midominio.com
 | `/oauth2/jwks` | GET | JWK Set del Verifier |
 | `/oid4vp/auth-response` | POST | Endpoint `direct_post` donde la wallet envia el VP Token |
 | `/api/login/events?state={state}` | GET (SSE) | Server-Sent Events para notificacion de login completado |
+| `/api/login/abort?state={state}` | POST | Aborta un login QR ya expirado y devuelve la URL del cliente con `error=access_denied` (404 si no hay login pendiente o aun no ha expirado) |
 | `/api/v1/resolve-did` | POST | Resolucion did:key -> JWK |
 
 ---

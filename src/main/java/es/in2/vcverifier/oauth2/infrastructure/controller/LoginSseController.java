@@ -39,7 +39,7 @@ public class LoginSseController {
     public SseEmitter subscribe(
             @Parameter(description = "OAuth2 state parameter", required = true)
             @RequestParam String state) {
-        long timeoutMs = backendConfig.getLoginTimeoutSeconds() * 1000L;
+        long timeoutMs = backendConfig.getLoginEventStreamTimeoutSeconds() * 1000L;
         return sseEmitterStore.create(state, timeoutMs);
     }
 

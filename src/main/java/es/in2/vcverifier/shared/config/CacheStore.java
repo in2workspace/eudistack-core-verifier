@@ -45,6 +45,15 @@ public class CacheStore<T> {
         cache.invalidate(key);
     }
 
+    /**
+     * Atomically removes and returns the entry, or {@code null} when absent. Of several
+     * concurrent callers for the same key, exactly one gets the value — unlike
+     * {@link #getIfPresent(String)} followed by {@link #delete(String)}, where all may.
+     */
+    public T remove(String key) {
+        return cache.asMap().remove(key);
+    }
+
     public String add(String key, T value) {
         if (key != null && !key.isBlank() && value != null) {
             cache.put(key, value);

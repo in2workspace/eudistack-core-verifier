@@ -87,11 +87,12 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         Throwable verificationFailure = null;
 
         try {
-            // Validate if the state exists in the cache
-            OAuth2AuthorizationRequest oAuth2AuthorizationRequest = cacheStoreForOAuth2AuthorizationRequest.get(state);
-
-            // Remove the state from cache after retrieving the Object
-            cacheStoreForOAuth2AuthorizationRequest.delete(state);
+            // Take the pending login atomically: if the browser aborted it (login timeout)
+            // first, this presentation must not complete it, and vice versa.
+            OAuth2AuthorizationRequest oAuth2AuthorizationRequest = cacheStoreForOAuth2AuthorizationRequest.remove(state);
+            if (oAuth2AuthorizationRequest == null) {
+                throw new NoSuchElementException("No pending login for this state");
+            }
 
             Instant issueTime = Instant.now();
 

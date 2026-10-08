@@ -151,8 +151,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         when(cacheForNonceByState.get(state)).thenReturn(nonce);
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
         when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
@@ -188,17 +187,14 @@ class AuthorizationResponseProcessorServiceImplTest {
         String state = "invalid-state";
         String vpToken = Base64.getEncoder().encodeToString("valid-vp-token".getBytes(StandardCharsets.UTF_8));
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenThrow(new NoSuchElementException("Value is not present."));
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(null);
 
         // Act & Assert
         NoSuchElementException exception = assertThrows(NoSuchElementException.class, () ->
                 authorizationResponseProcessorService.handleAuthResponse(state, vpToken)
         );
 
-        assertEquals("Value is not present.", exception.getMessage());
-
-        // Verify that delete was not called
-        verify(cacheStoreForOAuth2AuthorizationRequest, never()).delete(state);
+        assertEquals("No pending login for this state", exception.getMessage());
     }
 
 
@@ -218,8 +214,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
         when(cacheForNonceByState.get(state)).thenReturn(state);
 
@@ -251,8 +246,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
         when(registeredClientRepository.findByClientId("client-id")).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
@@ -315,8 +309,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(oAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
         LoginTimeoutException exception = assertThrows(LoginTimeoutException.class, () ->
                 authorizationResponseProcessorService.handleAuthResponse(state, vpToken)
@@ -324,7 +317,7 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         assertEquals("Login time has expired", exception.getMessage());
 
-        verify(cacheStoreForOAuth2AuthorizationRequest, times(1)).delete(state);
+        verify(cacheStoreForOAuth2AuthorizationRequest, times(1)).remove(state);
         verify(credentialVerificationLogger).logVerifiedError(isNull(), any(Throwable.class));
     }
 
@@ -344,8 +337,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
 
         when(cacheForNonceByState.get(stateKey)).thenReturn(nonce);
@@ -371,8 +363,7 @@ class AuthorizationResponseProcessorServiceImplTest {
             when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
             String stateKey = "state";
-            when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-            doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+            when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
             // Act & Assert
             JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
@@ -395,8 +386,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
 
         when(cacheForNonceByState.get(stateKey)).thenReturn("test-nonce2");
@@ -422,8 +412,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         );
         when(mockAuthRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(blankState)).thenReturn(mockAuthRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(blankState);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(blankState)).thenReturn(mockAuthRequest);
 
         // Act & Assert
         JWTClaimMissingException exception = assertThrows(JWTClaimMissingException.class, () ->
@@ -444,8 +433,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
         when(cacheForNonceByState.get(stateKey)).thenReturn(null);
 
@@ -470,8 +458,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(mockOAuth2AuthorizationRequest.getRedirectUri()).thenReturn("https://client.example.com/callback");
 
         String stateKey = "state";
-        when(cacheStoreForOAuth2AuthorizationRequest.get(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(stateKey);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(stateKey)).thenReturn(mockOAuth2AuthorizationRequest);
 
         // Act & Assert
         JWTParsingException exception = assertThrows(JWTParsingException.class, () ->
@@ -535,8 +522,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(req);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
         when(cacheForNonceByState.get(state)).thenReturn(nonce);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
@@ -590,8 +576,7 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .scope("read")
                 .build();
 
-        when(cacheStoreForOAuth2AuthorizationRequest.get(state)).thenReturn(req);
-        doNothing().when(cacheStoreForOAuth2AuthorizationRequest).delete(state);
+        when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
         when(cacheForNonceByState.get(state)).thenReturn(nonce);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());

@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,6 +31,15 @@ class LoginSseControllerTest {
 
     @InjectMocks
     private LoginSseController controller;
+
+    @Test
+    void subscribe_usesTheLoginEventStreamTimeout() {
+        when(backendConfig.getLoginEventStreamTimeoutSeconds()).thenReturn(150L);
+
+        controller.subscribe("s1");
+
+        verify(sseEmitterStore).create("s1", 150_000L);
+    }
 
     @Test
     void abort_pendingLogin_returnsRedirectUrl() {
