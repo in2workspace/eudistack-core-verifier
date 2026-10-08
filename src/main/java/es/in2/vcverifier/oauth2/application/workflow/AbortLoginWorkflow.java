@@ -21,9 +21,10 @@ import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
  * Relying Party: its validated {@code redirect_uri} is cached under the login {@code state}.
  *
  * <p>Removing the cached request also prevents a late wallet presentation from completing a
- * login the user already saw as expired. The removal is atomic and the presentation flow takes
- * the request the same way, so abort and completion are mutually exclusive: when the
- * presentation wins, abort returns empty and the redirect reaches the browser over SSE.
+ * login the user already saw as expired. The removal is atomic and conditional on the entry
+ * being the one checked, and the presentation flow takes the request atomically too, so abort
+ * and completion are mutually exclusive: when the presentation wins, abort returns empty and
+ * the redirect reaches the browser over SSE.
  *
  * <p>Only an expired login can be aborted: a login still in progress is left untouched.
  */
@@ -50,19 +51,23 @@ public class AbortLoginWorkflow {
         // The endpoint is public and the state is not a secret (the wallet sees it): only an
         // expired login may be aborted, or anyone could cut a login in progress.
         OAuth2AuthorizationRequest pending = cacheStoreForOAuth2AuthorizationRequest.getIfPresent(state);
-        if (pending != null && !hasExpired(pending)) {
-            log.warn("Rejected abort of a login that has not expired yet, state={}", sanitize(state));
-            return Optional.empty();
-        }
-
-        OAuth2AuthorizationRequest authorizationRequest = cacheStoreForOAuth2AuthorizationRequest.remove(state);
-        if (authorizationRequest == null) {
+        if (pending == null) {
             log.debug("No pending login to abort for state={}", sanitize(state));
             return Optional.empty();
         }
+        if (!hasExpired(pending)) {
+            log.warn("Rejected abort of a login that has not expired yet, state={}", sanitize(state));
+            return Optional.empty();
+        }
+        // Remove only the entry just checked: a wallet presentation may have taken it, or a
+        // same-browser /authorize retry may have replaced it with a fresh login, in between.
+        if (!cacheStoreForOAuth2AuthorizationRequest.remove(state, pending)) {
+            log.debug("Pending login changed before it could be aborted, state={}", sanitize(state));
+            return Optional.empty();
+        }
 
-        log.info("Login aborted for client={}", sanitize(authorizationRequest.getClientId()));
-        return Optional.of(buildErrorRedirect(authorizationRequest.getRedirectUri(), state));
+        log.info("Login aborted for client={}", sanitize(pending.getClientId()));
+        return Optional.of(buildErrorRedirect(pending.getRedirectUri(), state));
     }
 
     private boolean hasExpired(OAuth2AuthorizationRequest authorizationRequest) {

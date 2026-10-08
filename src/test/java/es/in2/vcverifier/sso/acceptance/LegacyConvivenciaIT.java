@@ -1,5 +1,6 @@
 package es.in2.vcverifier.sso.acceptance;
 
+import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
@@ -11,6 +12,7 @@ import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
+import es.in2.vcverifier.sso.it.CrossDeviceLoginTestSupport;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +30,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -94,6 +97,7 @@ class LegacyConvivenciaIT {
     @MockitoBean StateStore stateStore;
     @MockitoBean CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
     @MockitoBean AuthorizationResponseProcessorService authorizationResponseProcessorService;
+    @MockitoSpyBean SseEmitterStore sseEmitterStore;
     @Autowired SsoSessionRepositoryPort sessionRepositoryPort;
 
     @BeforeEach
@@ -117,9 +121,14 @@ class LegacyConvivenciaIT {
         // W2 (review): establishment is now fail-closed without a verified credential snapshot
         // to encrypt — mirror what a real VP verification returns instead of leaving this mock
         // unstubbed/null, otherwise every establishment in this suite would fail closed.
-        when(authorizationResponseProcessorService.handleAuthResponse(any(), any()))
-                .thenReturn(new com.fasterxml.jackson.databind.ObjectMapper()
-                        .createObjectNode().put("sub", "test-holder"));
+        // EUD-252: mirrors /authorize — a login is browser-bound only if its tenant has SSO enabled
+        // at that moment ("hashed-user" = mocked hash of the binding cookie); legacy logins are not.
+        when(authorizationResponseProcessorService.handleAuthResponse(any(), any(), any()))
+                .thenAnswer(invocation -> CrossDeviceLoginTestSupport.boundResult(
+                        new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("sub", "test-holder"),
+                        invocation.getArgument(0),
+                        tenantSsoConfigPort.getByTenant(invocation.getArgument(2))
+                                .filter(TenantSsoConfig::ssoEnabled).isPresent() ? "hashed-user" : null));
     }
 
     // ---- helpers -----------------------------------------------------------
@@ -145,16 +154,25 @@ class LegacyConvivenciaIT {
     }
 
     private void authResponse(String tenant, boolean expectCookie) throws Exception {
-        var result = mockMvc.perform(post("/oid4vp/auth-response")
+        String state = "state-" + tenant + "-" + System.nanoTime();
+        mockMvc.perform(post("/oid4vp/auth-response")
                         .requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, tenant)
-                        .param("state", "state-" + tenant + "-" + System.nanoTime())
+                        .param("state", state)
                         .param("vp_token", VP_TOKEN_B64))
                 // EUDISTACK-547: POST /oid4vp/auth-response = ACK 200 (redirect vía SSE), no 302.
-                .andExpect(status().isOk());
+                // EUD-252: the wallet never gets the SSO cookie, whatever the tenant.
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("Set-Cookie"));
         if (expectCookie) {
-            result.andExpect(header().exists("Set-Cookie"));
+            // SSO tenant: the browser that started the login closes it and gets the cookie.
+            CrossDeviceLoginTestSupport.closeInBrowser(mockMvc, sseEmitterStore, state,
+                            r -> r.requestAttr(TenantDomainFilter.TENANT_ATTRIBUTE, tenant))
+                    .andExpect(status().is3xxRedirection())
+                    .andExpect(header().exists("Set-Cookie"));
         } else {
-            result.andExpect(header().doesNotExist("Set-Cookie"));
+            // Legacy tenant: unchanged flow — the RP redirect goes straight over SSE.
+            assertThat(CrossDeviceLoginTestSupport.sseUrlFor(sseEmitterStore, state))
+                    .startsWith(CrossDeviceLoginTestSupport.RP_REDIRECT_URI + "?code=");
         }
     }
 

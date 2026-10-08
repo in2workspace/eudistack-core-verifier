@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 class AbortLoginWorkflowTest {
 
@@ -113,5 +115,21 @@ class AbortLoginWorkflowTest {
         cache.remove("state-1"); // the wallet presentation is completing this login
 
         assertThat(workflow.abort("state-1")).isEmpty();
+    }
+
+    @Test
+    void abort_loginReplacedByASameBrowserRetryAfterTheCheck_leavesTheFreshLogin() {
+        cacheExpiredLogin("state-1", "https://rp.example.com/cb");
+        OAuth2AuthorizationRequest checked = cache.getIfPresent("state-1");
+        // A same-browser /authorize retry lands between abort's expiry check and its removal.
+        CacheStore<OAuth2AuthorizationRequest> racingCache = spy(cache);
+        doAnswer(invocation -> {
+            cacheLogin("state-1", "https://rp.example.com/cb",
+                    Map.of(EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond()));
+            return checked;
+        }).when(racingCache).getIfPresent("state-1");
+
+        assertThat(new AbortLoginWorkflow(racingCache).abort("state-1")).isEmpty();
+        assertThat(cache.getIfPresent("state-1")).isNotNull().isNotSameAs(checked);
     }
 }

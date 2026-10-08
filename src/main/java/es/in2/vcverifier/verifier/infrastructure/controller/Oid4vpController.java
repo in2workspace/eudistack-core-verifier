@@ -2,37 +2,33 @@ package es.in2.vcverifier.verifier.infrastructure.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.exception.ResourceNotFoundException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationRequestJWT;
+import es.in2.vcverifier.sso.application.workflow.SsoLoginCompletionWorkflow;
+import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
-import es.in2.vcverifier.sso.infrastructure.web.SsoSessionAuthenticationSuccessHandler;
+import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -45,7 +41,8 @@ public class Oid4vpController {
 
     private final CacheStore<AuthorizationRequestJWT> cacheStoreForAuthorizationRequestJWT;
     private final AuthorizationResponseProcessorService authorizationResponseProcessorService;
-    private final SsoSessionAuthenticationSuccessHandler ssoSessionHandler;
+    private final SsoLoginCompletionWorkflow ssoLoginCompletionWorkflow;
+    private final SseEmitterStore sseEmitterStore;
     private final SsoAuditPort ssoAuditPort;
     private final ObjectMapper objectMapper;
 
@@ -85,8 +82,7 @@ public class Oid4vpController {
             @RequestParam("state") @NotBlank @Size(max = 128) String state,
             @Parameter(description = "Verifiable Presentation token", required = true)
             @RequestParam("vp_token") @NotBlank @Size(max = 65536) String vpToken,
-            HttpServletRequest request,
-            HttpServletResponse response) throws IOException, ServletException {
+            HttpServletRequest request) {
 
         log.info("Processing auth response");
         log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken=[{} chars]",
@@ -95,10 +91,9 @@ public class Oid4vpController {
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         String correlationId = UUID.randomUUID().toString();
 
+        AuthResponseResult result;
         try {
-            JsonNode credentialJson = authorizationResponseProcessorService.handleAuthResponse(state, vpToken);
-            ssoSessionHandler.onAuthenticationSuccess(request, response,
-                    buildSsoAuthentication(vpToken, tenant, credentialJson));
+            result = authorizationResponseProcessorService.handleAuthResponse(state, vpToken, tenant);
         } catch (Exception ex) {
             // ES-01: VP invalid or any processing failure → emit sso_establish_failed audit, then re-throw
             // The existing OID4VP error handling produces the access_denied response.
@@ -113,21 +108,21 @@ public class Oid4vpController {
             ));
             throw ex;
         }
-    }
 
-    private Authentication buildSsoAuthentication(String vpToken, String tenant, JsonNode credentialJson) {
-        String sub = extractSubFromVpToken(vpToken);
-        String safeTenant = tenant != null ? tenant : "";
-
-        Map<String, Object> principal = new HashMap<>();
-        principal.put("tenant", safeTenant);
-        principal.put("holderHash", sub);       // raw sub — workflow applies SHA-256(sub)
-        principal.put("clientId", safeTenant);  // fallback: tenant as clientId for audit
-        principal.put("tenantSlug", safeTenant);
-        // Snapshot for SSO reuse (prompt=none, no VP re-presentation) — see ReuseSsoSessionWorkflowImpl.
-        principal.put("credentialJson", credentialJson);
-
-        return new UsernamePasswordAuthenticationToken(principal, vpToken);
+        // EUD-252: this request comes from the WALLET (possibly another device) — it never gets the
+        // SSO cookie. The browser that started the login is sent, over SSE, straight to the RP
+        // (unbound login) or to the one-time close URL (browser-bound login, always).
+        String browserRedirect;
+        try {
+            browserRedirect = ssoLoginCompletionWorkflow.resolveBrowserRedirect(
+                    tenant, result, () -> extractSubFromVpToken(vpToken), correlationId);
+        } catch (LoginCompletionUnavailableException e) {
+            // Fail closed (code already revoked and audited): tell the browser, never send the code.
+            sseEmitterStore.sendValidationFailed(state, "LOGIN_COMPLETION_UNAVAILABLE",
+                    "The login could not be completed, please try again");
+            throw e;
+        }
+        sseEmitterStore.send(state, browserRedirect);
     }
 
     private String extractSubFromVpToken(String vpToken) {
