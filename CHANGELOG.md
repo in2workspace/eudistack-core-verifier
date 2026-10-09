@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.8] - 2026-10-09
+
+### Added
+- **POST /api/login/abort — an expired QR login returns the user to the Relying Party that started it.** The endpoint looks up the pending authorization by state, removes it so a late wallet presentation cannot complete that login, and returns the cached redirect_uri with error=access_denied and error_description=login_timeout. Unknown or already consumed state answers 404.
+
+### Fixed
+- **Abort cannot cancel a login that is still in progress.** The endpoint only removes a login whose expiration has passed (5 s margin). A same-browser retry that replaces the login mid-abort keeps the fresh login.
+- **A wallet presentation finishing right at the timeout is no longer lost, and cannot both complete and abort.** Abort and the authorization response remove the pending login atomically. The login SSE stream stays open 30 s past the timeout so the authorization code can still reach the browser.
+- **EUD-252 — the SSO cookie is set in the browser on a cross-device login.** It used to be written on the wallet's POST /oid4vp/auth-response, so it never reached the browser when the wallet was on another device and the next app's prompt=none returned login_required. The browser that started the login now closes it on GET /api/login/complete.
+
 ## [Unreleased]
 
 ### Added
