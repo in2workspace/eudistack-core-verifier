@@ -6,10 +6,12 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.util.Base64;
+import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.exception.SsrfProtectionException;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.verifier.domain.exception.CredentialException;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
@@ -23,6 +25,9 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.security.auth.x500.X500Principal;
 import java.io.ByteArrayOutputStream;
@@ -33,6 +38,7 @@ import java.net.http.HttpResponse;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
+import java.security.interfaces.ECPrivateKey;
 import java.security.Security;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
@@ -46,21 +52,28 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Covers the signature verification (SEC-S5), claim validation and HTTP branches of
+ * Covers the signature verification (SEC-S5), claim validation, SSRF guard (SEC-14) and HTTP branches of
  * {@link TokenStatusListVerifier} with real signed Token Status List JWTs.
  */
-class TokenStatusListVerifierSignatureTest {
+@ExtendWith(MockitoExtension.class)
+class TokenStatusListVerifierParseAndFetchTest {
 
     private static final String DID = "did:key:zStatusListIssuer";
     private static final String URL = "https://example.com/status/1";
 
-    private final DIDService didService = mock(DIDService.class);
-    private final SafeUrlValidator safeUrlValidator = mock(SafeUrlValidator.class);
-    private final HttpClient httpClient = mock(HttpClient.class);
+    @Mock
+    private DIDService didService;
+    @Mock
+    private SafeUrlValidator safeUrlValidator;
+    @Mock
+    private HttpClient httpClient;
     private TokenStatusListVerifier verifier;
     private KeyPair ecKeyPair;
 
@@ -122,13 +135,14 @@ class TokenStatusListVerifierSignatureTest {
 
     @Test
     void parse_didIssuer_unsupportedKeyType_throws() throws Exception {
-        PublicKey dsaKey = KeyPairGenerator.getInstance("DSA").generateKeyPair().getPublic();
-        when(didService.resolvePublicKeyFromDid(DID)).thenReturn(dsaKey);
+        PublicKey unsupportedKey = mock(PublicKey.class);
+        when(unsupportedKey.getAlgorithm()).thenReturn("DSA");
+        when(didService.resolvePublicKeyFromDid(DID)).thenReturn(unsupportedKey);
         String jwt = signEc(claims(DID, Map.of("bits", 1, "lst", lst(new byte[]{1}))));
 
         var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
 
-        assertTrue(ex.getMessage().contains("unsupported key type"));
+        assertTrue(ex.getMessage().contains("unsupported key type: DSA"));
     }
 
     @Test
@@ -154,12 +168,16 @@ class TokenStatusListVerifierSignatureTest {
     void parse_noIssuer_throws() throws Exception {
         String jwt = signEc(claims(null, Map.of("bits", 1, "lst", lst(new byte[]{1}))));
 
-        assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+
+        assertTrue(ex.getMessage().contains("no x5c header and no DID issuer"));
     }
 
     @Test
     void parse_malformedJwt_throws() {
-        assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList("not-a-jwt"));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList("not-a-jwt"));
+
+        assertTrue(ex.getMessage().contains("Error parsing"));
     }
 
     // --- x5c-based signature verification ---
@@ -191,7 +209,7 @@ class TokenStatusListVerifierSignatureTest {
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256)
                 .x509CertChain(List.of(Base64.encode(new byte[]{1, 2, 3}))).build(),
                 claims(null, Map.of("bits", 1, "lst", lst(new byte[]{1}))));
-        jwt.sign(new ECDSASigner((java.security.interfaces.ECPrivateKey) ecKeyPair.getPrivate()));
+        jwt.sign(new ECDSASigner((ECPrivateKey) ecKeyPair.getPrivate()));
 
         String serialized = jwt.serialize();
 
@@ -207,7 +225,9 @@ class TokenStatusListVerifierSignatureTest {
         stubDidKey();
         String jwt = signEc(new JWTClaimsSet.Builder().issuer(DID).build());
 
-        assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+
+        assertTrue(ex.getMessage().contains("'status_list'"));
     }
 
     @Test
@@ -215,7 +235,9 @@ class TokenStatusListVerifierSignatureTest {
         stubDidKey();
         String jwt = signEc(new JWTClaimsSet.Builder().issuer(DID).claim("status_list", "text").build());
 
-        assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+
+        assertTrue(ex.getMessage().contains("'status_list'"));
     }
 
     @Test
@@ -233,7 +255,9 @@ class TokenStatusListVerifierSignatureTest {
         stubDidKey();
         String jwt = signEc(claims(DID, Map.of("bits", "one", "lst", lst(new byte[]{1}))));
 
-        assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+
+        assertTrue(ex.getMessage().contains("'bits'"));
     }
 
     @Test
@@ -251,7 +275,9 @@ class TokenStatusListVerifierSignatureTest {
         stubDidKey();
         String jwt = signEc(claims(DID, Map.of("bits", 1, "lst", "  ")));
 
-        assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+
+        assertTrue(ex.getMessage().contains("'lst'"));
     }
 
     @Test
@@ -259,7 +285,9 @@ class TokenStatusListVerifierSignatureTest {
         stubDidKey();
         String jwt = signEc(claims(DID, Map.of("bits", 1, "lst", 42)));
 
-        assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.parseTokenStatusList(jwt));
+
+        assertTrue(ex.getMessage().contains("'lst'"));
     }
 
     // --- isRevoked end to end ---
@@ -270,6 +298,8 @@ class TokenStatusListVerifierSignatureTest {
         stubHttp(200, signEc(claims(DID, Map.of("bits", 1, "lst", lst(new byte[]{(byte) 0x80})))));
 
         assertTrue(verifier.isRevoked(URL, "0", "revocation"));
+
+        verify(safeUrlValidator).validate(URL);
     }
 
     @Test
@@ -278,6 +308,20 @@ class TokenStatusListVerifierSignatureTest {
         stubHttp(200, signEc(claims(DID, Map.of("bits", 1, "lst", lst(new byte[]{(byte) 0x80})))));
 
         assertFalse(verifier.isRevoked(URL, "1", "revocation"));
+
+        verify(safeUrlValidator).validate(URL);
+    }
+
+    @Test
+    void isRevoked_unsafeUrl_isRejectedBeforeAnyHttpCall() {
+        doThrow(new SsrfProtectionException("Private network addresses are not allowed"))
+                .when(safeUrlValidator).validate(URL);
+
+        var ex = assertThrows(SsrfProtectionException.class, () -> verifier.isRevoked(URL, "0", "revocation"));
+
+        assertTrue(ex.getMessage().contains("Private network"));
+        verify(safeUrlValidator).validate(URL);
+        verifyNoInteractions(httpClient, didService);
     }
 
     @Test
@@ -285,7 +329,10 @@ class TokenStatusListVerifierSignatureTest {
         stubDidKey();
         stubHttp(200, signEc(claims(DID, Map.of("bits", 1, "lst", lst(new byte[]{0})))));
 
-        assertThrows(CredentialException.class, () -> verifier.isRevoked(URL, "8", "revocation"));
+        var ex = assertThrows(CredentialException.class, () -> verifier.isRevoked(URL, "8", "revocation"));
+
+        assertTrue(ex.getMessage().contains("statusListIndex out of range"));
+        assertTrue(ex.getMessage().contains("totalEntries=8"));
     }
 
     @Test
@@ -295,6 +342,7 @@ class TokenStatusListVerifierSignatureTest {
         var ex = assertThrows(FailedCommunicationException.class, () -> verifier.isRevoked(URL, "0", "revocation"));
 
         assertTrue(ex.getMessage().contains("500"));
+        verify(safeUrlValidator).validate(URL);
     }
 
     @Test
@@ -313,11 +361,12 @@ class TokenStatusListVerifierSignatureTest {
     // --- decompression edge case ---
 
     @Test
-    void decodeLst_emptyGzipMagicTruncated_throws() {
-        String truncatedGzip = java.util.Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(new byte[]{0x1F, (byte) 0x8B, 0x08});
+    void decodeLst_truncatedGzip_throws() {
+        String truncatedGzip = Base64URL.encode(new byte[]{0x1F, (byte) 0x8B, 0x08}).toString();
 
-        assertThrows(StatusListCredentialException.class, () -> verifier.decodeLst(truncatedGzip));
+        var ex = assertThrows(StatusListCredentialException.class, () -> verifier.decodeLst(truncatedGzip));
+
+        assertTrue(ex.getMessage().contains("Failed to decompress"));
     }
 
     // --- helpers ---
@@ -330,7 +379,9 @@ class TokenStatusListVerifierSignatureTest {
     private void stubHttp(int status, String body) throws Exception {
         HttpResponse<String> response = mock(HttpResponse.class);
         when(response.statusCode()).thenReturn(status);
-        when(response.body()).thenReturn(body);
+        if (status == 200) {
+            when(response.body()).thenReturn(body); // the body is only read from a successful response
+        }
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(response);
     }
 
@@ -344,14 +395,14 @@ class TokenStatusListVerifierSignatureTest {
 
     private String signEc(JWTClaimsSet claims) throws Exception {
         SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.ES256), claims);
-        jwt.sign(new ECDSASigner((java.security.interfaces.ECPrivateKey) ecKeyPair.getPrivate()));
+        jwt.sign(new ECDSASigner((ECPrivateKey) ecKeyPair.getPrivate()));
         return jwt.serialize();
     }
 
     private String signEcWithX5c(JWTClaimsSet claims, X509Certificate cert) throws Exception {
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256)
                 .x509CertChain(List.of(Base64.encode(cert.getEncoded()))).build(), claims);
-        jwt.sign(new ECDSASigner((java.security.interfaces.ECPrivateKey) ecKeyPair.getPrivate()));
+        jwt.sign(new ECDSASigner((ECPrivateKey) ecKeyPair.getPrivate()));
         return jwt.serialize();
     }
 
@@ -365,7 +416,7 @@ class TokenStatusListVerifierSignatureTest {
             out.write(buffer, 0, deflater.deflate(buffer));
         }
         deflater.end();
-        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(out.toByteArray());
+        return Base64URL.encode(out.toByteArray()).toString();
     }
 
     private static X509Certificate selfSigned(KeyPair pair) throws Exception {

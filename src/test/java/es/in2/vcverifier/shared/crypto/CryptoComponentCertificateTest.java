@@ -1,6 +1,8 @@
 package es.in2.vcverifier.shared.crypto;
 
+import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.util.Base64URL;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.ECKeyCreationException;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -20,11 +22,14 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Security;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPrivateKey;
+import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Base64;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -58,22 +63,37 @@ class CryptoComponentCertificateTest {
         return config;
     }
 
-    private X509Certificate writeCertificate(Path target) throws Exception {
+    private static KeyPair newEcKeyPair() throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
         generator.initialize(new ECGenParameterSpec("secp256r1"));
-        KeyPair pair = generator.generateKeyPair();
-        privateKeyHex = ((java.security.interfaces.ECPrivateKey) pair.getPrivate()).getS().toString(16);
+        return generator.generateKeyPair();
+    }
+
+    /** Writes a certificate of {@code certificateKey} valid in [notBefore, notAfter] as PEM at {@code target}. */
+    private static X509Certificate writeCertificate(Path target, KeyPair certificateKey, Date notBefore, Date notAfter)
+            throws Exception {
         X500Principal subject = new X500Principal("CN=verifier");
         var builder = new JcaX509v3CertificateBuilder(subject, BigInteger.valueOf(System.nanoTime()),
-                new Date(System.currentTimeMillis() - 60_000), new Date(System.currentTimeMillis() + 3_600_000),
-                subject, pair.getPublic());
+                notBefore, notAfter, subject, certificateKey.getPublic());
         X509Certificate cert = new JcaX509CertificateConverter().setProvider("BC").getCertificate(
-                builder.build(new JcaContentSignerBuilder("SHA256WithECDSA").setProvider("BC").build(pair.getPrivate())));
+                builder.build(new JcaContentSignerBuilder("SHA256WithECDSA").setProvider("BC")
+                        .build(certificateKey.getPrivate())));
         String pem = "-----BEGIN CERTIFICATE-----\n"
                 + Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(cert.getEncoded())
                 + "\n-----END CERTIFICATE-----\n";
         Files.writeString(target, pem);
         return cert;
+    }
+
+    private static Date minutesFromNow(int minutes) {
+        return new Date(System.currentTimeMillis() + minutes * 60_000L);
+    }
+
+    /** A currently valid certificate of the configured identity key (the key matches the certificate). */
+    private X509Certificate writeCertificate(Path target) throws Exception {
+        KeyPair pair = newEcKeyPair();
+        privateKeyHex = ((ECPrivateKey) pair.getPrivate()).getS().toString(16);
+        return writeCertificate(target, pair, minutesFromNow(-1), minutesFromNow(60));
     }
 
     @Test
@@ -85,9 +105,42 @@ class CryptoComponentCertificateTest {
 
         assertEquals(1, key.getX509CertChain().size());
         byte[] expectedHash = MessageDigest.getInstance("SHA-256").digest(cert.getEncoded());
-        assertEquals(com.nimbusds.jose.util.Base64URL.encode(expectedHash), key.getX509CertSHA256Thumbprint());
-        assertNotNull(key.getKeyID());
-        assertTrue(!key.getKeyID().startsWith("did:key:"));
+        assertEquals(Base64URL.encode(expectedHash), key.getX509CertSHA256Thumbprint());
+        // kid = RFC 7638 thumbprint of the certificate's public key
+        Base64URL expectedKid =
+                new ECKey.Builder(Curve.P_256, (ECPublicKey) cert.getPublicKey()).build().computeThumbprint();
+        assertEquals(expectedKid.toString(), key.getKeyID());
+        assertFalse(key.getKeyID().startsWith("did:key:"));
+    }
+
+    @Test
+    void getECKey_certificateOfAnotherKey_isRejected() throws Exception {
+        Path certFile = dir.resolve("cert.pem");
+        writeCertificate(certFile, newEcKeyPair(), minutesFromNow(-1), minutesFromNow(60));
+        privateKeyHex = ((ECPrivateKey) newEcKeyPair().getPrivate()).getS().toString(16);
+        var component = new CryptoComponent(identity(certFile.toString(), null));
+
+        // not validated by CryptoComponent itself: Nimbus rejects a chain whose first certificate
+        // does not carry the JWK's public key
+        var ex = assertThrows(ECKeyCreationException.class, component::getECKey);
+
+        assertTrue(ex.getMessage().contains("must match the JWK type and public parameters"));
+    }
+
+    // CryptoComponent does not check the validity period of the certificate: an expired one is
+    // accepted today. The test makes that behaviour explicit.
+
+    @Test
+    void getECKey_expiredCertificate_isAcceptedWithoutCheckingValidity() throws Exception {
+        Path certFile = dir.resolve("expired.pem");
+        KeyPair pair = newEcKeyPair();
+        privateKeyHex = ((ECPrivateKey) pair.getPrivate()).getS().toString(16);
+        writeCertificate(certFile, pair, minutesFromNow(-120), minutesFromNow(-60));
+
+        CryptoComponent component = new CryptoComponent(identity(certFile.toString(), null));
+
+        assertEquals(1, component.getECKey().getX509CertChain().size());
+        assertTrue(component.getClientId().startsWith("x509_hash:"));
     }
 
     @Test

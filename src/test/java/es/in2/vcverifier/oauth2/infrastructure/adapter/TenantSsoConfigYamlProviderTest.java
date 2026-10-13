@@ -8,12 +8,14 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoEntry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,6 +56,15 @@ class TenantSsoConfigYamlProviderTest {
         return file;
     }
 
+    /** The {@code sso-config.yaml} shipped in the test classpath: three tenants, only the first one has a client. */
+    private static void assertIsTestClasspathConfig(TenantSsoConfigYamlData data) {
+        assertEquals(List.of("sandbox", "sandboxDos", "sandboxTres"),
+                data.tenants().stream().map(TenantSsoEntry::tenant).toList());
+        assertEquals(List.of("verifier-client"),
+                data.tenants().get(0).eligibleClients().stream().map(EligibleClientConfig::clientId).toList());
+        assertTrue(data.tenants().get(1).eligibleClients().isEmpty());
+    }
+
     // --- retrieve ---
 
     @Test
@@ -91,18 +102,17 @@ class TenantSsoConfigYamlProviderTest {
         TenantSsoConfigYamlData data = new TenantSsoConfigYamlProvider(
                 props(dir.resolve("absent.yaml").toString())).retrieve();
 
-        assertNotNull(data);
-        assertNotNull(data.tenants());
+        assertIsTestClasspathConfig(data);
     }
 
     @Test
     void retrieve_blankPath_usesClasspath() {
-        assertNotNull(new TenantSsoConfigYamlProvider(props("  ")).retrieve().tenants());
+        assertIsTestClasspathConfig(new TenantSsoConfigYamlProvider(props("  ")).retrieve());
     }
 
     @Test
     void retrieve_noLocalFiles_usesClasspath() {
-        assertNotNull(new TenantSsoConfigYamlProvider(propsWithoutLocalFiles()).retrieve().tenants());
+        assertIsTestClasspathConfig(new TenantSsoConfigYamlProvider(propsWithoutLocalFiles()).retrieve());
     }
 
     @Test
@@ -132,23 +142,36 @@ class TenantSsoConfigYamlProviderTest {
 
     @Test
     void addEligibleClient_alreadyPresent_returnsFalse() throws Exception {
-        var provider = new TenantSsoConfigYamlProvider(props(writeYaml(YAML).toString()));
+        Path file = writeYaml(YAML);
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
 
         assertFalse(provider.addEligibleClient("sandbox", "app-a"));
+
+        assertEquals(YAML, Files.readString(file));
     }
 
     @Test
     void addEligibleClient_tenantNameIsCaseInsensitive() throws Exception {
-        var provider = new TenantSsoConfigYamlProvider(props(writeYaml(YAML).toString()));
+        Path file = writeYaml(YAML);
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
 
         assertTrue(provider.addEligibleClient("SANDBOX", "app-z"));
+
+        TenantSsoEntry sandbox = provider.retrieve().tenants().get(0);
+        assertEquals("Sandbox", sandbox.tenant());
+        assertEquals(List.of("app-a", "app-b", "app-z"),
+                sandbox.eligibleClients().stream().map(EligibleClientConfig::clientId).toList());
+        assertTrue(provider.retrieve().tenants().get(1).eligibleClients().isEmpty());
     }
 
     @Test
     void addEligibleClient_unknownTenant_returnsFalse() throws Exception {
-        var provider = new TenantSsoConfigYamlProvider(props(writeYaml(YAML).toString()));
+        Path file = writeYaml(YAML);
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
 
         assertFalse(provider.addEligibleClient("missing", "app-a"));
+
+        assertEquals(YAML, Files.readString(file));
     }
 
     @Test
@@ -181,16 +204,22 @@ class TenantSsoConfigYamlProviderTest {
 
     @Test
     void removeEligibleClient_absentClient_returnsFalse() throws Exception {
-        var provider = new TenantSsoConfigYamlProvider(props(writeYaml(YAML).toString()));
+        Path file = writeYaml(YAML);
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
 
         assertFalse(provider.removeEligibleClient("sandbox", "nope"));
+
+        assertEquals(YAML, Files.readString(file));
     }
 
     @Test
     void removeEligibleClient_unknownTenant_returnsFalse() throws Exception {
-        var provider = new TenantSsoConfigYamlProvider(props(writeYaml(YAML).toString()));
+        Path file = writeYaml(YAML);
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
 
         assertFalse(provider.removeEligibleClient("missing", "app-a"));
+
+        assertEquals(YAML, Files.readString(file));
     }
 
     // --- write errors ---
@@ -221,6 +250,20 @@ class TenantSsoConfigYamlProviderTest {
     void modify_missingFile_wrapsIoException() {
         var provider = new TenantSsoConfigYamlProvider(props(dir.resolve("absent.yaml").toString()));
 
-        assertThrows(SsoConfigLoadingException.class, () -> provider.addEligibleClient("sandbox", "a"));
+        var ex = assertThrows(SsoConfigLoadingException.class, () -> provider.addEligibleClient("sandbox", "a"));
+
+        assertInstanceOf(IOException.class, ex.getCause());
+    }
+
+    @Test
+    void modify_nullTenant_failsWithNullPointerAndLeavesFileUntouched() throws Exception {
+        Path file = writeYaml(YAML);
+        var provider = new TenantSsoConfigYamlProvider(props(file.toString()));
+
+        // Documents current behaviour: `normalizedTenant.equals(...)` is not null-safe. Fixing
+        // production (reject or return false) is tracked separately.
+        assertThrows(NullPointerException.class, () -> provider.addEligibleClient(null, "a"));
+
+        assertEquals(YAML, Files.readString(file));
     }
 }
