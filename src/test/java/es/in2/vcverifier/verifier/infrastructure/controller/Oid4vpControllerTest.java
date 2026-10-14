@@ -203,6 +203,27 @@ class Oid4vpControllerTest {
         assertThrows(IllegalStateException.class, holderSubject::get);
     }
 
+    @Test
+    void handleAuthResponse_subjectSupplier_sdJwtWithoutKbJwt_lastDisclosureIssIsNotTakenAsHolder() {
+        // Given: no KB-JWT (trailing "~"), but the last disclosure has dots and a base64url JSON
+        // segment carrying an "iss". String.split("~") drops the trailing empty segment, so it
+        // would have taken that disclosure for the KB-JWT and returned its "iss" as the holder.
+        String lastDisclosure = "salt." + b64Url("{\"iss\":\"not-the-holder\"}") + ".tail";
+        String sdJwt = b64Url("{\"alg\":\"none\"}") + "." + b64Url("{}") + ".sig~" + lastDisclosure + "~";
+        String vpToken = Base64.getEncoder().encodeToString(sdJwt.getBytes(StandardCharsets.UTF_8));
+        when(authorizationResponseProcessorService.handleAuthResponse(eq(STATE), eq(vpToken), any()))
+                .thenReturn(result("h"));
+        ArgumentCaptor<Supplier<String>> subject = ArgumentCaptor.captor();
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(any(), any(), subject.capture(), anyString()))
+                .thenReturn("url");
+
+        oid4vpController.handleAuthResponse(STATE, vpToken, request);
+
+        Supplier<String> holderSubject = subject.getValue();
+        IllegalStateException ex = assertThrows(IllegalStateException.class, holderSubject::get);
+        assertEquals("VP token contains no usable subject for SSO session establishment", ex.getMessage());
+    }
+
     private static String b64Url(String json) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
     }
