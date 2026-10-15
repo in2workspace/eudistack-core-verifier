@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -53,10 +54,10 @@ class SseEmitterStoreTest {
     @Test
     void send_completesEmitterAndRemovesIt() {
         store.create("state-1", 60000L);
-        // Should not throw
-        store.send("state-1", "http://redirect.example.com");
+
+        assertDoesNotThrow(() -> store.send("state-1", "http://redirect.example.com"));
         // Second send should find no emitter (already removed)
-        store.send("state-1", "http://redirect.example.com");
+        assertDoesNotThrow(() -> store.send("state-1", "http://redirect.example.com"));
     }
 
     @Test
@@ -68,7 +69,7 @@ class SseEmitterStoreTest {
 
     @Test
     void send_nonExistentState_doesNotThrow() {
-        store.send("unknown-state", "http://redirect.example.com");
+        assertDoesNotThrow(() -> store.send("unknown-state", "http://redirect.example.com"));
     }
 
     @Test

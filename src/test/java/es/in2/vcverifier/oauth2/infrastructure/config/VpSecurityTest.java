@@ -362,9 +362,8 @@ class VpSecurityTest {
                             .build()
             );
 
-            // Should not throw
-            method.invoke(vpService, capabilities,
-                    List.of("VerifiableCredential", "LEARCredentialEmployee"));
+            assertDoesNotThrow(() -> method.invoke(vpService, capabilities,
+                    List.of("VerifiableCredential", "LEARCredentialEmployee")));
         }
     }
 

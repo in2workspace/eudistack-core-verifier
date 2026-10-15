@@ -93,7 +93,12 @@ public class BackendConfig {
     }
 
     private BackendProperties.TrustFramework getSelectedTrustFramework() {
-        return properties.getDOMETrustFrameworkByName();
+        BackendProperties.TrustFramework trustFramework = properties.getDOMETrustFrameworkByName();
+        if (trustFramework == null) {
+            throw new IllegalStateException(
+                    "No 'DOME' trust framework configured: set it under verifier.backend.trust-frameworks");
+        }
+        return trustFramework;
     }
 
     public String getTrustedIssuerListUri() {
