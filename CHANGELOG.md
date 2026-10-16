@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-10-16
+
 ### Added
 
 - **Unit tests for the four classes that kept overall coverage under the Sonar 80% threshold (test-only, no production code changed)**: `AuthorizationResponseProcessorServiceImpl` (SD-JWT path, fail-closed revocation, DCQL, error mapping), `TokenStatusListVerifier`, `TenantSsoConfigYamlProvider` and `CryptoComponent` (`x509_hash` mode). The overall Sonar coverage is now above 80%.
