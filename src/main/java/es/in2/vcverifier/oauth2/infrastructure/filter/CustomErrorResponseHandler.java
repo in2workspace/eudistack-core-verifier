@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 
@@ -38,7 +39,9 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
             if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION)
                     || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)
                     || error.getErrorCode().equals(LOGIN_REQUIRED)
-                    || error.getErrorCode().equals(INTERACTION_REQUIRED)) {
+                    || error.getErrorCode().equals(INTERACTION_REQUIRED)
+                    // EUD-300: prompt=none combined with other values, sent to the validated redirect_uri
+                    || error.getErrorCode().equals(OAuth2ErrorCodes.INVALID_REQUEST)) {
                 String redirectUri = error.getUri();
                 // SEC-S7: Validate redirect URI belongs to a registered client origin to prevent open redirect.
                 if (redirectUri != null && isAllowedRedirectUri(redirectUri)) {

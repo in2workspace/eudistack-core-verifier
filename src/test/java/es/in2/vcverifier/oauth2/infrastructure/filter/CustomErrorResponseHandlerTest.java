@@ -352,4 +352,36 @@ class CustomErrorResponseHandlerTest {
         verify(response, never()).addHeader(eq("Set-Cookie"), anyString());
         verify(response).sendError(eq(400), anyString());
     }
+
+    @Test
+    void onAuthenticationFailure_invalidRequestToAllowedClient_redirectsWithoutCookie() throws IOException {
+        // Given: EUD-300 — prompt=none combined with another value, sent back to the RP
+        allowedClientsOrigins.add("https://client.example.com");
+        String redirectUri = "https://client.example.com/callback?error=invalid_request&state=s";
+        lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("invalid_request", null, redirectUri), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).addHeader(eq("Set-Cookie"), anyString());
+        verify(response).sendRedirect(redirectUri);
+    }
+
+    @Test
+    void onAuthenticationFailure_invalidRequestWithSpecDocumentationUri_isNotRedirected() throws IOException {
+        // Given: Spring's own invalid_request errors carry an RFC documentation link as uri
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("invalid_request", "OAuth 2.0 Parameter: state",
+                        "https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1"), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).sendRedirect(anyString());
+        verify(response).sendError(eq(400), anyString());
+    }
 }
