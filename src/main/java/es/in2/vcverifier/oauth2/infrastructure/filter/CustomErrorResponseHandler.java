@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ERROR_REDIRECT;
 import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.INVALID_CLIENT_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
@@ -40,8 +41,9 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
                     || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)
                     || error.getErrorCode().equals(LOGIN_REQUIRED)
                     || error.getErrorCode().equals(INTERACTION_REQUIRED)
-                    // EUD-300: prompt=none combined with other values, sent to the validated redirect_uri
-                    || error.getErrorCode().equals(OAuth2ErrorCodes.INVALID_REQUEST)) {
+                    // EUD-300: prompt=none combined with other values, sent to the validated redirect_uri.
+                    // invalid_request is also a Spring code, so only our own marked errors redirect.
+                    || isClientInvalidRequest(error)) {
                 String redirectUri = error.getUri();
                 // SEC-S7: Validate redirect URI belongs to a registered client origin to prevent open redirect.
                 if (redirectUri != null && isAllowedRedirectUri(redirectUri)) {
@@ -60,6 +62,11 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
 
         // Handle other unexpected errors
         response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Authentication failed");
+    }
+
+    private static boolean isClientInvalidRequest(OAuth2Error error) {
+        return OAuth2ErrorCodes.INVALID_REQUEST.equals(error.getErrorCode())
+                && CLIENT_ERROR_REDIRECT.equals(error.getDescription());
     }
 
     private boolean isAllowedRedirectUri(String uri) {

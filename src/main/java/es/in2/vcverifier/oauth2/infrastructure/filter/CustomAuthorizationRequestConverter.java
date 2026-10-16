@@ -46,6 +46,7 @@ import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ERROR_REDIRECT;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
@@ -212,8 +213,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         try {
             return reuseSsoSession(request, ctx, tenant, clientId);
         } catch (RuntimeException e) {
+            // Throwable logged so a persistent reuse failure (cipher key, DB, bug) is debuggable;
+            // reuse exception messages carry no session or credential data.
             log.warn("event=sso_reuse_failed tenant={} clientId={} error={}", tenant, clientId,
-                    e.getClass().getSimpleName());
+                    e.getClass().getSimpleName(), e);
             return null;
         }
     }
@@ -234,7 +237,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 + (ctx.state() != null && !ctx.state().isBlank()
                    ? "&state=" + URLEncoder.encode(ctx.state(), StandardCharsets.UTF_8)
                    : "");
-        OAuth2Error error = new OAuth2Error(errorCode, null, location);
+        OAuth2Error error = new OAuth2Error(errorCode, CLIENT_ERROR_REDIRECT, location);
         throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
     }
 

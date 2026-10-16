@@ -198,7 +198,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                     sessionRepository.updateLastUsedAt(sessionId, tenantSlug, now);
                     sessionRepository.recordClientActivity(sessionId, tenantSlug, clientId);
                 } catch (Exception ex) {
-                    log.warn("sso_touch_failed session={} tenant={}", sessionId, tenantSlug, ex);
+                    log.warn("sso_touch_failed session={} tenant={}", prefix8(sessionId.getValue()), tenantSlug, ex);
                 }
             });
         }
@@ -307,5 +307,11 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                     }
                 })
                 .orElse(null);
+    }
+
+    /** NFR-S-547-02: the session id is the SSO cookie value — never log it in full, 8-char prefix only. */
+    private static String prefix8(String s) {
+        if (s == null) return "null";
+        return s.length() <= 8 ? s : s.substring(0, 8);
     }
 }

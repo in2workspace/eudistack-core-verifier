@@ -360,7 +360,7 @@ class CustomErrorResponseHandlerTest {
         String redirectUri = "https://client.example.com/callback?error=invalid_request&state=s";
         lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
         AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
-                new OAuth2Error("invalid_request", null, redirectUri), null);
+                new OAuth2Error("invalid_request", "client_error_redirect", redirectUri), null);
 
         // When
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
@@ -368,6 +368,22 @@ class CustomErrorResponseHandlerTest {
         // Then
         verify(response, never()).addHeader(eq("Set-Cookie"), anyString());
         verify(response).sendRedirect(redirectUri);
+    }
+
+    @Test
+    void onAuthenticationFailure_unmarkedInvalidRequestToAllowedClient_isNotRedirected() throws IOException {
+        // Given: an invalid_request not produced by the converter, even with an allowlisted uri
+        allowedClientsOrigins.add("https://client.example.com");
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("invalid_request", "OAuth 2.0 Parameter: state",
+                        "https://client.example.com/callback"), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).sendRedirect(anyString());
+        verify(response).sendError(eq(400), anyString());
     }
 
     @Test
