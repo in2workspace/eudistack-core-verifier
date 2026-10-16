@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -128,5 +129,41 @@ class DcqlQueryTest {
 
         assertFalse(json.contains("meta"));
         assertFalse(json.contains("claims"));
+    }
+
+    @Test
+    @DisplayName("requestedTopLevelClaims: collects the first path segment of the claims of matching queries")
+    void requestedTopLevelClaims_matchingVct_returnsFirstPathSegments() {
+        // Arrange
+        DcqlQuery query = new DcqlQuery(List.of(
+                new CredentialQuery("doctor", CredentialQuery.FORMAT_DC_SD_JWT,
+                        new CredentialQuery.CredentialMeta(List.of("urn:es.cgcom:doctorid:1"), null),
+                        List.of(new ClaimQuery(List.of("givenName"), null, null),
+                                new ClaimQuery(List.of("mandate", "power", "*"), null, null))),
+                new CredentialQuery("other", CredentialQuery.FORMAT_DC_SD_JWT,
+                        new CredentialQuery.CredentialMeta(List.of("urn:other:1"), null),
+                        List.of(new ClaimQuery(List.of("unrelated"), null, null)))));
+
+        // Act
+        var claims = query.requestedTopLevelClaims("urn:es.cgcom:doctorid:1");
+
+        // Assert
+        assertEquals(Set.of("givenName", "mandate"), claims);
+    }
+
+    @Test
+    @DisplayName("requestedTopLevelClaims: no matching query yields an empty set")
+    void requestedTopLevelClaims_noMatchingVct_returnsEmptySet() {
+        // Arrange
+        DcqlQuery query = new DcqlQuery(List.of(
+                new CredentialQuery("doctor", CredentialQuery.FORMAT_DC_SD_JWT,
+                        new CredentialQuery.CredentialMeta(List.of("urn:es.cgcom:doctorid:1"), null),
+                        List.of(new ClaimQuery(List.of("givenName"), null, null)))));
+
+        // Act
+        var claims = query.requestedTopLevelClaims("urn:unknown:1");
+
+        // Assert
+        assertTrue(claims.isEmpty());
     }
 }

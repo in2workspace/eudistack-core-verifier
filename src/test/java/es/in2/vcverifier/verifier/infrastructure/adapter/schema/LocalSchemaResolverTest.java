@@ -3,6 +3,8 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.schema;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.JsonSchema;
+import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
+import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -12,8 +14,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class LocalSchemaResolverTest {
 
@@ -114,5 +119,25 @@ class LocalSchemaResolverTest {
                 "learcredential.employee.w3c.4",
                 List.of("https://www.w3.org/ns/credentials/v2"));
         assertEquals("learcredential.employee.w3c.4", type);
+    }
+
+    @Test
+    void resolve_sdJwtVctAliasOfConfigId_returnsSchemaOfConfigId() throws IOException {
+        // Arrange
+        Files.writeString(tempDir.resolve("doctorid.sd.1.json"), """
+                { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object" }
+                """);
+        SchemaProfileRegistry registry = mock(SchemaProfileRegistry.class);
+        when(registry.findByConfigId("urn:es.cgcom:doctorid:1")).thenReturn(Optional.of(
+                new SchemaProfile("doctorid.sd.1", null, null, null, Set.of(), false, "iss", null)));
+        LocalSchemaResolver aliasResolver = new LocalSchemaResolver(tempDir.toString(), registry);
+        ObjectNode credential = JsonNodeFactory.instance.objectNode();
+        credential.put("vct", "urn:es.cgcom:doctorid:1");
+
+        // Act
+        Optional<JsonSchema> schema = aliasResolver.resolve("urn:es.cgcom:doctorid:1", List.of(), credential);
+
+        // Assert
+        assertTrue(schema.isPresent());
     }
 }
