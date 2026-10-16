@@ -215,4 +215,29 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         verify(metricsPort).recordReuse(TENANT, CLIENT_ID);
         verify(metricsPort).recordOid4vpAvoided(TENANT);
     }
+
+    @Test
+    void reuse_redirectUriNotRegisteredForClient_failsClosedToLoginRequiredWithoutIssuingCode() {
+        // Defense in depth: the converter validates redirect_uri before calling reuse, but the
+        // workflow must never issue a code for a URI not registered to this client either.
+        String cookieValue = "session-cookie-value";
+        byte[] ciphertext = "ciphertext".getBytes(StandardCharsets.UTF_8);
+        when(sessionRepository.findActiveById(SsoSessionId.of(cookieValue), TENANT))
+                .thenReturn(Optional.of(activeSession(cookieValue, ciphertext)));
+        when(configPort.resolveEligibleClients(TENANT))
+                .thenReturn(TenantSsoCatalog.of(List.of(es.in2.vcverifier.sso.domain.model.SsoEligibleClient.of(CLIENT_ID))));
+        when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext))
+                .thenReturn(Optional.of("{\"vc\":\"claims\"}"));
+        AuthorizationContext ctx = ctxAllowingReuse().toBuilder()
+                .redirectUri("https://client.example.com/not-the-registered-path")
+                .build();
+
+        ReuseSsoSessionWorkflow.Result result = workflow.reuse(TENANT, cookieValue, ctx, CLIENT_ID, "corr-7");
+
+        assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
+        verify(authorizationResponseProcessorService, never()).issueCodeForReusedSession(
+                any(), any(), any(), any(), any(), any(), any(), any());
+        verify(auditPort).publish(org.mockito.ArgumentMatchers.argThat(e ->
+                "REDIRECT_URI_MISMATCH".equals(e.getOutcome())));
+    }
 }

@@ -95,6 +95,18 @@ public class AuthorizationRequestBuildWorkflow {
         return new Result(signedJwt, openid4vpUrl, qrNonce, nonce);
     }
 
+    /**
+     * Validates that the scope maps to configured DCQL profiles, without building any request.
+     * Same check {@link #buildAuthorizationRequest} runs first; used by the SSO-reuse path, which
+     * issues a code without building an OID4VP request and must not accept a scope the QR path
+     * would reject.
+     *
+     * @throws es.in2.vcverifier.verifier.domain.exception.InvalidScopeException if the scope is not supported
+     */
+    public void validateScope(String scope) {
+        dcqlProfileResolver.resolve(scope);
+    }
+
     private DcqlQuery applyAccessProfile(DcqlQuery dcqlQuery, String accessProfile) {
         if (accessProfile == null || accessProfile.isBlank()) {
             return dcqlQuery;

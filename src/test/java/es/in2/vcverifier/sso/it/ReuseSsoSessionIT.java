@@ -74,7 +74,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   EC-02  Sesión SUPERSEDED: fila con state='SUPERSEDED' → filtro SQL la excluye.
  *   ES-01  Fallo de almacén (fail-closed): spy lanza RuntimeException → SSO_PERSIST_ERROR.
  *   W5     Aislamiento cross-tenant a nivel de repositorio con DB real.
- *   Coex   prompt=login y ausencia de prompt → rama SSO no se activa.
+ *   Coex   prompt=login → rama SSO no se activa; sin prompt → reutilización si es posible,
+ *          si no flujo OID4VP estándar (QR) sin error OIDC.
  */
 @SpringBootTest(properties = {
         "verifier.backend.url=https://localhost",
@@ -256,13 +257,33 @@ class ReuseSsoSessionIT {
                         .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("code="))));
+                .andExpect(header().string("Location", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("code="))))
+                // The redirect_uri is now rejected before any reuse decision: not even the
+                // prompt=none error redirect may target an unregistered URI (Verifier error page).
+                .andExpect(header().string("Location", org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.startsWith("https://localhost/not-the-registered-path"))))
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("/error?")));
 
+        verify(sessionRepository, never()).findActiveById(any(), any());
         verify(auditPort, never()).publish(argThat(e ->
                 e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED));
-        verify(auditPort, atLeastOnce()).publish(argThat(e ->
-                e.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
-                        && "REDIRECT_URI_MISMATCH".equals(e.getOutcome())));
+    }
+
+    // =========================================================
+    // OIDC Core §3.1.2.1: prompt=none combinado con otro valor → invalid_request al cliente.
+    // =========================================================
+    @Test
+    void should_return_invalid_request_when_prompt_none_combined_with_login() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-hash-none-login");
+        allowedClientsOrigins.add("https://localhost");
+
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("prompt", "none login"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", REDIRECT_URI + "?error=invalid_request&state=xyz"));
+
+        verify(sessionRepository, never()).findActiveById(any(), any());
     }
 
     // =========================================================
@@ -467,29 +488,71 @@ class ReuseSsoSessionIT {
     }
 
     // =========================================================
-    // COEXISTENCIA: prompt=login → rama SSO no se activa;
-    // el flujo OID4VP estándar produce 3xx hacia la wallet.
+    // COEXISTENCIA: prompt=login → rama SSO no se activa, aunque la sesión sea válida;
+    // el flujo OID4VP estándar produce 3xx hacia la página de login (QR).
     // =========================================================
     @Test
     void should_skip_sso_branch_when_prompt_is_login() throws Exception {
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, SsoSessionId.generate().getValue()))
+        String sessionId = insertActiveSession(TENANT, "holder-hash-login");
+
+        mockMvc.perform(baseRequestWithFreshState()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "login"))
-                .andExpect(status().is3xxRedirection());
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("/login?authRequest=")));
 
         verify(sessionRepository, never()).findActiveById(any(), any());
     }
 
     // =========================================================
-    // COEXISTENCIA: sin parámetro prompt → flujo OID4VP estándar.
+    // EUD-300 FR-03 / OIDC Core §3.1.2.1: sin parámetro prompt y sesión válida →
+    // reutilización y code, sin pantalla de login.
     // =========================================================
     @Test
-    void should_skip_sso_branch_when_no_prompt_parameter() throws Exception {
-        mockMvc.perform(baseRequest()
-                        .cookie(new Cookie(COOKIE_NAME, SsoSessionId.generate().getValue())))
-                .andExpect(status().is3xxRedirection());
+    void should_reuse_session_when_no_prompt_parameter() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-hash-no-prompt");
 
-        verify(sessionRepository, never()).findActiveById(any(), any());
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId)))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(REDIRECT_URI)))
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("code=")));
+
+        verify(auditPort, times(1)).publish(argThat(e ->
+                e.getEventType() == SsoAuditEvent.EventType.SSO_SESSION_REUSED
+                        && "REUSED".equals(e.getOutcome())));
+    }
+
+    // =========================================================
+    // Sin prompt y sin sesión reutilizable → flujo OID4VP estándar (QR), nunca un error OIDC.
+    // =========================================================
+    @Test
+    void should_fall_back_to_qr_when_no_prompt_parameter_and_no_session() throws Exception {
+        mockMvc.perform(baseRequestWithFreshState()
+                        .cookie(new Cookie(COOKIE_NAME, SsoSessionId.generate().getValue())))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("/login?authRequest=")))
+                .andExpect(header().string("Location", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("error="))));
+
+        verify(sessionRepository, atLeastOnce()).findActiveById(any(), any());
+    }
+
+    // =========================================================
+    // Sin prompt y max_age superado → flujo OID4VP estándar (QR), no login_required.
+    // =========================================================
+    @Test
+    void should_fall_back_to_qr_when_no_prompt_parameter_and_max_age_exceeded() throws Exception {
+        String sessionId = insertActiveSessionEstablishedSecondsAgo(TENANT, "holder-hash-no-prompt-maxage", 60);
+
+        mockMvc.perform(baseRequestWithFreshState()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("max_age", "10"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("/login?authRequest=")));
+
+        verify(auditPort, atLeastOnce()).publish(argThat(event ->
+                event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                        && "REJECT_MAX_AGE".equals(event.getOutcome())));
     }
 
     // =========================================================
@@ -497,12 +560,24 @@ class ReuseSsoSessionIT {
     // =========================================================
 
     private MockHttpServletRequestBuilder baseRequest() {
+        return baseRequest("xyz");
+    }
+
+    /**
+     * Requests that end in the QR flow cache the login under its {@code state} for the whole
+     * Spring context (EUD-252 put-if-absent), so each of them needs its own state.
+     */
+    private MockHttpServletRequestBuilder baseRequestWithFreshState() {
+        return baseRequest(UUID.randomUUID().toString());
+    }
+
+    private MockHttpServletRequestBuilder baseRequest(String state) {
         return get("/oidc/authorize")
                 .header("X-Forwarded-Proto", "https")
                 .header(X_TENANT, TENANT)
                 .param("client_id", CLIENT_ID)
                 .param("scope", "openid")
-                .param("state", "xyz")
+                .param("state", state)
                 .param("redirect_uri", REDIRECT_URI);
     }
 

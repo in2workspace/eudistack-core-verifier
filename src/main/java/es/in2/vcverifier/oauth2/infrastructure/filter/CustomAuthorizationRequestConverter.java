@@ -7,6 +7,7 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.oauth2.domain.model.OidcPrompt;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -64,6 +65,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
     private static final String SSO_COOKIE_PREFIX = "__Secure-sso-";
     private static final String MAX_AGE_PARAMETER = "max_age";
+    private static final String PROMPT_PARAMETER = "prompt";
     private static final String ACCESS_PROFILE_PARAMETER = "access_profile";
 
     private final DIDService didService;
@@ -119,20 +121,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // Case 1: Standard OIDC authorization request without a signed JWT object
         if (requestUri == null && request.getParameter("request") == null) {
             log.info("Processing an authorization request without a signed JWT object.");
-            ReuseSsoSessionWorkflow.Result ssoResult = tryReuseSsoSession(request, authorizationContext, clientId);
-            if (ssoResult != null) {
-                // Every branch of handleSsoReuseResult throws: LOGIN_REQUIRED/INTERACTION_REQUIRED
-                // redirect back to the RP with an OIDC error, ALLOWED redirects with a real code —
-                // none of them should fall through to a fresh OID4VP/QR challenge below.
-                handleSsoReuseResult(ssoResult, authorizationContext);
-            }
-            // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
-            // carry the login-page browser-binding cookie.
-            return handleOIDCStandardRequest(authorizationContext, registeredClient, bindLogin(request));
+            return handleOIDCStandardRequest(authorizationContext, request, registeredClient);
         }
 
         // Case 2: FAPI authorization request with a signed JWT object
-        return handleFAPIRequest(authorizationContext, request, registeredClient, bindLogin(request));
+        return handleFAPIRequest(authorizationContext, request, registeredClient);
     }
 
     /** Tenant resolved at /authorize + browser binding (null when the tenant has no SSO). */
@@ -144,31 +137,84 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 ssoBrowserBindingCookie.bindIfSsoEnabled(request));
     }
 
-    private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
-                                                              AuthorizationContext ctx,
-                                                              String clientId) {
-        if (!"none".equals(request.getParameter("prompt"))) {
-            return null;
+    /**
+     * OIDC Core 1.0 §3.1.2.1 + EUD-300 FR-03/FR-05: decides whether the tenant SSO session is reused.
+     * Must only be called once the request is fully validated (client, redirect_uri, and for JAR the
+     * request object signature and claims): every redirect thrown here goes to {@code ctx.redirectUri()}.
+     *
+     * <ul>
+     *   <li>{@code none} combined with another value → {@code invalid_request}.</li>
+     *   <li>{@code login} → no reuse, the caller continues to the QR flow.</li>
+     *   <li>{@code none} → ALLOWED redirects with the code; otherwise {@code login_required} /
+     *       {@code interaction_required}, never UI.</li>
+     *   <li>absent (or only unsupported values) → ALLOWED redirects with the code; any other outcome
+     *       returns and the caller continues to the QR flow.</li>
+     * </ul>
+     *
+     * <p>Returns normally only when the caller must continue to the OID4VP/QR flow.
+     */
+    private void attemptSsoReuse(HttpServletRequest request, AuthorizationContext ctx,
+                                 RegisteredClient registeredClient, OidcPrompt prompt) {
+        String clientId = registeredClient.getClientId();
+        if (prompt.isInvalidNoneCombination()) {
+            log.warn("event=authorize_prompt_invalid clientId={} reason=none_combined_with_other_values", clientId);
+            throwOidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, ctx);
+        }
+        if (prompt.requiresLogin()) {
+            log.debug("event=sso_reuse_skipped clientId={} reason=prompt_login", clientId);
+            return;
         }
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
-            return null;
+            if (prompt.isNone()) {
+                throwOidcErrorRedirect(LOGIN_REQUIRED, ctx);
+            }
+            return;
         }
+        // The reuse path issues a code without building an OID4VP request, so the scope check that
+        // buildAuthorizationRequest does for the QR path has to run here first.
+        authorizationRequestBuildWorkflow.validateScope(ctx.scope());
+
+        ReuseSsoSessionWorkflow.Result result = prompt.isNone()
+                ? reuseSsoSession(request, ctx, tenant, clientId)
+                : reuseSsoSessionOrNull(request, ctx, tenant, clientId);
+        ReuseSsoSessionWorkflow.Result.Status status = result != null ? result.status() : null;
+        if (status == ReuseSsoSessionWorkflow.Result.Status.ALLOWED) {
+            throwSsoReuseRedirect(result.redirectUrl());
+        }
+        if (prompt.isNone()) {
+            throwOidcErrorRedirect(status == ReuseSsoSessionWorkflow.Result.Status.INTERACTION_REQUIRED
+                    ? INTERACTION_REQUIRED : LOGIN_REQUIRED, ctx);
+        }
+        log.debug("event=sso_reuse_skipped tenant={} clientId={} reason={}", tenant, clientId,
+                status != null ? status : "reuse_failed");
+    }
+
+    private ReuseSsoSessionWorkflow.Result reuseSsoSession(HttpServletRequest request, AuthorizationContext ctx,
+                                                           String tenant, String clientId) {
         String cookieValue = extractCookieValue(request, SSO_COOKIE_PREFIX + tenant);
-        // EUDISTACK-548: mirrors the sso_cookie_issued log above — lets us see, side by side,
-        // whether the exact cookie this request expected was ever actually presented by the
-        // browser. Cookie value itself is never logged, only whether one was found.
+        // EUDISTACK-548: mirrors the sso_cookie_issued log — lets us see, side by side, whether the
+        // exact cookie this request expected was ever actually presented by the browser. Cookie
+        // value itself is never logged, only whether one was found.
         log.debug("event=sso_cookie_lookup tenant={} expectedCookieName={} found={}",
                 tenant, SSO_COOKIE_PREFIX + tenant, cookieValue != null);
         String correlationId = UUID.randomUUID().toString();
         return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, correlationId);
     }
 
-    private void handleSsoReuseResult(ReuseSsoSessionWorkflow.Result result, AuthorizationContext ctx) {
-        switch (result.status()) {
-            case LOGIN_REQUIRED -> throwPromptNoneOidcError(LOGIN_REQUIRED, ctx);
-            case INTERACTION_REQUIRED -> throwPromptNoneOidcError(INTERACTION_REQUIRED, ctx);
-            case ALLOWED -> throwSsoReuseRedirect(result.redirectUrl());
+    /**
+     * Without {@code prompt}, reuse is only an optimisation over the normal login: an unexpected
+     * failure while trying it must not break a login that would otherwise succeed, so it falls back
+     * to the QR flow (fail-safe: no code is issued).
+     */
+    private ReuseSsoSessionWorkflow.Result reuseSsoSessionOrNull(HttpServletRequest request, AuthorizationContext ctx,
+                                                                 String tenant, String clientId) {
+        try {
+            return reuseSsoSession(request, ctx, tenant, clientId);
+        } catch (RuntimeException e) {
+            log.warn("event=sso_reuse_failed tenant={} clientId={} error={}", tenant, clientId,
+                    e.getClass().getSimpleName());
+            return null;
         }
     }
 
@@ -182,7 +228,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
     }
 
-    private void throwPromptNoneOidcError(String errorCode, AuthorizationContext ctx) {
+    /** OIDC error response to the client; {@code ctx.redirectUri()} must already be validated against the client. */
+    private void throwOidcErrorRedirect(String errorCode, AuthorizationContext ctx) {
         String location = ctx.redirectUri() + "?error=" + errorCode
                 + (ctx.state() != null && !ctx.state().isBlank()
                    ? "&state=" + URLEncoder.encode(ctx.state(), StandardCharsets.UTF_8)
@@ -233,8 +280,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication handleFAPIRequest(AuthorizationContext authorizationContext,
                                              HttpServletRequest request,
-                                             RegisteredClient registeredClient,
-                                             LoginBinding loginBinding) {
+                                             RegisteredClient registeredClient) {
         String jwt = retrieveJwtFromRequestUriOrRequest(
                 authorizationContext.requestUri(), request, registeredClient, authorizationContext.originalRequestURL(),
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -251,48 +297,77 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                     authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
         }
 
-        return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient, loginBinding);
+        return processAuthorizationFlow(authorizationContext, request, signedJwt, registeredClient);
     }
 
     private Authentication handleOIDCStandardRequest(AuthorizationContext authorizationContext,
-                                                     RegisteredClient registeredClient,
-                                                     LoginBinding loginBinding) {
+                                                     HttpServletRequest request,
+                                                     RegisteredClient registeredClient) {
+        // redirect_uri is validated BEFORE any SSO-reuse decision: both the reuse code redirect and
+        // the prompt=none / invalid_request error redirects target it.
         validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null,
                 authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
+
+        attemptSsoReuse(request, authorizationContext, registeredClient,
+                OidcPrompt.parse(request.getParameter(PROMPT_PARAMETER)));
 
         // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient, authorizationContext.scope(), authorizationContext.state(),
                 authorizationContext.accessProfile());
 
+        // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
+        // carry the login-page browser-binding cookie.
         cacheAuthorizationRequest(authorizationContext, registeredClient, authorizationContext.redirectUri(),
-                loginBinding, result.vpNonce());
+                bindLogin(request), result.vpNonce());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
+                                                    HttpServletRequest request,
                                                     SignedJWT signedJwt,
-                                                    RegisteredClient registeredClient,
-                                                    LoginBinding loginBinding) {
+                                                    RegisteredClient registeredClient) {
         PublicKey publicKey = didService.resolvePublicKeyFromDid(registeredClient.getClientId());
         jwtService.verifyJWTWithECKey(signedJwt.serialize(), publicKey);
+
+        String jwtRedirectUri = jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI);
+
+        // RFC 9101 §6.3: the request object is authoritative — prompt and max_age come from its
+        // (now signature-verified) claims, never from the query string. The reuse context also
+        // targets the validated request-object redirect_uri, the same one cached for the QR path.
+        Map<String, Object> claims = signedJwt.getPayload().toJSONObject();
+        AuthorizationContext reuseContext = authorizationContext.toBuilder()
+                .redirectUri(jwtRedirectUri)
+                .maxAge(parseMaxAge(optionalClaim(claims, MAX_AGE_PARAMETER)))
+                .build();
+        attemptSsoReuse(request, reuseContext, registeredClient,
+                OidcPrompt.parse(optionalClaim(claims, PROMPT_PARAMETER)));
 
         // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient, authorizationContext.scope(), authorizationContext.state(),
                 authorizationContext.accessProfile());
 
-        cacheAuthorizationRequest(
-                authorizationContext,
-                registeredClient,
-                jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI),
-                loginBinding,
-                result.vpNonce());
+        // EUD-252: bound only AFTER the reuse branch, same as the plain path.
+        cacheAuthorizationRequest(authorizationContext, registeredClient, jwtRedirectUri,
+                bindLogin(request), result.vpNonce());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
+    }
+
+    /** Optional string/number claim of the request object; {@code null} when absent or of another type. */
+    private static String optionalClaim(Map<String, Object> claims, String name) {
+        Object value = claims == null ? null : claims.get(name);
+        if (value instanceof String s) {
+            return s;
+        }
+        if (value instanceof Number n) {
+            return n.toString();
+        }
+        return null;
     }
 
     private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,
