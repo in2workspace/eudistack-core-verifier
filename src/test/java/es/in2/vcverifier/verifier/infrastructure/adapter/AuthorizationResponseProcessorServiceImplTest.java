@@ -1,4 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
+import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.service.VpService;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
@@ -95,6 +97,12 @@ class AuthorizationResponseProcessorServiceImplTest {
     private CredentialVerificationLoggerPort credentialVerificationLogger;
 
     @Mock
+    private DcqlProfileResolver dcqlProfileResolver;
+
+    @Mock
+    private CredentialValidator credentialValidator;
+
+    @Mock
     private AuthorizationResponseProcessorServiceImpl authorizationResponseProcessorService;
 
     @BeforeEach
@@ -112,7 +120,9 @@ class AuthorizationResponseProcessorServiceImplTest {
                 cryptoComponent,
                 java.util.List.of(),
                 credentialSchemaDispatcher,
-                credentialVerificationLogger
+                credentialVerificationLogger,
+                dcqlProfileResolver,
+                credentialValidator
         );
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
         lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);

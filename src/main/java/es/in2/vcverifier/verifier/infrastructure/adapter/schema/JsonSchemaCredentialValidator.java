@@ -9,6 +9,7 @@ import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Validates credentials against JSON Schemas resolved by the chain of CredentialSchemaResolvers.
@@ -25,7 +26,7 @@ public class JsonSchemaCredentialValidator implements CredentialValidator {
     }
 
     @Override
-    public ValidationResult validate(JsonNode credential) {
+    public ValidationResult validate(JsonNode credential, Set<String> requestedClaims) {
         String credentialType = extractCredentialType(credential);
         List<String> context = extractContext(credential);
         String version = LocalSchemaResolver.resolveVersion(credentialType, context);
@@ -57,7 +58,9 @@ public class JsonSchemaCredentialValidator implements CredentialValidator {
                     .build();
         }
 
-        Set<ValidationMessage> errors = schema.get().validate(credential);
+        Set<ValidationMessage> errors = schema.get().validate(credential).stream()
+                .filter(error -> !isMissingClaimNotRequested(error, requestedClaims))
+                .collect(Collectors.toSet());
         if (errors.isEmpty()) {
             log.info("Credential validated successfully against schema: type={}, version={}", credentialType, version);
             return ValidationResult.builder()
@@ -92,7 +95,19 @@ public class JsonSchemaCredentialValidator implements CredentialValidator {
                 }
             }
         }
+        // SD-JWT VC has no 'type' array: it is identified by its 'vct' claim
+        JsonNode vctNode = credential.get("vct");
+        if (vctNode != null && vctNode.isTextual()) {
+            return vctNode.asText();
+        }
         return "Unknown";
+    }
+
+    private boolean isMissingClaimNotRequested(ValidationMessage error, Set<String> requestedClaims) {
+        return !requestedClaims.isEmpty()
+                && "required".equals(error.getType())
+                && error.getInstanceLocation().getNameCount() == 0
+                && !requestedClaims.contains(error.getProperty());
     }
 
     private List<String> extractContext(JsonNode credential) {
