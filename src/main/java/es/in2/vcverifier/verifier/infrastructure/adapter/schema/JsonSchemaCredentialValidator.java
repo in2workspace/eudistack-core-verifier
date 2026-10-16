@@ -106,7 +106,7 @@ public class JsonSchemaCredentialValidator implements CredentialValidator {
     private boolean isMissingClaimNotRequested(ValidationMessage error, Set<String> requestedClaims) {
         return !requestedClaims.isEmpty()
                 && "required".equals(error.getType())
-                && "$".equals(error.getInstanceLocation().toString())
+                && error.getInstanceLocation().getNameCount() == 0
                 && !requestedClaims.contains(error.getProperty());
     }
 
