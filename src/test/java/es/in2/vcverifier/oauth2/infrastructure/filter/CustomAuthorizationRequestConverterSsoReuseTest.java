@@ -1,5 +1,9 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
@@ -28,6 +32,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
@@ -39,6 +44,7 @@ import org.springframework.security.oauth2.server.authorization.context.Authoriz
 
 import java.net.http.HttpClient;
 import java.security.PublicKey;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -204,6 +210,40 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
         // When / Then
         assertQrRedirect(convertExpectingRedirect(request));
+    }
+
+    @Test
+    void convert_promptAbsentAndReuseFailsWithDriverError_logsClassNamesOnlyAtWarnAndThrowableAtDebug() {
+        // Given: a raw driver exception whose message chain carries a session id
+        HttpServletRequest request = request(Mode.PLAIN, null, null);
+        when(reuseSsoSessionWorkflow.reuse(any(), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("query failed for " + SESSION_ID,
+                        new SQLException("Key (id)=(" + SESSION_ID + ") already exists")));
+        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
+        Level previousLevel = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.DEBUG);
+        try {
+            // When
+            assertQrRedirect(convertExpectingRedirect(request));
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previousLevel);
+        }
+
+        // Then
+        ILoggingEvent warn = appender.list.stream()
+                .filter(e -> e.getLevel() == Level.WARN && e.getFormattedMessage().startsWith("event=sso_reuse_failed"))
+                .findFirst().orElseThrow();
+        assertEquals("event=sso_reuse_failed tenant=" + TENANT + " clientId=" + CLIENT_ID
+                + " error=IllegalStateException rootCause=SQLException", warn.getFormattedMessage());
+        assertNull(warn.getThrowableProxy());
+        assertTrue(appender.list.stream().anyMatch(e -> e.getLevel() == Level.DEBUG
+                && e.getFormattedMessage().startsWith("event=sso_reuse_failed")
+                && e.getThrowableProxy() != null
+                && e.getThrowableProxy().getClassName().equals(IllegalStateException.class.getName())));
     }
 
     @ParameterizedTest

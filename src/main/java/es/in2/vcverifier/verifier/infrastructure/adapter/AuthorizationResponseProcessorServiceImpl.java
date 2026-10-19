@@ -285,7 +285,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         ));
 
         // SEC-O2: Log redirect target without full authorization code.
-        log.info("Authorization code issued for redirect_uri: {}", redirectUri);
+        log.info("Authorization code issued for redirect_uri: {}", sanitize(redirectUri));
 
         // EUD-252: the success redirect is NOT pushed over SSE here any more. The caller routes
         // the browser — directly to the RP, or first through the browser-bound SSO close step.
@@ -566,11 +566,13 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             // OID4VP Final 1.0: aud MUST be client_id. Accept both x509_hash/DID client_id and backend URL for backwards compatibility.
             String expectedClientId = cryptoComponent.getClientId();
             String expectedUrl = backendConfig.getUrl();
-            log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}", expectedClientId, expectedUrl, audiences);
+            log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}", expectedClientId, expectedUrl,
+                    sanitize(String.valueOf(audiences)));
             if (!audiences.contains(expectedClientId) && !audiences.contains(expectedUrl)) {
                 throw new JWTClaimMissingException("The 'aud' claim in the VP token does not match the verifier client_id or URL.");
             }
-            log.debug("Validated VP nonce: received={}, cached={}, audience={}", vpNonce, cachedNonce, audiences);
+            log.debug("Validated VP nonce: received={}, cached={}, audience={}", sanitize(vpNonce), cachedNonce,
+                    sanitize(String.valueOf(audiences)));
         } catch (ParseException e) {
             throw new JWTParsingException("Failed to parse the VP JWT or extract claims.");
         }

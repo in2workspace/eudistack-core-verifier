@@ -2,6 +2,9 @@ package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomTokenRequestConverter;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -29,6 +32,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -100,6 +104,38 @@ class CustomTokenRequestConverterTest {
         assertInstanceOf(OAuth2AuthorizationCodeAuthenticationToken.class, result);
         assertFalse(((OAuth2AuthorizationCodeAuthenticationToken) result).getAdditionalParameters()
                 .containsKey("auth_time"));
+    }
+
+    @Test
+    void convert_authorizationCodeGrant_stateMismatchWithCrLf_logsNoRawLineBreak() {
+        // Given: request-supplied state and client_id trying to forge a log line (CWE-117)
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+        parameters.add(OAuth2ParameterNames.GRANT_TYPE, "authorization_code");
+        parameters.add(OAuth2ParameterNames.CODE, "code\r\nFORGED");
+        parameters.add(OAuth2ParameterNames.CLIENT_ID, "client-id\r\nFORGED");
+        parameters.add(OAuth2ParameterNames.STATE, "other\r\nFORGED level=ERROR");
+        when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+        AuthorizationCodeData authorizationCodeData = mock(AuthorizationCodeData.class);
+        when(cacheStoreForAuthorizationCodeData.get("code\r\nFORGED")).thenReturn(authorizationCodeData);
+        when(authorizationCodeData.state()).thenReturn("state");
+
+        Logger logger = (Logger) LoggerFactory.getLogger(CustomTokenRequestConverter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            // When
+            assertThrows(IllegalArgumentException.class, () -> customTokenRequestConverter.convert(mockRequest));
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        // Then
+        assertTrue(appender.list.stream().anyMatch(e -> e.getFormattedMessage()
+                .equals("State mismatch. Expected: state, Actual: other__FORGED level=ERROR")));
+        assertTrue(appender.list.stream().noneMatch(e -> e.getFormattedMessage().contains("\r")
+                || e.getFormattedMessage().contains("\n")));
     }
 
     @Test

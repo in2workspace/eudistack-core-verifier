@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
+
 @Repository
 @Slf4j
 public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
@@ -162,7 +164,10 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                     return session;
                 } catch (SQLException e) {
                     if (!isUniqueViolation(e)) {
-                        log.warn("Insert failed for session {}...: {}", prefix8(session.getId().getValue()), e.getMessage());
+                        // Class names only at WARN: a PostgreSQL error detail may echo the full session id.
+                        log.warn("Insert failed for session {}... error={} rootCause={}", prefix8(session.getId().getValue()),
+                                e.getClass().getSimpleName(), rootCauseName(e));
+                        log.debug("Insert failed for session {}...", prefix8(session.getId().getValue()), e);
                         throw e;
                     }
 
@@ -506,8 +511,11 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
             });
         } catch (SQLException e) {
             // Best-effort (ADR-108): no propagar — no debe romper establish/reuse.
-            log.warn("sso_session_client_record_failed session={}... tenant={} error={}",
-                    prefix8(sessionId.getValue()), tenant, e.getMessage());
+            // Class names only at WARN: a PostgreSQL error detail (e.g. an FK violation) may echo the
+            // full session id. The throwable goes to DEBUG.
+            log.warn("sso_session_client_record_failed session={}... tenant={} error={} rootCause={}",
+                    prefix8(sessionId.getValue()), tenant, e.getClass().getSimpleName(), rootCauseName(e));
+            log.debug("sso_session_client_record_failed session={}... tenant={}", prefix8(sessionId.getValue()), tenant, e);
         }
     }
 

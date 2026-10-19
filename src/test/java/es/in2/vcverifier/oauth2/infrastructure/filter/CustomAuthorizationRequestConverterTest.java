@@ -580,6 +580,64 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
+    void convert_requestUriWithCrLf_logsNoRawLineBreak() {
+        // Given: a request_uri trying to forge a log line (CWE-117)
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        Map<String, String> parameters = Map.of(OAuth2ParameterNames.CLIENT_ID, clientId,
+                REQUEST_URI, "https://client.example.com/r.jwt\r\nFORGED level=ERROR");
+        when(request.getParameter(anyString())).thenAnswer(inv -> parameters.get(inv.<String>getArgument(0)));
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://client.example.com/callback")
+                .build());
+
+        // When: the CRLF value is not a URI, so the fetch itself fails after the log line
+        List<ILoggingEvent> events = captureConverterLogs(
+                () -> assertThrows(IllegalArgumentException.class, () -> converter.convert(request)));
+
+        // Then
+        assertTrue(events.stream().anyMatch(e -> e.getFormattedMessage()
+                .equals("Retrieving JWT from request_uri: https://client.example.com/r.jwt__FORGED level=ERROR")));
+        assertTrue(events.stream().noneMatch(e -> e.getFormattedMessage().contains("\r")
+                || e.getFormattedMessage().contains("\n")));
+    }
+
+    @Test
+    void convert_unknownClientIdWithCrLf_logsNoRawLineBreak() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getParameter(anyString()))
+                .thenAnswer(inv -> OAuth2ParameterNames.CLIENT_ID.equals(inv.getArgument(0)) ? "evil\r\nFORGED" : null);
+
+        // When
+        List<ILoggingEvent> events = captureConverterLogs(
+                () -> assertThrows(OAuth2AuthenticationException.class, () -> converter.convert(request)));
+
+        // Then
+        assertTrue(events.stream().anyMatch(e -> e.getFormattedMessage()
+                .equals("Unauthorized client: Client with ID evil__FORGED not found.")));
+        assertTrue(events.stream().noneMatch(e -> e.getFormattedMessage().contains("\r")
+                || e.getFormattedMessage().contains("\n")));
+    }
+
+    private static List<ILoggingEvent> captureConverterLogs(Runnable action) {
+        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            action.run();
+            return List.copyOf(appender.list);
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
     void convert_standardRequest_withPkce_shouldCachePkceAdditionalParameters() {
         HttpServletRequest request = mock(HttpServletRequest.class);
         String clientId = "test-client-id";

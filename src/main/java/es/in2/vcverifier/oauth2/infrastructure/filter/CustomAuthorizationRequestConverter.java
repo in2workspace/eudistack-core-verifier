@@ -57,6 +57,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
@@ -123,7 +124,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient == null) {
-            log.error("Unauthorized client: Client with ID {} not found.", clientId);
+            log.error("Unauthorized client: Client with ID {} not found.", sanitize(clientId));
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
 
@@ -229,10 +230,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         try {
             return reuseSsoSession(request, ctx, tenant, clientId);
         } catch (RuntimeException e) {
-            // Throwable logged so a persistent reuse failure (cipher key, DB, bug) is debuggable;
-            // reuse exception messages carry no session or credential data.
-            log.warn("event=sso_reuse_failed tenant={} clientId={} error={}", tenant, clientId,
-                    e.getClass().getSimpleName(), e);
+            // Class names only at WARN: a raw driver/JDBC exception (or one in its cause chain) may
+            // carry SQL or constraint detail, e.g. a session id, in its message. The throwable goes
+            // to DEBUG so a persistent reuse failure (cipher key, DB, bug) stays debuggable.
+            log.warn("event=sso_reuse_failed tenant={} clientId={} error={} rootCause={}", tenant, clientId,
+                    e.getClass().getSimpleName(), rootCauseName(e));
+            log.debug("event=sso_reuse_failed tenant={} clientId={}", tenant, clientId, e);
             return null;
         }
     }
@@ -492,7 +495,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             try {
                 // SEC-14: SSRF protection — validate URL before outbound request
                 safeUrlValidator.validate(requestUri);
-                log.info("Retrieving JWT from request_uri: {}", requestUri);
+                log.info("Retrieving JWT from request_uri: {}", sanitize(requestUri));
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                         .uri(URI.create(requestUri)).timeout(REQUEST_TIMEOUT).GET().build();
                 HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());

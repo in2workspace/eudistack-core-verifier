@@ -87,14 +87,14 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
 
         String codePrefix = code == null ? "null" : code.substring(0, Math.min(10, code.length()));
         log.info("[AUTH_CODE] codePrefix={}, clientId={}, redirectUriPresent={}, statePresent={}, pkcePresent={}",
-                codePrefix, clientId,
+                LogSanitizer.sanitize(codePrefix), LogSanitizer.sanitize(clientId),
                 redirectUri != null && !redirectUri.isBlank(),
                 state != null && !state.isBlank(),
                 codeVerifier != null && !codeVerifier.isBlank());
 
         AuthorizationCodeData authorizationCodeData = cacheStoreForAuthorizationCodeData.get(code);
         if (authorizationCodeData == null) {
-            log.error("[AUTH_CODE] AuthorizationCodeData NOT FOUND for codePrefix={}", codePrefix);
+            log.error("[AUTH_CODE] AuthorizationCodeData NOT FOUND for codePrefix={}", LogSanitizer.sanitize(codePrefix));
             throw new IllegalArgumentException("Invalid or expired authorization code");
         }
 
@@ -104,7 +104,8 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
                 authorizationCodeData.requestedScopes());
 
         if (state != null && !state.isBlank() && (!authorizationCodeData.state().equals(state))) {
-            log.error("State mismatch. Expected: {}, Actual: {}", authorizationCodeData.state(), state);
+            log.error("State mismatch. Expected: {}, Actual: {}", LogSanitizer.sanitize(authorizationCodeData.state()),
+                    LogSanitizer.sanitize(state));
             throw new IllegalArgumentException("Invalid state parameter");
         }
 
@@ -151,35 +152,35 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         try {
             vc = clientCredentialsValidationWorkflow.validateClientCredentialsGrant(clientId, clientAssertion);
         } catch (InvalidCredentialTypeException e) {
-            log.warn("M2M client '{}' rejected: credential type not eligible for client_credentials: {}", clientId, e.getMessage());
+            log.warn("M2M client '{}' rejected: credential type not eligible for client_credentials: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_CREDENTIAL_TYPE_NOT_ELIGIBLE);
             throw OAuth2ErrorTranslator.invalidClient();
         } catch (InvalidProofOfPossessionException e) {
-            log.warn("M2M client '{}' rejected: invalid proof of possession: {}", clientId, e.getMessage());
+            log.warn("M2M client '{}' rejected: invalid proof of possession: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_INVALID_PROOF_OF_POSSESSION);
             throw OAuth2ErrorTranslator.invalidClient();
         } catch (IssuerNotAuthorizedException e) {
-            log.warn("M2M client '{}' rejected: issuer not trusted: {}", clientId, e.getMessage());
+            log.warn("M2M client '{}' rejected: issuer not trusted: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_ISSUER_NOT_TRUSTED);
             throw OAuth2ErrorTranslator.invalidClient();
         } catch (CredentialExpiredException e) {
             // The credential's temporal validity is what's wrong here, not the client's identity —
             // same RFC 6749 wording used for expired/revoked grants elsewhere.
-            log.warn("M2M client '{}' rejected: credential expired: {}", clientId, e.getMessage());
+            log.warn("M2M client '{}' rejected: credential expired: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_CREDENTIAL_EXPIRED);
             throw OAuth2ErrorTranslator.invalidGrant();
         } catch (CredentialNotActiveException e) {
-            log.warn("M2M client '{}' rejected: credential not yet active: {}", clientId, e.getMessage());
+            log.warn("M2M client '{}' rejected: credential not yet active: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_CREDENTIAL_NOT_ACTIVE);
             throw OAuth2ErrorTranslator.invalidGrant();
         } catch (CredentialRevokedException e) {
-            log.warn("M2M client '{}' rejected: credential revoked: {}", clientId, e.getMessage());
+            log.warn("M2M client '{}' rejected: credential revoked: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_CREDENTIAL_REVOKED);
             throw OAuth2ErrorTranslator.invalidGrant();
         } catch (FailedCommunicationException | StatusListCredentialException e) {
             // Failure talking to an external dependency (trusted-issuers registry, status list) —
             // not the client's fault, so invalid_client/invalid_grant would be misleading.
-            log.error("M2M client '{}' validation failed due to an infrastructure error: {}", clientId, e.getMessage());
+            log.error("M2M client '{}' validation failed due to an infrastructure error: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_EXTERNAL_DEPENDENCY_FAILURE);
             throw OAuth2ErrorTranslator.serverError();
         } catch (RuntimeException e) {
@@ -188,7 +189,7 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
             // cryptographic binding failures, etc.) means the presented credential could not be used to
             // authenticate this client. Also the safety net for exception types not explicitly enumerated
             // above, so nothing escapes this boundary untranslated.
-            log.warn("M2M client '{}' rejected: {}", clientId, e.getMessage());
+            log.warn("M2M client '{}' rejected: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_CREDENTIAL_VALIDATION_FAILED);
             throw OAuth2ErrorTranslator.invalidClient();
         }
