@@ -22,12 +22,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
-import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.web.authentication.AuthenticationConverter;
@@ -46,14 +44,12 @@ import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
-import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ERROR_REDIRECT;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
-import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
@@ -227,8 +223,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * (an "error" whose uri is really just the next hop, not a real OAuth failure).
      */
     private void throwSsoReuseRedirect(String redirectUrl) {
-        OAuth2Error error = new OAuth2Error(REQUIRED_EXTERNAL_USER_AUTHENTICATION, "SSO session reused", redirectUrl);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        throw AuthorizationRedirectException.toClientWithCode(redirectUrl);
     }
 
     /** OIDC error response to the client; {@code ctx.redirectUri()} must already be validated against the client. */
@@ -237,8 +232,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 + (ctx.state() != null && !ctx.state().isBlank()
                    ? "&state=" + URLEncoder.encode(ctx.state(), StandardCharsets.UTF_8)
                    : "");
-        OAuth2Error error = new OAuth2Error(errorCode, CLIENT_ERROR_REDIRECT, location);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        throw AuthorizationRedirectException.toClient(errorCode, null, location);
     }
 
     /**
@@ -399,8 +393,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             );
         }
 
-        OAuth2Error error = new OAuth2Error(REQUIRED_EXTERNAL_USER_AUTHENTICATION, "Redirection required", redirectUrl);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        throw AuthorizationRedirectException.toLoginPage(redirectUrl);
     }
 
     // --- Validation methods (framework-level, kept in filter) ---
@@ -417,8 +410,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 URLEncoder.encode(clientName, StandardCharsets.UTF_8),
                 URLEncoder.encode(originalRequestURL, StandardCharsets.UTF_8)
         );
-        OAuth2Error error = new OAuth2Error("invalid_client_authentication", errorMessage, redirectUrl);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        throw AuthorizationRedirectException.toErrorPage(errorMessage, redirectUrl);
     }
 
     /**

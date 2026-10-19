@@ -29,7 +29,6 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
-import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
@@ -40,6 +39,7 @@ import java.util.Map;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -83,6 +83,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     @Mock private SsoBrowserBindingCookie ssoBrowserBindingCookie;
 
     private CustomAuthorizationRequestConverter converter;
+    private AuthorizationRedirectException thrown;
 
     /** The two request shapes that must behave identically. */
     enum Mode { PLAIN, JAR }
@@ -118,6 +119,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
         // Then
         assertEquals(REUSE_REDIRECT, error.getUri());
+        assertFalse(thrown.isLoginPage());
         verify(authorizationRequestBuildWorkflow).validateScope(SCOPE);
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
         verifyNoInteractions(ssoBrowserBindingCookie);
@@ -218,6 +220,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         // Then
         assertEquals("login_required", error.getErrorCode());
         assertEquals(REDIRECT_URI + "?error=login_required&state=" + STATE, error.getUri());
+        assertFalse(thrown.isLoginPage());
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
     }
 
@@ -425,13 +428,15 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         return error;
     }
 
+    /** Every redirect the converter decides on is the dedicated type the error handler follows. */
     private OAuth2Error convertExpectingError(HttpServletRequest request) {
-        return assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class,
-                () -> converter.convert(request)).getError();
+        thrown = assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
+        return thrown.getError();
     }
 
     private void assertQrRedirect(OAuth2Error error) {
         assertTrue(error.getUri().contains(QR_REDIRECT_MARKER), () -> "expected QR redirect, got " + error.getUri());
+        assertTrue(thrown.isLoginPage());
         verify(ssoBrowserBindingCookie).bindIfSsoEnabled(any());
     }
 }

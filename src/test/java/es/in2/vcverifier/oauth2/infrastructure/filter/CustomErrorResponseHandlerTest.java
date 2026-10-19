@@ -51,12 +51,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://example.com");
         String redirectUri = "https://example.com/login";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -69,12 +64,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://example.com");
         String redirectUri = "https://example.com/error";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "invalid_client_authentication",
-                "Invalid client authentication",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toErrorPage("Invalid client authentication", redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -108,12 +98,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://example.com");
         String untrustedUri = "https://evil.com/phishing";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                untrustedUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(untrustedUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -126,12 +111,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://external-rp.example.com");
         String redirectUri = "https://external-rp.example.com/login?foo=bar";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -144,12 +124,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://legit.example.com");
         String untrustedUri = "https://evil.com/phishing";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                untrustedUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(untrustedUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -161,12 +136,7 @@ class CustomErrorResponseHandlerTest {
     void testOnAuthenticationFailure_WithVerifierOwnOrigin_ShouldRedirect() throws IOException {
         String redirectUri = "https://verifier.example.com/verifier/login?authRequest=openid4vp%3A%2F%2F&state=abc";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -178,12 +148,7 @@ class CustomErrorResponseHandlerTest {
     void testOnAuthenticationFailure_WithVerifierOwnOriginErrorPage_ShouldRedirect() throws IOException {
         String redirectUri = "https://verifier.example.com/verifier/error?errorCode=abc&errorMessage=msg&clientUrl=x&originalRequestURL=y";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "invalid_client_authentication",
-                "Invalid client authentication",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toErrorPage("Invalid client authentication", redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -196,12 +161,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("http://insecure.example.com");
         String httpUri = "http://insecure.example.com/login";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                httpUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(httpUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -215,12 +175,7 @@ class CustomErrorResponseHandlerTest {
                 .thenReturn(Set.of("https://verifier.example.com", "https://kpmg.eudistack.net"));
         String redirectUri = "https://kpmg.eudistack.net/login?state=abc";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -232,12 +187,7 @@ class CustomErrorResponseHandlerTest {
     void testOnAuthenticationFailure_WithVerifierOriginDifferentCaseAndDefaultPort_ShouldRedirect() throws IOException {
         String redirectUri = "https://Verifier.Example.com:443/login?state=abc";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -250,12 +200,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://external-rp.example.com");
         String redirectUri = "https://External-RP.Example.com/login";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -267,12 +212,7 @@ class CustomErrorResponseHandlerTest {
     void testOnAuthenticationFailure_WithUppercaseHttpsScheme_ShouldRedirect() throws IOException {
         String redirectUri = "HTTPS://verifier.example.com/login?state=abc";
 
-        OAuth2Error oauth2Error = new OAuth2Error(
-                "required_external_user_authentication",
-                "Redirection required",
-                redirectUri
-        );
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(oauth2Error, null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
 
@@ -289,8 +229,7 @@ class CustomErrorResponseHandlerTest {
         // Given: the converter bound the login to this browser (SSO tenant)
         String redirectUri = "https://verifier.example.com/login?state=abc";
         when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
-                new OAuth2Error("required_external_user_authentication", "Redirection required", redirectUri), null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         // When
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
@@ -309,8 +248,7 @@ class CustomErrorResponseHandlerTest {
     void onAuthenticationFailure_loginPageRedirectWithoutPendingBinding_emitsNoCookie() throws IOException {
         // Given: SSO-disabled tenant → the converter set no binding
         String redirectUri = "https://verifier.example.com/login?state=abc";
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
-                new OAuth2Error("required_external_user_authentication", "Redirection required", redirectUri), null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         // When
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
@@ -326,8 +264,7 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://client.example.com");
         String redirectUri = "https://client.example.com/callback?error=login_required";
         lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
-                new OAuth2Error("login_required", null, redirectUri), null);
+        AuthenticationException exception = AuthorizationRedirectException.toClient("login_required", null, redirectUri);
 
         // When
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
@@ -342,8 +279,7 @@ class CustomErrorResponseHandlerTest {
         // Given: SEC-S7 open-redirect guard rejects the target
         String redirectUri = "https://evil.example.org/login";
         lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
-                new OAuth2Error("required_external_user_authentication", "Redirection required", redirectUri), null);
+        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
         // When
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
@@ -359,8 +295,8 @@ class CustomErrorResponseHandlerTest {
         allowedClientsOrigins.add("https://client.example.com");
         String redirectUri = "https://client.example.com/callback?error=invalid_request&state=s";
         lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
-        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
-                new OAuth2Error("invalid_request", "client_error_redirect", redirectUri), null);
+        AuthenticationException exception = AuthorizationRedirectException.toClient(
+                "invalid_request", "prompt=none cannot be combined with other values", redirectUri);
 
         // When
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
@@ -371,7 +307,7 @@ class CustomErrorResponseHandlerTest {
     }
 
     @Test
-    void onAuthenticationFailure_unmarkedInvalidRequestToAllowedClient_isNotRedirected() throws IOException {
+    void onAuthenticationFailure_plainExceptionToAllowedClient_isNotRedirected() throws IOException {
         // Given: an invalid_request not produced by the converter, even with an allowlisted uri
         allowedClientsOrigins.add("https://client.example.com");
         AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
@@ -392,6 +328,55 @@ class CustomErrorResponseHandlerTest {
         AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
                 new OAuth2Error("invalid_request", "OAuth 2.0 Parameter: state",
                         "https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1"), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).sendRedirect(anyString());
+        verify(response).sendError(eq(400), anyString());
+    }
+
+    @Test
+    void onAuthenticationFailure_plainExceptionWithRedirectErrorCodeToAllowedClient_isNotRedirected() throws IOException {
+        // Given: a plain exception carrying one of our redirect codes and an allowlisted https uri —
+        // only the dedicated AuthorizationRedirectException type is ever redirected
+        allowedClientsOrigins.add("https://client.example.com");
+        AuthenticationException exception = new OAuth2AuthorizationCodeRequestAuthenticationException(
+                new OAuth2Error("required_external_user_authentication", "Redirection required",
+                        "https://client.example.com/callback"), null);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).sendRedirect(anyString());
+        verify(response).sendError(eq(400), anyString());
+    }
+
+    @Test
+    void onAuthenticationFailure_ssoReuseCodeRedirectWithPendingBinding_emitsNoCookie() throws IOException {
+        // Given: SSO reuse — the code redirect to the RP never carries the login-page binding
+        allowedClientsOrigins.add("https://client.example.com");
+        String redirectUri = "https://client.example.com/callback?code=c&state=s";
+        lenient().when(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).thenReturn(BINDING_VALUE);
+        AuthenticationException exception = AuthorizationRedirectException.toClientWithCode(redirectUri);
+
+        // When
+        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
+
+        // Then
+        verify(response, never()).addHeader(eq("Set-Cookie"), anyString());
+        verify(response).sendRedirect(redirectUri);
+    }
+
+    @Test
+    void onAuthenticationFailure_clientRedirectToUnregisteredOrigin_isBlocked() throws IOException {
+        // Given: the dedicated type is still subject to the origin allowlist (second layer)
+        allowedClientsOrigins.add("https://client.example.com");
+        AuthenticationException exception = AuthorizationRedirectException.toClient(
+                "login_required", "prompt=none: end-user authentication is required",
+                "https://evil.example.org/callback?error=login_required");
 
         // When
         customErrorResponseHandler.onAuthenticationFailure(request, response, exception);

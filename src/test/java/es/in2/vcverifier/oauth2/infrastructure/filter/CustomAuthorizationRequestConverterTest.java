@@ -145,7 +145,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // Act & Assert
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -197,7 +197,7 @@ class CustomAuthorizationRequestConverterTest {
                 .thenReturn(workflowResult);
 
         // Act
-        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Assert
         verify(authorizationRequestBuildWorkflow).buildAuthorizationRequest(registeredClient, scope, state, "issuer_access");
@@ -242,7 +242,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // Act & Assert
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -293,7 +293,7 @@ class CustomAuthorizationRequestConverterTest {
         when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(jwtRedirectUri);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -359,7 +359,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -427,7 +427,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -528,7 +528,7 @@ class CustomAuthorizationRequestConverterTest {
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(mockHttpResponse);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -569,7 +569,7 @@ class CustomAuthorizationRequestConverterTest {
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenThrow(new IOException("Simulated IO Exception"));
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -619,7 +619,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -667,7 +667,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -733,7 +733,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: one atomic entry carries request, OID4VP nonce and /authorize tenant
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -752,7 +752,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: verifier error page (never the login page), and no replacement
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
@@ -771,7 +771,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: login page as usual, with the new request (and its nonce) replacing the old one
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -790,7 +790,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When / Then
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
     }
 
@@ -803,7 +803,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When / Then
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
         verify(cacheStoreForOAuth2AuthorizationRequest, never()).replace(anyString(), any(), any());
     }
@@ -817,7 +817,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When / Then
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
         verify(cacheStoreForOAuth2AuthorizationRequest, never()).replace(anyString(), any(), any());
     }
@@ -847,7 +847,7 @@ class CustomAuthorizationRequestConverterTest {
                         "https://client.example.com/callback?code=c&state=s"));
 
         // When
-        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: the RP redirect never carries the login-page browser-binding cookie
         verifyNoInteractions(ssoBrowserBindingCookie);
@@ -892,7 +892,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -948,7 +948,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1001,7 +1001,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1056,7 +1056,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1110,7 +1110,7 @@ class CustomAuthorizationRequestConverterTest {
         when(jwtService.parseJWT(jwt)).thenReturn(signedJWT);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1158,7 +1158,7 @@ class CustomAuthorizationRequestConverterTest {
                 "signed-jwt", "openid4vp://...", "nonce-max-age-valid");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
-        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
     }
 
     @Test
@@ -1202,7 +1202,7 @@ class CustomAuthorizationRequestConverterTest {
                     "signed-jwt", "openid4vp://...", "nonce-max-age-negative");
             when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+            assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
             assertTrue(appender.list.stream().anyMatch(event ->
                     event.getFormattedMessage().equals("event=sso_max_age_invalid reason=negative value=-5")));
@@ -1255,7 +1255,7 @@ class CustomAuthorizationRequestConverterTest {
                     "signed-jwt", "openid4vp://...", "nonce-max-age-overflow");
             when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+            assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
             assertTrue(appender.list.stream().anyMatch(event ->
                     event.getFormattedMessage().equals(
@@ -1310,7 +1310,7 @@ class CustomAuthorizationRequestConverterTest {
                     "signed-jwt", "openid4vp://...", "nonce-max-age-crlf");
             when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+            assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
             assertTrue(appender.list.stream().anyMatch(event -> {
                 String message = event.getFormattedMessage();
