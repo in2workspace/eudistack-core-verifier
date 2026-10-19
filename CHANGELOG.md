@@ -38,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EUD-149 — AC-05: `reason=client_not_eligible` on catalog-reject SSO audit event**: `ReuseSsoSessionWorkflowImpl`'s `REJECT_CATALOG` branch now sets `reason="client_not_eligible"` on the published `SsoAuditEvent` (previously only `outcome=CATALOG_REJECTED` distinguished the cause internally; `SsoAuditAdapter` already emitted `reason` when set, so this was a producer-side gap). Test: `ReuseSsoSessionIT.should_return_interaction_required_when_client_not_eligible` now asserts `outcome` and `reason` in addition to `eventType`.
 - **EUD-149 — reverted a Flyway `table` default from `application.yaml`**: a prior local-verification commit set `spring.flyway.table: flyway_schema_history_verifier` here to resolve a `public.flyway_schema_history` collision with `eudistack-core-wallet-ebw` — but that collision only happens in local Docker Compose (shared `POSTGRES_DB`/`public` schema). STG/DEV already isolate Flyway migrations in the `verifier` schema (`SPRING_FLYWAY_DEFAULT_SCHEMA=verifier` via IAC), with history in `verifier.flyway_schema_history`; shipping the renamed table as an app default would have pointed Flyway at an empty table, baselined at `0`, and reapplied `V1..V8` onto objects that already exist, failing the Verifier at startup. The override now lives only in `eudistack-platform-dev/compose.yaml` (`SPRING_FLYWAY_TABLE`, PR #154) as a local-only env var — see [in2workspace/eudistack-platform-dev#154](https://github.com/in2workspace/eudistack-platform-dev/pull/154).
 
+### Known issues
+
+Pre-existing, not introduced by this release, but more exposed now that SSO reuse is the default without `prompt`. Tracked in `eudistack-platform-dev` `docs/_shared/reference/tech-debt-register.md`:
+
+- **TDG-50 (high) — the ID Token `sid` claim is the SSO session cookie value**: any OIDC client of the tenant receives in the `id_token` (and in the back-channel `logout_token`) a value it can replay as `__Secure-sso-<tenant>` to reuse the user's session while it is alive. Present since US-06 / ADR-109. Planned fix: a separate random cookie secret, stored hashed, with `sid` kept as the session id. Needs its own Security Review ticket.
+- **TDG-48 (high) — SSO reuse does not re-check the attestation's validity or revocation status (EUD-300 FR-04)**: a credential revoked or expired after the QR login keeps working through SSO until the session expires (up to 24 h).
+- **TDG-49 (low) — request objects (JAR) are only signature-checked**: `exp`, `aud`, `iss` and `jti` are not validated, and `state`, `nonce` and PKCE are taken from the query instead of the signed claims.
+
 ## [3.3.8] - 2026-10-05
 
 ### Fixed
