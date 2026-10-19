@@ -651,6 +651,26 @@ class AuthorizationResponseProcessorServiceImplTest {
         verify(cacheStoreForAuthorizationCodeData).delete("gone");
     }
 
+    @Test
+    void issueCodeForReusedSession_redirectUriThatCannotCarryAResponse_failsWithoutSavingOrCachingACode() {
+        // Given: a registered redirect_uri no authorization response can be built on (non-ASCII)
+        String redirectUri = "https://client.example.com/café";
+        when(registeredClientRepository.findByClientId("client-id")).thenReturn(RegisteredClient.withId("client-id")
+                .clientId("client-id")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(redirectUri)
+                .build());
+
+        // When
+        assertThrows(IllegalArgumentException.class, () -> authorizationResponseProcessorService.issueCodeForReusedSession(
+                "client-id", redirectUri, java.util.Set.of("openid"), "state-1", null, null, null,
+                new ObjectMapper().createObjectNode(), Instant.now(), "https://tenant-a.example.com/verifier"));
+
+        // Then: no orphan code left behind
+        verify(oAuth2AuthorizationService, never()).save(any());
+        verify(cacheStoreForAuthorizationCodeData, never()).add(any(), any());
+    }
+
     // ---- EUD-252 (F1): the wallet must answer through the tenant the login started on ----
 
     private OAuth2AuthorizationRequest tenantBoundRequest(String state, String nonce, String tenant) {

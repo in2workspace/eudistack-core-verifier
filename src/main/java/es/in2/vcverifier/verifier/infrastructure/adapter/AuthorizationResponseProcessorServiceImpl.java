@@ -365,9 +365,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     }
 
     /**
-     * Generates a fresh authorization code, registers the {@link OAuth2Authorization} (needed at
-     * the token endpoint), caches the {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow}
-     * to read the credential claims from, and builds the {@code redirectUri?code=...&state=...&iss=...} URL.
+     * Generates a fresh authorization code, builds the {@code redirectUri?code=...&state=...&iss=...} URL,
+     * then registers the {@link OAuth2Authorization} (needed at the token endpoint) and caches the
+     * {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow} to read the credential claims from.
      * Shared by the VP-validated establishment path ({@link #handleAuthResponse}) and the SSO-reuse
      * path ({@link #issueCodeForReusedSession}) — the only difference between them is where
      * {@code credentialJson} comes from (freshly verified VP vs. cached establishment snapshot).
@@ -385,6 +385,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         // SEC-S9: Authorization codes must not be logged in full.
         String code = UUID.randomUUID().toString();
+        // Built before anything is saved or cached: a redirect_uri it cannot be built on
+        // (IllegalArgumentException) must not leave an orphan authorization code behind.
+        String redirectUrl = AuthorizationResponseUri.success(redirectUri, code, state, issuance.issuer());
         log.info("Authorization code generated: {}...", code.substring(0, 8));
 
         Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
@@ -451,7 +454,6 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 
-        String redirectUrl = AuthorizationResponseUri.success(redirectUri, code, state, issuance.issuer());
         return new IssuedCode(code, redirectUrl);
     }
 

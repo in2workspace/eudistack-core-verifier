@@ -117,5 +117,23 @@ class AuthorizationResponseUriTest {
     void success_redirectUriThatCannotCarryAResponse_throwsIllegalArgumentException(String redirectUri) {
         assertThatThrownBy(() -> AuthorizationResponseUri.success(redirectUri, "c-1", "st", ISSUER))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThat(AuthorizationResponseUri.isUsable(redirectUri)).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "https://rp.example.com/cb",
+            "https://rp.example.com/cb?tenant=a&next=%2Fhome%3Fx%3D1",
+            "https://rp.example.com:8443/c%20b#section",
+            "http://127.0.0.1:4200/callback",
+            "com.example.app:/oauth2redirect"
+    })
+    void isUsable_redirectUriAResponseCanBeBuiltOn_isTrue(String redirectUri) {
+        assertThat(AuthorizationResponseUri.isUsable(redirectUri)).isTrue();
+    }
+
+    @Test
+    void isUsable_null_isFalse() {
+        assertThat(AuthorizationResponseUri.isUsable(null)).isFalse();
     }
 }

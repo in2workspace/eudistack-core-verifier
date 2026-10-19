@@ -544,6 +544,14 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             throwInvalidClientAuthenticationException("The redirect_uri does not match any of the registered client's redirect_uris.",
                     registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }
+        // Every authorization response (code, or an OIDC error) is built on this redirect_uri. One it
+        // cannot be built on fails here, on the Verifier error page, before SSO reuse, caching or the
+        // QR flow — not after the wallet POST has consumed the pending login (500, lost login).
+        if (!AuthorizationResponseUri.isUsable(jwtRedirectUri)) {
+            log.warn("event=authorize_redirect_uri_malformed clientId={}", registeredClient.getClientId());
+            throwInvalidClientAuthenticationException("The redirect_uri cannot carry an authorization response.",
+                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
+        }
     }
 
     private void validateNonceRequired(String clientNonce, RegisteredClient registeredClient,

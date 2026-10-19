@@ -377,6 +377,50 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         verifyNoInteractions(reuseSsoSessionWorkflow);
     }
 
+    static Stream<Arguments> unusableRegisteredRedirectUris() {
+        // Accepted by RegisteredClient (a java.net.URI without fragment), but no authorization
+        // response can be built on them.
+        return Stream.of(Mode.values()).flatMap(mode -> Stream.of(
+                Arguments.of(mode, "https://client.example.com/café"),
+                Arguments.of(mode, "https://client.example.com/callback?x=[1]")));
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("unusableRegisteredRedirectUris")
+    void convert_registeredRedirectUriThatCannotCarryAResponse_failsOnTheVerifierErrorPageBeforeReuse(
+            Mode mode, String redirectUri) {
+        // Given: plain → query redirect_uri; JAR → request-object redirect_uri; both registered as-is
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
+                .clientId(CLIENT_ID)
+                .clientName("Client A")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(redirectUri)
+                .build());
+        HttpServletRequest request = request(mode, null, null, redirectUri);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        OAuth2Error error;
+        try {
+            // When
+            error = convertExpectingError(request);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        // Then: Verifier error page, never a redirect to that URI; nothing reused, cached or built
+        assertEquals("invalid_client_authentication", error.getErrorCode());
+        assertTrue(error.getUri().startsWith("https://verifier.example.com/error?"));
+        assertFalse(thrown.isLoginPage());
+        verifyNoInteractions(reuseSsoSessionWorkflow, cacheStore, ssoBrowserBindingCookie);
+        verify(authorizationRequestBuildWorkflow, never()).validateScope(any());
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+        assertTrue(appender.list.stream().anyMatch(event -> event.getLevel() == Level.WARN
+                && event.getFormattedMessage().equals("event=authorize_redirect_uri_malformed clientId=" + CLIENT_ID)));
+    }
+
     @ParameterizedTest
     @EnumSource(Mode.class)
     void convert_unsupportedScopeWithValidSession_isRejectedBeforeReuse(Mode mode) {

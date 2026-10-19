@@ -23,8 +23,8 @@ import java.util.regex.Pattern;
  * used at {@code /oidc/authorize}, so the client can detect a mix-up between authorization servers.
  *
  * <p>A {@code redirect_uri} that is not a valid, ASCII-only, hierarchical URI reference (e.g. with an
- * unencoded space, '{' or '|') cannot carry a response: the builders throw
- * {@link IllegalArgumentException}.
+ * unencoded space, '{' or '|') cannot carry a response: {@link #isUsable(String)} tells
+ * it in advance (no side effects) and the builders throw {@link IllegalArgumentException}.
  *
  * <p>JDK only (domain package). Output normalisation, identical to the former
  * {@code UriComponentsBuilder}-based version: scheme lower-cased, empty port and empty path segments
@@ -64,6 +64,16 @@ public final class AuthorizationResponseUri {
         response.addParam(STATE, state);
         response.addParam(ISS, issuer);
         return response.toUriString();
+    }
+
+    /** Whether an authorization response can be built on {@code redirectUri}. No side effects. */
+    public static boolean isUsable(String redirectUri) {
+        try {
+            Response.to(redirectUri);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     /**
