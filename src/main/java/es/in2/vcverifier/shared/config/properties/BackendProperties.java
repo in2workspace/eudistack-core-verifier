@@ -14,6 +14,7 @@ import java.util.List;
 public record BackendProperties(
         @NotBlank @URL String url,
         List<@URL String> additionalUrls,
+        @URL String requestUriBase,
         Identity identity,
         @Valid List<TrustFramework> trustFrameworks,
         LocalFiles localFiles,

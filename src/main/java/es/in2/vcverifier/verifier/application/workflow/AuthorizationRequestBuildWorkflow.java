@@ -17,12 +17,14 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.stereotype.Service;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+import java.nio.charset.StandardCharsets;
+
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_REQUEST_ENDPOINT;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_RESPONSE_ENDPOINT;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIENT_METADATA;
@@ -42,6 +44,13 @@ public class AuthorizationRequestBuildWorkflow {
      * OID4VP §5.8: static Self-Issued OP v2 discovery audience.
      */
     private static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
+
+    private static final int REQUEST_ID_BYTES = 9;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private static final String QUERY_SAFE =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?@!$'()*,;";
 
     private final JWTService jwtService;
     private final CryptoComponent cryptoComponent;
@@ -83,8 +92,8 @@ public class AuthorizationRequestBuildWorkflow {
         String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery, registeredClient);
         String signedJwt = jwtService.issueJWTwithOI4VPType(jwtPayload);
 
-        // Cache the auth request JWT keyed by a new nonce for the QR
-        String qrNonce = UUID.randomUUID().toString();
+        // Cache the auth request JWT keyed by a new id for the QR
+        String qrNonce = generateRequestId();
         cacheStoreForAuthorizationRequestJWT.add(
                 qrNonce,
                 AuthorizationRequestJWT.builder().authRequest(signedJwt).build()
@@ -147,11 +156,30 @@ public class AuthorizationRequestBuildWorkflow {
         return ClientMetadata.defaultMetadata();
     }
 
-    private String generateOpenId4VpUrl(String nonce) {
-        String requestUri = String.format("%s/oid4vp/auth-request/%s",
-                backendConfig.getUrl(), nonce);
+    private String generateRequestId() {
+        byte[] bytes = new byte[REQUEST_ID_BYTES];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String generateOpenId4VpUrl(String requestId) {
+        String requestUri = String.format("%s%s%s",
+                backendConfig.getRequestUriBase(), AUTHORIZATION_REQUEST_ENDPOINT, requestId);
         return String.format("openid4vp://?client_id=%s&request_uri=%s",
-                URLEncoder.encode(cryptoComponent.getClientId(), StandardCharsets.UTF_8),
-                URLEncoder.encode(requestUri, StandardCharsets.UTF_8));
+                encodeQueryValue(cryptoComponent.getClientId()),
+                encodeQueryValue(requestUri));
+    }
+
+    private static String encodeQueryValue(String value) {
+        StringBuilder encoded = new StringBuilder(value.length());
+        for (byte b : value.getBytes(StandardCharsets.UTF_8)) {
+            char c = (char) (b & 0xFF);
+            if (QUERY_SAFE.indexOf(c) >= 0) {
+                encoded.append(c);
+            } else {
+                encoded.append('%').append(String.format("%02X", b & 0xFF));
+            }
+        }
+        return encoded.toString();
     }
 }
