@@ -53,6 +53,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
@@ -185,7 +186,7 @@ class CrossDeviceSsoLoginIT {
                     cached.getClientId(), cached.getRedirectUri(), cached.getScopes(), state,
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
-                    null, credentialJson, null);
+                    null, credentialJson, null, cached.getAuthorizationUri());
             String code = codeFrom(redirectUrl);
             issuedCodes.put(state, code);
             return new AuthResponseResult(credentialJson, redirectUrl, cached.getRedirectUri(), state,
@@ -290,6 +291,8 @@ class CrossDeviceSsoLoginIT {
         // Given: the victim's browser starts the login and the wallet presents
         String state = "xd-hijack-" + UUID.randomUUID();
         authorizeInBrowser(state);
+        // RFC 9207 iss of the error response: the /authorize issuer, cached with the login
+        String cachedIssuer = cacheStoreForOAuth2AuthorizationRequest.get(state).getAuthorizationUri();
         walletPost(state);
         String closeUrl = sseUrlFor(state);
         String issuedCode = issuedCodes.get(state);
@@ -298,8 +301,9 @@ class CrossDeviceSsoLoginIT {
         browserClose(closeUrl, attackerCookie)
                 // Then: OAuth error back to the registered redirect_uri, no code, no SSO cookie
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location",
-                        REDIRECT_URI + "?error=access_denied&state=" + state))
+                .andExpect(header().string("Location", REDIRECT_URI + "?error=access_denied"
+                        + "&error_description=the+login+cannot+be+completed+in+this+browser&state=" + state
+                        + "&iss=" + URLEncoder.encode(cachedIssuer, StandardCharsets.UTF_8)))
                 .andExpect(cookie().doesNotExist(SSO_COOKIE));
 
         // ... the code is invalidated: gone from both stores read by the token endpoint

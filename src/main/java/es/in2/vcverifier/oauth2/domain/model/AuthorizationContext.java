@@ -23,6 +23,11 @@ public record AuthorizationContext(
          * {@code access_profile} of the request: names a named restriction applied on top of the
          * scope's DCQL query (e.g. {@code issuer_access}). {@code null} when absent.
          */
-        String accessProfile
+        String accessProfile,
+        /**
+         * Issuer the discovery document advertises for the host of this {@code /oidc/authorize}
+         * request; sent as {@code iss} in every authorization response (RFC 9207).
+         */
+        String issuer
 ) {
 }

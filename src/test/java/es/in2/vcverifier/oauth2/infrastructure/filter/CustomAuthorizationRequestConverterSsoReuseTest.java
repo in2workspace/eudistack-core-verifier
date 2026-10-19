@@ -15,6 +15,7 @@ import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +32,8 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequ
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContext;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
 
 import java.net.http.HttpClient;
 import java.security.PublicKey;
@@ -70,6 +73,14 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     private static final String JWT = "request-object";
     private static final String REUSE_REDIRECT = REDIRECT_URI + "?code=c&state=" + STATE;
     private static final String QR_REDIRECT_MARKER = "/login?authRequest=";
+    /** RFC 9207 iss: no server context bound here, so the request-derived BackendConfig URL. */
+    private static final String ISS_PARAM = "&iss=https%3A%2F%2Fverifier.example.com";
+    private static final String LOGIN_REQUIRED_REDIRECT = REDIRECT_URI + "?error=login_required"
+            + "&error_description=prompt%3Dnone%3A+end-user+authentication+is+required&state=" + STATE + ISS_PARAM;
+    private static final String INTERACTION_REQUIRED_REDIRECT = REDIRECT_URI + "?error=interaction_required"
+            + "&error_description=prompt%3Dnone%3A+end-user+interaction+is+required&state=" + STATE + ISS_PARAM;
+    private static final String NONE_COMBINED_REDIRECT = REDIRECT_URI + "?error=invalid_request"
+            + "&error_description=prompt%3Dnone+cannot+be+combined+with+other+values&state=" + STATE + ISS_PARAM;
 
     @Mock private DIDService didService;
     @Mock private JWTService jwtService;
@@ -87,6 +98,11 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
     /** The two request shapes that must behave identically. */
     enum Mode { PLAIN, JAR }
+
+    @AfterEach
+    void clearAuthorizationServerContext() {
+        AuthorizationServerContextHolder.resetContext();
+    }
 
     @BeforeEach
     void setUp() {
@@ -219,7 +235,8 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
         // Then
         assertEquals("login_required", error.getErrorCode());
-        assertEquals(REDIRECT_URI + "?error=login_required&state=" + STATE, error.getUri());
+        assertEquals(LOGIN_REQUIRED_REDIRECT, error.getUri());
+        assertEquals("prompt=none: end-user authentication is required", error.getDescription());
         assertFalse(thrown.isLoginPage());
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
     }
@@ -236,7 +253,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
         // Then
         assertEquals("interaction_required", error.getErrorCode());
-        assertEquals(REDIRECT_URI + "?error=interaction_required&state=" + STATE, error.getUri());
+        assertEquals(INTERACTION_REQUIRED_REDIRECT, error.getUri());
     }
 
     @ParameterizedTest
@@ -251,6 +268,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
         // Then
         assertEquals("login_required", error.getErrorCode());
+        assertEquals(LOGIN_REQUIRED_REDIRECT, error.getUri());
         verifyNoInteractions(reuseSsoSessionWorkflow);
     }
 
@@ -280,7 +298,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
         // Then
         assertEquals("invalid_request", error.getErrorCode());
-        assertEquals(REDIRECT_URI + "?error=invalid_request&state=" + STATE, error.getUri());
+        assertEquals(NONE_COMBINED_REDIRECT, error.getUri());
         verifyNoInteractions(reuseSsoSessionWorkflow);
     }
 
@@ -360,6 +378,64 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         assertEquals(REDIRECT_URI, ctx.redirectUri());
     }
 
+    // ---- authorization response shape (RFC 6749 §3.1.2 / RFC 9207) ----
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_errorToRedirectUriWithQuery_keepsItsQueryAndAddsTheResponseParams(Mode mode) {
+        // Given: the registered redirect_uri has its own query
+        String redirectUriWithQuery = REDIRECT_URI + "?tenant=a&x=1%202";
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
+                .clientId(CLIENT_ID)
+                .clientName("Client A")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(redirectUriWithQuery)
+                .build());
+        HttpServletRequest request = request(mode, "none", null, redirectUriWithQuery);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then: one well-formed query, the client's parameters untouched
+        assertEquals(redirectUriWithQuery + "&error=login_required"
+                + "&error_description=prompt%3Dnone%3A+end-user+authentication+is+required&state=" + STATE + ISS_PARAM,
+                error.getUri());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_withAuthorizationServerContext_usesItsIssuerAsIss(Mode mode) {
+        // Given: the issuer Spring Authorization Server resolved for this host (= discovery issuer)
+        AuthorizationServerContext context = mock(AuthorizationServerContext.class);
+        when(context.getIssuer()).thenReturn("https://tenant-a.example.com/verifier");
+        AuthorizationServerContextHolder.setContext(context);
+        HttpServletRequest request = request(mode, "none", null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.INTERACTION_REQUIRED);
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then: on the error response and on the context the reuse code is issued with
+        assertTrue(error.getUri().endsWith("&iss=https%3A%2F%2Ftenant-a.example.com%2Fverifier"), error.getUri());
+        assertEquals("https://tenant-a.example.com/verifier", capturedReuseContext().issuer());
+    }
+
+    @Test
+    void convert_qrFlow_cachesTheIssuerWithTheRequest() {
+        // Given: the code and abort responses of the QR flow read iss from the cached request
+        HttpServletRequest request = request(Mode.PLAIN, "login", null);
+        when(cacheStore.putIfAbsent(eq(STATE), any())).thenReturn(null);
+
+        // When
+        convertExpectingRedirect(request);
+
+        // Then
+        ArgumentCaptor<OAuth2AuthorizationRequest> cached = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
+        verify(cacheStore).putIfAbsent(eq(STATE), cached.capture());
+        assertEquals("https://verifier.example.com", cached.getValue().getAuthorizationUri());
+    }
+
     // ---- helpers ----
 
     /**
@@ -367,6 +443,10 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
      * {@code max_age} go into the request-object claims; in PLAIN mode into the query.
      */
     private HttpServletRequest request(Mode mode, String prompt, Long maxAge) {
+        return request(mode, prompt, maxAge, REDIRECT_URI);
+    }
+
+    private HttpServletRequest request(Mode mode, String prompt, Long maxAge, String redirectUri) {
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURL()).thenReturn(new StringBuffer("https://verifier.example.com/oidc/authorize"));
         when(request.getHeader("X-Forwarded-Host")).thenReturn("verifier.example.com");
@@ -374,7 +454,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(CLIENT_ID);
         when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(STATE);
         when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(SCOPE);
-        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(REDIRECT_URI);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
         when(request.getParameter(REQUEST_URI)).thenReturn(null);
         when(request.getAttribute(TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn(TENANT);
         when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("__Secure-sso-" + TENANT, SESSION_ID)});
@@ -390,7 +470,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         Map<String, Object> claims = new HashMap<>();
         claims.put(OAuth2ParameterNames.CLIENT_ID, CLIENT_ID);
         claims.put(OAuth2ParameterNames.SCOPE, SCOPE);
-        claims.put(OAuth2ParameterNames.REDIRECT_URI, REDIRECT_URI);
+        claims.put(OAuth2ParameterNames.REDIRECT_URI, redirectUri);
         if (prompt != null) {
             claims.put("prompt", prompt);
         }

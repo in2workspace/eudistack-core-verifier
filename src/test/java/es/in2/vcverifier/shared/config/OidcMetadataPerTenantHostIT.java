@@ -104,6 +104,23 @@ class OidcMetadataPerTenantHostIT {
                         .value(base + "/oidc/logout"));
     }
 
+    @Test
+    @DisplayName("RFC 9207: las respuestas de autorización llevan iss — anunciado en la metadata OIDC y OAuth 2.0.")
+    void shouldAdvertiseAuthorizationResponseIssParameter() throws Exception {
+        mockMvc.perform(get("/.well-known/openid-configuration")
+                        .header("X-Forwarded-Host", "idp.tenant-a.com")
+                        .header("X-Forwarded-Proto", "https"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.authorization_response_iss_parameter_supported").value(true));
+
+        mockMvc.perform(get("/.well-known/oauth-authorization-server")
+                        .header("X-Forwarded-Host", "idp.tenant-a.com")
+                        .header("X-Forwarded-Proto", "https"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issuer").value("https://idp.tenant-a.com"))
+                .andExpect(jsonPath("$.authorization_response_iss_parameter_supported").value(true));
+    }
+
 
     @Test
     @DisplayName("Con el host legacy de eudistack → el issuer sigue siendo el de eudistack, sin regresión.")

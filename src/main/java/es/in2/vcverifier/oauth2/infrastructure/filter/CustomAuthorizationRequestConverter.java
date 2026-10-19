@@ -4,6 +4,7 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
@@ -28,6 +29,8 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContext;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
 import org.springframework.security.web.authentication.AuthenticationConverter;
 
 import java.io.IOException;
@@ -64,6 +67,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final String MAX_AGE_PARAMETER = "max_age";
     private static final String PROMPT_PARAMETER = "prompt";
     private static final String ACCESS_PROFILE_PARAMETER = "access_profile";
+    private static final String PROMPT_NONE_COMBINED_DESCRIPTION = "prompt=none cannot be combined with other values";
+    private static final String LOGIN_REQUIRED_DESCRIPTION = "prompt=none: end-user authentication is required";
+    private static final String INTERACTION_REQUIRED_DESCRIPTION = "prompt=none: end-user interaction is required";
 
     private final DIDService didService;
     private final JWTService jwtService;
@@ -107,6 +113,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .contextPath(contextPath)
                 .maxAge(parseMaxAge(request.getParameter(MAX_AGE_PARAMETER)))
                 .accessProfile(request.getParameter(ACCESS_PROFILE_PARAMETER))
+                .issuer(resolveIssuer())
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
@@ -123,6 +130,17 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         // Case 2: FAPI authorization request with a signed JWT object
         return handleFAPIRequest(authorizationContext, request, registeredClient);
+    }
+
+    /**
+     * RFC 9207 {@code iss}: the issuer Spring Authorization Server resolved for this request, i.e. the
+     * one its discovery document advertises for this host (no issuer is configured, it is derived
+     * from the request). {@link BackendConfig#getUrl()} derives the same
+     * {@code scheme://host[:port]/context-path} and only serves when no server context is bound.
+     */
+    private String resolveIssuer() {
+        AuthorizationServerContext context = AuthorizationServerContextHolder.getContext();
+        return context != null && context.getIssuer() != null ? context.getIssuer() : backendConfig.getUrl();
     }
 
     /** Tenant resolved at /authorize + browser binding (null when the tenant has no SSO). */
@@ -155,7 +173,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String clientId = registeredClient.getClientId();
         if (prompt.isInvalidNoneCombination()) {
             log.warn("event=authorize_prompt_invalid clientId={} reason=none_combined_with_other_values", clientId);
-            throwOidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, ctx);
+            throwOidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, PROMPT_NONE_COMBINED_DESCRIPTION, ctx);
         }
         if (prompt.requiresLogin()) {
             log.debug("event=sso_reuse_skipped clientId={} reason=prompt_login", clientId);
@@ -164,7 +182,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
             if (prompt.isNone()) {
-                throwOidcErrorRedirect(LOGIN_REQUIRED, ctx);
+                throwOidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
             }
             return;
         }
@@ -180,8 +198,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             throwSsoReuseRedirect(result.redirectUrl());
         }
         if (prompt.isNone()) {
-            throwOidcErrorRedirect(status == ReuseSsoSessionWorkflow.Result.Status.INTERACTION_REQUIRED
-                    ? INTERACTION_REQUIRED : LOGIN_REQUIRED, ctx);
+            if (status == ReuseSsoSessionWorkflow.Result.Status.INTERACTION_REQUIRED) {
+                throwOidcErrorRedirect(INTERACTION_REQUIRED, INTERACTION_REQUIRED_DESCRIPTION, ctx);
+            }
+            throwOidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
         }
         log.debug("event=sso_reuse_skipped tenant={} clientId={} reason={}", tenant, clientId,
                 status != null ? status : "reuse_failed");
@@ -227,12 +247,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     }
 
     /** OIDC error response to the client; {@code ctx.redirectUri()} must already be validated against the client. */
-    private void throwOidcErrorRedirect(String errorCode, AuthorizationContext ctx) {
-        String location = ctx.redirectUri() + "?error=" + errorCode
-                + (ctx.state() != null && !ctx.state().isBlank()
-                   ? "&state=" + URLEncoder.encode(ctx.state(), StandardCharsets.UTF_8)
-                   : "");
-        throw AuthorizationRedirectException.toClient(errorCode, null, location);
+    private void throwOidcErrorRedirect(String errorCode, String errorDescription, AuthorizationContext ctx) {
+        String location = AuthorizationResponseUri.error(ctx.redirectUri(), errorCode, errorDescription,
+                ctx.state(), ctx.issuer());
+        throw AuthorizationRedirectException.toClient(errorCode, errorDescription, location);
     }
 
     /**
@@ -505,7 +523,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .clientId(registeredClient.getClientId())
                 .redirectUri(redirectUri)
                 .scope(authorizationContext.scope())
-                .authorizationUri(backendConfig.getUrl());
+                // The /authorize issuer (RFC 9207 iss of the code/abort responses), which is also the
+                // scheme://host/context-path base of the login completion URL.
+                .authorizationUri(authorizationContext.issuer());
 
         Map<String, Object> additionalParameters = new HashMap<>();
         additionalParameters.put(EXPIRATION, Instant.now().plusSeconds(loginTimeoutSeconds).getEpochSecond());

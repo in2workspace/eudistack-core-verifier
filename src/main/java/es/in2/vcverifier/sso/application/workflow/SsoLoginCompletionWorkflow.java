@@ -3,6 +3,7 @@ package es.in2.vcverifier.sso.application.workflow;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.sso.domain.model.PendingSsoLogin;
@@ -12,9 +13,9 @@ import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
 
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -46,6 +47,8 @@ public class SsoLoginCompletionWorkflow {
     static final String REASON_NO_USABLE_SUBJECT = "no_usable_subject";
     static final String REASON_SSO_CONFIG_UNAVAILABLE = "sso_config_unavailable";
     static final String REASON_LOGIN_COMPLETION_UNAVAILABLE = "login_completion_unavailable";
+
+    private static final String LOGIN_COMPLETION_REJECTED_DESCRIPTION = "the login cannot be completed in this browser";
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -114,7 +117,8 @@ public class SsoLoginCompletionWorkflow {
         try {
             handle = registerPendingLogin(new PendingSsoLogin(
                     tenant, subject, result.clientId(), result.credentialJson(), result.redirectUrl(),
-                    result.redirectUri(), result.state(), bindingHash, result.authorizationCode(), ssoEligible));
+                    result.redirectUri(), result.state(), bindingHash, result.authorizationCode(), ssoEligible,
+                    baseUrl)); // the base URL is the /authorize issuer (RFC 9207 iss)
         } catch (RuntimeException e) {
             log.error("event=login_completion_register_failed tenant={} error={}", tenant, e.getClass().getSimpleName());
             throw failClosed(tenant, result, correlationId);
@@ -230,13 +234,8 @@ public class SsoLoginCompletionWorkflow {
 
     /** RFC 6749 §4.1.2.1 error response to the client's registered redirect_uri — no open redirect. */
     private String accessDeniedRedirect(PendingSsoLogin pending) {
-        String redirectUri = pending.redirectUri();
-        String separator = redirectUri.contains("?") ? "&" : "?";
-        String location = redirectUri + separator + "error=access_denied";
-        if (pending.state() != null && !pending.state().isBlank()) {
-            location += "&state=" + URLEncoder.encode(pending.state(), StandardCharsets.UTF_8);
-        }
-        return location;
+        return AuthorizationResponseUri.error(pending.redirectUri(), OAuth2ErrorCodes.ACCESS_DENIED,
+                LOGIN_COMPLETION_REJECTED_DESCRIPTION, pending.state(), pending.issuer());
     }
 
     /** Result of {@link #complete}. */

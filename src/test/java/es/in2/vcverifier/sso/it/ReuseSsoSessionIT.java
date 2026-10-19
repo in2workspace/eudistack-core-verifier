@@ -45,6 +45,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -208,7 +210,10 @@ class ReuseSsoSessionIT {
                         .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "none"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("code=")));
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("code=")))
+                // RFC 9207: iss is exactly the issuer the discovery document advertises for this host
+                .andExpect(header().string("Location", org.hamcrest.Matchers.endsWith(
+                        "&state=xyz&iss=" + URLEncoder.encode(discoveryIssuer(), StandardCharsets.UTF_8))));
 
         verify(sessionRepository, atLeastOnce())
                 .findActiveById(any(SsoSessionId.class), anyString());
@@ -281,7 +286,9 @@ class ReuseSsoSessionIT {
                         .cookie(new Cookie(COOKIE_NAME, sessionId))
                         .param("prompt", "none login"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", REDIRECT_URI + "?error=invalid_request&state=xyz"));
+                .andExpect(header().string("Location", REDIRECT_URI + "?error=invalid_request"
+                        + "&error_description=prompt%3Dnone+cannot+be+combined+with+other+values&state=xyz"
+                        + "&iss=" + URLEncoder.encode(discoveryIssuer(), StandardCharsets.UTF_8)));
 
         verify(sessionRepository, never()).findActiveById(any(), any());
     }
@@ -569,6 +576,18 @@ class ReuseSsoSessionIT {
      */
     private MockHttpServletRequestBuilder baseRequestWithFreshState() {
         return baseRequest(UUID.randomUUID().toString());
+    }
+
+    /** Issuer advertised by the discovery document for the host baseRequest() uses. */
+    private String discoveryIssuer() throws Exception {
+        String body = mockMvc.perform(get("/.well-known/openid-configuration")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String issuer = objectMapper.readTree(body).get("issuer").asText();
+        assertThat(issuer).isNotBlank();
+        return issuer;
     }
 
     private MockHttpServletRequestBuilder baseRequest(String state) {

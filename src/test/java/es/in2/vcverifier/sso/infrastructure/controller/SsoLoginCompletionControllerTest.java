@@ -125,7 +125,7 @@ class SsoLoginCompletionControllerTest {
         when(bindingCookie.readValue(request)).thenReturn(Optional.of("bv"));
         when(workflow.complete("h", "bv", "tenant-a")).thenReturn(new SsoLoginCompletionWorkflow.Outcome.Completed(
                 new PendingSsoLogin("tenant-a", null, "client-a", null, RP_URL,
-                        "https://rp.example.com/cb", "st", "hash", "c", false)));
+                        "https://rp.example.com/cb", "st", "hash", "c", false, "https://verifier.example.com")));
 
         // When
         controller.complete("h", request, response);
@@ -137,6 +137,6 @@ class SsoLoginCompletionControllerTest {
 
     private static PendingSsoLogin pending() {
         return new PendingSsoLogin("tenant-a", "raw-sub", "client-a", null, RP_URL,
-                "https://rp.example.com/cb", "st", "hash", "c", true);
+                "https://rp.example.com/cb", "st", "hash", "c", true, "https://verifier.example.com");
     }
 }

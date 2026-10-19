@@ -170,9 +170,9 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertEquals(state, result.state());
         String redirectUrl = result.redirectUrl();
         assertNotNull(redirectUrl);
-        assertTrue(redirectUrl.contains("code=" + result.authorizationCode()));
-        assertTrue(redirectUrl.contains("state="));
-        assertTrue(redirectUrl.startsWith("https://client.example.com/callback?"));
+        // RFC 9207: iss is the /authorize issuer cached with the request, not the wallet POST's host
+        assertEquals("https://client.example.com/callback?code=" + result.authorizationCode()
+                + "&state=test-state&iss=https%3A%2F%2Fauth.example.com", redirectUrl);
         assertEquals("https://client.example.com/callback", result.redirectUri());
         assertEquals("client-id", result.clientId());
         assertEquals("https://auth.example.com", result.authorizationServerBaseUrl());

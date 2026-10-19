@@ -49,6 +49,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
     private static final String TENANT = "tenant-a";
     private static final String CLIENT_ID = "client-a";
     private static final String REDIRECT_URI = "https://client.example.com/callback";
+    private static final String ISSUER = "https://tenant-a.verifier.example.com/verifier";
     private static final Instant NOW = Instant.parse("2026-09-08T10:00:00Z");
 
     private TenantSsoConfigPort configPort;
@@ -111,6 +112,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
                 .redirectUri(REDIRECT_URI)
                 .scope("openid learcredential")
                 .state("state-1")
+                .issuer(ISSUER)
                 .build();
     }
 
@@ -204,7 +206,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext))
                 .thenReturn(Optional.of("{\"vc\":\"claims\"}"));
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(), any()))
+                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(), any(), any()))
                 .thenReturn(REDIRECT_URI + "?code=abc&state=state-1");
 
         ReuseSsoSessionWorkflow.Result result =
@@ -212,10 +214,11 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
 
         assertEquals(ReuseSsoSessionWorkflow.Result.Status.ALLOWED, result.status());
         assertNotNull(result.redirectUrl());
-        // EUD-300: the code carries the session's original authentication time (auth_time).
+        // EUD-300: the code carries the session's original authentication time (auth_time),
+        // and the response the /authorize issuer (RFC 9207 iss).
         verify(authorizationResponseProcessorService).issueCodeForReusedSession(
                 eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(),
-                eq(NOW.minusSeconds(60)));
+                eq(NOW.minusSeconds(60)), eq(ISSUER));
         verify(metricsPort).recordReuse(TENANT, CLIENT_ID);
         verify(metricsPort).recordOid4vpAvoided(TENANT);
     }
@@ -240,7 +243,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
 
         assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
         verify(authorizationResponseProcessorService, never()).issueCodeForReusedSession(
-                any(), any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(auditPort).publish(org.mockito.ArgumentMatchers.argThat(e ->
                 "REDIRECT_URI_MISMATCH".equals(e.getOutcome())));
     }

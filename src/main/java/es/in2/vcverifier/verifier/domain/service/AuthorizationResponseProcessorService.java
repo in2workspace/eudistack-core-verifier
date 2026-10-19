@@ -29,8 +29,9 @@ public interface AuthorizationResponseProcessorService {
      *
      * @param authTime when the holder actually authenticated (the SSO session's establishment), so
      *                 the ID Token's {@code auth_time} reflects the original login, not this reuse
+     * @param issuer   issuer of the {@code /oidc/authorize} request, sent as {@code iss} (RFC 9207)
      *
-     * @return the redirect URL ({@code redirectUri?code=...&state=...}) to send back to the RP
+     * @return the redirect URL ({@code redirectUri?code=...&state=...&iss=...}) to send back to the RP
      */
     String issueCodeForReusedSession(
             String clientId,
@@ -41,7 +42,8 @@ public interface AuthorizationResponseProcessorService {
             String codeChallengeMethod,
             String nonce,
             JsonNode credentialJson,
-            Instant authTime
+            Instant authTime,
+            String issuer
     );
 
     /**
