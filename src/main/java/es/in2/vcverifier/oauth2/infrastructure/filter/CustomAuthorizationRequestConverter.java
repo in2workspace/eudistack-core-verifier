@@ -34,6 +34,7 @@ import org.springframework.security.oauth2.server.authorization.context.Authoriz
 import org.springframework.security.web.authentication.AuthenticationConverter;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -44,6 +45,7 @@ import java.security.PublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Pattern;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
@@ -68,6 +70,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final String PROMPT_PARAMETER = "prompt";
     private static final String ACCESS_PROFILE_PARAMETER = "access_profile";
     private static final String PROMPT_NONE_COMBINED_DESCRIPTION = "prompt=none cannot be combined with other values";
+    private static final String PROMPT_NOT_A_STRING_DESCRIPTION = "prompt must be a string";
+    private static final String MAX_AGE_INVALID_DESCRIPTION = "max_age must be a non-negative integer";
+    private static final Pattern DIGITS = Pattern.compile("\\d+");
+    private static final BigDecimal MAX_AGE_LIMIT = BigDecimal.valueOf(SsoTtlRange.MAX_ABSOLUTE.toSeconds());
     private static final String LOGIN_REQUIRED_DESCRIPTION = "prompt=none: end-user authentication is required";
     private static final String INTERACTION_REQUIRED_DESCRIPTION = "prompt=none: end-user interaction is required";
 
@@ -111,7 +117,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .scope(scope)
                 .portalUrl(portalUrl)
                 .contextPath(contextPath)
-                .maxAge(parseMaxAge(request.getParameter(MAX_AGE_PARAMETER)))
                 .accessProfile(request.getParameter(ACCESS_PROFILE_PARAMETER))
                 .issuer(resolveIssuer())
                 .build();
@@ -158,7 +163,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * request object signature and claims): every redirect thrown here goes to {@code ctx.redirectUri()}.
      *
      * <ul>
-     *   <li>{@code none} combined with another value → {@code invalid_request}.</li>
      *   <li>{@code login} → no reuse, the caller continues to the QR flow.</li>
      *   <li>{@code none} → ALLOWED redirects with the code; otherwise {@code login_required} /
      *       {@code interaction_required}, never UI.</li>
@@ -171,10 +175,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private void attemptSsoReuse(HttpServletRequest request, AuthorizationContext ctx,
                                  RegisteredClient registeredClient, OidcPrompt prompt) {
         String clientId = registeredClient.getClientId();
-        if (prompt.isInvalidNoneCombination()) {
-            log.warn("event=authorize_prompt_invalid clientId={} reason=none_combined_with_other_values", clientId);
-            throwOidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, PROMPT_NONE_COMBINED_DESCRIPTION, ctx);
-        }
         if (prompt.requiresLogin()) {
             log.debug("event=sso_reuse_skipped clientId={} reason=prompt_login", clientId);
             return;
@@ -182,7 +182,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
             if (prompt.isNone()) {
-                throwOidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
+                throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
             }
             return;
         }
@@ -199,9 +199,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         }
         if (prompt.isNone()) {
             if (status == ReuseSsoSessionWorkflow.Result.Status.INTERACTION_REQUIRED) {
-                throwOidcErrorRedirect(INTERACTION_REQUIRED, INTERACTION_REQUIRED_DESCRIPTION, ctx);
+                throw oidcErrorRedirect(INTERACTION_REQUIRED, INTERACTION_REQUIRED_DESCRIPTION, ctx);
             }
-            throwOidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
+            throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
         }
         log.debug("event=sso_reuse_skipped tenant={} clientId={} reason={}", tenant, clientId,
                 status != null ? status : "reuse_failed");
@@ -247,41 +247,92 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     }
 
     /** OIDC error response to the client; {@code ctx.redirectUri()} must already be validated against the client. */
-    private void throwOidcErrorRedirect(String errorCode, String errorDescription, AuthorizationContext ctx) {
+    private AuthorizationRedirectException oidcErrorRedirect(String errorCode, String errorDescription,
+                                                             AuthorizationContext ctx) {
         String location = AuthorizationResponseUri.error(ctx.redirectUri(), errorCode, errorDescription,
                 ctx.state(), ctx.issuer());
-        throw AuthorizationRedirectException.toClient(errorCode, errorDescription, location);
+        return AuthorizationRedirectException.toClient(errorCode, errorDescription, location);
+    }
+
+    /** {@code prompt} and {@code max_age} of a validated request; {@code maxAge} null = absent or not enforceable. */
+    private record AuthenticationParameters(OidcPrompt prompt, Long maxAge) {
     }
 
     /**
-     * FR-21/AC-09: parsea el {@code max_age} OIDC (segundos, entero no negativo). Un valor
-     * ausente o inválido se ignora (log warn) en vez de romper la petición — max_age es un
-     * refinamiento de frescura sobre el flujo estándar, no una condición de seguridad dura.
+     * OIDC Core 1.0 §3.1.2.1 / §3.1.2.6: parses {@code prompt} and {@code max_age} — query parameters
+     * (plain) or request-object claims (JAR). A malformed value is answered with {@code invalid_request}
+     * to {@code ctx.redirectUri()}, so this must only run once the request is validated (client,
+     * redirect_uri, and for JAR the request-object signature), and it runs whatever the prompt: a
+     * malformed request is malformed even with {@code prompt=login}.
      */
-    private Long parseMaxAge(String rawMaxAge) {
-        if (rawMaxAge == null || rawMaxAge.isBlank()) {
+    private AuthenticationParameters parseAuthenticationParameters(Object rawPrompt, Object rawMaxAge,
+                                                                   AuthorizationContext ctx, String clientId) {
+        return new AuthenticationParameters(parsePrompt(rawPrompt, ctx, clientId), parseMaxAge(rawMaxAge, ctx, clientId));
+    }
+
+    private OidcPrompt parsePrompt(Object rawPrompt, AuthorizationContext ctx, String clientId) {
+        if (rawPrompt != null && !(rawPrompt instanceof String)) {
+            // JAR only: a query parameter is always a string.
+            log.warn("event=authorize_prompt_invalid clientId={} reason=not_a_string type={}", clientId,
+                    rawPrompt.getClass().getSimpleName());
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, PROMPT_NOT_A_STRING_DESCRIPTION, ctx);
+        }
+        OidcPrompt prompt = OidcPrompt.parse((String) rawPrompt);
+        if (prompt.isInvalidNoneCombination()) {
+            log.warn("event=authorize_prompt_invalid clientId={} reason=none_combined_with_other_values", clientId);
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, PROMPT_NONE_COMBINED_DESCRIPTION, ctx);
+        }
+        return prompt;
+    }
+
+    /**
+     * FR-21/AC-09: OIDC {@code max_age}, in seconds, must be a non-negative integer. Accepted forms:
+     * a string of decimal digits (query parameter, or JAR string claim) and, for JAR, a JSON number
+     * with an integral value ({@code 300} or {@code 300.0}). Anything else — negative, fractional,
+     * non-numeric, or another JSON type — is {@code invalid_request}. An absent or empty value is
+     * absent (RFC 6749 §3.1).
+     */
+    private Long parseMaxAge(Object rawMaxAge, AuthorizationContext ctx, String clientId) {
+        if (rawMaxAge == null || (rawMaxAge instanceof String s && s.isBlank())) {
             return null;
         }
-        try {
-            long maxAge = Long.parseLong(rawMaxAge.trim());
-            if (maxAge < 0) {
-                log.warn("event=sso_max_age_invalid reason=negative value={}", sanitize(rawMaxAge));
-                return null;
-            }
-            // W3 (review): an unbounded max_age (e.g. Long.MAX_VALUE) overflows
-            // Instant.plusSeconds(...) in TenantSsoPolicy — ArithmeticException there would
-            // surface as a 500 instead of login_required. Cap at the system's own max session
-            // TTL: no session can ever be older than that anyway, so anything beyond it can
-            // never actually force freshness and is treated the same as an absent max_age.
-            if (maxAge > SsoTtlRange.MAX_ABSOLUTE.toSeconds()) {
-                log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitize(rawMaxAge));
-                return null;
-            }
-            return maxAge;
-        } catch (NumberFormatException e) {
-            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", sanitize(rawMaxAge));
+        BigDecimal maxAge = toNonNegativeInteger(rawMaxAge);
+        if (maxAge == null) {
+            log.warn("event=authorize_max_age_invalid clientId={} type={} value={}", clientId,
+                    rawMaxAge.getClass().getSimpleName(), sanitize(String.valueOf(rawMaxAge)));
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, MAX_AGE_INVALID_DESCRIPTION, ctx);
+        }
+        // W3 (review): an unbounded max_age (e.g. Long.MAX_VALUE) overflows
+        // Instant.plusSeconds(...) in TenantSsoPolicy — ArithmeticException there would
+        // surface as a 500 instead of login_required. Cap at the system's own max session
+        // TTL: no session can ever be older than that anyway, so anything beyond it can
+        // never actually force freshness and is treated the same as an absent max_age.
+        if (maxAge.compareTo(MAX_AGE_LIMIT) > 0) {
+            log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitize(String.valueOf(rawMaxAge)));
             return null;
         }
+        return maxAge.longValue();
+    }
+
+    /**
+     * The value of {@code raw} when it is a non-negative integer, else {@code null}. Kept as a
+     * BigDecimal (never expanded to an integer) so a huge value like {@code 1e999999999} is only
+     * compared against the cap, never materialised.
+     */
+    private static BigDecimal toNonNegativeInteger(Object raw) {
+        if (raw instanceof String s) {
+            String trimmed = s.trim();
+            return DIGITS.matcher(trimmed).matches() ? new BigDecimal(trimmed) : null;
+        }
+        if (raw instanceof Number n) {
+            try {
+                BigDecimal value = new BigDecimal(n.toString());
+                return value.signum() >= 0 && value.stripTrailingZeros().scale() <= 0 ? value : null;
+            } catch (NumberFormatException e) {
+                return null; // NaN / Infinity
+            }
+        }
+        return null;
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {
@@ -323,8 +374,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null,
                 authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
 
-        attemptSsoReuse(request, authorizationContext, registeredClient,
-                OidcPrompt.parse(request.getParameter(PROMPT_PARAMETER)));
+        String rawMaxAge = request.getParameter(MAX_AGE_PARAMETER);
+        String rawPrompt = request.getParameter(PROMPT_PARAMETER);
+        AuthenticationParameters parameters = parseAuthenticationParameters(rawPrompt, rawMaxAge,
+                authorizationContext, registeredClient.getClientId());
+        attemptSsoReuse(request, authorizationContext.toBuilder().maxAge(parameters.maxAge()).build(),
+                registeredClient, parameters.prompt());
 
         // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
@@ -353,12 +408,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // (now signature-verified) claims, never from the query string. The reuse context also
         // targets the validated request-object redirect_uri, the same one cached for the QR path.
         Map<String, Object> claims = signedJwt.getPayload().toJSONObject();
+        Map<String, Object> requestObjectClaims = claims != null ? claims : Map.of();
         AuthorizationContext reuseContext = authorizationContext.toBuilder()
                 .redirectUri(jwtRedirectUri)
-                .maxAge(parseMaxAge(optionalClaim(claims, MAX_AGE_PARAMETER)))
                 .build();
-        attemptSsoReuse(request, reuseContext, registeredClient,
-                OidcPrompt.parse(optionalClaim(claims, PROMPT_PARAMETER)));
+        AuthenticationParameters parameters = parseAuthenticationParameters(
+                requestObjectClaims.get(PROMPT_PARAMETER), requestObjectClaims.get(MAX_AGE_PARAMETER),
+                reuseContext, registeredClient.getClientId());
+        attemptSsoReuse(request, reuseContext.toBuilder().maxAge(parameters.maxAge()).build(),
+                registeredClient, parameters.prompt());
 
         // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
@@ -371,18 +429,6 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
-    }
-
-    /** Optional string/number claim of the request object; {@code null} when absent or of another type. */
-    private static String optionalClaim(Map<String, Object> claims, String name) {
-        Object value = claims == null ? null : claims.get(name);
-        if (value instanceof String s) {
-            return s;
-        }
-        if (value instanceof Number n) {
-            return n.toString();
-        }
-        return null;
     }
 
     private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,

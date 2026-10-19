@@ -275,6 +275,25 @@ class ReuseSsoSessionIT {
     }
 
     // =========================================================
+    // OIDC Core §3.1.2.6: max_age malformado → invalid_request al cliente, aunque haya sesión.
+    // =========================================================
+    @Test
+    void should_return_invalid_request_when_max_age_is_malformed() throws Exception {
+        String sessionId = insertActiveSession(TENANT, "holder-hash-bad-max-age");
+        allowedClientsOrigins.add("https://localhost");
+
+        mockMvc.perform(baseRequest()
+                        .cookie(new Cookie(COOKIE_NAME, sessionId))
+                        .param("max_age", "-1"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", REDIRECT_URI + "?error=invalid_request"
+                        + "&error_description=max_age+must+be+a+non-negative+integer&state=xyz"
+                        + "&iss=" + URLEncoder.encode(discoveryIssuer(), StandardCharsets.UTF_8)));
+
+        verify(sessionRepository, never()).findActiveById(any(), any());
+    }
+
+    // =========================================================
     // OIDC Core §3.1.2.1: prompt=none combinado con otro valor → invalid_request al cliente.
     // =========================================================
     @Test

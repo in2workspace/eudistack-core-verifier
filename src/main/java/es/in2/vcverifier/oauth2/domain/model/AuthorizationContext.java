@@ -16,7 +16,8 @@ public record AuthorizationContext(
         String contextPath,
         /**
          * FR-21/AC-09: {@code max_age} del request OIDC, en segundos. {@code null} si el
-         * parámetro está ausente o no es un entero no negativo válido.
+         * parámetro está ausente o supera la TTL máxima de sesión; un valor malformado se
+         * rechaza antes con {@code invalid_request}.
          */
         Long maxAge,
         /**

@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -1162,7 +1163,7 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
-    void convert_standardRequestWithNegativeMaxAge_shouldIgnoreItAndLogSanitizedWarning() {
+    void convert_standardRequestWithNegativeMaxAge_shouldReturnInvalidRequestAndLogSanitizedWarning() {
         Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -1198,14 +1199,18 @@ class CustomAuthorizationRequestConverterTest {
             when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
             when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
-            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-negative");
-            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
+            AuthorizationRedirectException exception =
+                    assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
-            assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
-
-            assertTrue(appender.list.stream().anyMatch(event ->
-                    event.getFormattedMessage().equals("event=sso_max_age_invalid reason=negative value=-5")));
+            // OIDC Core §3.1.2.6: malformed max_age → invalid_request to the validated redirect_uri
+            assertEquals("invalid_request", exception.getError().getErrorCode());
+            assertEquals("https://client.example.com/callback?error=invalid_request"
+                    + "&error_description=max_age+must+be+a+non-negative+integer&state=test-state"
+                    + "&iss=https%3A%2F%2Fauth.server.com", exception.getError().getUri());
+            verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+            assertTrue(appender.list.stream().anyMatch(event -> event.getLevel() == Level.WARN
+                    && event.getFormattedMessage().equals(
+                            "event=authorize_max_age_invalid clientId=test-client-id type=String value=-5")));
         } finally {
             logger.detachAppender(appender);
         }
@@ -1266,7 +1271,7 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
-    void convert_standardRequestWithNonNumericMaxAgeContainingCrlf_shouldIgnoreItAndLogSanitizedTruncatedWarning() {
+    void convert_standardRequestWithNonNumericMaxAgeContainingCrlf_shouldReturnInvalidRequestAndLogSanitizedTruncatedWarning() {
         Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -1306,15 +1311,15 @@ class CustomAuthorizationRequestConverterTest {
             when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
             when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
-            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-crlf");
-            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
+            AuthorizationRedirectException exception =
+                    assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
-            assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
-
+            // The raw value is never echoed back to the client either
+            assertEquals("invalid_request", exception.getError().getErrorCode());
+            assertFalse(exception.getError().getUri().contains("forged"));
             assertTrue(appender.list.stream().anyMatch(event -> {
                 String message = event.getFormattedMessage();
-                return message.startsWith("event=sso_max_age_invalid reason=not_a_number value=")
+                return message.startsWith("event=authorize_max_age_invalid clientId=test-client-id type=String value=")
                         && !message.contains("\r")
                         && !message.contains("\n")
                         && !message.contains("\t")
@@ -1328,7 +1333,8 @@ class CustomAuthorizationRequestConverterTest {
     private void stubPkceParamsNull(HttpServletRequest request) {
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
-        when(request.getParameter("max_age")).thenReturn(null);
+        // Only read on the plain path (JAR takes max_age from the request object).
+        lenient().when(request.getParameter("max_age")).thenReturn(null);
         when(request.getParameter("access_profile")).thenReturn(null);
     }
 

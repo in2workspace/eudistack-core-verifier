@@ -20,7 +20,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -38,11 +40,14 @@ import org.springframework.security.oauth2.server.authorization.context.Authoriz
 import java.net.http.HttpClient;
 import java.security.PublicKey;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -79,6 +84,12 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
             + "&error_description=prompt%3Dnone%3A+end-user+authentication+is+required&state=" + STATE + ISS_PARAM;
     private static final String INTERACTION_REQUIRED_REDIRECT = REDIRECT_URI + "?error=interaction_required"
             + "&error_description=prompt%3Dnone%3A+end-user+interaction+is+required&state=" + STATE + ISS_PARAM;
+    private static final String MAX_AGE_INVALID_REDIRECT = REDIRECT_URI + "?error=invalid_request"
+            + "&error_description=max_age+must+be+a+non-negative+integer&state=" + STATE + ISS_PARAM;
+    private static final String PROMPT_NOT_A_STRING_REDIRECT = REDIRECT_URI + "?error=invalid_request"
+            + "&error_description=prompt+must+be+a+string&state=" + STATE + ISS_PARAM;
+    /** SsoTtlRange.MAX_ABSOLUTE (24 h) + 1 s. */
+    private static final long MAX_AGE_ABOVE_CAP = 86_401L;
     private static final String NONE_COMBINED_REDIRECT = REDIRECT_URI + "?error=invalid_request"
             + "&error_description=prompt%3Dnone+cannot+be+combined+with+other+values&state=" + STATE + ISS_PARAM;
 
@@ -378,6 +389,154 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         assertEquals(REDIRECT_URI, ctx.redirectUri());
     }
 
+    // ---- malformed prompt / max_age → invalid_request (OIDC Core §3.1.2.6) ----
+
+    static Stream<Arguments> malformedMaxAge() {
+        return Stream.of(
+                Arguments.of(Mode.PLAIN, "-1"),
+                Arguments.of(Mode.PLAIN, "abc"),
+                Arguments.of(Mode.PLAIN, "1.5"),
+                Arguments.of(Mode.PLAIN, "+5"),
+                Arguments.of(Mode.PLAIN, "1e3"),
+                Arguments.of(Mode.JAR, -1L),
+                Arguments.of(Mode.JAR, 300.5),
+                Arguments.of(Mode.JAR, Double.NaN),
+                Arguments.of(Mode.JAR, "-1"),
+                Arguments.of(Mode.JAR, "abc"),
+                Arguments.of(Mode.JAR, true),
+                Arguments.of(Mode.JAR, List.of(300L)));
+    }
+
+    @ParameterizedTest(name = "{0} max_age={1}")
+    @MethodSource("malformedMaxAge")
+    void convert_malformedMaxAge_returnsInvalidRequestToClient(Mode mode, Object maxAge) {
+        // Given: a session that could be reused
+        HttpServletRequest request = request(mode, null, maxAge);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then: error to the validated redirect_uri with description, state and iss — no reuse, no QR
+        assertEquals("invalid_request", error.getErrorCode());
+        assertEquals("max_age must be a non-negative integer", error.getDescription());
+        assertEquals(MAX_AGE_INVALID_REDIRECT, error.getUri());
+        verifyNoInteractions(reuseSsoSessionWorkflow, ssoBrowserBindingCookie);
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_malformedMaxAgeWithPromptLogin_isStillInvalidRequest(Mode mode) {
+        // Given: prompt=login never attempts reuse, but the request is malformed anyway
+        HttpServletRequest request = request(mode, "login", "-5");
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then
+        assertEquals(MAX_AGE_INVALID_REDIRECT, error.getUri());
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+    }
+
+    static Stream<Arguments> wellFormedMaxAge() {
+        return Stream.of(
+                Arguments.of(Mode.PLAIN, "300", 300L),
+                Arguments.of(Mode.PLAIN, "0", 0L),
+                Arguments.of(Mode.JAR, 300L, 300L),
+                Arguments.of(Mode.JAR, 300.0, 300L),
+                Arguments.of(Mode.JAR, "300", 300L));
+    }
+
+    @ParameterizedTest(name = "{0} max_age={1}")
+    @MethodSource("wellFormedMaxAge")
+    void convert_wellFormedMaxAge_isPassedToReuse(Mode mode, Object maxAge, long expectedSeconds) {
+        // Given
+        HttpServletRequest request = request(mode, null, maxAge);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        assertEquals(expectedSeconds, capturedReuseContext().maxAge());
+    }
+
+    static Stream<Arguments> unenforceableMaxAge() {
+        return Stream.of(
+                Arguments.of(Mode.PLAIN, ""),
+                Arguments.of(Mode.PLAIN, String.valueOf(MAX_AGE_ABOVE_CAP)),
+                Arguments.of(Mode.PLAIN, "99999999999999999999999999"),
+                Arguments.of(Mode.JAR, MAX_AGE_ABOVE_CAP),
+                Arguments.of(Mode.JAR, 1e300));
+    }
+
+    @ParameterizedTest(name = "{0} max_age={1}")
+    @MethodSource("unenforceableMaxAge")
+    void convert_emptyOrAboveMaxTtlMaxAge_isTreatedAsAbsent(Mode mode, Object maxAge) {
+        // Given: valid input that cannot force freshness (or no value at all)
+        HttpServletRequest request = request(mode, null, maxAge);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        // When
+        OAuth2Error error = convertExpectingRedirect(request);
+
+        // Then: reuse proceeds as without max_age
+        assertEquals(REUSE_REDIRECT, error.getUri());
+        assertNull(capturedReuseContext().maxAge());
+    }
+
+    static Stream<Object> nonStringPrompt() {
+        return Stream.of(List.of("none"), 1L, true, Map.of("value", "none"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("nonStringPrompt")
+    void convert_jarPromptClaimNotAString_returnsInvalidRequestToClient(Object prompt) {
+        // Given: absent would mean reuse; a malformed prompt must not be read as absent
+        HttpServletRequest request = request(Mode.JAR, prompt, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then
+        assertEquals("invalid_request", error.getErrorCode());
+        assertEquals("prompt must be a string", error.getDescription());
+        assertEquals(PROMPT_NOT_A_STRING_REDIRECT, error.getUri());
+        verifyNoInteractions(reuseSsoSessionWorkflow);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_malformedMaxAgeWithUnregisteredRedirectUri_isRejectedOnTheVerifierErrorPage(Mode mode) {
+        // Given: the error must never go to a redirect_uri that was not validated first
+        HttpServletRequest request = request(mode, null, "-1");
+        if (mode == Mode.PLAIN) {
+            when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(MALICIOUS_REDIRECT_URI);
+        } else {
+            when(jwtService.extractClaimFromPayload(any(), eq(OAuth2ParameterNames.REDIRECT_URI)))
+                    .thenReturn(MALICIOUS_REDIRECT_URI);
+        }
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then
+        assertEquals("invalid_client_authentication", error.getErrorCode());
+        assertTrue(error.getUri().startsWith("https://verifier.example.com/error?"));
+    }
+
+    @Test
+    void convert_jarMalformedMaxAgeWithInvalidSignature_failsOnTheSignatureFirst() {
+        // Given
+        HttpServletRequest request = request(Mode.JAR, null, -1L);
+        doThrow(new IllegalArgumentException("bad signature")).when(jwtService).verifyJWTWithECKey(anyString(), any());
+
+        // When / Then: no redirect to the request-object redirect_uri before the signature is verified
+        assertThrows(IllegalArgumentException.class, () -> converter.convert(request));
+    }
+
     // ---- authorization response shape (RFC 6749 §3.1.2 / RFC 9207) ----
 
     @ParameterizedTest
@@ -440,13 +599,14 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
     /**
      * Builds a valid request with an SSO cookie for {@link #TENANT}. In JAR mode {@code prompt} and
-     * {@code max_age} go into the request-object claims; in PLAIN mode into the query.
+     * {@code max_age} go into the request-object claims with their Java type (JSON type); in PLAIN
+     * mode into the query, as strings.
      */
-    private HttpServletRequest request(Mode mode, String prompt, Long maxAge) {
+    private HttpServletRequest request(Mode mode, Object prompt, Object maxAge) {
         return request(mode, prompt, maxAge, REDIRECT_URI);
     }
 
-    private HttpServletRequest request(Mode mode, String prompt, Long maxAge, String redirectUri) {
+    private HttpServletRequest request(Mode mode, Object prompt, Object maxAge, String redirectUri) {
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURL()).thenReturn(new StringBuffer("https://verifier.example.com/oidc/authorize"));
         when(request.getHeader("X-Forwarded-Host")).thenReturn("verifier.example.com");
@@ -461,7 +621,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
         if (mode == Mode.PLAIN) {
             when(request.getParameter("request")).thenReturn(null);
-            when(request.getParameter("prompt")).thenReturn(prompt);
+            when(request.getParameter("prompt")).thenReturn(prompt == null ? null : prompt.toString());
             when(request.getParameter("max_age")).thenReturn(maxAge == null ? null : maxAge.toString());
             return request;
         }
@@ -475,7 +635,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
             claims.put("prompt", prompt);
         }
         if (maxAge != null) {
-            claims.put("max_age", maxAge); // numeric claim, as Nimbus parses JSON integers
+            claims.put("max_age", maxAge); // as given: Long = JSON integer, Double = JSON decimal, ...
         }
         SignedJWT signedJwt = mock(SignedJWT.class);
         Payload payload = mock(Payload.class);
