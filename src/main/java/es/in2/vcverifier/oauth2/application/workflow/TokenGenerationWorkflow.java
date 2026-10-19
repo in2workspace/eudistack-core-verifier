@@ -170,8 +170,9 @@ public class TokenGenerationWorkflow {
         // authentication's value, not be re-stamped as "now" — angular-auth-oidc-client's
         // pre/post id_token claims check rejects the refresh outright otherwise. The original
         // value is carried through additionalParameters by CustomTokenRequestConverter
-        // (see RefreshTokenDataCache.authTimeEpochSeconds); absent it, this IS the original
-        // authentication, so "now" is correct.
+        // (see RefreshTokenDataCache.authTimeEpochSeconds). The same holds for a code issued by
+        // SSO reuse (EUD-300, AuthorizationCodeData.authTime = session establishment). Absent
+        // it, this IS the original authentication, so "now" is correct.
         Instant authTime = additionalParameters.containsKey(AUTH_TIME_PARAM)
                 ? Instant.ofEpochSecond(((Number) additionalParameters.get(AUTH_TIME_PARAM)).longValue())
                 : issueTime;

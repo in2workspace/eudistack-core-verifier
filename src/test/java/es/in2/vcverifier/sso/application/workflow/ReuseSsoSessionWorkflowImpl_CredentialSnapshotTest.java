@@ -204,7 +204,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext))
                 .thenReturn(Optional.of("{\"vc\":\"claims\"}"));
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any()))
+                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(), any()))
                 .thenReturn(REDIRECT_URI + "?code=abc&state=state-1");
 
         ReuseSsoSessionWorkflow.Result result =
@@ -212,6 +212,10 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
 
         assertEquals(ReuseSsoSessionWorkflow.Result.Status.ALLOWED, result.status());
         assertNotNull(result.redirectUrl());
+        // EUD-300: the code carries the session's original authentication time (auth_time).
+        verify(authorizationResponseProcessorService).issueCodeForReusedSession(
+                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(),
+                eq(NOW.minusSeconds(60)));
         verify(metricsPort).recordReuse(TENANT, CLIENT_ID);
         verify(metricsPort).recordOid4vpAvoided(TENANT);
     }
@@ -236,7 +240,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
 
         assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
         verify(authorizationResponseProcessorService, never()).issueCodeForReusedSession(
-                any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(auditPort).publish(org.mockito.ArgumentMatchers.argThat(e ->
                 "REDIRECT_URI_MISMATCH".equals(e.getOutcome())));
     }

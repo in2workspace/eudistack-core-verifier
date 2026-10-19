@@ -278,7 +278,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
                 (String) addl.get(NONCE),
-                credentialJson
+                credentialJson,
+                null // fresh VP presentation: auth_time is the token issue time
         ));
 
         // SEC-O2: Log redirect target without full authorization code.
@@ -308,14 +309,16 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson
+            JsonNode credentialJson,
+            Instant authTime
     ) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient == null) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
-                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson));
+                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson,
+                authTime));
         log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
         return issuedCode.redirectUrl();
     }
@@ -344,7 +347,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson
+            JsonNode credentialJson,
+            Instant authTime
     ) {
     }
 
@@ -438,7 +442,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 .verifiableCredential(credentialJson)
                 .oAuth2Authorization(authorization)
                 .requestedScopes(scopes)
-                .clientNonce(nonce);
+                .clientNonce(nonce)
+                .authTime(issuance.authTime());
 
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 

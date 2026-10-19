@@ -3,6 +3,7 @@ package es.in2.vcverifier.verifier.domain.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 
+import java.time.Instant;
 import java.util.Set;
 
 public interface AuthorizationResponseProcessorService {
@@ -26,6 +27,9 @@ public interface AuthorizationResponseProcessorService {
      * The caller MUST have already validated {@code redirectUri} against the client's registered
      * redirect URIs — this method does not repeat that check.
      *
+     * @param authTime when the holder actually authenticated (the SSO session's establishment), so
+     *                 the ID Token's {@code auth_time} reflects the original login, not this reuse
+     *
      * @return the redirect URL ({@code redirectUri?code=...&state=...}) to send back to the RP
      */
     String issueCodeForReusedSession(
@@ -36,7 +40,8 @@ public interface AuthorizationResponseProcessorService {
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson
+            JsonNode credentialJson,
+            Instant authTime
     );
 
     /**

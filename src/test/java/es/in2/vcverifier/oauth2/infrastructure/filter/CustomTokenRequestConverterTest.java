@@ -98,6 +98,32 @@ class CustomTokenRequestConverterTest {
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AuthorizationCodeAuthenticationToken.class, result);
+        assertFalse(((OAuth2AuthorizationCodeAuthenticationToken) result).getAdditionalParameters()
+                .containsKey("auth_time"));
+    }
+
+    @Test
+    void convert_authorizationCodeGrant_fromSsoReuse_carriesOriginalAuthTime() {
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        SecurityContextHolder.getContext().setAuthentication(mock(Authentication.class));
+
+        MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+        parameters.add(OAuth2ParameterNames.GRANT_TYPE, "authorization_code");
+        parameters.add(OAuth2ParameterNames.CODE, "code");
+        parameters.add(OAuth2ParameterNames.CLIENT_ID, "client-id");
+        parameters.add(OAuth2ParameterNames.STATE, "state");
+        when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+
+        AuthorizationCodeData authorizationCodeData = mock(AuthorizationCodeData.class);
+        when(cacheStoreForAuthorizationCodeData.get("code")).thenReturn(authorizationCodeData);
+        when(authorizationCodeData.state()).thenReturn("state");
+        when(authorizationCodeData.verifiableCredential()).thenReturn(mock(JsonNode.class));
+        when(authorizationCodeData.authTime()).thenReturn(java.time.Instant.ofEpochSecond(1_700_000_000L));
+
+        OAuth2AuthorizationCodeAuthenticationToken token =
+                (OAuth2AuthorizationCodeAuthenticationToken) customTokenRequestConverter.convert(mockRequest);
+
+        assertEquals(1_700_000_000L, token.getAdditionalParameters().get("auth_time"));
     }
 
     @Test

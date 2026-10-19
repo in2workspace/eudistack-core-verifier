@@ -263,7 +263,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                 ctx.codeChallenge(),
                 ctx.codeChallengeMethod(),
                 ctx.clientNonce(),
-                credentialJson
+                credentialJson,
+                session.getEstablishedAt()
         );
 
         // 8. AUDIT

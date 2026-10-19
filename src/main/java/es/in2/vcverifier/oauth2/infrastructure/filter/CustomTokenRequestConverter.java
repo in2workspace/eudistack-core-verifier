@@ -123,6 +123,11 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         if (codeVerifier != null && !codeVerifier.isBlank()) {
             additionalParameters.put(PkceParameterNames.CODE_VERIFIER, codeVerifier);
         }
+        // EUD-300: a code issued by SSO reuse carries the original authentication time, so the
+        // ID Token's auth_time is not re-stamped as "now" (OIDC Core §2).
+        if (authorizationCodeData.authTime() != null) {
+            additionalParameters.put(AUTH_TIME_PARAM, authorizationCodeData.authTime().getEpochSecond());
+        }
 
         log.info("Authorization code grant successfully handled");
         return new OAuth2AuthorizationCodeAuthenticationToken(code, clientPrincipal, redirectUri, additionalParameters);
