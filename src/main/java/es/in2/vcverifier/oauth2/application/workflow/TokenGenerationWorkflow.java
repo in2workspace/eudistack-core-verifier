@@ -27,6 +27,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 /**
@@ -230,7 +231,11 @@ public class TokenGenerationWorkflow {
                                 .ifPresent(session -> idTokenClaimsBuilder.claim("sid", session.getId().getValue()));
                     });
         } catch (Exception e) {
-            log.warn("sso_sid_stamp_lookup_failed tenant={}", tenant, e);
+            // Class names only at WARN (a driver message may echo the session id or holder hash);
+            // the throwable goes to DEBUG.
+            log.warn("sso_sid_stamp_lookup_failed tenant={} error={} rootCause={}", tenant,
+                    e.getClass().getSimpleName(), rootCauseName(e));
+            log.debug("sso_sid_stamp_lookup_failed tenant={}", tenant, e);
         }
     }
 }

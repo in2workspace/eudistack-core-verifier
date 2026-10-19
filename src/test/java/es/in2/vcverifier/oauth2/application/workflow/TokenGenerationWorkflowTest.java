@@ -1,5 +1,9 @@
 package es.in2.vcverifier.oauth2.application.workflow;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -22,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 
@@ -361,6 +366,44 @@ class TokenGenerationWorkflowTest {
 
             assertThat(capturedIdTokenPayload().has("sid")).isFalse();
             verifyNoInteractions(ssoSessionRepositoryPort, hashingService);
+        }
+
+        @Test
+        @DisplayName("lookup failure: omits sid and logs class names only at WARN, throwable at DEBUG")
+        void buildIdToken_lookupFailure_omitsSidAndLogsWithoutMessage() {
+            ObjectNode credential = buildW3cCredential("learcredential.employee.w3c.4");
+            stubHappyPathUpTo(credential, baseClaims(), "learcredential.employee.w3c.4");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
+
+            TenantSsoConfig config = mock(TenantSsoConfig.class);
+            when(config.ssoEnabled()).thenReturn(true);
+            when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config));
+            when(hashingService.sha256(SUBJECT)).thenReturn(HOLDER_HASH);
+            when(ssoSessionRepositoryPort.findActiveByTenantAndHolder(TENANT, HOLDER_HASH))
+                    .thenThrow(new IllegalStateException("query failed",
+                            new java.sql.SQLException("detail: holder_hash=" + HOLDER_HASH)));
+
+            Logger logger = (Logger) LoggerFactory.getLogger(TokenGenerationWorkflow.class);
+            Level previousLevel = logger.getLevel();
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            logger.setLevel(Level.DEBUG);
+            try {
+                workflow.issueAccessToken(credential, "did:key:client", Map.of(), true, TENANT);
+            } finally {
+                logger.detachAppender(appender);
+                logger.setLevel(previousLevel);
+            }
+
+            assertThat(capturedIdTokenPayload().has("sid")).isFalse();
+            ILoggingEvent warn = appender.list.stream()
+                    .filter(e -> e.getLevel() == Level.WARN).findFirst().orElseThrow();
+            assertThat(warn.getFormattedMessage()).isEqualTo(
+                    "sso_sid_stamp_lookup_failed tenant=" + TENANT
+                            + " error=IllegalStateException rootCause=SQLException");
+            assertThat(warn.getThrowableProxy()).isNull();
+            assertThat(appender.list).anyMatch(e -> e.getLevel() == Level.DEBUG && e.getThrowableProxy() != null);
         }
     }
 }
