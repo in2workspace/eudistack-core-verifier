@@ -41,13 +41,13 @@ class TenantSsoConfigYamlProviderTest {
     Path dir;
 
     private static BackendProperties props(String ssoConfigPath) {
-        return new BackendProperties("http://localhost", null, null, null,
+        return new BackendProperties("http://localhost", null, null, null, null,
                 new BackendProperties.LocalFiles(null, null, null, ssoConfigPath),
                 null, null, null, null, null);
     }
 
     private static BackendProperties propsWithoutLocalFiles() {
-        return new BackendProperties("http://localhost", null, null, null, null, null, null, null, null, null);
+        return new BackendProperties("http://localhost", null, null, null, null, null, null, null, null, null, null);
     }
 
     private Path writeYaml(String content) throws Exception {

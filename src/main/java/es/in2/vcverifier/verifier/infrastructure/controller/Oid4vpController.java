@@ -52,11 +52,11 @@ public class Oid4vpController {
     @ApiResponse(responseCode = "200", description = "Authorization request JWT",
             content = @Content(mediaType = "application/oauth-authz-req+jwt"))
     @ApiResponse(responseCode = "404", description = "Authorization request not found or expired")
-    @GetMapping("/auth-request/{id}")
+    @GetMapping({"/r/{id}", "/auth-request/{id}"})
     @ResponseStatus(HttpStatus.OK)
     // SEC-F1: Input validation on path/request parameters. Next step: ensure proper error handling for invalid inputs.
     public String getAuthorizationRequest(
-            @Parameter(description = "Authorization request nonce (from QR code)", required = true)
+            @Parameter(description = "Authorization request id (from QR code)", required = true)
             @PathVariable @NotBlank @Size(max = 256) String id) {
         AuthorizationRequestJWT authorizationRequestJWT = cacheStoreForAuthorizationRequestJWT.get(id);
         cacheStoreForAuthorizationRequestJWT.delete(id);

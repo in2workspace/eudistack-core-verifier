@@ -68,6 +68,7 @@ class AuthorizationRequestBuildWorkflowTest {
         when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(backendConfig.getRequestUriBase()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
         RegisteredClient client = createDummyClient("My Client");
@@ -302,5 +303,71 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(jwtVc.get("alg_values_supported").get(0).asText()).isEqualTo("ES256");
         assertThat(jwtVc.has("sd-jwt_alg_values")).isFalse();
         assertThat(jwtVc.has("kb-jwt_alg_values")).isFalse();
+    }
+
+    @Test
+    @DisplayName("QR request_uri uses the short /oid4vp/r/ path and a 12-char base64url id")
+    void qrUrl_usesShortPathAndShortId() {
+        stubMinimalRequest("did:key:z6Mk...", "https://verifier.example.com");
+
+        AuthorizationRequestBuildWorkflow.Result result =
+                workflow.buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null);
+
+        assertThat(result.openid4vpUrl())
+                .contains("request_uri=https://verifier.example.com/oid4vp/r/" + result.nonce());
+        assertThat(result.nonce()).hasSize(12);
+        // base64url only: '+', '/' and '=' would be mangled by URLSearchParams on the wallet side
+        assertThat(result.nonce()).matches("[A-Za-z0-9_-]{12}");
+    }
+
+    @Test
+    @DisplayName("QR leaves ':' and '/' unescaped — RFC 3986 allows them in a query value")
+    void qrUrl_doesNotPercentEncodeSafeCharacters() {
+        stubMinimalRequest("did:key:z6Mk...", "https://verifier.example.com");
+
+        String url = workflow
+                .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
+                .openid4vpUrl();
+
+        assertThat(url).doesNotContain("%3A").doesNotContain("%2F");
+        assertThat(url).contains("client_id=did:key:z6Mk...");
+        assertThat(url).contains("request_uri=https://");
+    }
+
+    @Test
+    @DisplayName("QR request_uri honours requestUriBase, so it can be moved to a short host")
+    void qrUrl_honoursRequestUriBase() {
+        stubMinimalRequest("did:key:z6Mk...", "https://vfy.eudistack.net");
+
+        String url = workflow
+                .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
+                .openid4vpUrl();
+
+        assertThat(url).contains("request_uri=https://vfy.eudistack.net/oid4vp/r/");
+    }
+
+    @Test
+    @DisplayName("QR payload stays within QR version 7 capacity (154 bytes at EC level L)")
+    void qrUrl_staysWithinVersion7Capacity() {
+        stubMinimalRequest(
+                "did:key:zDnaevN85Z7VJgcBoQeqQU7d8kZpuVhDSdm8hQtJYWjvek3VL",
+                "https://vfy.eudistack.net");
+
+        String url = workflow
+                .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
+                .openid4vpUrl();
+
+        assertThat(url.length()).isLessThanOrEqualTo(154);
+    }
+
+    private void stubMinimalRequest(String clientId, String requestUriBase) {
+        when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(new DcqlQuery(List.of(
+                new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        )));
+        when(cryptoComponent.getClientId()).thenReturn(clientId);
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(backendConfig.getRequestUriBase()).thenReturn(requestUriBase);
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
     }
 }
