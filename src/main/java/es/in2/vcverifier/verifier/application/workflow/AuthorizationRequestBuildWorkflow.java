@@ -45,7 +45,7 @@ public class AuthorizationRequestBuildWorkflow {
      */
     private static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
 
-    private static final int REQUEST_ID_BYTES = 9;
+    private static final int REQUEST_ID_BYTES = 6;
 
     private static final SecureRandom RANDOM = new SecureRandom();
 

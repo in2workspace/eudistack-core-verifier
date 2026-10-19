@@ -306,7 +306,7 @@ class AuthorizationRequestBuildWorkflowTest {
     }
 
     @Test
-    @DisplayName("QR request_uri uses the short /oid4vp/r/ path and a 12-char base64url id")
+    @DisplayName("QR request_uri uses the short /oid4vp/r/ path and an 8-char base64url id")
     void qrUrl_usesShortPathAndShortId() {
         stubMinimalRequest("did:key:z6Mk...", "https://verifier.example.com");
 
@@ -315,9 +315,8 @@ class AuthorizationRequestBuildWorkflowTest {
 
         assertThat(result.openid4vpUrl())
                 .contains("request_uri=https://verifier.example.com/oid4vp/r/" + result.nonce());
-        assertThat(result.nonce()).hasSize(12);
-        // base64url only: '+', '/' and '=' would be mangled by URLSearchParams on the wallet side
-        assertThat(result.nonce()).matches("[A-Za-z0-9_-]{12}");
+        assertThat(result.nonce()).hasSize(8);
+        assertThat(result.nonce()).matches("[A-Za-z0-9_-]{8}");
     }
 
     @Test
@@ -347,11 +346,11 @@ class AuthorizationRequestBuildWorkflowTest {
     }
 
     @Test
-    @DisplayName("QR payload stays within QR version 7 capacity (154 bytes at EC level L)")
+    @DisplayName("QR payload on a real tenant host stays within QR version 7 capacity (154 bytes at EC level L)")
     void qrUrl_staysWithinVersion7Capacity() {
         stubMinimalRequest(
                 "did:key:zDnaevN85Z7VJgcBoQeqQU7d8kZpuVhDSdm8hQtJYWjvek3VL",
-                "https://vfy.eudistack.net");
+                "https://sandbox.dev.eudistack.net/verifier");
 
         String url = workflow
                 .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
