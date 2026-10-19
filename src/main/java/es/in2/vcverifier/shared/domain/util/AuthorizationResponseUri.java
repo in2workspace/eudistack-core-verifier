@@ -71,7 +71,7 @@ public final class AuthorizationResponseUri {
         try {
             Response.to(redirectUri);
             return true;
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return false;
         }
     }
@@ -92,10 +92,18 @@ public final class AuthorizationResponseUri {
             if (rawQuery != null) {
                 Matcher matcher = QUERY_PARAM.matcher(rawQuery);
                 while (matcher.find()) {
-                    String value = matcher.group(3);
-                    put(matcher.group(1), value != null ? value : (matcher.group(2).isEmpty() ? null : ""));
+                    put(matcher.group(1), queryValue(matcher));
                 }
             }
+        }
+
+        /** The parameter value: as given, {@code ""} for {@code name=}, {@code null} for a bare name. */
+        private static String queryValue(Matcher matcher) {
+            String value = matcher.group(3);
+            if (value != null) {
+                return value;
+            }
+            return matcher.group(2).isEmpty() ? null : "";
         }
 
         static Response to(String redirectUri) {

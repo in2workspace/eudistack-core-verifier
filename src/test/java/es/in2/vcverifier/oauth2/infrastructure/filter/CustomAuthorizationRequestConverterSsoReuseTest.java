@@ -729,7 +729,8 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         when(payload.toJSONObject()).thenReturn(claims);
         when(jwtService.extractClaimFromPayload(eq(payload), anyString()))
                 .thenAnswer(inv -> (String) claims.get(inv.<String>getArgument(1)));
-        when(didService.resolvePublicKeyFromDid(CLIENT_ID)).thenReturn(mock(PublicKey.class));
+        PublicKey publicKey = mock(PublicKey.class);
+        when(didService.resolvePublicKeyFromDid(CLIENT_ID)).thenReturn(publicKey);
         return request;
     }
 

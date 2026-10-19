@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.ArgumentCaptor;
@@ -46,10 +48,15 @@ class CustomErrorResponseHandlerTest {
         customErrorResponseHandler = new CustomErrorResponseHandler(allowedClientsOrigins, backendConfig);
     }
 
-    @Test
-    void testOnAuthenticationFailure_WithRequiredExternalUserAuthenticationError_ShouldRedirect() throws IOException {
-        allowedClientsOrigins.add("https://example.com");
-        String redirectUri = "https://example.com/login";
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({
+            "registered client origin,                  https://example.com,             https://example.com/login",
+            "registered client origin with query,       https://external-rp.example.com, https://external-rp.example.com/login?foo=bar",
+            "registered client origin in different case, https://external-rp.example.com, https://External-RP.Example.com/login"
+    })
+    void testOnAuthenticationFailure_ToLoginPageOnAllowedClientOrigin_ShouldRedirect(
+            String scenario, String allowedOrigin, String redirectUri) throws IOException {
+        allowedClientsOrigins.add(allowedOrigin);
 
         AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 
@@ -104,19 +111,6 @@ class CustomErrorResponseHandlerTest {
 
         verify(response, never()).sendRedirect(anyString());
         verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Authentication failed");
-    }
-
-    @Test
-    void testOnAuthenticationFailure_WithAllowedClientOrigin_ShouldRedirect() throws IOException {
-        allowedClientsOrigins.add("https://external-rp.example.com");
-        String redirectUri = "https://external-rp.example.com/login?foo=bar";
-
-        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
-
-        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
-
-        verify(response).sendRedirect(redirectUri);
-        verify(response, never()).sendError(anyInt(), anyString());
     }
 
     @Test
@@ -186,19 +180,6 @@ class CustomErrorResponseHandlerTest {
     @Test
     void testOnAuthenticationFailure_WithVerifierOriginDifferentCaseAndDefaultPort_ShouldRedirect() throws IOException {
         String redirectUri = "https://Verifier.Example.com:443/login?state=abc";
-
-        AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
-
-        customErrorResponseHandler.onAuthenticationFailure(request, response, exception);
-
-        verify(response).sendRedirect(redirectUri);
-        verify(response, never()).sendError(anyInt(), anyString());
-    }
-
-    @Test
-    void testOnAuthenticationFailure_WithAllowedClientOriginDifferentCase_ShouldRedirect() throws IOException {
-        allowedClientsOrigins.add("https://external-rp.example.com");
-        String redirectUri = "https://External-RP.Example.com/login";
 
         AuthenticationException exception = AuthorizationRedirectException.toLoginPage(redirectUri);
 

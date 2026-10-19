@@ -153,7 +153,8 @@ class CustomTokenRequestConverterTest {
         AuthorizationCodeData authorizationCodeData = mock(AuthorizationCodeData.class);
         when(cacheStoreForAuthorizationCodeData.get("code")).thenReturn(authorizationCodeData);
         when(authorizationCodeData.state()).thenReturn("state");
-        when(authorizationCodeData.verifiableCredential()).thenReturn(mock(JsonNode.class));
+        JsonNode verifiableCredential = mock(JsonNode.class);
+        when(authorizationCodeData.verifiableCredential()).thenReturn(verifiableCredential);
         when(authorizationCodeData.authTime()).thenReturn(java.time.Instant.ofEpochSecond(1_700_000_000L));
 
         OAuth2AuthorizationCodeAuthenticationToken token =

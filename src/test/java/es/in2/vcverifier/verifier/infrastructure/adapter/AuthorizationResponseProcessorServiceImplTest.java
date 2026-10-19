@@ -5,6 +5,7 @@ import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -49,6 +50,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
@@ -661,10 +663,14 @@ class AuthorizationResponseProcessorServiceImplTest {
                 .redirectUri(redirectUri)
                 .build());
 
+        Set<String> scopes = Set.of("openid");
+        ObjectNode verifiableCredential = new ObjectMapper().createObjectNode();
+        Instant authTime = Instant.now();
+
         // When
         assertThrows(IllegalArgumentException.class, () -> authorizationResponseProcessorService.issueCodeForReusedSession(
-                "client-id", redirectUri, java.util.Set.of("openid"), "state-1", null, null, null,
-                new ObjectMapper().createObjectNode(), Instant.now(), "https://tenant-a.example.com/verifier"));
+                "client-id", redirectUri, scopes, "state-1", null, null, null,
+                verifiableCredential, authTime, "https://tenant-a.example.com/verifier"));
 
         // Then: no orphan code left behind
         verify(oAuth2AuthorizationService, never()).save(any());
