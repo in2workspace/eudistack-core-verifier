@@ -137,11 +137,6 @@ verifier:
     # Canonical public URL of the verifier. Used as `iss`/audience in issued tokens and as
     # the base for OID4VP endpoints.
     url: http://localhost:8082
-    # Base URL embedded in the QR's `request_uri` (where the wallet fetches the signed request
-    # object). Empty = use the tenant host the request came in on, i.e. today's behaviour.
-    # Set to a short dedicated hostname to shrink the QR payload and so enlarge its modules;
-    # that host must route `/oid4vp/r/*` to this service.
-    request-uri-base: ${VERIFIER_BACKEND_REQUEST_URI_BASE:}
     identity:
       # Leave empty to auto-generate ephemeral P-256 key + did:key at startup (dev only).
       # For production, configure privateKey + certificate for x509_hash client_id_scheme.

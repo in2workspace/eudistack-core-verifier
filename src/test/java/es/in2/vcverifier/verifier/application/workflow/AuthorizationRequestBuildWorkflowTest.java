@@ -68,7 +68,6 @@ class AuthorizationRequestBuildWorkflowTest {
         when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(dcqlQuery);
         when(cryptoComponent.getClientId()).thenReturn("did:key:z6Mk...");
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-        when(backendConfig.getRequestUriBase()).thenReturn("https://verifier.example.com");
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
 
         RegisteredClient client = createDummyClient("My Client");
@@ -328,21 +327,23 @@ class AuthorizationRequestBuildWorkflowTest {
                 .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
                 .openid4vpUrl();
 
-        assertThat(url).doesNotContain("%3A").doesNotContain("%2F");
-        assertThat(url).contains("client_id=did:key:z6Mk...");
-        assertThat(url).contains("request_uri=https://");
+        assertThat(url)
+                .doesNotContain("%3A")
+                .doesNotContain("%2F")
+                .contains("client_id=did:key:z6Mk...")
+                .contains("request_uri=https://");
     }
 
     @Test
-    @DisplayName("QR request_uri honours requestUriBase, so it can be moved to a short host")
-    void qrUrl_honoursRequestUriBase() {
-        stubMinimalRequest("did:key:z6Mk...", "https://vfy.eudistack.net");
+    @DisplayName("QR escapes the characters a query value cannot carry literally")
+    void qrUrl_escapesQueryDelimiters() {
+        stubMinimalRequest("did:key:a&b=c+d%e#f", "https://verifier.example.com");
 
         String url = workflow
                 .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
                 .openid4vpUrl();
 
-        assertThat(url).contains("request_uri=https://vfy.eudistack.net/oid4vp/r/");
+        assertThat(url).contains("client_id=did:key:a%26b%3Dc%2Bd%25e%23f&request_uri=");
     }
 
     @Test
@@ -359,14 +360,13 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(url.length()).isLessThanOrEqualTo(154);
     }
 
-    private void stubMinimalRequest(String clientId, String requestUriBase) {
+    private void stubMinimalRequest(String clientId, String verifierUrl) {
         when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(new DcqlQuery(List.of(
                 new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
                         new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
         )));
         when(cryptoComponent.getClientId()).thenReturn(clientId);
-        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
-        when(backendConfig.getRequestUriBase()).thenReturn(requestUriBase);
+        when(backendConfig.getUrl()).thenReturn(verifierUrl);
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
     }
 }

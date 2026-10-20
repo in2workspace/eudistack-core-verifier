@@ -163,11 +163,9 @@ public class AuthorizationRequestBuildWorkflow {
     }
 
     private String generateOpenId4VpUrl(String requestId) {
-        String requestUri = String.format("%s%s%s",
-                backendConfig.getRequestUriBase(), AUTHORIZATION_REQUEST_ENDPOINT, requestId);
-        return String.format("openid4vp://?client_id=%s&request_uri=%s",
-                encodeQueryValue(cryptoComponent.getClientId()),
-                encodeQueryValue(requestUri));
+        String requestUri = backendConfig.getUrl() + AUTHORIZATION_REQUEST_ENDPOINT + requestId;
+        return "openid4vp://?client_id=" + encodeQueryValue(cryptoComponent.getClientId())
+                + "&request_uri=" + encodeQueryValue(requestUri);
     }
 
     private static String encodeQueryValue(String value) {

@@ -105,7 +105,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://Verifier.Example.com:443",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getTrustedVerifierOrigins())
@@ -117,7 +117,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getStaticUrl()).isEqualTo("https://verifier.example.com");
@@ -128,7 +128,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net", "https://dome.example.com"),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getAllUrls())
@@ -145,7 +145,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of(),
-                null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null,
                 new BackendProperties.Sso("base64-encoded-key"));
         BackendConfig config = new BackendConfig(properties);
 
@@ -157,7 +157,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of(),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getSsoCredentialEncryptionKey()).isNull();

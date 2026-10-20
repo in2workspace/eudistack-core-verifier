@@ -47,14 +47,6 @@ public class BackendConfig {
         return properties.url();
     }
 
-    public String getRequestUriBase() {
-        String base = properties.requestUriBase();
-        if (base == null || base.isBlank()) {
-            return getUrl();
-        }
-        return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
-    }
-
     public List<String> getAllUrls() {
         List<String> additional = properties.additionalUrls();
         if (additional == null || additional.isEmpty()) {
