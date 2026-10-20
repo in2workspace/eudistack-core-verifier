@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
+import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -13,8 +16,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class JsonSchemaCredentialValidatorTest {
 
@@ -160,5 +167,123 @@ class JsonSchemaCredentialValidatorTest {
         mandate.putArray("power");
 
         return vc;
+    }
+
+    @Nested
+    class SdJwtVc {
+
+        private static final String VCT = "urn:es.cgcom:doctorid:1";
+
+        private JsonSchemaCredentialValidator sdJwtValidator;
+
+        @BeforeEach
+        void setUpDoctorSchema() throws IOException {
+            Files.writeString(tempDir.resolve("doctorid.sd.1.json"), """
+                    {
+                      "$schema": "https://json-schema.org/draft/2020-12/schema",
+                      "type": "object",
+                      "required": ["givenName", "familyName", "medical_speciality"],
+                      "additionalProperties": true,
+                      "properties": {
+                        "givenName": { "type": "string" },
+                        "familyName": { "type": "string" },
+                        "legally_entitled": { "type": "boolean" },
+                        "medical_speciality": { "type": "array", "items": { "type": "string" } }
+                      }
+                    }
+                    """);
+            SchemaProfileRegistry registry = mock(SchemaProfileRegistry.class);
+            when(registry.findByConfigId(VCT)).thenReturn(Optional.of(
+                    new SchemaProfile("doctorid.sd.1", null, null, null, Set.of(), false, "iss", null)));
+            sdJwtValidator = new JsonSchemaCredentialValidator(
+                    List.of(new LocalSchemaResolver(tempDir.toString(), registry)));
+        }
+
+        private ObjectNode doctor() {
+            ObjectNode claims = JsonNodeFactory.instance.objectNode();
+            claims.put("vct", VCT);
+            claims.put("givenName", "Jane");
+            claims.put("familyName", "Doe");
+            claims.putArray("medical_speciality").add("Cardiology");
+            return claims;
+        }
+
+        @Test
+        void validate_sdJwtWithAllMandatoryClaims_success() {
+            // Arrange
+            ObjectNode credential = doctor();
+
+            // Act
+            ValidationResult result = sdJwtValidator.validate(credential);
+
+            // Assert
+            assertTrue(result.valid());
+            assertEquals(VCT, result.credentialType());
+        }
+
+        @Test
+        void validate_sdJwtWithUndeclaredClaim_success() {
+            // Arrange
+            ObjectNode credential = doctor();
+            credential.put("externalReference", "REF-1");
+
+            // Act
+            ValidationResult result = sdJwtValidator.validate(credential);
+
+            // Assert
+            assertTrue(result.valid());
+        }
+
+        @Test
+        void validate_sdJwtMissingMandatoryClaim_fails() {
+            // Arrange
+            ObjectNode credential = doctor();
+            credential.remove("familyName");
+
+            // Act
+            ValidationResult result = sdJwtValidator.validate(credential);
+
+            // Assert
+            assertFalse(result.valid());
+        }
+
+        @Test
+        void validate_sdJwtMissingClaimThatWasNotRequested_success() {
+            // Arrange
+            ObjectNode credential = doctor();
+            credential.remove("medical_speciality");
+
+            // Act
+            ValidationResult result = sdJwtValidator.validate(credential, Set.of("givenName", "familyName"));
+
+            // Assert
+            assertTrue(result.valid());
+        }
+
+        @Test
+        void validate_sdJwtMissingClaimThatWasRequested_fails() {
+            // Arrange
+            ObjectNode credential = doctor();
+            credential.remove("familyName");
+
+            // Act
+            ValidationResult result = sdJwtValidator.validate(credential, Set.of("givenName", "familyName"));
+
+            // Assert
+            assertFalse(result.valid());
+        }
+
+        @Test
+        void validate_sdJwtClaimWithWrongTypeEvenIfNotRequested_fails() {
+            // Arrange
+            ObjectNode credential = doctor();
+            credential.put("legally_entitled", "yes");
+
+            // Act
+            ValidationResult result = sdJwtValidator.validate(credential, Set.of("givenName"));
+
+            // Assert
+            assertFalse(result.valid());
+        }
     }
 }

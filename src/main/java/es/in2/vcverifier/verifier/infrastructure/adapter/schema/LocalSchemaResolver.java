@@ -5,7 +5,9 @@ import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SpecVersion;
+import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaResolver;
+import es.in2.vcverifier.verifier.domain.service.SchemaProfileRegistry;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.FileInputStream;
@@ -32,13 +34,19 @@ public class LocalSchemaResolver implements CredentialSchemaResolver {
 
     private final Map<String, JsonSchema> cache = new ConcurrentHashMap<>();
     private final String externalSchemasDir;
+    private final SchemaProfileRegistry schemaProfileRegistry;
 
     public LocalSchemaResolver() {
         this(null);
     }
 
     public LocalSchemaResolver(String externalSchemasDir) {
+        this(externalSchemasDir, null);
+    }
+
+    public LocalSchemaResolver(String externalSchemasDir, SchemaProfileRegistry schemaProfileRegistry) {
         this.externalSchemasDir = externalSchemasDir;
+        this.schemaProfileRegistry = schemaProfileRegistry;
     }
 
     @Override
@@ -48,16 +56,26 @@ public class LocalSchemaResolver implements CredentialSchemaResolver {
 
     @Override
     public Optional<JsonSchema> resolve(String credentialType, List<String> context, JsonNode credential) {
-        // For SD-JWT, the vct IS the config ID; for W3C, the type IS the config ID
+        // For W3C the type IS the config ID; for SD-JWT the vct may be an alias of it
+        // (e.g. urn:es.cgcom:doctorid:1 → doctorid.sd.1), which the profile registry maps back
         String configId = credentialType;
         if (credential != null && credential.has("vct")) {
-            configId = credential.get("vct").asText();
+            configId = toConfigId(credential.get("vct").asText());
         }
 
         String schemaFileName = configId + ".json";
         log.debug("Resolving schema for configId={}, file={}", configId, schemaFileName);
 
         return Optional.ofNullable(cache.computeIfAbsent(schemaFileName, this::loadSchema));
+    }
+
+    private String toConfigId(String vct) {
+        if (schemaProfileRegistry == null) {
+            return vct;
+        }
+        return schemaProfileRegistry.findByConfigId(vct)
+                .map(SchemaProfile::credentialConfigurationId)
+                .orElse(vct);
     }
 
     public static String resolveVersion(String credentialType, List<String> context) {
