@@ -15,6 +15,13 @@ public record DcqlQuery(
     /**
      * Top-level claims this query asks for within the credential queries that accept the given vct.
      * Empty when no query matches or none names specific claims.
+     * <p>
+     * Known limitation (technical debt): a credential query without {@code claims} yields an empty set, which
+     * the schema validation reads as "enforce every mandatory attribute". OID4VP 1.0 §6.4.1 states that such a
+     * query requests no selectively disclosable attribute, so a wallet that applies selective disclosure
+     * would send none of them and the presentation would be rejected. It has no effect today because our
+     * wallet sends every disclosure. The fix, to be done before or together with selective disclosure in the
+     * wallet, is to require no selectively disclosable attribute when the query lists no claims.
      */
     public Set<String> requestedTopLevelClaims(String vct) {
         return credentials.stream()

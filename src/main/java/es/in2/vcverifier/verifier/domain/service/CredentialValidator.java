@@ -17,7 +17,8 @@ public interface CredentialValidator {
     /**
      * @param requestedClaims top-level claims the verifier asked for. A selectively disclosed
      *                        presentation only carries those, so a mandatory claim outside this set
-     *                        is not reported as missing. An empty set enforces every mandatory claim.
+     *                        is not reported as missing. An empty set enforces every mandatory claim; see the
+     *                        known limitation in {@code DcqlQuery#requestedTopLevelClaims} for queries without claims.
      */
     ValidationResult validate(JsonNode credential, Set<String> requestedClaims);
 }
