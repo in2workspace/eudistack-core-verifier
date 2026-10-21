@@ -16,6 +16,7 @@ import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialSchemaValidationException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
@@ -23,10 +24,13 @@ import es.in2.vcverifier.verifier.domain.exception.LoginTenantMismatchException;
 import es.in2.vcverifier.verifier.domain.exception.LegacyFormatSunsetClosedException;
 import es.in2.vcverifier.verifier.domain.exception.UnknownCredentialFormatException;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
 import es.in2.vcverifier.verifier.domain.port.CredentialVerificationLoggerPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
+import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.verifier.domain.service.VpService;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
@@ -80,6 +84,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private final List<CredentialStatusVerifier> credentialStatusVerifiers;
     private final CredentialSchemaDispatcher credentialSchemaDispatcher;
     private final CredentialVerificationLoggerPort credentialVerificationLogger;
+    private final DcqlProfileResolver dcqlProfileResolver;
+    private final CredentialValidator credentialValidator;
 
     @Override
     public AuthResponseResult handleAuthResponse(String state, String vpToken, String tenant){
@@ -97,7 +103,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             Object vpNonceValue = oAuth2AuthorizationRequest.getAdditionalParameters().get(VP_NONCE);
             String cachedVpNonce = vpNonceValue instanceof String n ? n : null;
 
-            JsonNode credentialJson = verifyPresentation(state, vpToken, cachedVpNonce);
+            JsonNode credentialJson = verifyPresentation(state, vpToken, cachedVpNonce, oAuth2AuthorizationRequest.getScopes());
             configurationId = dispatchCredential(state, credentialJson);
 
             verificationLogged = true;
@@ -191,7 +197,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
      * propagate untouched (the caller's catch-all reports them); verification errors are reported
      * here with their specific {@code validation_failed} code.
      */
-    private JsonNode verifyPresentation(String state, String encodedPresentation, String cachedVpNonce) {
+    private JsonNode verifyPresentation(String state, String encodedPresentation, String cachedVpNonce, Set<String> scopes) {
         // Decode the presentation from Base64
         String decodedVpToken = new String(Base64.getDecoder().decode(encodedPresentation), StandardCharsets.UTF_8);
 
@@ -202,7 +208,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         try {
             return isSdJwt(resolvedVpToken)
-                    ? verifySdJwtPresentation(state, resolvedVpToken, cachedVpNonce)
+                    ? verifySdJwtPresentation(state, resolvedVpToken, cachedVpNonce, scopes)
                     : verifyJwtPresentation(state, resolvedVpToken, cachedVpNonce);
         } catch (CredentialRevokedException e) {
             throw e;
@@ -215,7 +221,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
     }
 
-    private JsonNode verifySdJwtPresentation(String state, String presentation, String cachedVpNonce) {
+    private JsonNode verifySdJwtPresentation(String state, String presentation, String cachedVpNonce, Set<String> scopes) {
         // SD-JWT VC path: nonce/aud validation is done inside KB-JWT verification
         // OID4VP Final 1.0: aud MUST be client_id. Use DID key as primary expected audience.
         String expectedAud = cryptoComponent.getClientId();
@@ -223,6 +229,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 presentation, expectedAud, cachedVpNonce);
         JsonNode credentialJson = objectMapper.valueToTree(result.resolvedClaims());
         log.info("SD-JWT VC validated successfully. vct={}", result.vct());
+
+        validateSdJwtSchema(credentialJson, result.vct(), scopes);
 
         // Check revocation via Token Status List (status.status_list)
         try {
@@ -232,6 +240,16 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             throw e;
         }
         return credentialJson;
+    }
+
+    private void validateSdJwtSchema(JsonNode credentialJson, String vct, Set<String> scopes) {
+        Set<String> requestedClaims = dcqlProfileResolver.resolve(String.join(" ", scopes)).requestedTopLevelClaims(vct);
+        ValidationResult schemaResult = credentialValidator.validate(credentialJson, requestedClaims);
+        if (!schemaResult.valid()) {
+            throw new CredentialSchemaValidationException(
+                    "Credential schema validation failed for type '" + schemaResult.credentialType()
+                            + "': " + String.join("; ", schemaResult.errors()));
+        }
     }
 
     private JsonNode verifyJwtPresentation(String state, String presentation, String cachedVpNonce) {

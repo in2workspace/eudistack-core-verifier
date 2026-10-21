@@ -44,6 +44,17 @@ Pre-existing, not introduced by this release, but more exposed now that SSO reus
 - **TDG-48 (high)**: SSO reuse does not re-check whether the credential was revoked or expired after the QR login (EUD-300 FR-04).
 - **TDG-49 (low)**: request objects (JAR) are only signature-checked (`exp`, `aud`, `iss`, `jti` not validated; `state`, `nonce` and PKCE taken from the query).
 
+## [3.3.9] - 2026-10-16
+
+### Added
+
+- **EUD-301 — SD-JWT VC presentations are validated against their schema**: the SD-JWT path now runs the same JSON Schema validation as the JWT path, and a missing mandatory attribute is rejected.
+
+### Changed
+
+- **EUD-301 — Schema resolved by `vct`**: an SD-JWT VC is identified by its `vct` (including aliases such as `urn:es.cgcom:doctorid:1` → `doctorid.sd.1`) instead of being treated as `Unknown` and accepted unvalidated.
+- **EUD-301 — Mandatory attributes are only enforced when the DCQL requested them**: a selectively disclosed presentation only carries the requested attributes. Attributes the schema does not declare never invalidate the credential.
+
 ## [3.3.8] - 2026-10-05
 
 ### Fixed

@@ -19,9 +19,9 @@ import java.util.List;
 public class CredentialValidationConfig {
 
     @Bean
-    public CredentialSchemaResolver localSchemaResolver(BackendConfig backendConfig) {
+    public CredentialSchemaResolver localSchemaResolver(BackendConfig backendConfig, SchemaProfileRegistry schemaProfileRegistry) {
         log.info("Registering Local Schema Resolver");
-        return new LocalSchemaResolver(backendConfig.getLocalSchemasDir());
+        return new LocalSchemaResolver(backendConfig.getLocalSchemasDir(), schemaProfileRegistry);
     }
 
     @Bean

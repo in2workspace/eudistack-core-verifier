@@ -23,6 +23,7 @@ import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabl
 import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
+import es.in2.vcverifier.verifier.domain.exception.CredentialSchemaValidationException;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.exception.LegacyFormatSunsetClosedException;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
@@ -30,10 +31,16 @@ import es.in2.vcverifier.verifier.domain.exception.UnknownCredentialFormatExcept
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.model.dispatch.CredentialFormat;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
+import es.in2.vcverifier.verifier.domain.model.dcql.ClaimQuery;
+import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
+import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchReason;
+import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
 import es.in2.vcverifier.verifier.domain.port.CredentialVerificationLoggerPort;
 import es.in2.vcverifier.verifier.domain.service.CredentialSchemaDispatcher;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
+import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.service.VpService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -133,6 +140,10 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
     private CredentialVerificationLoggerPort verificationLogger;
     @Mock
     private CredentialStatusVerifier statusVerifier;
+    @Mock
+    private DcqlProfileResolver dcqlProfileResolver;
+    @Mock
+    private CredentialValidator credentialValidator;
 
     private AuthorizationResponseProcessorServiceImpl service;
     private RegisteredClient client;
@@ -152,7 +163,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
     private AuthorizationResponseProcessorServiceImpl newService(List<CredentialStatusVerifier> verifiers) {
         return new AuthorizationResponseProcessorServiceImpl(requestCache, codeCache, vpService, sdJwtService,
                 new ObjectMapper(), clientRepository, authorizationService, sse, backendConfig, crypto,
-                verifiers, dispatcher, verificationLogger);
+                verifiers, dispatcher, verificationLogger, dcqlProfileResolver, credentialValidator);
     }
 
     // --- login window ---
@@ -291,6 +302,48 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
 
         verify(sse).sendValidationFailed(eq(STATE), eq("SIGNATURE_INVALID"), contains("bad sig"));
         assertNoCodeIssued();
+    }
+
+    @Test
+    void sdJwt_schemaValidationFails_sendsValidationErrorAndIssuesNoCode() {
+        // Arrange
+        givenOpenLoginWith();
+        givenSdJwtVerifiedAs(Map.of("name", "x"));
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(new DcqlQuery(List.of()));
+        when(credentialValidator.validate(any(), any())).thenReturn(ValidationResult.builder()
+                .valid(false).credentialType("vct").errors(List.of("givenName is required")).build());
+
+        // Act
+        var ex = assertThrows(CredentialSchemaValidationException.class,
+                () -> service.handleAuthResponse(STATE, SD_JWT_B64, TENANT));
+
+        // Assert
+        assertTrue(ex.getMessage().contains("givenName is required"));
+        verify(sse, times(2)).sendValidationFailed(eq(STATE), eq("VALIDATION_ERROR"), contains("givenName is required"));
+        assertNoCodeIssued();
+    }
+
+    @Test
+    void sdJwt_dcqlNamesClaims_passesThemToSchemaValidation() {
+        // Arrange
+        givenOpenLoginWith();
+        givenSdJwtVerifiedAs(Map.of("name", "x"));
+        CredentialQuery.CredentialMeta meta = new CredentialQuery.CredentialMeta(List.of("vct"), null);
+        when(dcqlProfileResolver.resolve("read")).thenReturn(new DcqlQuery(List.of(
+                new CredentialQuery("q1", "dc+sd-jwt", meta, List.of(
+                        new ClaimQuery(List.of("givenName"), null, null),
+                        new ClaimQuery(List.of("familyName"), null, null))))));
+        when(credentialValidator.validate(any(), any()))
+                .thenReturn(ValidationResult.builder().valid(true).errors(List.of()).build());
+        givenDispatch();
+        givenRegisteredClient();
+        givenCodeIssuance();
+
+        // Act
+        service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
+
+        // Assert
+        verify(credentialValidator).validate(any(), eq(Set.of("givenName", "familyName")));
     }
 
     @Test
@@ -656,6 +709,13 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
     }
 
     private void givenVerifiedSdJwt(Map<String, Object> claims) {
+        givenSdJwtVerifiedAs(claims);
+        when(dcqlProfileResolver.resolve(anyString())).thenReturn(new DcqlQuery(List.of()));
+        when(credentialValidator.validate(any(), any()))
+                .thenReturn(ValidationResult.builder().valid(true).errors(List.of()).build());
+    }
+
+    private void givenSdJwtVerifiedAs(Map<String, Object> claims) {
         givenClientId();
         when(sdJwtService.verifyPresentation(anyString(), anyString(), any()))
                 .thenReturn(new SdJwtVerificationResult(new HashMap<>(claims), "vct", null));
