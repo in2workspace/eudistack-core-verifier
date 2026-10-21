@@ -7,6 +7,7 @@ import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -51,6 +52,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
@@ -180,9 +182,9 @@ class AuthorizationResponseProcessorServiceImplTest {
         assertEquals(state, result.state());
         String redirectUrl = result.redirectUrl();
         assertNotNull(redirectUrl);
-        assertTrue(redirectUrl.contains("code=" + result.authorizationCode()));
-        assertTrue(redirectUrl.contains("state="));
-        assertTrue(redirectUrl.startsWith("https://client.example.com/callback?"));
+        // RFC 9207: iss is the /authorize issuer cached with the request, not the wallet POST's host
+        assertEquals("https://client.example.com/callback?code=" + result.authorizationCode()
+                + "&state=test-state&iss=https%3A%2F%2Fauth.example.com", redirectUrl);
         assertEquals("https://client.example.com/callback", result.redirectUri());
         assertEquals("client-id", result.clientId());
         assertEquals("https://auth.example.com", result.authorizationServerBaseUrl());
@@ -659,6 +661,30 @@ class AuthorizationResponseProcessorServiceImplTest {
         // Then
         verify(oAuth2AuthorizationService, never()).remove(any());
         verify(cacheStoreForAuthorizationCodeData).delete("gone");
+    }
+
+    @Test
+    void issueCodeForReusedSession_redirectUriThatCannotCarryAResponse_failsWithoutSavingOrCachingACode() {
+        // Given: a registered redirect_uri no authorization response can be built on (non-ASCII)
+        String redirectUri = "https://client.example.com/café";
+        when(registeredClientRepository.findByClientId("client-id")).thenReturn(RegisteredClient.withId("client-id")
+                .clientId("client-id")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(redirectUri)
+                .build());
+
+        Set<String> scopes = Set.of("openid");
+        ObjectNode verifiableCredential = new ObjectMapper().createObjectNode();
+        Instant authTime = Instant.now();
+
+        // When
+        assertThrows(IllegalArgumentException.class, () -> authorizationResponseProcessorService.issueCodeForReusedSession(
+                "client-id", redirectUri, scopes, "state-1", null, null, null,
+                verifiableCredential, authTime, "https://tenant-a.example.com/verifier"));
+
+        // Then: no orphan code left behind
+        verify(oAuth2AuthorizationService, never()).save(any());
+        verify(cacheStoreForAuthorizationCodeData, never()).add(any(), any());
     }
 
     // ---- EUD-252 (F1): the wallet must answer through the tenant the login started on ----

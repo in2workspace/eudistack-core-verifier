@@ -9,6 +9,7 @@ import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
+import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +24,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -368,5 +370,29 @@ class AuthorizationRequestBuildWorkflowTest {
         when(cryptoComponent.getClientId()).thenReturn(clientId);
         when(backendConfig.getUrl()).thenReturn(verifierUrl);
         when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
+    }
+
+    @Test
+    void validateScope_unsupportedScope_throwsWithoutBuildingOrCachingARequest() {
+        // Given
+        when(dcqlProfileResolver.resolve("openid unknown"))
+                .thenThrow(new InvalidScopeException("No DCQL profile configured for scope 'unknown'"));
+
+        // When / Then
+        assertThatThrownBy(() -> workflow.validateScope("openid unknown")).isInstanceOf(InvalidScopeException.class);
+        verifyNoInteractions(jwtService, cacheStoreForAuthorizationRequestJWT);
+    }
+
+    @Test
+    void validateScope_supportedScope_resolvesItWithoutBuildingOrCachingARequest() {
+        // Given
+        when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(new DcqlQuery(List.of()));
+
+        // When
+        workflow.validateScope("openid learcredential");
+
+        // Then
+        verify(dcqlProfileResolver).resolve("openid learcredential");
+        verifyNoInteractions(jwtService, cacheStoreForAuthorizationRequestJWT);
     }
 }

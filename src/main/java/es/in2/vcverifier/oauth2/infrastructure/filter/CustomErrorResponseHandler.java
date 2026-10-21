@@ -9,18 +9,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.oauth2.core.OAuth2Error;
-import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 
 import java.io.IOException;
 import java.net.URI;
 import java.util.Set;
 
-import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRED;
-import static es.in2.vcverifier.shared.domain.util.Constants.INVALID_CLIENT_AUTHENTICATION;
-import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
-import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -32,31 +27,35 @@ public class CustomErrorResponseHandler implements AuthenticationFailureHandler 
     @Override
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
                                         AuthenticationException exception) throws IOException {
-        if (exception instanceof OAuth2AuthorizationCodeRequestAuthenticationException oAuth2Exception) {
-            OAuth2Error error = oAuth2Exception.getError();
-            // Redirect to the URI in the error for codes that carry a client-facing redirect destination.
-            if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION)
-                    || error.getErrorCode().equals(INVALID_CLIENT_AUTHENTICATION)
-                    || error.getErrorCode().equals(LOGIN_REQUIRED)
-                    || error.getErrorCode().equals(INTERACTION_REQUIRED)) {
-                String redirectUri = error.getUri();
-                // SEC-S7: Validate redirect URI belongs to a registered client origin to prevent open redirect.
-                if (redirectUri != null && isAllowedRedirectUri(redirectUri)) {
-                    if (error.getErrorCode().equals(REQUIRED_EXTERNAL_USER_AUTHENTICATION)) {
-                        // EUD-252: login-page redirect of an SSO tenant — bind the login to this
-                        // browser. Always re-emitted (also when reused) to refresh its Max-Age.
-                        SsoBrowserBindingCookie.pendingCookie(request)
-                                .ifPresent(cookie -> response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString()));
-                    }
-                    response.sendRedirect(redirectUri);
-                    return;
+        // Only redirects our converter decided on are followed. Any other exception — including
+        // Spring's own OAuth2AuthorizationCodeRequestAuthenticationException, whose uri is just a
+        // documentation link — is answered with a 400, whatever its error code or uri.
+        if (exception instanceof AuthorizationRedirectException redirect) {
+            String location = redirect.location();
+            // SEC-S7: second layer — the target must still belong to a registered client origin (or
+            // the Verifier itself) over HTTPS, to prevent an open redirect.
+            if (location != null && isAllowedRedirectUri(location)) {
+                if (redirect.isLoginPage()) {
+                    // EUD-252: login-page redirect of an SSO tenant — bind the login to this
+                    // browser. Always re-emitted (also when reused) to refresh its Max-Age.
+                    SsoBrowserBindingCookie.pendingCookie(request)
+                            .ifPresent(cookie -> response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString()));
                 }
-                log.warn("Blocked redirect to untrusted URI: {}", redirectUri);
+                response.sendRedirect(location);
+                return;
             }
+            log.warn("event=authorize_redirect_blocked error={} origin={}", redirect.getError().getErrorCode(),
+                    sanitize(originOf(location)));
         }
 
         // Handle other unexpected errors
         response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Authentication failed");
+    }
+
+    /** Origin only: the location may carry an authorization code or the client's state. */
+    private static String originOf(String uri) {
+        URI origin = OriginNormalizer.normalize(uri);
+        return origin != null ? origin.toString() : null;
     }
 
     private boolean isAllowedRedirectUri(String uri) {

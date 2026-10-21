@@ -9,6 +9,7 @@ import es.in2.vcverifier.shared.crypto.CryptoComponent;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
+import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
@@ -48,7 +49,6 @@ import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
@@ -296,11 +296,14 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
                 (String) addl.get(NONCE),
-                credentialJson
+                credentialJson,
+                null, // fresh VP presentation: auth_time is the token issue time
+                // issuer resolved at /authorize (cached with the request), not the wallet POST's host
+                oAuth2AuthorizationRequest.getAuthorizationUri()
         ));
 
         // SEC-O2: Log redirect target without full authorization code.
-        log.info("Authorization code issued for redirect_uri: {}", redirectUri);
+        log.info("Authorization code issued for redirect_uri: {}", sanitize(redirectUri));
 
         // EUD-252: the success redirect is NOT pushed over SSE here any more. The caller routes
         // the browser — directly to the RP, or first through the browser-bound SSO close step.
@@ -326,14 +329,17 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson
+            JsonNode credentialJson,
+            Instant authTime,
+            String issuer
     ) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient == null) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
-                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson));
+                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson,
+                authTime, issuer));
         log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
         return issuedCode.redirectUrl();
     }
@@ -362,11 +368,13 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson
+            JsonNode credentialJson,
+            Instant authTime,
+            String issuer
     ) {
     }
 
-    /** A freshly issued authorization code and the {@code redirectUri?code=...&state=...} URL carrying it. */
+    /** A freshly issued authorization code and the {@code redirectUri?code=...&state=...&iss=...} URL carrying it. */
     private record IssuedCode(String code, String redirectUrl) {
         @Override
         public String toString() {
@@ -375,9 +383,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     }
 
     /**
-     * Generates a fresh authorization code, registers the {@link OAuth2Authorization} (needed at
-     * the token endpoint), caches the {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow}
-     * to read the credential claims from, and builds the {@code redirectUri?code=...&state=...} URL.
+     * Generates a fresh authorization code, builds the {@code redirectUri?code=...&state=...&iss=...} URL,
+     * then registers the {@link OAuth2Authorization} (needed at the token endpoint) and caches the
+     * {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow} to read the credential claims from.
      * Shared by the VP-validated establishment path ({@link #handleAuthResponse}) and the SSO-reuse
      * path ({@link #issueCodeForReusedSession}) — the only difference between them is where
      * {@code credentialJson} comes from (freshly verified VP vs. cached establishment snapshot).
@@ -395,6 +403,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         // SEC-S9: Authorization codes must not be logged in full.
         String code = UUID.randomUUID().toString();
+        // Built before anything is saved or cached: a redirect_uri it cannot be built on
+        // (IllegalArgumentException) must not leave an orphan authorization code behind.
+        String redirectUrl = AuthorizationResponseUri.success(redirectUri, code, state, issuance.issuer());
         log.info("Authorization code generated: {}...", code.substring(0, 8));
 
         Instant expirationTime = issueTime.plus(backendConfig.getAccessTokenExpirationSeconds(), ChronoUnit.SECONDS);
@@ -456,15 +467,11 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 .verifiableCredential(credentialJson)
                 .oAuth2Authorization(authorization)
                 .requestedScopes(scopes)
-                .clientNonce(nonce);
+                .clientNonce(nonce)
+                .authTime(issuance.authTime());
 
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 
-        String redirectUrl = UriComponentsBuilder.fromHttpUrl(redirectUri)
-                .queryParam("code", code)
-                .queryParam("state", state)
-                .build()
-                .toUriString();
         return new IssuedCode(code, redirectUrl);
     }
 
@@ -579,11 +586,13 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             // OID4VP Final 1.0: aud MUST be client_id. Accept both x509_hash/DID client_id and backend URL for backwards compatibility.
             String expectedClientId = cryptoComponent.getClientId();
             String expectedUrl = backendConfig.getUrl();
-            log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}", expectedClientId, expectedUrl, audiences);
+            log.debug("VP aud validation: expectedClientId={}, expectedUrl={}, received={}", expectedClientId, expectedUrl,
+                    sanitize(String.valueOf(audiences)));
             if (!audiences.contains(expectedClientId) && !audiences.contains(expectedUrl)) {
                 throw new JWTClaimMissingException("The 'aud' claim in the VP token does not match the verifier client_id or URL.");
             }
-            log.debug("Validated VP nonce: received={}, cached={}, audience={}", vpNonce, cachedNonce, audiences);
+            log.debug("Validated VP nonce: received={}, cached={}, audience={}", sanitize(vpNonce), cachedNonce,
+                    sanitize(String.valueOf(audiences)));
         } catch (ParseException e) {
             throw new JWTParsingException("Failed to parse the VP JWT or extract claims.");
         }

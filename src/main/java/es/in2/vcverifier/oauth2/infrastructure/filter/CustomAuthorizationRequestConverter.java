@@ -4,9 +4,11 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.oauth2.domain.model.OidcPrompt;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -21,17 +23,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
-import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationException;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContext;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
 import org.springframework.security.web.authentication.AuthenticationConverter;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -42,6 +45,7 @@ import java.security.PublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Pattern;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
@@ -51,9 +55,9 @@ import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
-import static es.in2.vcverifier.shared.domain.util.Constants.REQUIRED_EXTERNAL_USER_AUTHENTICATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 
@@ -64,7 +68,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
     private static final String SSO_COOKIE_PREFIX = "__Secure-sso-";
     private static final String MAX_AGE_PARAMETER = "max_age";
+    private static final String PROMPT_PARAMETER = "prompt";
     private static final String ACCESS_PROFILE_PARAMETER = "access_profile";
+    private static final String PROMPT_NONE_COMBINED_DESCRIPTION = "prompt=none cannot be combined with other values";
+    private static final String PROMPT_NOT_A_STRING_DESCRIPTION = "prompt must be a string";
+    private static final String MAX_AGE_INVALID_DESCRIPTION = "max_age must be a non-negative integer";
+    private static final Pattern DIGITS = Pattern.compile("\\d+");
+    private static final BigDecimal MAX_AGE_LIMIT = BigDecimal.valueOf(SsoTtlRange.MAX_ABSOLUTE.toSeconds());
+    private static final String LOGIN_REQUIRED_DESCRIPTION = "prompt=none: end-user authentication is required";
+    private static final String INTERACTION_REQUIRED_DESCRIPTION = "prompt=none: end-user interaction is required";
 
     private final DIDService didService;
     private final JWTService jwtService;
@@ -106,33 +118,35 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .scope(scope)
                 .portalUrl(portalUrl)
                 .contextPath(contextPath)
-                .maxAge(parseMaxAge(request.getParameter(MAX_AGE_PARAMETER)))
                 .accessProfile(request.getParameter(ACCESS_PROFILE_PARAMETER))
+                .issuer(resolveIssuer())
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient == null) {
-            log.error("Unauthorized client: Client with ID {} not found.", clientId);
+            log.error("Unauthorized client: Client with ID {} not found.", sanitize(clientId));
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
 
         // Case 1: Standard OIDC authorization request without a signed JWT object
         if (requestUri == null && request.getParameter("request") == null) {
             log.info("Processing an authorization request without a signed JWT object.");
-            ReuseSsoSessionWorkflow.Result ssoResult = tryReuseSsoSession(request, authorizationContext, clientId);
-            if (ssoResult != null) {
-                // Every branch of handleSsoReuseResult throws: LOGIN_REQUIRED/INTERACTION_REQUIRED
-                // redirect back to the RP with an OIDC error, ALLOWED redirects with a real code —
-                // none of them should fall through to a fresh OID4VP/QR challenge below.
-                handleSsoReuseResult(ssoResult, authorizationContext);
-            }
-            // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
-            // carry the login-page browser-binding cookie.
-            return handleOIDCStandardRequest(authorizationContext, registeredClient, bindLogin(request));
+            return handleOIDCStandardRequest(authorizationContext, request, registeredClient);
         }
 
         // Case 2: FAPI authorization request with a signed JWT object
-        return handleFAPIRequest(authorizationContext, request, registeredClient, bindLogin(request));
+        return handleFAPIRequest(authorizationContext, request, registeredClient);
+    }
+
+    /**
+     * RFC 9207 {@code iss}: the issuer Spring Authorization Server resolved for this request, i.e. the
+     * one its discovery document advertises for this host (no issuer is configured, it is derived
+     * from the request). {@link BackendConfig#getUrl()} derives the same
+     * {@code scheme://host[:port]/context-path} and only serves when no server context is bound.
+     */
+    private String resolveIssuer() {
+        AuthorizationServerContext context = AuthorizationServerContextHolder.getContext();
+        return context != null && context.getIssuer() != null ? context.getIssuer() : backendConfig.getUrl();
     }
 
     /** Tenant resolved at /authorize + browser binding (null when the tenant has no SSO). */
@@ -144,31 +158,85 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 ssoBrowserBindingCookie.bindIfSsoEnabled(request));
     }
 
-    private ReuseSsoSessionWorkflow.Result tryReuseSsoSession(HttpServletRequest request,
-                                                              AuthorizationContext ctx,
-                                                              String clientId) {
-        if (!"none".equals(request.getParameter("prompt"))) {
-            return null;
+    /**
+     * OIDC Core 1.0 §3.1.2.1 + EUD-300 FR-03/FR-05: decides whether the tenant SSO session is reused.
+     * Must only be called once the request is fully validated (client, redirect_uri, and for JAR the
+     * request object signature and claims): every redirect thrown here goes to {@code ctx.redirectUri()}.
+     *
+     * <ul>
+     *   <li>{@code login} → no reuse, the caller continues to the QR flow.</li>
+     *   <li>{@code none} → ALLOWED redirects with the code; otherwise {@code login_required} /
+     *       {@code interaction_required}, never UI.</li>
+     *   <li>absent (or only unsupported values) → ALLOWED redirects with the code; any other outcome
+     *       returns and the caller continues to the QR flow.</li>
+     * </ul>
+     *
+     * <p>Returns normally only when the caller must continue to the OID4VP/QR flow.
+     */
+    private void attemptSsoReuse(HttpServletRequest request, AuthorizationContext ctx,
+                                 RegisteredClient registeredClient, OidcPrompt prompt) {
+        String clientId = registeredClient.getClientId();
+        if (prompt.requiresLogin()) {
+            log.debug("event=sso_reuse_skipped clientId={} reason=prompt_login", clientId);
+            return;
         }
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
-            return null;
+            if (prompt.isNone()) {
+                throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
+            }
+            return;
         }
+        // The reuse path issues a code without building an OID4VP request, so the scope check that
+        // buildAuthorizationRequest does for the QR path has to run here first.
+        authorizationRequestBuildWorkflow.validateScope(ctx.scope());
+
+        ReuseSsoSessionWorkflow.Result result = prompt.isNone()
+                ? reuseSsoSession(request, ctx, tenant, clientId)
+                : reuseSsoSessionOrNull(request, ctx, tenant, clientId);
+        ReuseSsoSessionWorkflow.Result.Status status = result != null ? result.status() : null;
+        if (status == ReuseSsoSessionWorkflow.Result.Status.ALLOWED) {
+            throwSsoReuseRedirect(result.redirectUrl());
+        }
+        if (prompt.isNone()) {
+            if (status == ReuseSsoSessionWorkflow.Result.Status.INTERACTION_REQUIRED) {
+                throw oidcErrorRedirect(INTERACTION_REQUIRED, INTERACTION_REQUIRED_DESCRIPTION, ctx);
+            }
+            throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
+        }
+        log.debug("event=sso_reuse_skipped tenant={} clientId={} reason={}", tenant, clientId,
+                status != null ? status : "reuse_failed");
+    }
+
+    private ReuseSsoSessionWorkflow.Result reuseSsoSession(HttpServletRequest request, AuthorizationContext ctx,
+                                                           String tenant, String clientId) {
         String cookieValue = extractCookieValue(request, SSO_COOKIE_PREFIX + tenant);
-        // EUDISTACK-548: mirrors the sso_cookie_issued log above — lets us see, side by side,
-        // whether the exact cookie this request expected was ever actually presented by the
-        // browser. Cookie value itself is never logged, only whether one was found.
+        // EUDISTACK-548: mirrors the sso_cookie_issued log — lets us see, side by side, whether the
+        // exact cookie this request expected was ever actually presented by the browser. Cookie
+        // value itself is never logged, only whether one was found.
         log.debug("event=sso_cookie_lookup tenant={} expectedCookieName={} found={}",
                 tenant, SSO_COOKIE_PREFIX + tenant, cookieValue != null);
         String correlationId = UUID.randomUUID().toString();
         return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, correlationId);
     }
 
-    private void handleSsoReuseResult(ReuseSsoSessionWorkflow.Result result, AuthorizationContext ctx) {
-        switch (result.status()) {
-            case LOGIN_REQUIRED -> throwPromptNoneOidcError(LOGIN_REQUIRED, ctx);
-            case INTERACTION_REQUIRED -> throwPromptNoneOidcError(INTERACTION_REQUIRED, ctx);
-            case ALLOWED -> throwSsoReuseRedirect(result.redirectUrl());
+    /**
+     * Without {@code prompt}, reuse is only an optimisation over the normal login: an unexpected
+     * failure while trying it must not break a login that would otherwise succeed, so it falls back
+     * to the QR flow (fail-safe: no code is issued).
+     */
+    private ReuseSsoSessionWorkflow.Result reuseSsoSessionOrNull(HttpServletRequest request, AuthorizationContext ctx,
+                                                                 String tenant, String clientId) {
+        try {
+            return reuseSsoSession(request, ctx, tenant, clientId);
+        } catch (RuntimeException e) {
+            // Class names only at WARN: a raw driver/JDBC exception (or one in its cause chain) may
+            // carry SQL or constraint detail, e.g. a session id, in its message. The throwable goes
+            // to DEBUG so a persistent reuse failure (cipher key, DB, bug) stays debuggable.
+            log.warn("event=sso_reuse_failed tenant={} clientId={} error={} rootCause={}", tenant, clientId,
+                    e.getClass().getSimpleName(), rootCauseName(e));
+            log.debug("event=sso_reuse_failed tenant={} clientId={}", tenant, clientId, e);
+            return null;
         }
     }
 
@@ -178,48 +246,96 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * (an "error" whose uri is really just the next hop, not a real OAuth failure).
      */
     private void throwSsoReuseRedirect(String redirectUrl) {
-        OAuth2Error error = new OAuth2Error(REQUIRED_EXTERNAL_USER_AUTHENTICATION, "SSO session reused", redirectUrl);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        throw AuthorizationRedirectException.toClientWithCode(redirectUrl);
     }
 
-    private void throwPromptNoneOidcError(String errorCode, AuthorizationContext ctx) {
-        String location = ctx.redirectUri() + "?error=" + errorCode
-                + (ctx.state() != null && !ctx.state().isBlank()
-                   ? "&state=" + URLEncoder.encode(ctx.state(), StandardCharsets.UTF_8)
-                   : "");
-        OAuth2Error error = new OAuth2Error(errorCode, null, location);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+    /** OIDC error response to the client; {@code ctx.redirectUri()} must already be validated against the client. */
+    private AuthorizationRedirectException oidcErrorRedirect(String errorCode, String errorDescription,
+                                                             AuthorizationContext ctx) {
+        String location = AuthorizationResponseUri.error(ctx.redirectUri(), errorCode, errorDescription,
+                ctx.state(), ctx.issuer());
+        return AuthorizationRedirectException.toClient(errorCode, errorDescription, location);
+    }
+
+    /** {@code prompt} and {@code max_age} of a validated request; {@code maxAge} null = absent or not enforceable. */
+    private record AuthenticationParameters(OidcPrompt prompt, Long maxAge) {
     }
 
     /**
-     * FR-21/AC-09: parsea el {@code max_age} OIDC (segundos, entero no negativo). Un valor
-     * ausente o inválido se ignora (log warn) en vez de romper la petición — max_age es un
-     * refinamiento de frescura sobre el flujo estándar, no una condición de seguridad dura.
+     * OIDC Core 1.0 §3.1.2.1 / §3.1.2.6: parses {@code prompt} and {@code max_age} — query parameters
+     * (plain) or request-object claims (JAR). A malformed value is answered with {@code invalid_request}
+     * to {@code ctx.redirectUri()}, so this must only run once the request is validated (client,
+     * redirect_uri, and for JAR the request-object signature), and it runs whatever the prompt: a
+     * malformed request is malformed even with {@code prompt=login}.
      */
-    private Long parseMaxAge(String rawMaxAge) {
-        if (rawMaxAge == null || rawMaxAge.isBlank()) {
+    private AuthenticationParameters parseAuthenticationParameters(Object rawPrompt, Object rawMaxAge,
+                                                                   AuthorizationContext ctx, String clientId) {
+        return new AuthenticationParameters(parsePrompt(rawPrompt, ctx, clientId), parseMaxAge(rawMaxAge, ctx, clientId));
+    }
+
+    private OidcPrompt parsePrompt(Object rawPrompt, AuthorizationContext ctx, String clientId) {
+        if (rawPrompt != null && !(rawPrompt instanceof String)) {
+            // JAR only: a query parameter is always a string.
+            log.warn("event=authorize_prompt_invalid clientId={} reason=not_a_string type={}", clientId,
+                    rawPrompt.getClass().getSimpleName());
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, PROMPT_NOT_A_STRING_DESCRIPTION, ctx);
+        }
+        OidcPrompt prompt = OidcPrompt.parse((String) rawPrompt);
+        if (prompt.isInvalidNoneCombination()) {
+            log.warn("event=authorize_prompt_invalid clientId={} reason=none_combined_with_other_values", clientId);
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, PROMPT_NONE_COMBINED_DESCRIPTION, ctx);
+        }
+        return prompt;
+    }
+
+    /**
+     * FR-21/AC-09: OIDC {@code max_age}, in seconds, must be a non-negative integer. Accepted forms:
+     * a string of decimal digits (query parameter, or JAR string claim) and, for JAR, a JSON number
+     * with an integral value ({@code 300} or {@code 300.0}). Anything else — negative, fractional,
+     * non-numeric, or another JSON type — is {@code invalid_request}. An absent or empty value is
+     * absent (RFC 6749 §3.1).
+     */
+    private Long parseMaxAge(Object rawMaxAge, AuthorizationContext ctx, String clientId) {
+        if (rawMaxAge == null || (rawMaxAge instanceof String s && s.isBlank())) {
             return null;
         }
-        try {
-            long maxAge = Long.parseLong(rawMaxAge.trim());
-            if (maxAge < 0) {
-                log.warn("event=sso_max_age_invalid reason=negative value={}", sanitize(rawMaxAge));
-                return null;
-            }
-            // W3 (review): an unbounded max_age (e.g. Long.MAX_VALUE) overflows
-            // Instant.plusSeconds(...) in TenantSsoPolicy — ArithmeticException there would
-            // surface as a 500 instead of login_required. Cap at the system's own max session
-            // TTL: no session can ever be older than that anyway, so anything beyond it can
-            // never actually force freshness and is treated the same as an absent max_age.
-            if (maxAge > SsoTtlRange.MAX_ABSOLUTE.toSeconds()) {
-                log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitize(rawMaxAge));
-                return null;
-            }
-            return maxAge;
-        } catch (NumberFormatException e) {
-            log.warn("event=sso_max_age_invalid reason=not_a_number value={}", sanitize(rawMaxAge));
+        BigDecimal maxAge = toNonNegativeInteger(rawMaxAge);
+        if (maxAge == null) {
+            log.warn("event=authorize_max_age_invalid clientId={} type={} value={}", clientId,
+                    rawMaxAge.getClass().getSimpleName(), sanitize(String.valueOf(rawMaxAge)));
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, MAX_AGE_INVALID_DESCRIPTION, ctx);
+        }
+        // W3 (review): an unbounded max_age (e.g. Long.MAX_VALUE) overflows
+        // Instant.plusSeconds(...) in TenantSsoPolicy — ArithmeticException there would
+        // surface as a 500 instead of login_required. Cap at the system's own max session
+        // TTL: no session can ever be older than that anyway, so anything beyond it can
+        // never actually force freshness and is treated the same as an absent max_age.
+        if (maxAge.compareTo(MAX_AGE_LIMIT) > 0) {
+            log.warn("event=sso_max_age_invalid reason=exceeds_max_ttl value={}", sanitize(String.valueOf(rawMaxAge)));
             return null;
         }
+        return maxAge.longValue();
+    }
+
+    /**
+     * The value of {@code raw} when it is a non-negative integer, else {@code null}. Kept as a
+     * BigDecimal (never expanded to an integer) so a huge value like {@code 1e999999999} is only
+     * compared against the cap, never materialised.
+     */
+    private static BigDecimal toNonNegativeInteger(Object raw) {
+        if (raw instanceof String s) {
+            String trimmed = s.trim();
+            return DIGITS.matcher(trimmed).matches() ? new BigDecimal(trimmed) : null;
+        }
+        if (raw instanceof Number n) {
+            try {
+                BigDecimal value = new BigDecimal(n.toString());
+                return value.signum() >= 0 && value.stripTrailingZeros().scale() <= 0 ? value : null;
+            } catch (NumberFormatException e) {
+                return null; // NaN / Infinity
+            }
+        }
+        return null;
     }
 
     private String extractCookieValue(HttpServletRequest request, String cookieName) {
@@ -233,8 +349,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private Authentication handleFAPIRequest(AuthorizationContext authorizationContext,
                                              HttpServletRequest request,
-                                             RegisteredClient registeredClient,
-                                             LoginBinding loginBinding) {
+                                             RegisteredClient registeredClient) {
         String jwt = retrieveJwtFromRequestUriOrRequest(
                 authorizationContext.requestUri(), request, registeredClient, authorizationContext.originalRequestURL(),
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -251,45 +366,69 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                     authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
         }
 
-        return processAuthorizationFlow(authorizationContext, signedJwt, registeredClient, loginBinding);
+        return processAuthorizationFlow(authorizationContext, request, signedJwt, registeredClient);
     }
 
     private Authentication handleOIDCStandardRequest(AuthorizationContext authorizationContext,
-                                                     RegisteredClient registeredClient,
-                                                     LoginBinding loginBinding) {
+                                                     HttpServletRequest request,
+                                                     RegisteredClient registeredClient) {
+        // redirect_uri is validated BEFORE any SSO-reuse decision: both the reuse code redirect and
+        // the prompt=none / invalid_request error redirects target it.
         validateRedirectUri(registeredClient, authorizationContext.redirectUri(), null,
                 authorizationContext.originalRequestURL(), authorizationContext.portalUrl(), authorizationContext.contextPath());
+
+        String rawMaxAge = request.getParameter(MAX_AGE_PARAMETER);
+        String rawPrompt = request.getParameter(PROMPT_PARAMETER);
+        AuthenticationParameters parameters = parseAuthenticationParameters(rawPrompt, rawMaxAge,
+                authorizationContext, registeredClient.getClientId());
+        attemptSsoReuse(request, authorizationContext.toBuilder().maxAge(parameters.maxAge()).build(),
+                registeredClient, parameters.prompt());
 
         // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient, authorizationContext.scope(), authorizationContext.state(),
                 authorizationContext.accessProfile());
 
+        // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
+        // carry the login-page browser-binding cookie.
         cacheAuthorizationRequest(authorizationContext, registeredClient, authorizationContext.redirectUri(),
-                loginBinding, result.vpNonce());
+                bindLogin(request), result.vpNonce());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
+                                                    HttpServletRequest request,
                                                     SignedJWT signedJwt,
-                                                    RegisteredClient registeredClient,
-                                                    LoginBinding loginBinding) {
+                                                    RegisteredClient registeredClient) {
         PublicKey publicKey = didService.resolvePublicKeyFromDid(registeredClient.getClientId());
         jwtService.verifyJWTWithECKey(signedJwt.serialize(), publicKey);
+
+        String jwtRedirectUri = jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI);
+
+        // RFC 9101 §6.3: the request object is authoritative — prompt and max_age come from its
+        // (now signature-verified) claims, never from the query string. The reuse context also
+        // targets the validated request-object redirect_uri, the same one cached for the QR path.
+        Map<String, Object> claims = signedJwt.getPayload().toJSONObject();
+        Map<String, Object> requestObjectClaims = claims != null ? claims : Map.of();
+        AuthorizationContext reuseContext = authorizationContext.toBuilder()
+                .redirectUri(jwtRedirectUri)
+                .build();
+        AuthenticationParameters parameters = parseAuthenticationParameters(
+                requestObjectClaims.get(PROMPT_PARAMETER), requestObjectClaims.get(MAX_AGE_PARAMETER),
+                reuseContext, registeredClient.getClientId());
+        attemptSsoReuse(request, reuseContext.toBuilder().maxAge(parameters.maxAge()).build(),
+                registeredClient, parameters.prompt());
 
         // Delegate JWT building, signing and URL generation to the workflow
         AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
                 registeredClient, authorizationContext.scope(), authorizationContext.state(),
                 authorizationContext.accessProfile());
 
-        cacheAuthorizationRequest(
-                authorizationContext,
-                registeredClient,
-                jwtService.extractClaimFromPayload(signedJwt.getPayload(), OAuth2ParameterNames.REDIRECT_URI),
-                loginBinding,
-                result.vpNonce());
+        // EUD-252: bound only AFTER the reuse branch, same as the plain path.
+        cacheAuthorizationRequest(authorizationContext, registeredClient, jwtRedirectUri,
+                bindLogin(request), result.vpNonce());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -321,8 +460,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             );
         }
 
-        OAuth2Error error = new OAuth2Error(REQUIRED_EXTERNAL_USER_AUTHENTICATION, "Redirection required", redirectUrl);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        throw AuthorizationRedirectException.toLoginPage(redirectUrl);
     }
 
     // --- Validation methods (framework-level, kept in filter) ---
@@ -339,8 +477,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 URLEncoder.encode(clientName, StandardCharsets.UTF_8),
                 URLEncoder.encode(originalRequestURL, StandardCharsets.UTF_8)
         );
-        OAuth2Error error = new OAuth2Error("invalid_client_authentication", errorMessage, redirectUrl);
-        throw new OAuth2AuthorizationCodeRequestAuthenticationException(error, null);
+        throw AuthorizationRedirectException.toErrorPage(errorMessage, redirectUrl);
     }
 
     /**
@@ -358,7 +495,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             try {
                 // SEC-14: SSRF protection — validate URL before outbound request
                 safeUrlValidator.validate(requestUri);
-                log.info("Retrieving JWT from request_uri: {}", requestUri);
+                log.info("Retrieving JWT from request_uri: {}", sanitize(requestUri));
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                         .uri(URI.create(requestUri)).timeout(REQUEST_TIMEOUT).GET().build();
                 HttpResponse<String> httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
@@ -407,6 +544,14 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             throwInvalidClientAuthenticationException("The redirect_uri does not match any of the registered client's redirect_uris.",
                     registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
         }
+        // Every authorization response (code, or an OIDC error) is built on this redirect_uri. One it
+        // cannot be built on fails here, on the Verifier error page, before SSO reuse, caching or the
+        // QR flow — not after the wallet POST has consumed the pending login (500, lost login).
+        if (!AuthorizationResponseUri.isUsable(jwtRedirectUri)) {
+            log.warn("event=authorize_redirect_uri_malformed clientId={}", registeredClient.getClientId());
+            throwInvalidClientAuthenticationException("The redirect_uri cannot carry an authorization response.",
+                    registeredClient.getClientName(), UUID.randomUUID().toString(), originalRequestURL, portalUrl, contextPath);
+        }
     }
 
     private void validateNonceRequired(String clientNonce, RegisteredClient registeredClient,
@@ -435,7 +580,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .clientId(registeredClient.getClientId())
                 .redirectUri(redirectUri)
                 .scope(authorizationContext.scope())
-                .authorizationUri(backendConfig.getUrl());
+                // The /authorize issuer (RFC 9207 iss of the code/abort responses), which is also the
+                // scheme://host/context-path base of the login completion URL.
+                .authorizationUri(authorizationContext.issuer());
 
         Map<String, Object> additionalParameters = new HashMap<>();
         additionalParameters.put(EXPIRATION, Instant.now().plusSeconds(loginTimeoutSeconds).getEpochSecond());

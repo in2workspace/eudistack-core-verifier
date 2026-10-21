@@ -1,14 +1,13 @@
 package es.in2.vcverifier.oauth2.application.workflow;
 
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.stereotype.Service;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -67,7 +66,9 @@ public class AbortLoginWorkflow {
         }
 
         log.info("Login aborted for client={}", sanitize(pending.getClientId()));
-        return Optional.of(buildErrorRedirect(pending.getRedirectUri(), state));
+        // iss (RFC 9207): the issuer of the /authorize request, cached with it.
+        return Optional.of(AuthorizationResponseUri.error(pending.getRedirectUri(), OAuth2ErrorCodes.ACCESS_DENIED,
+                LOGIN_TIMEOUT_DESCRIPTION, state, pending.getAuthorizationUri()));
     }
 
     private boolean hasExpired(OAuth2AuthorizationRequest authorizationRequest) {
@@ -75,13 +76,5 @@ public class AbortLoginWorkflow {
             return false;
         }
         return Instant.now().getEpochSecond() >= expiration.longValue() - EXPIRATION_MARGIN_SECONDS;
-    }
-
-    private String buildErrorRedirect(String redirectUri, String state) {
-        String separator = redirectUri.contains("?") ? "&" : "?";
-        return redirectUri + separator
-                + "error=" + OAuth2ErrorCodes.ACCESS_DENIED
-                + "&error_description=" + LOGIN_TIMEOUT_DESCRIPTION
-                + "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8);
     }
 }

@@ -52,6 +52,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.clearInvocations;
@@ -92,6 +93,8 @@ class EstablishThenReuseRealLoginPathIT {
     private static final String TENANT       = "tenant-a";
     private static final String CLIENT_ID    = "clientA";
     private static final String REDIRECT_URI = "https://localhost/callback";
+    private static final String CLIENT_B_ID           = "clientB";
+    private static final String CLIENT_B_REDIRECT_URI = "https://localhost/client-b/callback";
     private static final String COOKIE_NAME  = "__Secure-sso-" + TENANT;
     private static final String X_TENANT     = "X-Tenant";
     private static final String RAW_SUB      = "test-holder";
@@ -150,11 +153,14 @@ class EstablishThenReuseRealLoginPathIT {
         when(tenantSsoConfigPort.resolveTtl(anyString()))
                 .thenReturn(SsoSessionTtl.systemDefault());
         when(tenantSsoConfigPort.resolveEligibleClients(anyString()))
-                .thenReturn(TenantSsoCatalog.of(Set.of(SsoEligibleClient.of(CLIENT_ID))));
+                .thenReturn(TenantSsoCatalog.of(Set.of(
+                        SsoEligibleClient.of(CLIENT_ID), SsoEligibleClient.of(CLIENT_B_ID))));
         when(dcqlProfileResolver.resolve(anyString()))
                 .thenReturn(new DcqlQuery(List.of()));
         when(registeredClientRepository.findByClientId(CLIENT_ID))
                 .thenReturn(buildClient());
+        when(registeredClientRepository.findByClientId(CLIENT_B_ID))
+                .thenReturn(buildClient(CLIENT_B_ID, CLIENT_B_REDIRECT_URI));
 
         // The only mocked step: real VP/SD-JWT verification is out of scope for this wiring
         // test — AuthorizationResponseProcessorServiceImplTest already covers that. Everything
@@ -216,6 +222,32 @@ class EstablishThenReuseRealLoginPathIT {
                 .andExpect(header().string("Location", containsString("code=")));
     }
 
+    /**
+     * EUD-300 FR-03 / OIDC Core 1.0 §3.1.2.1 — the scenario reported from SBX: a second eligible
+     * client of the tenant authorizes WITHOUT {@code prompt} in a browser that already holds the
+     * tenant SSO cookie. The session must be reused and a code issued straight to that client's
+     * redirect_uri, without the login (QR) page.
+     */
+    @Test
+    void establishViaRealHttpEndpoint_thenSecondClientWithoutPrompt_issuesCode() throws Exception {
+        MvcResult establishResult = establishThroughBrowserClose("establish-state-3");
+
+        String sessionId = establishResult.getResponse().getCookie(COOKIE_NAME).getValue();
+
+        mockMvc.perform(get("/oidc/authorize")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT)
+                        .param("client_id", CLIENT_B_ID)
+                        .param("scope", "openid")
+                        .param("state", "reuse-state-3")
+                        .param("redirect_uri", CLIENT_B_REDIRECT_URI)
+                        .cookie(new Cookie(COOKIE_NAME, sessionId)))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(CLIENT_B_REDIRECT_URI)))
+                .andExpect(header().string("Location", containsString("code=")))
+                .andExpect(header().string("Location", containsString("state=reuse-state-3")));
+    }
+
     // =========================================================
     // HELPERS
     // =========================================================
@@ -247,12 +279,16 @@ class EstablishThenReuseRealLoginPathIT {
     }
 
     private RegisteredClient buildClient() {
+        return buildClient(CLIENT_ID, REDIRECT_URI);
+    }
+
+    private RegisteredClient buildClient(String clientId, String redirectUri) {
         return RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId(CLIENT_ID)
+                .clientId(clientId)
                 .clientSecret("{noop}secret")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .redirectUri(REDIRECT_URI)
+                .redirectUri(redirectUri)
                 .scope(OidcScopes.OPENID)
                 .build();
     }

@@ -57,6 +57,8 @@ import org.springframework.security.web.SecurityFilterChain;
 @RequiredArgsConstructor
 public class AuthorizationServerConfig {
 
+    private static final String AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED = "authorization_response_iss_parameter_supported";
+
     private final CryptoComponent cryptoComponent;
     private final DIDService didService;
     private final JWTService jwtService;
@@ -142,6 +144,11 @@ public class AuthorizationServerConfig {
                                         jwtClientAssertionProvider.setJwtDecoderFactory(decoderFactory);
                                     }
                                 })))
+                // RFC 9207 §3: every authorization response (code and errors) carries iss — advertised
+                // in both the OAuth 2.0 (RFC 8414) and the OIDC discovery metadata.
+                .authorizationServerMetadataEndpoint(metadataEndpoint ->
+                        metadataEndpoint.authorizationServerMetadataCustomizer(builder -> builder
+                                .claim(AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED, true)))
                 .oidc(oidc -> oidc
                         // US-06 (AD-1): enganche del Single Logout tras la validación estándar
                         // RP-Initiated Logout (id_token_hint / post_logout_redirect_uri) — no
@@ -160,6 +167,7 @@ public class AuthorizationServerConfig {
                                         .claim("backchannel_logout_supported", true)
                                         .claim("backchannel_logout_session_supported", true)
                                         .claim("frontchannel_logout_supported", false)
+                                        .claim(AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED, true)
                                 )
                         )
                 );

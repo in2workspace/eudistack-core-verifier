@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -145,7 +146,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // Act & Assert
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -197,7 +198,7 @@ class CustomAuthorizationRequestConverterTest {
                 .thenReturn(workflowResult);
 
         // Act
-        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Assert
         verify(authorizationRequestBuildWorkflow).buildAuthorizationRequest(registeredClient, scope, state, "issuer_access");
@@ -242,7 +243,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // Act & Assert
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -293,7 +294,7 @@ class CustomAuthorizationRequestConverterTest {
         when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(jwtRedirectUri);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -359,7 +360,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -427,7 +428,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -528,7 +529,7 @@ class CustomAuthorizationRequestConverterTest {
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(mockHttpResponse);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -569,13 +570,71 @@ class CustomAuthorizationRequestConverterTest {
         when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenThrow(new IOException("Simulated IO Exception"));
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
         OAuth2Error error = exception.getError();
         assertEquals("invalid_client_authentication", error.getErrorCode());
         assertTrue(error.getDescription().contains("Failed to retrieve JWT from request_uri."));
+    }
+
+    @Test
+    void convert_requestUriWithCrLf_logsNoRawLineBreak() {
+        // Given: a request_uri trying to forge a log line (CWE-117)
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        Map<String, String> parameters = Map.of(OAuth2ParameterNames.CLIENT_ID, clientId,
+                REQUEST_URI, "https://client.example.com/r.jwt\r\nFORGED level=ERROR");
+        when(request.getParameter(anyString())).thenAnswer(inv -> parameters.get(inv.<String>getArgument(0)));
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://client.example.com/callback")
+                .build());
+
+        // When: the CRLF value is not a URI, so the fetch itself fails after the log line
+        List<ILoggingEvent> events = captureConverterLogs(
+                () -> assertThrows(IllegalArgumentException.class, () -> converter.convert(request)));
+
+        // Then
+        assertTrue(events.stream().anyMatch(e -> e.getFormattedMessage()
+                .equals("Retrieving JWT from request_uri: https://client.example.com/r.jwt__FORGED level=ERROR")));
+        assertTrue(events.stream().noneMatch(e -> e.getFormattedMessage().contains("\r")
+                || e.getFormattedMessage().contains("\n")));
+    }
+
+    @Test
+    void convert_unknownClientIdWithCrLf_logsNoRawLineBreak() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getParameter(anyString()))
+                .thenAnswer(inv -> OAuth2ParameterNames.CLIENT_ID.equals(inv.getArgument(0)) ? "evil\r\nFORGED" : null);
+
+        // When
+        List<ILoggingEvent> events = captureConverterLogs(
+                () -> assertThrows(OAuth2AuthenticationException.class, () -> converter.convert(request)));
+
+        // Then
+        assertTrue(events.stream().anyMatch(e -> e.getFormattedMessage()
+                .equals("Unauthorized client: Client with ID evil__FORGED not found.")));
+        assertTrue(events.stream().noneMatch(e -> e.getFormattedMessage().contains("\r")
+                || e.getFormattedMessage().contains("\n")));
+    }
+
+    private static List<ILoggingEvent> captureConverterLogs(Runnable action) {
+        Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            action.run();
+            return List.copyOf(appender.list);
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test
@@ -619,7 +678,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -667,7 +726,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -733,7 +792,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: one atomic entry carries request, OID4VP nonce and /authorize tenant
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -752,7 +811,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: verifier error page (never the login page), and no replacement
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
@@ -771,7 +830,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: login page as usual, with the new request (and its nonce) replacing the old one
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -790,7 +849,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When / Then
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
     }
 
@@ -803,7 +862,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When / Then
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
         verify(cacheStoreForOAuth2AuthorizationRequest, never()).replace(anyString(), any(), any());
     }
@@ -817,7 +876,7 @@ class CustomAuthorizationRequestConverterTest {
 
         // When / Then
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+                AuthorizationRedirectException.class, () -> converter.convert(request));
         assertEquals("invalid_client_authentication", ex.getError().getErrorCode());
         verify(cacheStoreForOAuth2AuthorizationRequest, never()).replace(anyString(), any(), any());
     }
@@ -847,7 +906,7 @@ class CustomAuthorizationRequestConverterTest {
                         "https://client.example.com/callback?code=c&state=s"));
 
         // When
-        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
         // Then: the RP redirect never carries the login-page browser-binding cookie
         verifyNoInteractions(ssoBrowserBindingCookie);
@@ -892,7 +951,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
         assertEquals("required_external_user_authentication", ex.getError().getErrorCode());
@@ -948,7 +1007,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1001,7 +1060,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1056,7 +1115,7 @@ class CustomAuthorizationRequestConverterTest {
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1110,7 +1169,7 @@ class CustomAuthorizationRequestConverterTest {
         when(jwtService.parseJWT(jwt)).thenReturn(signedJWT);
 
         OAuth2AuthorizationCodeRequestAuthenticationException exception = assertThrows(
-                OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                AuthorizationRedirectException.class,
                 () -> converter.convert(request)
         );
 
@@ -1158,11 +1217,11 @@ class CustomAuthorizationRequestConverterTest {
                 "signed-jwt", "openid4vp://...", "nonce-max-age-valid");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
-        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+        assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
     }
 
     @Test
-    void convert_standardRequestWithNegativeMaxAge_shouldIgnoreItAndLogSanitizedWarning() {
+    void convert_standardRequestWithNegativeMaxAge_shouldReturnInvalidRequestAndLogSanitizedWarning() {
         Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -1198,14 +1257,18 @@ class CustomAuthorizationRequestConverterTest {
             when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
             when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
-            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-negative");
-            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
+            AuthorizationRedirectException exception =
+                    assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
-
-            assertTrue(appender.list.stream().anyMatch(event ->
-                    event.getFormattedMessage().equals("event=sso_max_age_invalid reason=negative value=-5")));
+            // OIDC Core §3.1.2.6: malformed max_age → invalid_request to the validated redirect_uri
+            assertEquals("invalid_request", exception.getError().getErrorCode());
+            assertEquals("https://client.example.com/callback?error=invalid_request"
+                    + "&error_description=max_age+must+be+a+non-negative+integer&state=test-state"
+                    + "&iss=https%3A%2F%2Fauth.server.com", exception.getError().getUri());
+            verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+            assertTrue(appender.list.stream().anyMatch(event -> event.getLevel() == Level.WARN
+                    && event.getFormattedMessage().equals(
+                            "event=authorize_max_age_invalid clientId=test-client-id type=String value=-5")));
         } finally {
             logger.detachAppender(appender);
         }
@@ -1255,7 +1318,7 @@ class CustomAuthorizationRequestConverterTest {
                     "signed-jwt", "openid4vp://...", "nonce-max-age-overflow");
             when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
 
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
+            assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
             assertTrue(appender.list.stream().anyMatch(event ->
                     event.getFormattedMessage().equals(
@@ -1266,7 +1329,7 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
-    void convert_standardRequestWithNonNumericMaxAgeContainingCrlf_shouldIgnoreItAndLogSanitizedTruncatedWarning() {
+    void convert_standardRequestWithNonNumericMaxAgeContainingCrlf_shouldReturnInvalidRequestAndLogSanitizedTruncatedWarning() {
         Logger logger = (Logger) LoggerFactory.getLogger(CustomAuthorizationRequestConverter.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -1306,15 +1369,15 @@ class CustomAuthorizationRequestConverterTest {
             when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
             when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
 
-            AuthorizationRequestBuildWorkflow.Result workflowResult = new AuthorizationRequestBuildWorkflow.Result(
-                    "signed-jwt", "openid4vp://...", "nonce-max-age-crlf");
-            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null)).thenReturn(workflowResult);
+            AuthorizationRedirectException exception =
+                    assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
 
-            assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class, () -> converter.convert(request));
-
+            // The raw value is never echoed back to the client either
+            assertEquals("invalid_request", exception.getError().getErrorCode());
+            assertFalse(exception.getError().getUri().contains("forged"));
             assertTrue(appender.list.stream().anyMatch(event -> {
                 String message = event.getFormattedMessage();
-                return message.startsWith("event=sso_max_age_invalid reason=not_a_number value=")
+                return message.startsWith("event=authorize_max_age_invalid clientId=test-client-id type=String value=")
                         && !message.contains("\r")
                         && !message.contains("\n")
                         && !message.contains("\t")
@@ -1328,7 +1391,8 @@ class CustomAuthorizationRequestConverterTest {
     private void stubPkceParamsNull(HttpServletRequest request) {
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE)).thenReturn(null);
         when(request.getParameter(PkceParameterNames.CODE_CHALLENGE_METHOD)).thenReturn(null);
-        when(request.getParameter("max_age")).thenReturn(null);
+        // Only read on the plain path (JAR takes max_age from the request object).
+        lenient().when(request.getParameter("max_age")).thenReturn(null);
         when(request.getParameter("access_profile")).thenReturn(null);
     }
 

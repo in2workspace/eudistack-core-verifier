@@ -57,6 +57,7 @@ class SsoLoginCompletionWorkflowTest {
 
     private static final String RP_URL = "https://rp.example.com/cb?code=" + CODE + "&state=st";
     private static final String BASE_URL = "https://tenant-a.example.com/verifier";
+    private static final String ENCODED_BASE_URL = "https%3A%2F%2Ftenant-a.example.com%2Fverifier";
 
     @Test
     void resolveBrowserRedirect_unboundLogin_returnsRpUrlDirectly() {
@@ -82,6 +83,7 @@ class SsoLoginCompletionWorkflowTest {
         PendingSsoLogin parked = cache.getIfPresent(hashingService.sha256(handleOf(url)));
         assertThat(parked.ssoEligible()).isTrue();
         assertThat(parked.holderSubject()).isEqualTo("holder-sub");
+        assertThat(parked.issuer()).isEqualTo(BASE_URL);
         verify(ssoAuditPort, never()).publish(any());
     }
 
@@ -159,7 +161,7 @@ class SsoLoginCompletionWorkflowTest {
     void complete_ineligibleLoginWithMatchingBinding_completesWithoutSsoFlag() {
         // Given
         String handle = workflow.registerPendingLogin(new PendingSsoLogin(TENANT, null, "client-a", null, RP_URL,
-                "https://rp.example.com/cb", "st", hashingService.sha256(BINDING_VALUE), CODE, false));
+                "https://rp.example.com/cb", "st", hashingService.sha256(BINDING_VALUE), CODE, false, BASE_URL));
 
         // When
         var outcome = workflow.complete(handle, BINDING_VALUE, TENANT);
@@ -172,7 +174,7 @@ class SsoLoginCompletionWorkflowTest {
     void complete_ineligibleLoginWithWrongBinding_rejectsWithoutHolderHash() {
         // Given
         String handle = workflow.registerPendingLogin(new PendingSsoLogin(TENANT, null, "client-a", null, RP_URL,
-                "https://rp.example.com/cb", "st", hashingService.sha256(BINDING_VALUE), CODE, false));
+                "https://rp.example.com/cb", "st", hashingService.sha256(BINDING_VALUE), CODE, false, BASE_URL));
 
         // When
         var outcome = workflow.complete(handle, "attacker-browser-value", TENANT);
@@ -180,6 +182,22 @@ class SsoLoginCompletionWorkflowTest {
         // Then
         assertThat(outcome).isInstanceOf(SsoLoginCompletionWorkflow.Outcome.Rejected.class);
         verify(authorizationResponseProcessorService).revokeAuthorizationCode(CODE);
+    }
+
+    @Test
+    void complete_rejectedLoginWhoseRedirectUriHasAQuery_keepsItInTheErrorRedirect() {
+        // Given: registered redirect_uri with its own query (RFC 6749 §3.1.2)
+        String handle = workflow.registerPendingLogin(new PendingSsoLogin(TENANT, null, "client-a", null, RP_URL,
+                "https://rp.example.com/cb?tenant=a", "st", hashingService.sha256(BINDING_VALUE), CODE, false,
+                BASE_URL));
+
+        // When
+        var outcome = workflow.complete(handle, "attacker-browser-value", TENANT);
+
+        // Then
+        assertThat(((SsoLoginCompletionWorkflow.Outcome.Rejected) outcome).errorRedirectUrl())
+                .startsWith("https://rp.example.com/cb?tenant=a&error=access_denied&")
+                .endsWith("&state=st&iss=" + ENCODED_BASE_URL);
     }
 
     private void assertAudited(String reason) {
@@ -311,7 +329,9 @@ class SsoLoginCompletionWorkflowTest {
     private void assertRejected(SsoLoginCompletionWorkflow.Outcome outcome, String expectedReason) {
         assertThat(outcome).isInstanceOf(SsoLoginCompletionWorkflow.Outcome.Rejected.class);
         assertThat(((SsoLoginCompletionWorkflow.Outcome.Rejected) outcome).errorRedirectUrl())
-                .isEqualTo("https://rp.example.com/cb?error=access_denied&state=st");
+                .isEqualTo("https://rp.example.com/cb?error=access_denied"
+                        + "&error_description=the+login+cannot+be+completed+in+this+browser"
+                        + "&state=st&iss=" + ENCODED_BASE_URL);
         verify(authorizationResponseProcessorService).revokeAuthorizationCode(CODE);
         ArgumentCaptor<SsoAuditEvent> event = ArgumentCaptor.forClass(SsoAuditEvent.class);
         verify(ssoAuditPort).publish(event.capture());
@@ -324,7 +344,7 @@ class SsoLoginCompletionWorkflowTest {
     private PendingSsoLogin pending() {
         return new PendingSsoLogin(TENANT, "holder-sub", "client-a", null,
                 "https://rp.example.com/cb?code=" + CODE + "&state=st", "https://rp.example.com/cb", "st",
-                hashingService.sha256(BINDING_VALUE), CODE, true);
+                hashingService.sha256(BINDING_VALUE), CODE, true, BASE_URL);
     }
 
     private static TenantSsoConfig config(boolean ssoEnabled) {

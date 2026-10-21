@@ -17,6 +17,10 @@ import static org.mockito.Mockito.spy;
 
 class AbortLoginWorkflowTest {
 
+    /** Issuer of the /authorize request, cached as the request's authorizationUri. */
+    private static final String ISSUER = "https://verifier.example.com/verifier";
+    private static final String ISS_PARAM = "&iss=https%3A%2F%2Fverifier.example.com%2Fverifier";
+
     private CacheStore<OAuth2AuthorizationRequest> cache;
     private AbortLoginWorkflow workflow;
 
@@ -32,7 +36,7 @@ class AbortLoginWorkflowTest {
 
     private void cacheLogin(String state, String redirectUri, Map<String, Object> additionalParameters) {
         cache.add(state, OAuth2AuthorizationRequest.authorizationCode()
-                .authorizationUri("https://verifier.example.com")
+                .authorizationUri(ISSUER)
                 .clientId("marketplace-client")
                 .redirectUri(redirectUri)
                 .state(state)
@@ -72,7 +76,8 @@ class AbortLoginWorkflowTest {
         Optional<String> result = workflow.abort("state-1");
 
         assertThat(result).contains(
-                "https://marketplace.example.com/callback?error=access_denied&error_description=login_timeout&state=state-1");
+                "https://marketplace.example.com/callback?error=access_denied&error_description=login_timeout&state=state-1"
+                        + ISS_PARAM);
     }
 
     @Test
@@ -82,7 +87,8 @@ class AbortLoginWorkflowTest {
         Optional<String> result = workflow.abort("state-1");
 
         assertThat(result).contains(
-                "https://rp.example.com/cb?tenant=dome&error=access_denied&error_description=login_timeout&state=state-1");
+                "https://rp.example.com/cb?tenant=dome&error=access_denied&error_description=login_timeout&state=state-1"
+                        + ISS_PARAM);
     }
 
     @Test
@@ -91,7 +97,7 @@ class AbortLoginWorkflowTest {
 
         Optional<String> result = workflow.abort("a b&c=d");
 
-        assertThat(result).hasValueSatisfying(url -> assertThat(url).endsWith("&state=a+b%26c%3Dd"));
+        assertThat(result).hasValueSatisfying(url -> assertThat(url).endsWith("&state=a+b%26c%3Dd" + ISS_PARAM));
     }
 
     @Test
