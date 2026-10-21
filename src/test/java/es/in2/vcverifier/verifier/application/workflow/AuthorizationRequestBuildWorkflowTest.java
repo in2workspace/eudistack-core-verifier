@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +80,7 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(result.openid4vpUrl()).startsWith("openid4vp://");
         assertThat(result.openid4vpUrl()).contains("client_id=");
         assertThat(result.openid4vpUrl()).contains("request_uri=");
-        assertThat(result.nonce()).isNotBlank();
+        assertThat(result.requestId()).isNotBlank();
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -87,7 +88,7 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(payload).contains("client_metadata");
 
         // Verify JWT was cached
-        verify(cacheStoreForAuthorizationRequestJWT).add(eq(result.nonce()), any(AuthorizationRequestJWT.class));
+        verify(cacheStoreForAuthorizationRequestJWT).add(eq(result.requestId()), any(AuthorizationRequestJWT.class));
         // EUD-252 (F1): the OID4VP nonce is returned (the caller caches it atomically with the
         // authorization request), and it is the one embedded in the signed request object
         assertThat(result.vpNonce()).isNotBlank();
@@ -315,9 +316,9 @@ class AuthorizationRequestBuildWorkflowTest {
                 workflow.buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null);
 
         assertThat(result.openid4vpUrl())
-                .contains("request_uri=https://verifier.example.com/oid4vp/r/" + result.nonce());
-        assertThat(result.nonce()).hasSize(8);
-        assertThat(result.nonce()).matches("[A-Za-z0-9_-]{8}");
+                .contains("request_uri=https://verifier.example.com/oid4vp/r/" + result.requestId());
+        assertThat(result.requestId()).hasSize(8);
+        assertThat(result.requestId()).matches("[A-Za-z0-9_-]{8}");
     }
 
     @Test
@@ -349,7 +350,7 @@ class AuthorizationRequestBuildWorkflowTest {
     }
 
     @Test
-    @DisplayName("QR payload on a real tenant host stays within QR version 7 capacity (154 bytes at EC level L)")
+    @DisplayName("QR payload on a deployed tenant host (sandbox.dev.eudistack.net) stays within QR version 7 capacity (154 bytes at EC level L)")
     void qrUrl_staysWithinVersion7Capacity() {
         stubMinimalRequest(
                 "did:key:zDnaevN85Z7VJgcBoQeqQU7d8kZpuVhDSdm8hQtJYWjvek3VL",
@@ -359,7 +360,7 @@ class AuthorizationRequestBuildWorkflowTest {
                 .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
                 .openid4vpUrl();
 
-        assertThat(url.length()).isLessThanOrEqualTo(154);
+        assertThat(url.getBytes(StandardCharsets.UTF_8)).hasSizeLessThanOrEqualTo(154);
     }
 
     private void stubMinimalRequest(String clientId, String verifierUrl) {

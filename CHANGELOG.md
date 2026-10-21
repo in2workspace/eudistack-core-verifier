@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
 - **Login QR was hard to scan because its content was too long**: the QR `request_uri` now uses a short 8-character id (base64url, 48 random bits) instead of a UUID, a shorter path (`/oid4vp/r/{id}`) and no longer percent-encodes `:` and `/`. In DEV/STG the QR drops from version 9 (53 modules) to version 7 (45 modules), so each module is larger on screen. The previous `/oid4vp/auth-request/{id}` path is still served during the transition.
 
 ## [3.4.0] - 2026-10-16

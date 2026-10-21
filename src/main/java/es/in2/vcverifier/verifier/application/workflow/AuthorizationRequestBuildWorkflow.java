@@ -17,12 +17,11 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.stereotype.Service;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-
-import java.nio.charset.StandardCharsets;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_REQUEST_ENDPOINT;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_RESPONSE_ENDPOINT;
@@ -60,16 +59,16 @@ public class AuthorizationRequestBuildWorkflow {
     private final ObjectMapper objectMapper;
 
     /**
-     * @param nonce   id of the cached request object for the QR ({@code /oid4vp/auth-request/{nonce}})
+     * @param requestId id of the cached request object for the QR ({@code /oid4vp/r/{requestId}})
      * @param vpNonce OID4VP nonce embedded in the request object. EUD-252 (F1): NOT cached here — the
      *                caller stores it in the same atomic authorization-request entry as the rest of the
      *                login, so a concurrent /authorize reusing the state can never swap it.
      */
-    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String vpNonce) {
+    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String requestId, String vpNonce) {
 
         /** Convenience for callers that don't need the VP nonce. */
-        public Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce) {
-            this(signedAuthRequestJwt, openid4vpUrl, nonce, null);
+        public Result(String signedAuthRequestJwt, String openid4vpUrl, String requestId) {
+            this(signedAuthRequestJwt, openid4vpUrl, requestId, null);
         }
     }
 
@@ -93,15 +92,15 @@ public class AuthorizationRequestBuildWorkflow {
         String signedJwt = jwtService.issueJWTwithOI4VPType(jwtPayload);
 
         // Cache the auth request JWT keyed by a new id for the QR
-        String qrNonce = generateRequestId();
+        String requestId = generateRequestId();
         cacheStoreForAuthorizationRequestJWT.add(
-                qrNonce,
+                requestId,
                 AuthorizationRequestJWT.builder().authRequest(signedJwt).build()
         );
 
-        String openid4vpUrl = generateOpenId4VpUrl(qrNonce);
+        String openid4vpUrl = generateOpenId4VpUrl(requestId);
 
-        return new Result(signedJwt, openid4vpUrl, qrNonce, nonce);
+        return new Result(signedJwt, openid4vpUrl, requestId, nonce);
     }
 
     /**
