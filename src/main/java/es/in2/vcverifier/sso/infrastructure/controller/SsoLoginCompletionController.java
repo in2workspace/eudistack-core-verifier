@@ -96,7 +96,7 @@ public class SsoLoginCompletionController {
         principal.put("holderHash", login.holderSubject()); // raw sub — workflow applies SHA-256(sub)
         principal.put("clientId", login.tenant());          // fallback: tenant as clientId for audit (unchanged)
         principal.put("tenantSlug", login.tenant());
-        // Snapshot for SSO reuse (prompt=none, no VP re-presentation) — see ReuseSsoSessionWorkflowImpl.
+        // Snapshot for SSO reuse (prompt absent or none, no VP re-presentation) — see ReuseSsoSessionWorkflowImpl.
         principal.put("credentialJson", login.credentialJson());
         return new UsernamePasswordAuthenticationToken(principal, null);
     }

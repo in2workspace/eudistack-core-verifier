@@ -1,5 +1,9 @@
 package es.in2.vcverifier.sso.infrastructure.persistence;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import es.in2.vcverifier.sso.domain.exception.SsoSessionRepositoryException;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
@@ -11,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -21,6 +26,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +63,23 @@ class SsoSessionJdbcRepositoryTest {
 
     private static SQLException uniqueViolation() {
         return new SQLException("duplicate key value violates unique constraint", "23505");
+    }
+
+    /** Runs {@code action} and returns the events the repository logged meanwhile (DEBUG included). */
+    private static List<ILoggingEvent> captureLogs(Runnable action) {
+        Logger logger = (Logger) LoggerFactory.getLogger(SsoSessionJdbcRepository.class);
+        Level previousLevel = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.DEBUG);
+        try {
+            action.run();
+            return List.copyOf(appender.list);
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previousLevel);
+        }
     }
 
     @Nested
@@ -99,6 +122,28 @@ class SsoSessionJdbcRepositoryTest {
             verify(connection).rollback();
             verify(connection).setAutoCommit(true);
             verify(connection, never()).commit();
+        }
+
+        @Test
+        void save_insertFailure_logsClassNamesOnlyAtWarnAndThrowableAtDebug() throws SQLException {
+            // Given: a driver error whose detail echoes the full session id
+            SsoSession session = SsoSession.establish(TENANT, HOLDER_HASH, Duration.ofHours(1));
+            String fullSessionId = session.getId().getValue();
+            SQLException driverError = new SQLException("Key (id)=(" + fullSessionId + ") violates check", "23514");
+            when(preparedStatement.executeUpdate()).thenThrow(driverError);
+
+            // When
+            List<ILoggingEvent> events = captureLogs(() -> assertThatThrownBy(() -> repository.save(session))
+                    .isInstanceOf(SsoSessionRepositoryException.class));
+
+            // Then
+            ILoggingEvent warn = events.stream().filter(e -> e.getLevel() == Level.WARN).findFirst().orElseThrow();
+            assertThat(warn.getFormattedMessage())
+                    .endsWith("error=SQLException rootCause=SQLException")
+                    .doesNotContain(fullSessionId);
+            assertThat(warn.getThrowableProxy()).isNull();
+            assertThat(events).anyMatch(e -> e.getLevel() == Level.DEBUG && e.getThrowableProxy() != null
+                    && e.getThrowableProxy().getMessage().contains(fullSessionId));
         }
 
         @Test
@@ -247,6 +292,28 @@ class SsoSessionJdbcRepositoryTest {
             assertDoesNotThrow(() -> repository.recordClientActivity(sessionId, TENANT, "client-a"));
 
             verify(connection).rollback();
+        }
+
+        @Test
+        void recordClientActivity_failure_logsClassNamesOnlyAtWarnAndThrowableAtDebug() throws SQLException {
+            // Given: an FK-violation detail echoing the full session id
+            SsoSessionId sessionId = SsoSessionId.generate();
+            String fullSessionId = sessionId.getValue();
+            when(preparedStatement.executeUpdate()).thenThrow(new SQLException(
+                    "Key (session_id)=(" + fullSessionId + ") is not present in table \"sso_session\"", "23503"));
+
+            // When
+            List<ILoggingEvent> events = captureLogs(
+                    () -> repository.recordClientActivity(sessionId, TENANT, "client-a"));
+
+            // Then
+            ILoggingEvent warn = events.stream().filter(e -> e.getLevel() == Level.WARN).findFirst().orElseThrow();
+            assertThat(warn.getFormattedMessage())
+                    .endsWith("error=SQLException rootCause=SQLException")
+                    .doesNotContain(fullSessionId);
+            assertThat(warn.getThrowableProxy()).isNull();
+            assertThat(events).anyMatch(e -> e.getLevel() == Level.DEBUG && e.getThrowableProxy() != null
+                    && e.getThrowableProxy().getMessage().contains(fullSessionId));
         }
     }
 

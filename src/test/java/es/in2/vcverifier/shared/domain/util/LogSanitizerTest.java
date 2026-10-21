@@ -56,4 +56,41 @@ class LogSanitizerTest {
         assertEquals("a".repeat(64) + "...(truncated)", result);
         assertTrue(result.endsWith("...(truncated)"));
     }
+
+    @Test
+    void rootCauseName_nullThrowable_returnsNull() {
+        assertNull(LogSanitizer.rootCauseName(null));
+    }
+
+    @Test
+    void rootCauseName_noCause_returnsOwnSimpleClassName() {
+        assertEquals("IllegalStateException", LogSanitizer.rootCauseName(new IllegalStateException("detail")));
+    }
+
+    @Test
+    void rootCauseName_nestedCauses_returnsDeepestSimpleClassNameOnly() {
+        // Arrange
+        Throwable throwable = new IllegalStateException("outer",
+                new RuntimeException("middle", new java.sql.SQLException("Key (id)=(secret-session-id)")));
+
+        // Act
+        String result = LogSanitizer.rootCauseName(throwable);
+
+        // Assert
+        assertEquals("SQLException", result);
+    }
+
+    @Test
+    void rootCauseName_cyclicCauseChain_terminates() {
+        // Arrange
+        RuntimeException first = new RuntimeException("first");
+        IllegalStateException second = new IllegalStateException("second", first);
+        first.initCause(second);
+
+        // Act
+        String result = LogSanitizer.rootCauseName(first);
+
+        // Assert
+        assertTrue(result.equals("RuntimeException") || result.equals("IllegalStateException"));
+    }
 }

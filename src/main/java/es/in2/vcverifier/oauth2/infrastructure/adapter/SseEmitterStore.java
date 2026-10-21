@@ -39,7 +39,7 @@ public class SseEmitterStore {
     public SseEmitter create(String state, long timeoutMs) {
         if (emitters.size() >= MAX_CONCURRENT_EMITTERS) {
             log.warn("SSE emitter limit reached ({}). Rejecting new connection for state={}...",
-                    MAX_CONCURRENT_EMITTERS, state.substring(0, Math.min(8, state.length())));
+                    MAX_CONCURRENT_EMITTERS, sanitize(state.substring(0, Math.min(8, state.length()))));
             throw new IllegalStateException("Too many concurrent SSE connections");
         }
         SseEmitter emitter = new SseEmitter(timeoutMs);
@@ -60,7 +60,7 @@ public class SseEmitterStore {
                 Instant.now().plus(HEARTBEAT_INTERVAL),
                 HEARTBEAT_INTERVAL));
 
-        log.debug("SSE emitter created for state={}, timeout={}ms", state, timeoutMs);
+        log.debug("SSE emitter created for state={}, timeout={}ms", sanitize(state), timeoutMs);
         return emitter;
     }
 
@@ -70,13 +70,13 @@ public class SseEmitterStore {
             try {
                 emitter.send(SseEmitter.event().name("redirect").data(redirectUrl));
                 emitter.complete();
-                log.debug("SSE redirect event sent for state={}", state);
+                log.debug("SSE redirect event sent for state={}", sanitize(state));
             } catch (IOException e) {
-                log.warn("Failed to send SSE event for state={}: {}", state, e.getMessage());
+                log.warn("Failed to send SSE event for state={}: {}", sanitize(state), e.getMessage());
                 emitter.completeWithError(e);
             }
         } else {
-            log.warn("No SSE emitter found for state={}", state);
+            log.warn("No SSE emitter found for state={}", sanitize(state));
         }
     }
 
@@ -104,13 +104,13 @@ public class SseEmitterStore {
                     .data(payload));
 
                 emitter.complete();
-                log.info("SSE validation_failed event sent for state={}, code={}", state, errorCode);
+                log.info("SSE validation_failed event sent for state={}, code={}", sanitize(state), errorCode);
             } catch (IOException e) {
-                log.warn("Failed to send validation_failed SSE for state={}: {}", state, e.getMessage());
+                log.warn("Failed to send validation_failed SSE for state={}: {}", sanitize(state), e.getMessage());
                 emitter.completeWithError(e);
             }
         } else {
-            log.debug("No SSE emitter found for state={} (validation_failed event not sent)", state);
+            log.debug("No SSE emitter found for state={} (validation_failed event not sent)", sanitize(state));
         }
     }
 

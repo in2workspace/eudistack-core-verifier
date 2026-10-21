@@ -27,6 +27,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
 /**
@@ -170,8 +171,9 @@ public class TokenGenerationWorkflow {
         // authentication's value, not be re-stamped as "now" — angular-auth-oidc-client's
         // pre/post id_token claims check rejects the refresh outright otherwise. The original
         // value is carried through additionalParameters by CustomTokenRequestConverter
-        // (see RefreshTokenDataCache.authTimeEpochSeconds); absent it, this IS the original
-        // authentication, so "now" is correct.
+        // (see RefreshTokenDataCache.authTimeEpochSeconds). The same holds for a code issued by
+        // SSO reuse (EUD-300, AuthorizationCodeData.authTime = session establishment). Absent
+        // it, this IS the original authentication, so "now" is correct.
         Instant authTime = additionalParameters.containsKey(AUTH_TIME_PARAM)
                 ? Instant.ofEpochSecond(((Number) additionalParameters.get(AUTH_TIME_PARAM)).longValue())
                 : issueTime;
@@ -229,7 +231,11 @@ public class TokenGenerationWorkflow {
                                 .ifPresent(session -> idTokenClaimsBuilder.claim("sid", session.getId().getValue()));
                     });
         } catch (Exception e) {
-            log.warn("sso_sid_stamp_lookup_failed tenant={}", tenant, e);
+            // Class names only at WARN (a driver message may echo the session id or holder hash);
+            // the throwable goes to DEBUG.
+            log.warn("sso_sid_stamp_lookup_failed tenant={} error={} rootCause={}", tenant,
+                    e.getClass().getSimpleName(), rootCauseName(e));
+            log.debug("sso_sid_stamp_lookup_failed tenant={}", tenant, e);
         }
     }
 }

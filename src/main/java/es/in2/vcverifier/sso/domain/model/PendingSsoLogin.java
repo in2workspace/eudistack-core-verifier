@@ -12,13 +12,14 @@ import com.fasterxml.jackson.databind.JsonNode;
  *                           workflow); {@code null} when the login is not SSO-eligible
  * @param clientId           OAuth2 client that started the login
  * @param credentialJson     verified credential claims (SSO snapshot)
- * @param redirectUrl        {@code redirectUri?code=...&state=...} to deliver on success
+ * @param redirectUrl        {@code redirectUri?code=...&state=...&iss=...} to deliver on success
  * @param redirectUri        client's registered redirect_uri (target of the error redirect)
  * @param state              OAuth2 state of the login
  * @param browserBindingHash SHA-256 (hex) of the browser-binding cookie set at /authorize
  * @param authorizationCode  issued code, invalidated if the binding check fails
  * @param ssoEligible        whether the close step must also establish the SSO session; when
  *                           {@code false} the binding is still checked, the browser just gets the code
+ * @param issuer             issuer of the {@code /oidc/authorize} request ({@code iss} of the error redirect, RFC 9207)
  */
 public record PendingSsoLogin(
         String tenant,
@@ -30,7 +31,8 @@ public record PendingSsoLogin(
         String state,
         String browserBindingHash,
         String authorizationCode,
-        boolean ssoEligible
+        boolean ssoEligible,
+        String issuer
 ) {
 
     /** Redacted: the subject, the code and the code-bearing redirect URL must never reach logs. */

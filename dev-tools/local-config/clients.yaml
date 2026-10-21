@@ -124,9 +124,9 @@ clients:
       - "https://issuer-dome.127.0.0.1.nip.io:4443/issuer/"
       - "https://dome.127.0.0.1.nip.io:4443/cert"
     postLogoutRedirectUris:
-      - "https://dome.127.0.0.1.nip.io:4443/issuer"
-      - "https://custom.127.0.0.1.nip.io:4443/issuer"
-      - "https://issuer-dome.127.0.0.1.nip.io:4443/issuer"
+      - "https://dome.127.0.0.1.nip.io:4443/issuer/"
+      - "https://custom.127.0.0.1.nip.io:4443/issuer/"
+      - "https://issuer-dome.127.0.0.1.nip.io:4443/issuer/"
     scopes:
       - "openid"
       - "profile"

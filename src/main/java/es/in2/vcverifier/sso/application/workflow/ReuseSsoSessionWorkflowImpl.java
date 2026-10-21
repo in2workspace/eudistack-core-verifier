@@ -34,6 +34,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
+
 @Slf4j
 @Component
 public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
@@ -198,7 +200,11 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                     sessionRepository.updateLastUsedAt(sessionId, tenantSlug, now);
                     sessionRepository.recordClientActivity(sessionId, tenantSlug, clientId);
                 } catch (Exception ex) {
-                    log.warn("sso_touch_failed session={} tenant={}", sessionId, tenantSlug, ex);
+                    // Class names only at WARN (a driver message may echo the full session id);
+                    // the throwable goes to DEBUG.
+                    log.warn("sso_touch_failed session={} tenant={} error={} rootCause={}", prefix8(sessionId.getValue()),
+                            tenantSlug, ex.getClass().getSimpleName(), rootCauseName(ex));
+                    log.debug("sso_touch_failed session={} tenant={}", prefix8(sessionId.getValue()), tenantSlug, ex);
                 }
             });
         }
@@ -263,7 +269,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                 ctx.codeChallenge(),
                 ctx.codeChallengeMethod(),
                 ctx.clientNonce(),
-                credentialJson
+                credentialJson,
+                session.getEstablishedAt(),
+                ctx.issuer()
         );
 
         // 8. AUDIT
@@ -307,5 +315,11 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                     }
                 })
                 .orElse(null);
+    }
+
+    /** NFR-S-547-02: the session id is the SSO cookie value — never log it in full, 8-char prefix only. */
+    private static String prefix8(String s) {
+        if (s == null) return "null";
+        return s.length() <= 8 ? s : s.substring(0, 8);
     }
 }

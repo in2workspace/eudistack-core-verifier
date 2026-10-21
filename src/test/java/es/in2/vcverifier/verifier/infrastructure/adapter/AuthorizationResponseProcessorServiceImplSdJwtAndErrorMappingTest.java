@@ -106,6 +106,9 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
     private static final String CLIENT_ID = "did:key:zVerifier";
     private static final String BACKEND_URL = "http://localhost:8080";
     private static final String REDIRECT_URI = "https://client.example.com/callback";
+    private static final Instant AUTH_TIME = Instant.parse("2026-10-19T08:00:00Z");
+    private static final String ISSUER = "https://verifier.example.com/verifier";
+    private static final String ENCODED_ISSUER = "https%3A%2F%2Fverifier.example.com%2Fverifier";
     private static final String VP_NONCE_VALUE = "nonce-1";
     private static final String SD_JWT = "header.payload.sig~disclosure~";
     private static final String SD_JWT_B64 =
@@ -188,6 +191,10 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
 
         assertNotNull(result.credentialJson());
         assertTrue(result.redirectUrl().startsWith(REDIRECT_URI + "?code="));
+        // Fresh VP presentation: no carried auth_time, the ID Token stamps the issue time.
+        ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
+        verify(codeCache).add(anyString(), codeData.capture());
+        assertNull(codeData.getValue().authTime());
         assertEquals("client-id", result.clientId());
         verify(sse, never()).send(anyString(), anyString());
         verify(verificationLogger).logVerifiedOk("cfg");
@@ -600,15 +607,14 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         JsonNode credential = new ObjectMapper().readTree("{\"a\":1}");
 
         String url = service.issueCodeForReusedSession("client-id", REDIRECT_URI,
-                Set.of("read"), "st", "challenge", "S256", "n-1", credential);
+                Set.of("read"), "st", "challenge", "S256", "n-1", credential, AUTH_TIME, ISSUER);
 
         ArgumentCaptor<OAuth2Authorization> authorization = ArgumentCaptor.forClass(OAuth2Authorization.class);
         verify(authorizationService).save(authorization.capture());
         OAuth2Authorization saved = authorization.getValue();
         String issuedCode = saved.getToken(OAuth2AuthorizationCode.class).getToken().getTokenValue();
 
-        assertTrue(url.startsWith(REDIRECT_URI + "?code=" + issuedCode));
-        assertTrue(url.endsWith("&state=st"));
+        assertEquals(REDIRECT_URI + "?code=" + issuedCode + "&state=st&iss=" + ENCODED_ISSUER, url);
         assertEquals("challenge", saved.getAttribute(PkceParameterNames.CODE_CHALLENGE));
         assertEquals("S256", saved.getAttribute(PkceParameterNames.CODE_CHALLENGE_METHOD));
         OAuth2AuthorizationRequest savedRequest = saved.getAttribute(OAuth2AuthorizationRequest.class.getName());
@@ -621,6 +627,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         verify(codeCache).add(eq(issuedCode), codeData.capture());
         assertEquals("n-1", codeData.getValue().clientNonce());
         assertSame(credential, codeData.getValue().verifiableCredential());
+        assertEquals(AUTH_TIME, codeData.getValue().authTime());
     }
 
     @Test
@@ -629,7 +636,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         givenCodeIssuance();
 
         String url = service.issueCodeForReusedSession("client-id", REDIRECT_URI,
-                Set.of("read"), "st", null, null, null, new ObjectMapper().readTree("{}"));
+                Set.of("read"), "st", null, null, null, new ObjectMapper().readTree("{}"), null, ISSUER);
 
         ArgumentCaptor<OAuth2Authorization> authorization = ArgumentCaptor.forClass(OAuth2Authorization.class);
         verify(authorizationService).save(authorization.capture());
@@ -652,7 +659,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         Set<String> scopes = Set.of();
 
         assertThrows(OAuth2AuthenticationException.class, () -> service.issueCodeForReusedSession("missing",
-                REDIRECT_URI, scopes, "st", null, null, null, null));
+                REDIRECT_URI, scopes, "st", null, null, null, null, null, ISSUER));
 
         assertNoCodeIssued();
     }

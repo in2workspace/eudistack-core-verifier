@@ -1,14 +1,19 @@
 package es.in2.vcverifier.oauth2.infrastructure.adapter;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -70,6 +75,48 @@ class SseEmitterStoreTest {
     @Test
     void send_nonExistentState_doesNotThrow() {
         assertDoesNotThrow(() -> store.send("unknown-state", "http://redirect.example.com"));
+    }
+
+    @Test
+    void send_unknownStateWithCrLf_logsNoRawLineBreak() {
+        // When
+        List<ILoggingEvent> events = captureLogs(
+                () -> store.send("state\r\nFORGED level=ERROR", "http://redirect.example.com"));
+
+        // Then: CWE-117 — the request-supplied state cannot forge a log line
+        assertThat(events).extracting(ILoggingEvent::getFormattedMessage)
+                .contains("No SSE emitter found for state=state__FORGED level=ERROR")
+                .noneMatch(message -> message.contains("\r") || message.contains("\n"));
+    }
+
+    @Test
+    void sendValidationFailed_stateWithCrLf_logsNoRawLineBreak() {
+        try (var _ = mockConstruction(SseEmitter.class)) {
+            String state = "state\r\nFORGED";
+            store.create(state, 60000L);
+
+            // When
+            List<ILoggingEvent> events = captureLogs(
+                    () -> store.sendValidationFailed(state, "SIGNATURE_INVALID", "bad signature"));
+
+            // Then
+            assertThat(events).extracting(ILoggingEvent::getFormattedMessage)
+                    .contains("SSE validation_failed event sent for state=state__FORGED, code=SIGNATURE_INVALID")
+                    .noneMatch(message -> message.contains("\r") || message.contains("\n"));
+        }
+    }
+
+    private static List<ILoggingEvent> captureLogs(Runnable action) {
+        Logger logger = (Logger) LoggerFactory.getLogger(SseEmitterStore.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            action.run();
+            return List.copyOf(appender.list);
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test
