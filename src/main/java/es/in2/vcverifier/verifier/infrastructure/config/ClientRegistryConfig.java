@@ -2,6 +2,7 @@ package es.in2.vcverifier.verifier.infrastructure.config;
 
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.infrastructure.audit.ExternalHttpAccessRecorder;
 import es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry.LocalClientRegistryProvider;
 import es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry.RemoteClientRegistryProvider;
 import lombok.extern.slf4j.Slf4j;
@@ -18,9 +19,10 @@ public class ClientRegistryConfig {
 
     @Bean
     @ConditionalOnProperty(name = "verifier.backend.trustFrameworks[0].trustedServicesListUrl")
-    public ClientRegistryProvider remoteClientRegistryProvider(BackendConfig backendConfig, HttpClient httpClient) {
+    public ClientRegistryProvider remoteClientRegistryProvider(BackendConfig backendConfig, HttpClient httpClient,
+                                                               ExternalHttpAccessRecorder accessRecorder) {
         log.info("Using Remote Client Registry Provider");
-        return new RemoteClientRegistryProvider(backendConfig, httpClient);
+        return new RemoteClientRegistryProvider(backendConfig, httpClient, accessRecorder);
     }
 
     @Bean

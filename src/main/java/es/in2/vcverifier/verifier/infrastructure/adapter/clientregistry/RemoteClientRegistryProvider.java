@@ -3,6 +3,8 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.domain.model.audit.ExternalSystemTarget;
+import es.in2.vcverifier.shared.infrastructure.audit.ExternalHttpAccessRecorder;
 import es.in2.vcverifier.verifier.domain.exception.RemoteFileFetchException;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -27,6 +29,7 @@ public class RemoteClientRegistryProvider implements ClientRegistryProvider {
 
     private final BackendConfig backendConfig;
     private final HttpClient httpClient;
+    private final ExternalHttpAccessRecorder accessRecorder;
     private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
 
     @Override
@@ -38,7 +41,9 @@ public class RemoteClientRegistryProvider implements ClientRegistryProvider {
                     .uri(URI.create(url))
                     .timeout(REQUEST_TIMEOUT)
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = accessRecorder.sendAsPlatform(
+                    ExternalSystemTarget.clientRegistry(request.uri().getHost()), request.uri().getPath(),
+                    httpClient, request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return yamlMapper.readValue(response.body(), ExternalTrustedListYamlData.class);
             } else {
