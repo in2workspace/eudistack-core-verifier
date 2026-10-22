@@ -48,8 +48,16 @@ public class AuthorizationRequestBuildWorkflow {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /**
+     * Characters left unencoded in the QR's query values: RFC 3986 unreserved characters plus
+     * ':' and '/', which RFC 3986 §3.4 allows literally in a query. Keeping them literal shortens
+     * the QR payload so that it fits QR version 7; in particular the ':' of the client_id prefix
+     * ({@code did:key:}, {@code x509_hash:}) is left unencoded on purpose. Every other character is
+     * percent-encoded, including the sub-delims ({@code ;} and {@code ,} are read as separators by
+     * some parsers) and the query delimiters ({@code & = + # %}).
+     */
     private static final String QUERY_SAFE =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?@!$'()*,;";
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/";
 
     private final JWTService jwtService;
     private final CryptoComponent cryptoComponent;

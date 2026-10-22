@@ -15,6 +15,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,6 +26,8 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -340,27 +345,39 @@ class AuthorizationRequestBuildWorkflowTest {
     @Test
     @DisplayName("QR escapes the characters a query value cannot carry literally")
     void qrUrl_escapesQueryDelimiters() {
-        stubMinimalRequest("did:key:a&b=c+d%e#f", "https://verifier.example.com");
+        stubMinimalRequest("did:key:a&b=c+d%e#f;g,h?i@j", "https://verifier.example.com");
 
         String url = workflow
                 .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
                 .openid4vpUrl();
 
-        assertThat(url).contains("client_id=did:key:a%26b%3Dc%2Bd%25e%23f&request_uri=");
+        assertThat(url).contains("client_id=did:key:a%26b%3Dc%2Bd%25e%23f%3Bg%2Ch%3Fi%40j&request_uri=");
     }
 
-    @Test
-    @DisplayName("QR payload on a deployed tenant host (sandbox.dev.eudistack.net) stays within QR version 7 capacity (154 bytes at EC level L)")
-    void qrUrl_staysWithinVersion7Capacity() {
-        stubMinimalRequest(
-                "did:key:zDnaevN85Z7VJgcBoQeqQU7d8kZpuVhDSdm8hQtJYWjvek3VL",
-                "https://sandbox.dev.eudistack.net/verifier");
+    @ParameterizedTest(name = "{1}")
+    @MethodSource("deployedVerifierHosts")
+    @DisplayName("QR payload on every deployed tenant host stays within QR version 7 capacity (154 bytes at EC level L)")
+    void qrUrl_staysWithinVersion7Capacity(String clientId, String verifierUrl) {
+        stubMinimalRequest(clientId, verifierUrl);
 
         String url = workflow
                 .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
                 .openid4vpUrl();
 
         assertThat(url.getBytes(StandardCharsets.UTF_8)).hasSizeLessThanOrEqualTo(154);
+    }
+
+    static Stream<Arguments> deployedVerifierHosts() {
+        String devAndStgClientId = "did:key:zDnaevN85Z7VJgcBoQeqQU7d8kZpuVhDSdm8hQtJYWjvek3VL";
+        String proClientId = "did:key:zDnaeVYnWTZu5nbrH1qmBVMvNwSrtKnkRbCZ4xH5h2LQPnzdr";
+        List<String> tenants = List.of("sandbox", "cgcom", "kpmg", "dome", "platform");
+        return Stream.of(
+                        Map.entry("dev.eudistack.net", devAndStgClientId),
+                        Map.entry("stg.eudistack.net", devAndStgClientId),
+                        Map.entry("eudistack.net", proClientId))
+                .flatMap(environment -> tenants.stream().map(tenant -> Arguments.of(
+                        environment.getValue(),
+                        "https://" + tenant + "." + environment.getKey() + "/verifier")));
     }
 
     private void stubMinimalRequest(String clientId, String verifierUrl) {

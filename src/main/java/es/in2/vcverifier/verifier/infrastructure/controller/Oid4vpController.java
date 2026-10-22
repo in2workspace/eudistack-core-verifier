@@ -47,8 +47,9 @@ public class Oid4vpController {
     private final ObjectMapper objectMapper;
 
     @Operation(
-            summary = "Retrieve authorization request JWT by nonce",
-            description = "Returns the signed authorization request JWT for the given nonce (QR code scan)")
+            summary = "Retrieve authorization request JWT by id",
+            description = "Returns the signed authorization request JWT for the given request id (QR code scan). "
+                    + "The id is single use: the request object is removed when it is returned.")
     @ApiResponse(responseCode = "200", description = "Authorization request JWT",
             content = @Content(mediaType = "application/oauth-authz-req+jwt"))
     @ApiResponse(responseCode = "404", description = "Authorization request not found or expired")
@@ -58,15 +59,11 @@ public class Oid4vpController {
     public String getAuthorizationRequest(
             @Parameter(description = "Authorization request id (from QR code)", required = true)
             @PathVariable @NotBlank @Size(max = 256) String id) {
-        AuthorizationRequestJWT authorizationRequestJWT = cacheStoreForAuthorizationRequestJWT.get(id);
-        cacheStoreForAuthorizationRequestJWT.delete(id);
-        String jwt = authorizationRequestJWT.authRequest();
-
-        if (jwt != null) {
-            return jwt;
-        } else {
+        AuthorizationRequestJWT authorizationRequestJWT = cacheStoreForAuthorizationRequestJWT.remove(id);
+        if (authorizationRequestJWT == null || authorizationRequestJWT.authRequest() == null) {
             throw new ResourceNotFoundException("JWT not found for id: " + id);
         }
+        return authorizationRequestJWT.authRequest();
     }
 
     @Operation(
