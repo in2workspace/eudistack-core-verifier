@@ -31,7 +31,7 @@ public interface AuditTrailPort {
     default void stageBestEffort(AuditEntry entry) {
         try {
             stageInNewTransaction(entry);
-        } catch (RuntimeException auditError) {
+        } catch (RuntimeException _) {
             // The adapter has already reported it; the operation goes on.
         }
     }
