@@ -285,6 +285,8 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private RegisteredClient getOrBuildRegisteredClient(String clientId, OAuth2AuthorizationGrantAuthenticationToken authentication) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient != null) {
+            // A pre-registered machine is authenticated like a synthetic one, and the trail has to say so.
+            publishM2MAudit(clientId, tenantOf(registeredClient), AUDIT_OUTCOME_ACCEPT, null);
             return registeredClient;
         }
         log.info("M2M client '{}' not pre-registered, building synthetic client from credential", clientId);
@@ -332,6 +334,11 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
         publishM2MAudit(clientId, tenant, AUDIT_OUTCOME_ACCEPT, null);
         return syntheticClient;
+    }
+
+    private static String tenantOf(RegisteredClient registeredClient) {
+        Object tenant = registeredClient.getClientSettings().getSettings().get(CLIENT_SETTING_TENANT);
+        return tenant instanceof String tenantName ? tenantName : null;
     }
 
     /**
