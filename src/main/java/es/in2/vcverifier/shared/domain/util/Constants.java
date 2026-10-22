@@ -11,6 +11,7 @@ public class Constants {
     public static final String RESPONSE_TYPE= "response_type";
     public static final String SCOPE = "scope";
     public static final String AUTHORIZATION_RESPONSE_ENDPOINT= "/oid4vp/auth-response";
+    public static final String AUTHORIZATION_REQUEST_ENDPOINT = "/oid4vp/r/";
     public static final String DID_ELSI_PREFIX = "did:elsi:";
     public static final String MINUTES = "MINUTES";
     public static final String REQUIRED_EXTERNAL_USER_AUTHENTICATION = "required_external_user_authentication";
