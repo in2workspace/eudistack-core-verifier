@@ -70,13 +70,25 @@ class Oid4vpControllerTest {
         String expectedJwt = "sampleJwt";
         AuthorizationRequestJWT mockAuthRequestJWT = Mockito.mock(AuthorizationRequestJWT.class);
 
-        when(cacheStoreForAuthorizationRequestJWT.get(id)).thenReturn(mockAuthRequestJWT);
+        when(cacheStoreForAuthorizationRequestJWT.remove(id)).thenReturn(mockAuthRequestJWT);
         when(mockAuthRequestJWT.authRequest()).thenReturn(expectedJwt);
 
         String resultJwt = oid4vpController.getAuthorizationRequest(id);
 
         assertEquals(expectedJwt, resultJwt);
-        Mockito.verify(cacheStoreForAuthorizationRequestJWT).delete(id);
+        Mockito.verify(cacheStoreForAuthorizationRequestJWT).remove(id);
+    }
+
+    @Test
+    void getAuthorizationRequest_unknownOrExpiredId_shouldThrowResourceNotFoundException() {
+        String id = "unknownId";
+        when(cacheStoreForAuthorizationRequestJWT.remove(id)).thenReturn(null);
+
+        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () ->
+                oid4vpController.getAuthorizationRequest(id)
+        );
+
+        assertEquals("JWT not found for id: " + id, exception.getMessage());
     }
 
     @Test
@@ -84,7 +96,7 @@ class Oid4vpControllerTest {
         String id = "invalidId";
 
         AuthorizationRequestJWT authorizationRequestJWT = AuthorizationRequestJWT.builder().authRequest(null).build();
-        when(cacheStoreForAuthorizationRequestJWT.get(id)).thenReturn(authorizationRequestJWT);
+        when(cacheStoreForAuthorizationRequestJWT.remove(id)).thenReturn(authorizationRequestJWT);
 
         ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () ->
                 oid4vpController.getAuthorizationRequest(id)

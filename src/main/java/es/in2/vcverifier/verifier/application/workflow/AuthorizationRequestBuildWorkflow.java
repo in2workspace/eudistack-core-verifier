@@ -17,12 +17,13 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.stereotype.Service;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_REQUEST_ENDPOINT;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZATION_RESPONSE_ENDPOINT;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_CLIENT_METADATA;
@@ -43,6 +44,21 @@ public class AuthorizationRequestBuildWorkflow {
      */
     private static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
 
+    private static final int REQUEST_ID_BYTES = 6;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * Characters left unencoded in the QR's query values: RFC 3986 unreserved characters plus
+     * ':' and '/', which RFC 3986 §3.4 allows literally in a query. Keeping them literal shortens
+     * the QR payload so that it fits QR version 7; in particular the ':' of the client_id prefix
+     * ({@code did:key:}, {@code x509_hash:}) is left unencoded on purpose. Every other character is
+     * percent-encoded, including the sub-delims ({@code ;} and {@code ,} are read as separators by
+     * some parsers) and the query delimiters ({@code & = + # %}).
+     */
+    private static final String QUERY_SAFE =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/";
+
     private final JWTService jwtService;
     private final CryptoComponent cryptoComponent;
     private final BackendConfig backendConfig;
@@ -51,16 +67,16 @@ public class AuthorizationRequestBuildWorkflow {
     private final ObjectMapper objectMapper;
 
     /**
-     * @param nonce   id of the cached request object for the QR ({@code /oid4vp/auth-request/{nonce}})
+     * @param requestId id of the cached request object for the QR ({@code /oid4vp/r/{requestId}})
      * @param vpNonce OID4VP nonce embedded in the request object. EUD-252 (F1): NOT cached here — the
      *                caller stores it in the same atomic authorization-request entry as the rest of the
      *                login, so a concurrent /authorize reusing the state can never swap it.
      */
-    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce, String vpNonce) {
+    public record Result(String signedAuthRequestJwt, String openid4vpUrl, String requestId, String vpNonce) {
 
         /** Convenience for callers that don't need the VP nonce. */
-        public Result(String signedAuthRequestJwt, String openid4vpUrl, String nonce) {
-            this(signedAuthRequestJwt, openid4vpUrl, nonce, null);
+        public Result(String signedAuthRequestJwt, String openid4vpUrl, String requestId) {
+            this(signedAuthRequestJwt, openid4vpUrl, requestId, null);
         }
     }
 
@@ -83,16 +99,16 @@ public class AuthorizationRequestBuildWorkflow {
         String jwtPayload = buildJwtPayload(scope, state, nonce, dcqlQuery, registeredClient);
         String signedJwt = jwtService.issueJWTwithOI4VPType(jwtPayload);
 
-        // Cache the auth request JWT keyed by a new nonce for the QR
-        String qrNonce = UUID.randomUUID().toString();
+        // Cache the auth request JWT keyed by a new id for the QR
+        String requestId = generateRequestId();
         cacheStoreForAuthorizationRequestJWT.add(
-                qrNonce,
+                requestId,
                 AuthorizationRequestJWT.builder().authRequest(signedJwt).build()
         );
 
-        String openid4vpUrl = generateOpenId4VpUrl(qrNonce);
+        String openid4vpUrl = generateOpenId4VpUrl(requestId);
 
-        return new Result(signedJwt, openid4vpUrl, qrNonce, nonce);
+        return new Result(signedJwt, openid4vpUrl, requestId, nonce);
     }
 
     /**
@@ -159,11 +175,28 @@ public class AuthorizationRequestBuildWorkflow {
         return ClientMetadata.defaultMetadata();
     }
 
-    private String generateOpenId4VpUrl(String nonce) {
-        String requestUri = String.format("%s/oid4vp/auth-request/%s",
-                backendConfig.getUrl(), nonce);
-        return String.format("openid4vp://?client_id=%s&request_uri=%s",
-                URLEncoder.encode(cryptoComponent.getClientId(), StandardCharsets.UTF_8),
-                URLEncoder.encode(requestUri, StandardCharsets.UTF_8));
+    private String generateRequestId() {
+        byte[] bytes = new byte[REQUEST_ID_BYTES];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String generateOpenId4VpUrl(String requestId) {
+        String requestUri = backendConfig.getUrl() + AUTHORIZATION_REQUEST_ENDPOINT + requestId;
+        return "openid4vp://?client_id=" + encodeQueryValue(cryptoComponent.getClientId())
+                + "&request_uri=" + encodeQueryValue(requestUri);
+    }
+
+    private static String encodeQueryValue(String value) {
+        StringBuilder encoded = new StringBuilder(value.length());
+        for (byte b : value.getBytes(StandardCharsets.UTF_8)) {
+            char c = (char) (b & 0xFF);
+            if (QUERY_SAFE.indexOf(c) >= 0) {
+                encoded.append(c);
+            } else {
+                encoded.append('%').append(String.format("%02X", b & 0xFF));
+            }
+        }
+        return encoded.toString();
     }
 }
