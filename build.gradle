@@ -91,7 +91,7 @@ dependencies {
     testImplementation "org.testcontainers:postgresql"
 
     // --- PostgreSQL Driver ---
-    runtimeOnly 'org.postgresql:postgresql:42.7.3'
+    runtimeOnly 'org.postgresql:postgresql:42.7.13'
 
     // --- Flyway ---
     implementation 'org.flywaydb:flyway-core'
