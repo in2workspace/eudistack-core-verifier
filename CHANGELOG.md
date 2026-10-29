@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **EUD-244 — Audit events (catalogue 2.2.0)**: `SystemAuthenticated` for the client-credentials grant of machine clients and `ExternalSystemAccess` for the calls to the client registry and the trusted list, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the Verifier behaves as before.
+- **EUD-244 — Audit context before Spring Security**: the audit context is opened ahead of the security filter chain, where the token endpoint authenticates clients.
+
 ## [3.4.0] - 2026-10-16
 
 ### Added
