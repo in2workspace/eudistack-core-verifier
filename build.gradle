@@ -11,7 +11,7 @@ plugins {
 }
 
 group = 'com.eudistack'
-version = '3.4.0'
+version = '3.5.0'
 
 java {
     toolchain {
@@ -31,6 +31,14 @@ configurations {
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'GitHubPackages'
+        url = uri('https://maven.pkg.github.com/in2workspace/eudistack-platform-audit-starter')
+        credentials {
+            username = System.getenv('GITHUB_ACTOR') ?: findProperty('gpr.user')
+            password = System.getenv('GITHUB_TOKEN') ?: findProperty('gpr.token')
+        }
+    }
 }
 
 dependencies {
@@ -59,6 +67,7 @@ dependencies {
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
     implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
     implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'com.eudistack:auditoria-spring-boot-starter:0.1.0'
     implementation 'io.micrometer:micrometer-registry-otlp'
     implementation 'io.opentelemetry.proto:opentelemetry-proto:1.5.0-alpha'
     implementation platform('io.grpc:grpc-bom:1.69.0')
