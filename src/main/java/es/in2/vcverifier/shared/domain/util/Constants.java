@@ -55,6 +55,8 @@ public class Constants {
     public static final String LOGIN_METHODS = "login_methods";
     public static final String ACR_REQUESTED = "acr_requested";
     public static final String ACR_ESSENTIAL = "acr_essential";
+    public static final String ACCESS_PROFILE = "access_profile";
+    public static final String WALLET_AUTH_REQUEST = "wallet_auth_request";
     // EUD-252: browser-side close of a cross-device login (establishes the SSO session in the
     // browser that started the login, then redirects to the RP). Relative to the context path.
     public static final String LOGIN_COMPLETION_PATH = "/api/login/complete";

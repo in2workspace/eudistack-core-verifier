@@ -55,6 +55,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.ACCESS_PROFILE;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
@@ -70,6 +71,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
+import static es.in2.vcverifier.shared.domain.util.Constants.WALLET_AUTH_REQUEST;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
@@ -491,7 +493,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
         // carry the login-page browser-binding cookie.
         cacheAuthorizationRequest(authorizationContext, registeredClient, redirectUri, bindLogin(request),
-                walletRequest != null ? walletRequest.vpNonce() : null, loginMethods, parameters.requestedLevel());
+                walletRequest, loginMethods, parameters.requestedLevel());
 
         return throwRedirectAuthentication(authorizationContext.state(),
                 walletRequest != null ? walletRequest.openid4vpUrl() : null, registeredClient,
@@ -643,7 +645,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     }
 
     private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, RegisteredClient registeredClient,
-                                           String redirectUri, LoginBinding loginBinding, String vpNonce,
+                                           String redirectUri, LoginBinding loginBinding,
+                                           AuthorizationRequestBuildWorkflow.Result walletRequest,
                                            List<LoginMethod> loginMethods, RequestedAssuranceLevel requestedLevel) {
         OAuth2AuthorizationRequest.Builder builder = OAuth2AuthorizationRequest
                 .authorizationCode()
@@ -673,8 +676,13 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         if (loginBinding.browserBindingHash() != null) {
             additionalParameters.put(BROWSER_BINDING_HASH, loginBinding.browserBindingHash());
         }
-        if (vpNonce != null) {
-            additionalParameters.put(VP_NONCE, vpNonce);
+        if (walletRequest != null) {
+            additionalParameters.put(VP_NONCE, walletRequest.vpNonce());
+            additionalParameters.put(WALLET_AUTH_REQUEST, walletRequest.openid4vpUrl());
+        }
+        String accessProfile = authorizationContext.accessProfile();
+        if (accessProfile != null && !accessProfile.isBlank()) {
+            additionalParameters.put(ACCESS_PROFILE, accessProfile);
         }
         if (loginBinding.tenant() != null) {
             additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());

@@ -700,6 +700,24 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         // Then
         verify(authorizationRequestBuildWorkflow).buildAuthorizationRequest(any(), any(), eq(STATE), any());
         assertEquals("vp-nonce", cachedLogin().getAdditionalParameters().get("vp_nonce"));
+        assertEquals("openid4vp://...", cachedLogin().getAdditionalParameters().get("wallet_auth_request"));
+    }
+
+    @Test
+    void convert_withAccessProfile_cachesItForALaterWalletRequest() {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(Mode.PLAIN, Map.of("access_profile", "issuer_access"));
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertStateOnlyRedirect(convertExpectingRedirect(request));
+
+        // Then
+        Map<String, Object> cached = cachedLogin().getAdditionalParameters();
+        assertEquals("issuer_access", cached.get("access_profile"));
+        assertFalse(cached.containsKey("wallet_auth_request"));
     }
 
     @ParameterizedTest
