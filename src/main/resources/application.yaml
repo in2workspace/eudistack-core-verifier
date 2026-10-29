@@ -179,6 +179,9 @@ verifier:
       # SSO reuse fails closed to login_required across restarts/replicas without a shared key).
       credential-encryption-key: ${VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY:}
 
+  certificate-login:
+    tenants: {}
+
   dome:
     legacy-read-enabled: ${VERIFIER_DOME_LEGACY_READ_ENABLED:true}
     bumped-read-enabled: ${VERIFIER_DOME_BUMPED_READ_ENABLED:true}
