@@ -1,6 +1,7 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.util.JSONObjectUtils;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
@@ -9,6 +10,7 @@ import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.oauth2.domain.model.OidcPrompt;
+import es.in2.vcverifier.oauth2.domain.model.RequestedAssuranceLevel;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -42,6 +44,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
+import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -73,6 +76,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final String PROMPT_NONE_COMBINED_DESCRIPTION = "prompt=none cannot be combined with other values";
     private static final String PROMPT_NOT_A_STRING_DESCRIPTION = "prompt must be a string";
     private static final String MAX_AGE_INVALID_DESCRIPTION = "max_age must be a non-negative integer";
+    private static final String ACR_VALUES_PARAMETER = "acr_values";
+    private static final String CLAIMS_PARAMETER = "claims";
+    private static final String ACR_VALUES_NOT_A_STRING_DESCRIPTION = "acr_values must be a string";
+    private static final String CLAIMS_INVALID_DESCRIPTION = "claims must be a valid claims request";
     private static final Pattern DIGITS = Pattern.compile("\\d+");
     private static final BigDecimal MAX_AGE_LIMIT = BigDecimal.valueOf(SsoTtlRange.MAX_ABSOLUTE.toSeconds());
     private static final String LOGIN_REQUIRED_DESCRIPTION = "prompt=none: end-user authentication is required";
@@ -258,7 +265,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     }
 
     /** {@code prompt} and {@code max_age} of a validated request; {@code maxAge} null = absent or not enforceable. */
-    private record AuthenticationParameters(OidcPrompt prompt, Long maxAge) {
+    private record AuthenticationParameters(OidcPrompt prompt, Long maxAge, RequestedAssuranceLevel requestedLevel) {
     }
 
     /**
@@ -269,8 +276,38 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * malformed request is malformed even with {@code prompt=login}.
      */
     private AuthenticationParameters parseAuthenticationParameters(Object rawPrompt, Object rawMaxAge,
+                                                                   Object rawAcrValues, Object rawClaims,
                                                                    AuthorizationContext ctx, String clientId) {
-        return new AuthenticationParameters(parsePrompt(rawPrompt, ctx, clientId), parseMaxAge(rawMaxAge, ctx, clientId));
+        return new AuthenticationParameters(parsePrompt(rawPrompt, ctx, clientId), parseMaxAge(rawMaxAge, ctx, clientId),
+                parseRequestedLevel(rawAcrValues, rawClaims, ctx, clientId));
+    }
+
+    private RequestedAssuranceLevel parseRequestedLevel(Object rawAcrValues, Object rawClaims,
+                                                        AuthorizationContext ctx, String clientId) {
+        if (rawAcrValues != null && !(rawAcrValues instanceof String)) {
+            log.warn("event=authorize_acr_invalid clientId={} reason=acr_values_not_a_string", clientId);
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, ACR_VALUES_NOT_A_STRING_DESCRIPTION, ctx);
+        }
+        try {
+            return RequestedAssuranceLevel.from((String) rawAcrValues, toClaimsObject(rawClaims)).orElse(null);
+        } catch (IllegalArgumentException | ParseException e) {
+            log.warn("event=authorize_acr_invalid clientId={} reason={}", clientId, sanitize(e.getMessage()));
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, CLAIMS_INVALID_DESCRIPTION, ctx);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> toClaimsObject(Object rawClaims) throws ParseException {
+        if (rawClaims == null || (rawClaims instanceof String s && s.isBlank())) {
+            return null;
+        }
+        if (rawClaims instanceof String json) {
+            return JSONObjectUtils.parse(json);
+        }
+        if (rawClaims instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        throw new IllegalArgumentException("claims must be a JSON object");
     }
 
     private OidcPrompt parsePrompt(Object rawPrompt, AuthorizationContext ctx, String clientId) {
@@ -380,6 +417,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String rawMaxAge = request.getParameter(MAX_AGE_PARAMETER);
         String rawPrompt = request.getParameter(PROMPT_PARAMETER);
         AuthenticationParameters parameters = parseAuthenticationParameters(rawPrompt, rawMaxAge,
+                request.getParameter(ACR_VALUES_PARAMETER), request.getParameter(CLAIMS_PARAMETER),
                 authorizationContext, registeredClient.getClientId());
         attemptSsoReuse(request, authorizationContext.toBuilder().maxAge(parameters.maxAge()).build(),
                 registeredClient, parameters.prompt());
@@ -417,6 +455,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .build();
         AuthenticationParameters parameters = parseAuthenticationParameters(
                 requestObjectClaims.get(PROMPT_PARAMETER), requestObjectClaims.get(MAX_AGE_PARAMETER),
+                requestObjectClaims.get(ACR_VALUES_PARAMETER), requestObjectClaims.get(CLAIMS_PARAMETER),
                 reuseContext, registeredClient.getClientId());
         attemptSsoReuse(request, reuseContext.toBuilder().maxAge(parameters.maxAge()).build(),
                 registeredClient, parameters.prompt());

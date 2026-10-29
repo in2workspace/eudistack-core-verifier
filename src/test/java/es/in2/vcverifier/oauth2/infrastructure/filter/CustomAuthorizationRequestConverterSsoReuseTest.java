@@ -94,6 +94,11 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
             + "&error_description=max_age+must+be+a+non-negative+integer&state=" + STATE + ISS_PARAM;
     private static final String PROMPT_NOT_A_STRING_REDIRECT = REDIRECT_URI + "?error=invalid_request"
             + "&error_description=prompt+must+be+a+string&state=" + STATE + ISS_PARAM;
+    private static final String CLAIMS_INVALID_REDIRECT = REDIRECT_URI + "?error=invalid_request"
+            + "&error_description=claims+must+be+a+valid+claims+request&state=" + STATE + ISS_PARAM;
+    private static final String ACR_VALUES_NOT_A_STRING_REDIRECT = REDIRECT_URI + "?error=invalid_request"
+            + "&error_description=acr_values+must+be+a+string&state=" + STATE + ISS_PARAM;
+    private static final String HIGH_ACR = "http://eidas.europa.eu/LoA/high";
     /** SsoTtlRange.MAX_ABSOLUTE (24 h) + 1 s. */
     private static final long MAX_AGE_ABOVE_CAP = 86_401L;
     private static final String NONE_COMBINED_REDIRECT = REDIRECT_URI + "?error=invalid_request"
@@ -509,6 +514,65 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
     }
 
+    static Stream<Arguments> malformedClaims() {
+        return Stream.of(
+                Arguments.of(Mode.PLAIN, "{not json"),
+                Arguments.of(Mode.PLAIN, "{\"id_token\":{\"acr\":\"" + HIGH_ACR + "\"}}"),
+                Arguments.of(Mode.PLAIN, "{\"id_token\":{\"acr\":{\"essential\":\"yes\"}}}"),
+                Arguments.of(Mode.JAR, Map.of("id_token", Map.of("acr", Map.of("values", HIGH_ACR)))),
+                Arguments.of(Mode.JAR, List.of("acr")));
+    }
+
+    @ParameterizedTest(name = "{0} claims={1}")
+    @MethodSource("malformedClaims")
+    void convert_malformedClaims_returnsInvalidRequestToClient(Mode mode, Object claims) {
+        // Given
+        HttpServletRequest request = request(mode, Map.of("claims", claims));
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then
+        assertEquals("invalid_request", error.getErrorCode());
+        assertEquals(CLAIMS_INVALID_REDIRECT, error.getUri());
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+    }
+
+    @Test
+    void convert_jarAcrValuesNotAString_returnsInvalidRequestToClient() {
+        // Given
+        HttpServletRequest request = request(Mode.JAR, Map.of("acr_values", List.of(HIGH_ACR)));
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then
+        assertEquals(ACR_VALUES_NOT_A_STRING_REDIRECT, error.getUri());
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+    }
+
+    static Stream<Arguments> wellFormedRequestedLevel() {
+        return Stream.of(
+                Arguments.of(Mode.PLAIN, Map.of("acr_values", HIGH_ACR)),
+                Arguments.of(Mode.PLAIN, Map.of("claims",
+                        "{\"id_token\":{\"acr\":{\"essential\":true,\"values\":[\"" + HIGH_ACR + "\"]}}}")),
+                Arguments.of(Mode.PLAIN, Map.of("acr_values", "urn:example:unknown")),
+                Arguments.of(Mode.JAR, Map.of("acr_values", HIGH_ACR)),
+                Arguments.of(Mode.JAR, Map.of("claims",
+                        Map.of("id_token", Map.of("acr", Map.of("essential", true, "values", List.of(HIGH_ACR)))))));
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("wellFormedRequestedLevel")
+    void convert_wellFormedRequestedLevel_continuesToQr(Mode mode, Map<String, Object> parameters) {
+        // Given
+        HttpServletRequest request = request(mode, parameters);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When / Then
+        assertQrRedirect(convertExpectingRedirect(request));
+    }
+
     @ParameterizedTest
     @EnumSource(Mode.class)
     void convert_malformedMaxAgeWithPromptLogin_isStillInvalidRequest(Mode mode) {
@@ -691,6 +755,15 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     }
 
     private HttpServletRequest request(Mode mode, Object prompt, Object maxAge, String redirectUri) {
+        return request(mode, prompt, maxAge, redirectUri, Map.of());
+    }
+
+    private HttpServletRequest request(Mode mode, Map<String, Object> extraParameters) {
+        return request(mode, null, null, REDIRECT_URI, extraParameters);
+    }
+
+    private HttpServletRequest request(Mode mode, Object prompt, Object maxAge, String redirectUri,
+                                       Map<String, Object> extraParameters) {
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURL()).thenReturn(new StringBuffer("https://verifier.example.com/oidc/authorize"));
         when(request.getHeader("X-Forwarded-Host")).thenReturn("verifier.example.com");
@@ -707,6 +780,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
             when(request.getParameter("request")).thenReturn(null);
             when(request.getParameter("prompt")).thenReturn(prompt == null ? null : prompt.toString());
             when(request.getParameter("max_age")).thenReturn(maxAge == null ? null : maxAge.toString());
+            extraParameters.forEach((name, value) -> when(request.getParameter(name)).thenReturn(value.toString()));
             return request;
         }
 
@@ -721,6 +795,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         if (maxAge != null) {
             claims.put("max_age", maxAge); // as given: Long = JSON integer, Double = JSON decimal, ...
         }
+        claims.putAll(extraParameters);
         SignedJWT signedJwt = mock(SignedJWT.class);
         Payload payload = mock(Payload.class);
         when(jwtService.parseJWT(JWT)).thenReturn(signedJwt);
