@@ -16,6 +16,10 @@ import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,6 +43,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequ
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContext;
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
 
@@ -48,8 +53,11 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -114,6 +122,8 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     @Mock private SafeUrlValidator safeUrlValidator;
     @Mock private ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
     @Mock private SsoBrowserBindingCookie ssoBrowserBindingCookie;
+    @Mock private TenantLoginMethodsPort tenantLoginMethodsPort;
+    @Mock private DcqlProfileResolver dcqlProfileResolver;
 
     private CustomAuthorizationRequestConverter converter;
     private AuthorizationRedirectException thrown;
@@ -130,7 +140,8 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     void setUp() {
         converter = new CustomAuthorizationRequestConverter(didService, jwtService, cacheStore, backendConfig,
                 registeredClientRepository, false, 120L, httpClient, authorizationRequestBuildWorkflow,
-                safeUrlValidator, reuseSsoSessionWorkflow, ssoBrowserBindingCookie);
+                safeUrlValidator, reuseSsoSessionWorkflow, ssoBrowserBindingCookie, tenantLoginMethodsPort,
+                dcqlProfileResolver);
 
         when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
                 .clientId(CLIENT_ID)
@@ -573,6 +584,94 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         assertQrRedirect(convertExpectingRedirect(request));
     }
 
+    // ---- login methods ----
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_clientWithoutLoginMethods_cachesOnlyTheWalletAndNoLevel(Mode mode) {
+        // Given
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        Map<String, Object> cached = cachedLogin().getAdditionalParameters();
+        assertEquals(List.of("wallet"), cached.get("login_methods"));
+        assertFalse(cached.containsKey("acr_requested"));
+        assertFalse(cached.containsKey("acr_essential"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_clientWithBothMethods_cachesThemInTheirOrder(Mode mode) {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        assertEquals(List.of("x509", "wallet"), cachedLogin().getAdditionalParameters().get("login_methods"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_tenantWithoutCertificate_cachesOnlyTheWallet(Mode mode) {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        assertEquals(List.of("wallet"), cachedLogin().getAdditionalParameters().get("login_methods"));
+    }
+
+    @Test
+    void convert_essentialLevelOnlyTheCertificateMeets_cachesTheCertificateAndTheRequestedLevel() {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        when(dcqlProfileResolver.highestAssuranceLevel(any())).thenReturn(Optional.of(AssuranceLevel.SUBSTANTIAL));
+        HttpServletRequest request = request(Mode.PLAIN, Map.of("claims",
+                "{\"id_token\":{\"acr\":{\"essential\":true,\"value\":\"" + HIGH_ACR + "\"}}}"));
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        Map<String, Object> cached = cachedLogin().getAdditionalParameters();
+        assertEquals(List.of("x509"), cached.get("login_methods"));
+        assertEquals(HIGH_ACR, cached.get("acr_requested"));
+        assertEquals(true, cached.get("acr_essential"));
+    }
+
+    @Test
+    void convert_walletLevelComesFromTheClientScopes() {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET));
+        HttpServletRequest request = request(Mode.PLAIN, Map.of("acr_values", HIGH_ACR));
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        verify(dcqlProfileResolver).highestAssuranceLevel(Set.of("openid", "learcredential"));
+        assertEquals(false, cachedLogin().getAdditionalParameters().get("acr_essential"));
+    }
+
     @ParameterizedTest
     @EnumSource(Mode.class)
     void convert_malformedMaxAgeWithPromptLogin_isStillInvalidRequest(Mode mode) {
@@ -807,6 +906,26 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         PublicKey publicKey = mock(PublicKey.class);
         when(didService.resolvePublicKeyFromDid(CLIENT_ID)).thenReturn(publicKey);
         return request;
+    }
+
+    private void registerClientWithLoginMethods(List<LoginMethod> loginMethods) {
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
+                .clientId(CLIENT_ID)
+                .clientName("Client A")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(REDIRECT_URI)
+                .scope("openid")
+                .scope("learcredential")
+                .clientSettings(ClientSettings.builder()
+                        .setting(CLIENT_SETTING_LOGIN_METHODS, loginMethods)
+                        .build())
+                .build());
+    }
+
+    private OAuth2AuthorizationRequest cachedLogin() {
+        ArgumentCaptor<OAuth2AuthorizationRequest> captor = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
+        verify(cacheStore).putIfAbsent(eq(STATE), captor.capture());
+        return captor.getValue();
     }
 
     private void stubReuse(ReuseSsoSessionWorkflow.Result.Status status) {

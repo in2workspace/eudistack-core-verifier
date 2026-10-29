@@ -11,6 +11,9 @@ import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.oauth2.domain.model.OidcPrompt;
 import es.in2.vcverifier.oauth2.domain.model.RequestedAssuranceLevel;
+import es.in2.vcverifier.oauth2.domain.service.LoginMethodsResolver;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -18,6 +21,8 @@ import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import io.micrometer.common.util.StringUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -50,7 +55,11 @@ import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
+import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_METHODS;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
@@ -97,6 +106,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final SafeUrlValidator safeUrlValidator;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
     private final SsoBrowserBindingCookie ssoBrowserBindingCookie;
+    private final TenantLoginMethodsPort tenantLoginMethodsPort;
+    private final DcqlProfileResolver dcqlProfileResolver;
+    private final LoginMethodsResolver loginMethodsResolver = new LoginMethodsResolver();
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -429,8 +441,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
         // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
         // carry the login-page browser-binding cookie.
+        LoginBinding loginBinding = bindLogin(request);
         cacheAuthorizationRequest(authorizationContext, registeredClient, authorizationContext.redirectUri(),
-                bindLogin(request), result.vpNonce());
+                loginBinding, result.vpNonce(),
+                resolveLoginMethods(registeredClient, loginBinding.tenant(), parameters.requestedLevel()),
+                parameters.requestedLevel());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -466,8 +481,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 authorizationContext.accessProfile());
 
         // EUD-252: bound only AFTER the reuse branch, same as the plain path.
+        LoginBinding loginBinding = bindLogin(request);
         cacheAuthorizationRequest(authorizationContext, registeredClient, jwtRedirectUri,
-                bindLogin(request), result.vpNonce());
+                loginBinding, result.vpNonce(),
+                resolveLoginMethods(registeredClient, loginBinding.tenant(), parameters.requestedLevel()),
+                parameters.requestedLevel());
 
         return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
@@ -611,8 +629,25 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * the same client/redirect_uri (equal non-null binding hashes), done with an atomic compare-and-
      * replace. Request and OID4VP nonce live in this one entry, so they always come from the same call.
      */
+    @SuppressWarnings("unchecked")
+    private List<LoginMethod> resolveLoginMethods(RegisteredClient registeredClient, String tenant,
+                                                  RequestedAssuranceLevel requestedLevel) {
+        List<LoginMethod> clientMethods = Objects.requireNonNullElse(
+                (List<LoginMethod>) registeredClient.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_METHODS),
+                List.of(LoginMethod.WALLET));
+        AssuranceLevel walletLevel = dcqlProfileResolver.highestAssuranceLevel(registeredClient.getScopes()).orElse(null);
+        List<LoginMethod> loginMethods = loginMethodsResolver.resolve(clientMethods,
+                tenantLoginMethodsPort.activeLoginMethods(tenant), walletLevel, requestedLevel);
+        log.info("event=authorize_login_methods clientId={} methods={} requestedLevel={} essential={}",
+                registeredClient.getClientId(), loginMethods,
+                requestedLevel != null ? requestedLevel.level() : null,
+                requestedLevel != null && requestedLevel.essential());
+        return loginMethods;
+    }
+
     private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, RegisteredClient registeredClient,
-                                           String redirectUri, LoginBinding loginBinding, String vpNonce) {
+                                           String redirectUri, LoginBinding loginBinding, String vpNonce,
+                                           List<LoginMethod> loginMethods, RequestedAssuranceLevel requestedLevel) {
         OAuth2AuthorizationRequest.Builder builder = OAuth2AuthorizationRequest
                 .authorizationCode()
                 .state(authorizationContext.state())
@@ -646,6 +681,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         }
         if (loginBinding.tenant() != null) {
             additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());
+        }
+        additionalParameters.put(LOGIN_METHODS, loginMethods.stream().map(LoginMethod::value).toList());
+        if (requestedLevel != null) {
+            additionalParameters.put(ACR_REQUESTED, requestedLevel.level().acrValue());
+            additionalParameters.put(ACR_ESSENTIAL, requestedLevel.essential());
         }
 
         builder.additionalParameters(additionalParameters);

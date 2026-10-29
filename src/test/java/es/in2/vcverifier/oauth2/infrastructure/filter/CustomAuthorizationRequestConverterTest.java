@@ -14,6 +14,8 @@ import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,6 +85,12 @@ class CustomAuthorizationRequestConverterTest {
     @Mock
     private SsoBrowserBindingCookie ssoBrowserBindingCookie;
 
+    @Mock
+    private TenantLoginMethodsPort tenantLoginMethodsPort;
+
+    @Mock
+    private DcqlProfileResolver dcqlProfileResolver;
+
     private boolean isNonceRequiredOnFapiProfile = true;
     private long loginTimeoutSeconds = 120L;
 
@@ -102,7 +110,9 @@ class CustomAuthorizationRequestConverterTest {
                 authorizationRequestBuildWorkflow,
                 safeUrlValidator,
                 reuseSsoSessionWorkflow,
-                ssoBrowserBindingCookie
+                ssoBrowserBindingCookie,
+                tenantLoginMethodsPort,
+                dcqlProfileResolver
         );
     }
 

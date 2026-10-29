@@ -51,6 +51,9 @@ public class Constants {
     public static final String VP_NONCE = "vp_nonce";
     // EUD-252 (F1): tenant resolved at /authorize; the wallet POST must come through the same tenant.
     public static final String AUTHORIZE_TENANT = "authorize_tenant";
+    public static final String LOGIN_METHODS = "login_methods";
+    public static final String ACR_REQUESTED = "acr_requested";
+    public static final String ACR_ESSENTIAL = "acr_essential";
     // EUD-252: browser-side close of a cross-device login (establishes the SSO session in the
     // browser that started the login, then redirects to the RP). Relative to the context path.
     public static final String LOGIN_COMPLETION_PATH = "/api/login/complete";
