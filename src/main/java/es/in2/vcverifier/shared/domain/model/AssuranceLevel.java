@@ -1,4 +1,7 @@
-package es.in2.vcverifier.verifier.domain.model;
+package es.in2.vcverifier.shared.domain.model;
+
+import java.util.Arrays;
+import java.util.Optional;
 
 public enum AssuranceLevel {
 
@@ -17,5 +20,10 @@ public enum AssuranceLevel {
 
     public boolean satisfies(AssuranceLevel required) {
         return compareTo(required) >= 0;
+    }
+    public static Optional<AssuranceLevel> fromAcrValue(String acrValue) {
+        return Arrays.stream(values())
+                .filter(level -> level.acrValue.equals(acrValue))
+                .findFirst();
     }
 }

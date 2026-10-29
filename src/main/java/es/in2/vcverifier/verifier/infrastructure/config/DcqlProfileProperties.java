@@ -1,6 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.config;
 
-import es.in2.vcverifier.verifier.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 

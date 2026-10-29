@@ -1,6 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.config;
 
-import es.in2.vcverifier.verifier.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;

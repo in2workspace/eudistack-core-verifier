@@ -1,6 +1,6 @@
 package es.in2.vcverifier.verifier.domain.service;
 
-import es.in2.vcverifier.verifier.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 
 import java.util.Collection;

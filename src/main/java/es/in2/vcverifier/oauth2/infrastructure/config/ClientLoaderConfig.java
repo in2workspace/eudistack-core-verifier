@@ -5,7 +5,7 @@ import es.in2.vcverifier.oauth2.infrastructure.adapter.DelegatingRegisteredClien
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
-import es.in2.vcverifier.verifier.domain.model.LoginMethod;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

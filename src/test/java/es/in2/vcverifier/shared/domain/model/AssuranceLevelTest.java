@@ -1,4 +1,4 @@
-package es.in2.vcverifier.verifier.domain.model;
+package es.in2.vcverifier.shared.domain.model;
 
 import org.junit.jupiter.api.Test;
 
@@ -26,5 +26,18 @@ class AssuranceLevelTest {
     @Test
     void substantial_doesNotSatisfyHigh() {
         assertThat(AssuranceLevel.SUBSTANTIAL.satisfies(AssuranceLevel.HIGH)).isFalse();
+    }
+
+    @Test
+    void fromAcrValue_recognisesTheEidasLevels() {
+        assertThat(AssuranceLevel.fromAcrValue("http://eidas.europa.eu/LoA/substantial")).contains(AssuranceLevel.SUBSTANTIAL);
+        assertThat(AssuranceLevel.fromAcrValue("http://eidas.europa.eu/LoA/high")).contains(AssuranceLevel.HIGH);
+    }
+
+    @Test
+    void fromAcrValue_ignoresOtherValues() {
+        assertThat(AssuranceLevel.fromAcrValue("http://eidas.europa.eu/LoA/low")).isEmpty();
+        assertThat(AssuranceLevel.fromAcrValue("high")).isEmpty();
+        assertThat(AssuranceLevel.fromAcrValue(null)).isEmpty();
     }
 }

@@ -1,4 +1,4 @@
-package es.in2.vcverifier.verifier.domain.model;
+package es.in2.vcverifier.shared.domain.model;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;

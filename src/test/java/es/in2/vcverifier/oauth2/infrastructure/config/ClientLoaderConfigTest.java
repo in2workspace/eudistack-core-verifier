@@ -2,11 +2,11 @@ package es.in2.vcverifier.oauth2.infrastructure.config;
 
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
-import es.in2.vcverifier.verifier.domain.model.LoginMethod;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoExtension;xº
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;

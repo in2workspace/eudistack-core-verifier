@@ -1,7 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
-import es.in2.vcverifier.verifier.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
