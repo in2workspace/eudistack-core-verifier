@@ -1,12 +1,14 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.verifier.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.infrastructure.config.DcqlProfileProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,7 +27,7 @@ class DcqlProfileResolverImplTest {
                                 "lear_employee_sd_jwt", "dc+sd-jwt",
                                 new DcqlProfileProperties.CredentialMeta(
                                         List.of("eu.europa.ec.eudi.lce.1"), null))
-                )),
+                ), null),
                 "learcredential.machine", new DcqlProfileProperties.DcqlProfile(List.of(
                         new DcqlProfileProperties.CredentialEntry(
                                 "lear_machine_sd_jwt", "dc+sd-jwt",
@@ -37,7 +39,7 @@ class DcqlProfileResolverImplTest {
                                         null,
                                         new DcqlProfileProperties.CredentialDefinition(
                                                 List.of("VerifiableCredential", "LEARCredentialMachine"))))
-                ))
+                ), null)
         ));
         resolver = new DcqlProfileResolverImpl(properties);
     }
@@ -121,5 +123,59 @@ class DcqlProfileResolverImplTest {
         DcqlQuery result = resolver.resolve("learcredential.employee");
 
         assertThat(result.credentials()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("highestAssuranceLevel() returns the highest level among the profiles of the scopes")
+    void highestAssuranceLevel_returnsTheHighestLevel() {
+        DcqlProfileResolverImpl leveled = resolverWithLevels(Map.of(
+                "learcredential", AssuranceLevel.SUBSTANTIAL,
+                "doctorid", AssuranceLevel.HIGH));
+
+        assertThat(leveled.highestAssuranceLevel(List.of("openid", "learcredential", "doctorid")))
+                .contains(AssuranceLevel.HIGH);
+    }
+
+    @Test
+    @DisplayName("highestAssuranceLevel() ignores the profiles that declare no level")
+    void highestAssuranceLevel_ignoresProfilesWithoutLevel() {
+        DcqlProfileResolverImpl leveled = resolverWithLevels(Map.of("learcredential", AssuranceLevel.SUBSTANTIAL));
+
+        assertThat(leveled.highestAssuranceLevel(List.of("learcredential", "learcredential.employee")))
+                .contains(AssuranceLevel.SUBSTANTIAL);
+    }
+
+    @Test
+    @DisplayName("highestAssuranceLevel() is empty when no profile of the scopes declares a level")
+    void highestAssuranceLevel_isEmptyWithoutLevels() {
+        assertThat(resolver.highestAssuranceLevel(List.of("learcredential.employee", "learcredential.machine")))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("highestAssuranceLevel() ignores scopes without a DCQL profile instead of failing")
+    void highestAssuranceLevel_ignoresScopesWithoutProfile() {
+        DcqlProfileResolverImpl leveled = resolverWithLevels(Map.of("doctorid", AssuranceLevel.HIGH));
+
+        assertThat(leveled.highestAssuranceLevel(List.of("openid", "personal_administrative_number", "doctorid")))
+                .contains(AssuranceLevel.HIGH);
+        assertThat(leveled.highestAssuranceLevel(List.of("openid", "personal_administrative_number")))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("highestAssuranceLevel() is empty without scopes")
+    void highestAssuranceLevel_isEmptyWithoutScopes() {
+        assertThat(resolver.highestAssuranceLevel(null)).isEmpty();
+        assertThat(resolver.highestAssuranceLevel(List.of())).isEmpty();
+    }
+
+    private static DcqlProfileResolverImpl resolverWithLevels(Map<String, AssuranceLevel> levels) {
+        Map<String, DcqlProfileProperties.DcqlProfile> profiles = new HashMap<>();
+        levels.forEach((scope, level) -> profiles.put(scope, new DcqlProfileProperties.DcqlProfile(List.of(
+                new DcqlProfileProperties.CredentialEntry(scope + "_sd_jwt", "dc+sd-jwt",
+                        new DcqlProfileProperties.CredentialMeta(List.of(scope + ".1"), null))), level)));
+        profiles.put("learcredential.employee", new DcqlProfileProperties.DcqlProfile(List.of(), null));
+        return new DcqlProfileResolverImpl(new DcqlProfileProperties(profiles));
     }
 }

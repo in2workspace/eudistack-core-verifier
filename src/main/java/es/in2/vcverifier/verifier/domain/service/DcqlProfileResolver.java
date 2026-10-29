@@ -1,6 +1,10 @@
 package es.in2.vcverifier.verifier.domain.service;
 
+import es.in2.vcverifier.verifier.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
+
+import java.util.Collection;
+import java.util.Optional;
 
 /**
  * Resolves OIDC scopes from Relying Parties into DCQL queries for wallets.
@@ -20,4 +24,6 @@ public interface DcqlProfileResolver {
      *         if no scope maps to a DCQL profile
      */
     DcqlQuery resolve(String scopeString);
+
+    Optional<AssuranceLevel> highestAssuranceLevel(Collection<String> scopes);
 }

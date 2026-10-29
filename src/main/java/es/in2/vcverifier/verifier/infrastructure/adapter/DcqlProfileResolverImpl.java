@@ -1,6 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.verifier.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -59,6 +60,19 @@ public class DcqlProfileResolverImpl implements DcqlProfileResolver {
                 oid4vpScopes.size(), oid4vpScopes, mergedCredentials.size());
 
         return new DcqlQuery(mergedCredentials);
+    }
+
+    @Override
+    public Optional<AssuranceLevel> highestAssuranceLevel(Collection<String> scopes) {
+        if (scopes == null) {
+            return Optional.empty();
+        }
+        return scopes.stream()
+                .map(dcqlProfileProperties.profiles()::get)
+                .filter(Objects::nonNull)
+                .map(DcqlProfileProperties.DcqlProfile::assuranceLevel)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder());
     }
 
     private CredentialQuery toCredentialQuery(DcqlProfileProperties.CredentialEntry entry) {
