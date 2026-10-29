@@ -123,6 +123,13 @@ management:
       maximum-expected-value:
         http.server.requests: 5s
 
+auditoria:
+  source: verifier
+  publisher:
+    enabled: ${AUDIT_PUBLISHER_ENABLED:false}
+  dispatcher:
+    enabled: ${AUDIT_DISPATCHER_ENABLED:false}
+
 # ──────────────────────────────────────────────────────────
 # Verifier configuration
 #
