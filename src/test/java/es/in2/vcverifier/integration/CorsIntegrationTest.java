@@ -62,6 +62,16 @@ class CorsIntegrationTest {
         }
 
         @Test
+        @DisplayName("OID4VP short request-object endpoint allows any origin")
+        void oid4vpShortRequestObject_anyOrigin_corsAllowed() throws Exception {
+            mockMvc.perform(options("/oid4vp/r/test-id")
+                            .header("Origin", "https://any-wallet.example.com")
+                            .header("Access-Control-Request-Method", "GET"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().exists("Access-Control-Allow-Origin"));
+        }
+
+        @Test
         @DisplayName("OID4VP auth-response endpoint allows any origin")
         void oid4vpAuthResponse_anyOrigin_corsAllowed() throws Exception {
             mockMvc.perform(options("/oid4vp/auth-response")

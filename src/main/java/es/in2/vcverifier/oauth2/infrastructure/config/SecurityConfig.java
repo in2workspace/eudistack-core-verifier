@@ -27,6 +27,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/health").permitAll()
                         .requestMatchers("/prometheus").permitAll()
+                        .requestMatchers("/oid4vp/r/*").permitAll()
                         .requestMatchers("/oid4vp/auth-request/*").permitAll()
                         .requestMatchers("/oid4vp/auth-response").permitAll()
                         .requestMatchers("/oidc/did/*").permitAll()
@@ -48,6 +49,7 @@ public class SecurityConfig {
         private final AntPathRequestMatcher[] requestMatchers = {
                 new AntPathRequestMatcher("/health"),
                 new AntPathRequestMatcher("/prometheus"),
+                new AntPathRequestMatcher("/oid4vp/r/**"),
                 new AntPathRequestMatcher("/oid4vp/auth-request/**"),
                 new AntPathRequestMatcher("/oid4vp/auth-response"),
                 new AntPathRequestMatcher("/oidc/did/**"),

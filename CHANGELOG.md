@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EUD-244 — Audit events (catalogue 2.2.0)**: `SystemAuthenticated` for the client-credentials grant of machine clients and `ExternalSystemAccess` for the calls to the client registry and the trusted list, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the Verifier behaves as before.
 - **EUD-244 — Audit context before Spring Security**: the audit context is opened ahead of the security filter chain, where the token endpoint authenticates clients.
 
+## [3.4.1] - 2026-10-22
+
+### Fixed
+
+- **Login QR was hard to scan because its content was too long**: the QR `request_uri` now uses a short 8-character id (base64url, 48 random bits) instead of a UUID, a shorter path (`/oid4vp/r/{id}`) and no longer percent-encodes `:` and `/`. In DEV/STG the QR drops from version 9 (53 modules) to version 7 (45 modules), so each module is larger on screen. The previous `/oid4vp/auth-request/{id}` path is still served during the transition.
+
 ## [3.4.0] - 2026-10-16
 
 ### Added

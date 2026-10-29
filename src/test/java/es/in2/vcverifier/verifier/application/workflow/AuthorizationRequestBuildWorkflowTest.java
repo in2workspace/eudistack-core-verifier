@@ -15,13 +15,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -79,7 +85,7 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(result.openid4vpUrl()).startsWith("openid4vp://");
         assertThat(result.openid4vpUrl()).contains("client_id=");
         assertThat(result.openid4vpUrl()).contains("request_uri=");
-        assertThat(result.nonce()).isNotBlank();
+        assertThat(result.requestId()).isNotBlank();
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         verify(jwtService).issueJWTwithOI4VPType(payloadCaptor.capture());
@@ -87,7 +93,7 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(payload).contains("client_metadata");
 
         // Verify JWT was cached
-        verify(cacheStoreForAuthorizationRequestJWT).add(eq(result.nonce()), any(AuthorizationRequestJWT.class));
+        verify(cacheStoreForAuthorizationRequestJWT).add(eq(result.requestId()), any(AuthorizationRequestJWT.class));
         // EUD-252 (F1): the OID4VP nonce is returned (the caller caches it atomically with the
         // authorization request), and it is the one embedded in the signed request object
         assertThat(result.vpNonce()).isNotBlank();
@@ -304,6 +310,84 @@ class AuthorizationRequestBuildWorkflowTest {
         assertThat(jwtVc.get("alg_values_supported").get(0).asText()).isEqualTo("ES256");
         assertThat(jwtVc.has("sd-jwt_alg_values")).isFalse();
         assertThat(jwtVc.has("kb-jwt_alg_values")).isFalse();
+    }
+
+    @Test
+    @DisplayName("QR request_uri uses the short /oid4vp/r/ path and an 8-char base64url id")
+    void qrUrl_usesShortPathAndShortId() {
+        stubMinimalRequest("did:key:z6Mk...", "https://verifier.example.com");
+
+        AuthorizationRequestBuildWorkflow.Result result =
+                workflow.buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null);
+
+        assertThat(result.openid4vpUrl())
+                .contains("request_uri=https://verifier.example.com/oid4vp/r/" + result.requestId());
+        assertThat(result.requestId()).hasSize(8);
+        assertThat(result.requestId()).matches("[A-Za-z0-9_-]{8}");
+    }
+
+    @Test
+    @DisplayName("QR leaves ':' and '/' unescaped — RFC 3986 allows them in a query value")
+    void qrUrl_doesNotPercentEncodeSafeCharacters() {
+        stubMinimalRequest("did:key:z6Mk...", "https://verifier.example.com");
+
+        String url = workflow
+                .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
+                .openid4vpUrl();
+
+        assertThat(url)
+                .doesNotContain("%3A")
+                .doesNotContain("%2F")
+                .contains("client_id=did:key:z6Mk...")
+                .contains("request_uri=https://");
+    }
+
+    @Test
+    @DisplayName("QR escapes the characters a query value cannot carry literally")
+    void qrUrl_escapesQueryDelimiters() {
+        stubMinimalRequest("did:key:a&b=c+d%e#f;g,h?i@j", "https://verifier.example.com");
+
+        String url = workflow
+                .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
+                .openid4vpUrl();
+
+        assertThat(url).contains("client_id=did:key:a%26b%3Dc%2Bd%25e%23f%3Bg%2Ch%3Fi%40j&request_uri=");
+    }
+
+    @ParameterizedTest(name = "{1}")
+    @MethodSource("deployedVerifierHosts")
+    @DisplayName("QR payload on every deployed tenant host stays within QR version 7 capacity (154 bytes at EC level L)")
+    void qrUrl_staysWithinVersion7Capacity(String clientId, String verifierUrl) {
+        stubMinimalRequest(clientId, verifierUrl);
+
+        String url = workflow
+                .buildAuthorizationRequest(createDummyClient("c"), "openid learcredential", "s", null)
+                .openid4vpUrl();
+
+        assertThat(url.getBytes(StandardCharsets.UTF_8)).hasSizeLessThanOrEqualTo(154);
+    }
+
+    static Stream<Arguments> deployedVerifierHosts() {
+        String devAndStgClientId = "did:key:zDnaevN85Z7VJgcBoQeqQU7d8kZpuVhDSdm8hQtJYWjvek3VL";
+        String proClientId = "did:key:zDnaeVYnWTZu5nbrH1qmBVMvNwSrtKnkRbCZ4xH5h2LQPnzdr";
+        List<String> tenants = List.of("sandbox", "cgcom", "kpmg", "dome", "platform");
+        return Stream.of(
+                        Map.entry("dev.eudistack.net", devAndStgClientId),
+                        Map.entry("stg.eudistack.net", devAndStgClientId),
+                        Map.entry("eudistack.net", proClientId))
+                .flatMap(environment -> tenants.stream().map(tenant -> Arguments.of(
+                        environment.getValue(),
+                        "https://" + tenant + "." + environment.getKey() + "/verifier")));
+    }
+
+    private void stubMinimalRequest(String clientId, String verifierUrl) {
+        when(dcqlProfileResolver.resolve("openid learcredential")).thenReturn(new DcqlQuery(List.of(
+                new CredentialQuery("lear_employee_sd_jwt", "dc+sd-jwt",
+                        new CredentialQuery.CredentialMeta(List.of("eu.europa.ec.eudi.lce.1"), null), null)
+        )));
+        when(cryptoComponent.getClientId()).thenReturn(clientId);
+        when(backendConfig.getUrl()).thenReturn(verifierUrl);
+        when(jwtService.issueJWTwithOI4VPType(anyString())).thenReturn("signed-jwt-content");
     }
 
     @Test
