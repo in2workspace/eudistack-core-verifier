@@ -60,6 +60,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_METHODS;
+import static es.in2.vcverifier.shared.domain.util.Constants.UNMET_AUTHENTICATION_REQUIREMENTS;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
@@ -89,6 +90,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final String CLAIMS_PARAMETER = "claims";
     private static final String ACR_VALUES_NOT_A_STRING_DESCRIPTION = "acr_values must be a string";
     private static final String CLAIMS_INVALID_DESCRIPTION = "claims must be a valid claims request";
+    private static final String UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION = "no login method meets the requested authentication requirements";
+    private static final List<LoginMethod> WALLET_ONLY = List.of(LoginMethod.WALLET);
     private static final Pattern DIGITS = Pattern.compile("\\d+");
     private static final BigDecimal MAX_AGE_LIMIT = BigDecimal.valueOf(SsoTtlRange.MAX_ABSOLUTE.toSeconds());
     private static final String LOGIN_REQUIRED_DESCRIPTION = "prompt=none: end-user authentication is required";
@@ -434,21 +437,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         attemptSsoReuse(request, authorizationContext.toBuilder().maxAge(parameters.maxAge()).build(),
                 registeredClient, parameters.prompt());
 
-        // Delegate JWT building, signing and URL generation to the workflow
-        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient, authorizationContext.scope(), authorizationContext.state(),
-                authorizationContext.accessProfile());
-
-        // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
-        // carry the login-page browser-binding cookie.
-        LoginBinding loginBinding = bindLogin(request);
-        cacheAuthorizationRequest(authorizationContext, registeredClient, authorizationContext.redirectUri(),
-                loginBinding, result.vpNonce(),
-                resolveLoginMethods(registeredClient, loginBinding.tenant(), parameters.requestedLevel()),
-                parameters.requestedLevel());
-
-        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
-                authorizationContext.portalUrl(), authorizationContext.contextPath());
+        return continueToLoginPage(authorizationContext, authorizationContext, request, registeredClient,
+                authorizationContext.redirectUri(), parameters);
     }
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
@@ -475,23 +465,40 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         attemptSsoReuse(request, reuseContext.toBuilder().maxAge(parameters.maxAge()).build(),
                 registeredClient, parameters.prompt());
 
-        // Delegate JWT building, signing and URL generation to the workflow
-        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient, authorizationContext.scope(), authorizationContext.state(),
-                authorizationContext.accessProfile());
+        return continueToLoginPage(reuseContext, authorizationContext, request, registeredClient,
+                jwtRedirectUri, parameters);
+    }
 
-        // EUD-252: bound only AFTER the reuse branch, same as the plain path.
-        LoginBinding loginBinding = bindLogin(request);
-        cacheAuthorizationRequest(authorizationContext, registeredClient, jwtRedirectUri,
-                loginBinding, result.vpNonce(),
-                resolveLoginMethods(registeredClient, loginBinding.tenant(), parameters.requestedLevel()),
-                parameters.requestedLevel());
+    private Authentication continueToLoginPage(AuthorizationContext errorContext,
+                                               AuthorizationContext authorizationContext,
+                                               HttpServletRequest request,
+                                               RegisteredClient registeredClient,
+                                               String redirectUri,
+                                               AuthenticationParameters parameters) {
+        List<LoginMethod> loginMethods = resolveLoginMethods(registeredClient,
+                TenantDomainFilter.getCurrentTenant(request), parameters.requestedLevel());
+        if (loginMethods.isEmpty()) {
+            log.info("event=authorize_unmet_authentication_requirements clientId={}", registeredClient.getClientId());
+            throw oidcErrorRedirect(UNMET_AUTHENTICATION_REQUIREMENTS, UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION,
+                    errorContext);
+        }
 
-        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
+        AuthorizationRequestBuildWorkflow.Result walletRequest = loginMethods.equals(WALLET_ONLY)
+                ? authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient,
+                        authorizationContext.scope(), authorizationContext.state(), authorizationContext.accessProfile())
+                : null;
+
+        // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
+        // carry the login-page browser-binding cookie.
+        cacheAuthorizationRequest(authorizationContext, registeredClient, redirectUri, bindLogin(request),
+                walletRequest != null ? walletRequest.vpNonce() : null, loginMethods, parameters.requestedLevel());
+
+        return throwRedirectAuthentication(authorizationContext.state(),
+                walletRequest != null ? walletRequest.openid4vpUrl() : null, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
-    private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,
+    private Authentication throwRedirectAuthentication(String state, String openid4vpUrl,
                                                        RegisteredClient registeredClient, String portalUrl,
                                                        String contextPath) {
         Map<String, Object> clientSettings = registeredClient.getClientSettings().getSettings();
@@ -499,25 +506,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 ? (String) clientSettings.get(CLIENT_SETTING_LOGIN_PAGE_URI)
                 : null;
 
-        String redirectUrl;
-        if (loginPageUri != null) {
-            redirectUrl = String.format(
-                    "%s?authRequest=%s&state=%s",
-                    loginPageUri,
-                    URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
-                    URLEncoder.encode(state, StandardCharsets.UTF_8)
-            );
-        } else {
-            redirectUrl = String.format(
-                    "%s%s/login?authRequest=%s&state=%s",
-                    portalUrl,
-                    nullSafeContextPath(contextPath),
-                    URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
-                    URLEncoder.encode(state, StandardCharsets.UTF_8)
-            );
-        }
+        String loginPage = loginPageUri != null
+                ? loginPageUri
+                : portalUrl + nullSafeContextPath(contextPath) + "/login";
+        String authRequest = openid4vpUrl != null
+                ? "authRequest=" + URLEncoder.encode(openid4vpUrl, StandardCharsets.UTF_8) + "&"
+                : "";
 
-        throw AuthorizationRedirectException.toLoginPage(redirectUrl);
+        throw AuthorizationRedirectException.toLoginPage(
+                loginPage + "?" + authRequest + "state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
     }
 
     // --- Validation methods (framework-level, kept in filter) ---

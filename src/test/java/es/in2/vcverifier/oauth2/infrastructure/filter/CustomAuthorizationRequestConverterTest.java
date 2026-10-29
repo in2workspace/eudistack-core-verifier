@@ -41,6 +41,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.PublicKey;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -114,6 +116,7 @@ class CustomAuthorizationRequestConverterTest {
                 tenantLoginMethodsPort,
                 dcqlProfileResolver
         );
+        lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
     }
 
     @Test
