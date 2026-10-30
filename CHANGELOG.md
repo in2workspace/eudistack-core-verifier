@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-10-30
+
+### Changed
+
+- **Trace sampling reads `OTEL_SAMPLING_PROBABILITY`**, the same variable as the Issuer and the Wallet EBW, instead of `OTEL_TRACES_SAMPLER_ARG`, which is the ADOT agent's sampler. Default still `1.0`. Deployments that set `OTEL_TRACES_SAMPLER_ARG` for Spring must rename it (DEV and STG: `eudistack-platform-iac#126`).
+
 ## [3.4.1] - 2026-10-22
 
 ### Fixed
