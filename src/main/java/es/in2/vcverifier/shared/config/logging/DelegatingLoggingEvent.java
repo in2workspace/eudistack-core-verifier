@@ -1,4 +1,4 @@
-package es.in2.vcverifier.shared.config;
+package es.in2.vcverifier.shared.config.logging;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -84,6 +84,7 @@ abstract class DelegatingLoggingEvent implements ILoggingEvent {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public Map<String, String> getMdc() {
         return delegate.getMdc();
     }

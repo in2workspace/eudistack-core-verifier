@@ -1,4 +1,4 @@
-package es.in2.vcverifier.shared.config;
+package es.in2.vcverifier.shared.config.logging;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
@@ -6,14 +6,18 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class MaskingOpenTelemetryAppenderTest {
 
-    // MASK is private in MaskingPatternLayout — redeclared here, same as MaskingPatternLayoutTest.
-    private static final String MASK = "***REDACTED***";
+    private static final String MASK = MaskingPatternLayout.REPLACEMENT;
 
     private static final String SAMPLE_JWT =
             "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9"
@@ -65,7 +69,7 @@ class MaskingOpenTelemetryAppenderTest {
     // ─── getArgumentArray() ─────────────────────────────────────────────────────
 
     @Test
-    void mask_ArgumentArray_IsNulledOutSoOriginalCannotBeReRendered() {
+    void mask_ArgumentArray_IsEmptiedSoOriginalCannotBeReRendered() {
         // Arrange
         LoggingEvent source = newEvent("Notifying {}");
         source.setArgumentArray(new Object[]{"admin@empresa.com"});
@@ -74,7 +78,7 @@ class MaskingOpenTelemetryAppenderTest {
         ILoggingEvent masked = MaskingOpenTelemetryAppender.mask(source);
 
         // Assert
-        assertThat(masked.getArgumentArray()).isNull();
+        assertThat(masked.getArgumentArray()).isEmpty();
     }
 
     // ─── getMDCPropertyMap() / getMdc() ─────────────────────────────────────────
@@ -136,17 +140,52 @@ class MaskingOpenTelemetryAppenderTest {
         assertThat(masked.getMdc()).containsEntry("access_token", MASK);
     }
 
+    @Test
+    void mask_NullMdc_ReturnsEmptyMap() {
+        // Arrange
+        ILoggingEvent source = mock(ILoggingEvent.class);
+        when(source.getMDCPropertyMap()).thenReturn(null);
+
+        // Act & Assert
+        assertThat(MaskingOpenTelemetryAppender.mask(source).getMDCPropertyMap()).isEmpty();
+    }
+
     // ─── Unmasked passthrough ────────────────────────────────────────────────────
 
     @Test
-    void mask_LoggerName_IsForwardedUnchanged() {
+    void mask_EveryOtherAccessor_IsForwardedUnchanged() {
         // Arrange
-        LoggingEvent source = newEvent("plain message");
+        ILoggingEvent source = mock(ILoggingEvent.class);
+        Instant now = Instant.now();
+        when(source.getLoggerName()).thenReturn("test-logger");
+        when(source.getThreadName()).thenReturn("virtual-3");
+        when(source.getLevel()).thenReturn(Level.INFO);
+        when(source.getTimeStamp()).thenReturn(now.toEpochMilli());
+        when(source.getInstant()).thenReturn(now);
+        when(source.getNanoseconds()).thenReturn(42);
+        when(source.getSequenceNumber()).thenReturn(7L);
+        when(source.hasCallerData()).thenReturn(true);
+        when(source.getMarkerList()).thenReturn(List.of());
+        when(source.getKeyValuePairs()).thenReturn(List.of());
 
         // Act
         ILoggingEvent masked = MaskingOpenTelemetryAppender.mask(source);
+        masked.prepareForDeferredProcessing();
 
         // Assert
         assertThat(masked.getLoggerName()).isEqualTo("test-logger");
+        assertThat(masked.getThreadName()).isEqualTo("virtual-3");
+        assertThat(masked.getLevel()).isEqualTo(Level.INFO);
+        assertThat(masked.getTimeStamp()).isEqualTo(now.toEpochMilli());
+        assertThat(masked.getInstant()).isEqualTo(now);
+        assertThat(masked.getNanoseconds()).isEqualTo(42);
+        assertThat(masked.getSequenceNumber()).isEqualTo(7L);
+        assertThat(masked.hasCallerData()).isTrue();
+        assertThat(masked.getMarkerList()).isEmpty();
+        assertThat(masked.getKeyValuePairs()).isEmpty();
+        assertThat(masked.getLoggerContextVO()).isNull();
+        assertThat(masked.getThrowableProxy()).isNull();
+        assertThat(masked.getCallerData()).isNull();
+        verify(source).prepareForDeferredProcessing();
     }
 }

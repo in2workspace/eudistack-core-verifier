@@ -23,10 +23,11 @@ public class ObservationConfig {
         return new ObservedAspect(observationRegistry);
     }
 
+    /** Tags every observation (spans and the metrics derived from it) with the component and tenant. */
     @Bean
     public ObservationFilter globalObservationFilter() {
         return context -> {
-            context.addLowCardinalityKeyValue(KeyValue.of("component", "verifier-backend"));
+            context.addLowCardinalityKeyValue(KeyValue.of("component", MicrometerMetricsConfig.COMPONENT));
             context.addLowCardinalityKeyValue(KeyValue.of("tenant", currentTenant()));
             return context;
         };

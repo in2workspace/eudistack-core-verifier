@@ -1,16 +1,18 @@
-package es.in2.vcverifier.shared.config;
+package es.in2.vcverifier.shared.config.logging;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 class MaskingPatternLayoutTest {
-    private static final String MASK = "***REDACTED***";
+    private static final String MASK = MaskingPatternLayout.REPLACEMENT;
 
     private static final String SAMPLE_JWT =
             "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9"
@@ -200,7 +202,7 @@ class MaskingPatternLayoutTest {
         assertThat(result)
                 .doesNotContain("sender@example.com")
                 .doesNotContain("recipient@domain.net")
-                .containsPattern("\\*\\*\\*REDACTED\\*\\*\\*.*\\*\\*\\*REDACTED\\*\\*\\*");
+                .containsPattern("\\*\\*\\*.*\\*\\*\\*");
     }
 
     // ─── access_token masking ─────────────────────────────────────────────────
@@ -487,17 +489,13 @@ class MaskingPatternLayoutTest {
     @Test
     void doLayout_MessageWithNonSensitiveQueryParams_DoesNotMaskAnyParam() {
         // Arrange
-        String message = "grant_type=authorization_code&code=AUTH-CODE-123&redirect_uri=https://example.com/cb";
+        String message = "grant_type=authorization_code&state=abc&redirect_uri=https://example.com/cb";
 
         // Act
         String result = applyLayout(message);
 
         // Assert
-        assertThat(result)
-                .contains("grant_type=authorization_code")
-                .contains("code=AUTH-CODE-123")
-                .contains("redirect_uri=https://example.com/cb")
-                .doesNotContain(MASK);
+        assertThat(result).isEqualTo(message);
     }
 
     @Test
@@ -567,6 +565,82 @@ class MaskingPatternLayoutTest {
         assertThat(result)
                 .contains("my-application-id")
                 .doesNotContain(MASK);
+    }
+
+    // ─── code, otp and camelCase / client_secret keys ─────────────────────────
+
+    @Test
+    void doLayout_AuthorizationCodeInQueryString_MasksCodeKeepingOtherParams() {
+        // Arrange
+        String message = "grant_type=authorization_code&code=AUTH-CODE-123&redirect_uri=https://example.com/cb";
+
+        // Act
+        String result = applyLayout(message);
+
+        // Assert
+        assertThat(result)
+                .isEqualTo("grant_type=authorization_code&code=" + MASK + "&redirect_uri=https://example.com/cb");
+    }
+
+    @Test
+    void doLayout_CodeAsJsonField_MasksCode() {
+        // Act
+        String result = applyLayout("{\"code\":\"482913\"}");
+
+        // Assert
+        assertThat(result).doesNotContain("482913");
+    }
+
+    @Test
+    void doLayout_OtpAsKeyValue_MasksOtp() {
+        // Act
+        String result = applyLayout("Verifying otp=482913 for tenant sandbox");
+
+        // Assert
+        assertThat(result).isEqualTo("Verifying otp=" + MASK + " for tenant sandbox");
+    }
+
+    @Test
+    void doLayout_CamelCaseRefreshToken_MasksToken() {
+        // Act
+        String result = applyLayout("{\"refreshToken\":\"rT_abc123\"}");
+
+        // Assert
+        assertThat(result).doesNotContain("rT_abc123");
+    }
+
+    @Test
+    void doLayout_ClientSecretAsJsonField_MasksSecret() {
+        // Act
+        String result = applyLayout("{\"client_secret\":\"oauth2ClientSecret\"}");
+
+        // Assert
+        assertThat(result).doesNotContain("oauth2ClientSecret");
+    }
+
+    @Test
+    void doLayout_UnsignedJwt_MasksToken() {
+        // Arrange
+        String unsigned = SAMPLE_JWT.substring(0, SAMPLE_JWT.lastIndexOf('.') + 1);
+
+        // Act
+        String result = applyLayout("Rejecting token " + unsigned);
+
+        // Assert
+        assertThat(result).isEqualTo("Rejecting token " + MASK);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "error_code=expired_code notsecret=value",
+            "Failed to send a verification code: org.springframework.mail.MailSendException",
+            "Failed to resolve name. status=Status{code=UNAVAILABLE, description=Unable to resolve host}",
+            "{\"code\":\"invalid_request\"}",
+            "eyJ.onlyone"
+    })
+    void doLayout_LooksSensitiveButIsNot_LeavesMessageUnchanged(String message) {
+        // Act & Assert
+        assertThat(applyLayout(message)).isEqualTo(message);
     }
 
     // ─── Edge cases ───────────────────────────────────────────────────────────

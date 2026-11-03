@@ -1,4 +1,4 @@
-package es.in2.vcverifier.shared.config;
+package es.in2.vcverifier.shared.config.logging;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
@@ -33,19 +33,19 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
 
         @Override
         public String getFormattedMessage() {
-            return MaskingPatternLayout.applyMasking(super.getFormattedMessage());
+            return MaskingPatternLayout.mask(super.getFormattedMessage());
         }
 
         @Override
         public String getMessage() {
-            return MaskingPatternLayout.applyMasking(super.getMessage());
+            return MaskingPatternLayout.mask(super.getMessage());
         }
 
-        // Nulled out so no downstream consumer re-renders the unmasked original from
+        // Emptied so no downstream consumer re-renders the unmasked original from
         // the message template + arguments instead of using getFormattedMessage().
         @Override
         public Object[] getArgumentArray() {
-            return null;
+            return new Object[0];
         }
 
         @Override
@@ -59,6 +59,9 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
         }
 
         private static Map<String, String> maskValues(Map<String, String> source) {
+            if (source == null) {
+                return Map.of();
+            }
             Map<String, String> masked = new LinkedHashMap<>();
             source.forEach((key, value) -> masked.put(key, maskMdcValue(key, value)));
             return masked;
@@ -74,7 +77,7 @@ public class MaskingOpenTelemetryAppender extends OpenTelemetryAppender {
                 return null;
             }
             String prefix = key + "=";
-            String maskedLine = MaskingPatternLayout.applyMasking(prefix + value);
+            String maskedLine = MaskingPatternLayout.mask(prefix + value);
             return maskedLine.startsWith(prefix) ? maskedLine.substring(prefix.length()) : maskedLine;
         }
     }

@@ -6,11 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.4.2] - 2026-10-30
+## [3.4.2] - 2026-11-03
+
+Observability aligned with the Wallet EBW, the reference configuration.
 
 ### Changed
 
-- **Trace sampling reads `OTEL_SAMPLING_PROBABILITY`**, the same variable as the Issuer and the Wallet EBW, instead of `OTEL_TRACES_SAMPLER_ARG`, which is the ADOT agent's sampler. Default still `1.0`. Deployments that set `OTEL_TRACES_SAMPLER_ARG` for Spring must rename it (DEV and STG: `eudistack-platform-iac#126`).
+- **Traces use Spring Boot's native OTLP/gRPC exporter** (`management.otlp.tracing.transport: grpc`). Deployments must set `MANAGEMENT_OTLP_TRACING_EXPORT_ENABLED=true` and remove `SPRING_AUTOCONFIGURE_EXCLUDE`, which would turn this exporter off, `MANAGEMENT_OTLP_GRPC_TRACING_ENABLED` and `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Trace sampling reads `OTEL_SAMPLING_PROBABILITY`**, the same variable as the Issuer and the Wallet EBW, instead of `OTEL_TRACES_SAMPLER_ARG`, which is the ADOT agent's sampler. Default still `1.0`. Deployments that set `OTEL_TRACES_SAMPLER_ARG` for Spring must rename it.
+- **Masking**: the replacement is `***`, and authorization codes (`code=` or a JSON `code` field whose value has a digit), `otp`, `id_token` and camelCase token keys are now masked. Unsigned JWTs stay masked. An empty argument array replaces `null` in masked events, and a null MDC no longer fails.
+- **Console pattern** moved from `logging.pattern.level` to `logback-spring.xml`, with the same content. The `io.micrometer.registry.otlp` and `io.opentelemetry.exporter` loggers leave DEBUG.
+- The logging classes moved to `shared/config/logging`.
+
+### Removed
+
+- `OtlpGrpcTracingConfig`: its dual export (HTTP to Jaeger plus gRPC to the collector) is no longer used in any environment.
+- `SpringApplicationProperties`, which only `MicrometerMetricsConfig` read.
 
 ## [3.4.1] - 2026-10-22
 
