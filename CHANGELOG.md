@@ -23,6 +23,11 @@ Observability aligned with the Wallet EBW, the reference configuration.
 - `OtlpGrpcTracingConfig`: its dual export (HTTP to Jaeger plus gRPC to the collector) is no longer used in any environment.
 - `SpringApplicationProperties`, which only `MicrometerMetricsConfig` read.
 
+### Fixed
+
+- **HTTP traces and `http.server.requests` report the real tenant instead of `unknown`.** The global observation filter overwrote the tenant set by `TenantServerRequestObservationConvention`, because it read the MDC when it was already empty. It now keeps a tenant already on the observation. OpenObserve filters or dashboards on `tenant=unknown` must use the real tenant.
+- **Observations no longer report the first segment of an IP host as a tenant** (`127` for `127.0.0.1`): they report `unknown`. Tenant resolution for the rest of the service does not change.
+
 ## [3.4.1] - 2026-10-22
 
 ### Fixed
