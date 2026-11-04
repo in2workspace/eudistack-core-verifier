@@ -1,5 +1,6 @@
 package es.in2.vcverifier.shared.config;
 
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,7 +19,8 @@ class CertificatePortFilterTest {
     private static final int NORMAL_PORT = 8080;
     private static final int CERTIFICATE_PORT = 8081;
 
-    private final CertificatePortFilter filter = new CertificatePortFilter(CERTIFICATE_PORT);
+    private final CertificatePortFilter filter =
+            new CertificatePortFilter(new CertificateLoginProperties(CERTIFICATE_PORT, null));
 
     @ParameterizedTest
     @CsvSource({

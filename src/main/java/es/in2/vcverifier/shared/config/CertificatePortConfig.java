@@ -1,7 +1,7 @@
 package es.in2.vcverifier.shared.config;
 
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import org.apache.catalina.connector.Connector;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
@@ -12,10 +12,10 @@ public class CertificatePortConfig {
 
     @Bean
     public WebServerFactoryCustomizer<TomcatServletWebServerFactory> certificatePortConnector(
-            @Value("${verifier.certificate-login.port:8081}") int certificatePort) {
+            CertificateLoginProperties certificateLoginProperties) {
         return factory -> {
             Connector connector = new Connector(TomcatServletWebServerFactory.DEFAULT_PROTOCOL);
-            connector.setPort(certificatePort);
+            connector.setPort(certificateLoginProperties.port());
             factory.addAdditionalTomcatConnectors(connector);
         };
     }

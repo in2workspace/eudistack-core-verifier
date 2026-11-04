@@ -1,5 +1,6 @@
 package es.in2.vcverifier.shared.config;
 
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import org.apache.catalina.connector.Connector;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
@@ -12,7 +13,7 @@ class CertificatePortConfigTest {
     void certificatePortConnector_addsAConnectorOnTheCertificatePort() {
         TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory(8080);
 
-        new CertificatePortConfig().certificatePortConnector(8081).customize(factory);
+        new CertificatePortConfig().certificatePortConnector(new CertificateLoginProperties(8081, null)).customize(factory);
 
         assertThat(factory.getAdditionalTomcatConnectors())
                 .extracting(Connector::getPort)

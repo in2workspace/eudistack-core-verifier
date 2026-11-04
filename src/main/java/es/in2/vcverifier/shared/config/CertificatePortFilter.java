@@ -1,11 +1,11 @@
 package es.in2.vcverifier.shared.config;
 
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
@@ -25,8 +25,8 @@ public class CertificatePortFilter extends OncePerRequestFilter {
 
     private final int certificatePort;
 
-    public CertificatePortFilter(@Value("${verifier.certificate-login.port:8081}") int certificatePort) {
-        this.certificatePort = certificatePort;
+    public CertificatePortFilter(CertificateLoginProperties certificateLoginProperties) {
+        this.certificatePort = certificateLoginProperties.port();
     }
 
     @Override

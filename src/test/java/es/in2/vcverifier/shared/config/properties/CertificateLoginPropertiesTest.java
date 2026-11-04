@@ -5,6 +5,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CertificateLoginPropertiesTest {
@@ -26,9 +28,28 @@ class CertificateLoginPropertiesTest {
     }
 
     @Test
-    void binds_noTenantsWhenNothingIsConfigured() {
-        runner.run(context ->
-                assertThat(context.getBean(CertificateLoginProperties.class).tenants()).isEmpty());
+    void binds_noTenantsAndTheDefaultPortWhenNothingIsConfigured() {
+        runner.run(context -> {
+            CertificateLoginProperties properties = context.getBean(CertificateLoginProperties.class);
+            assertThat(properties.tenants()).isEmpty();
+            assertThat(properties.port()).isEqualTo(8081);
+        });
+    }
+
+    @Test
+    void binds_theConfiguredPort() {
+        runner.withPropertyValues("verifier.certificate-login.port=9443")
+                .run(context -> assertThat(context.getBean(CertificateLoginProperties.class).port()).isEqualTo(9443));
+    }
+
+    @Test
+    void tenantForHost_findsTheTenantOfItsCertificateHostIgnoringCase() {
+        CertificateLoginProperties properties = new CertificateLoginProperties(null, Map.of(
+                "cgcom", new CertificateLoginProperties.Tenant("cgcom-cert.stg.eudistack.net", "https://cgcom.stg.eudistack.net")));
+
+        assertThat(properties.tenantForHost("CGCOM-cert.stg.eudistack.net")).contains("cgcom");
+        assertThat(properties.tenantForHost("kpmg-cert.stg.eudistack.net")).isEmpty();
+        assertThat(properties.tenantForHost(null)).isEmpty();
     }
 
     @Test

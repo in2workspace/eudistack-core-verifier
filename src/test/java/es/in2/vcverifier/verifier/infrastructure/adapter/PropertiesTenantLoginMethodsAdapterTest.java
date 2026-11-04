@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PropertiesTenantLoginMethodsAdapterTest {
 
     private final PropertiesTenantLoginMethodsAdapter adapter = new PropertiesTenantLoginMethodsAdapter(
-            new CertificateLoginProperties(Map.of(
+            new CertificateLoginProperties(null, Map.of(
                     "cgcom", new CertificateLoginProperties.Tenant(
                             "cgcom-cert.stg.eudistack.net", "https://cgcom.stg.eudistack.net"))));
 
@@ -34,7 +34,7 @@ class PropertiesTenantLoginMethodsAdapterTest {
     @Test
     void activeLoginMethods_withoutAnyEntry_offersOnlyTheWallet() {
         PropertiesTenantLoginMethodsAdapter withoutEntries =
-                new PropertiesTenantLoginMethodsAdapter(new CertificateLoginProperties(null));
+                new PropertiesTenantLoginMethodsAdapter(new CertificateLoginProperties(null, null));
 
         assertThat(withoutEntries.activeLoginMethods("cgcom")).containsExactly(LoginMethod.WALLET);
     }
