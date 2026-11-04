@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
+import es.in2.vcverifier.oauth2.infrastructure.config.IdTokenUserInfoMapper;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomAuthenticationProvider;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,6 +35,10 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.authorization.oidc.authentication.OidcUserInfoAuthenticationProvider;
+import org.springframework.security.oauth2.server.authorization.oidc.authentication.OidcUserInfoAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
@@ -290,6 +295,74 @@ class CustomAuthenticationProviderTest {
         ArgumentCaptor<RefreshTokenDataCache> refreshTokenData = ArgumentCaptor.forClass(RefreshTokenDataCache.class);
         verify(cacheStoreForRefreshTokenData).add(anyString(), refreshTokenData.capture());
         assertSame(authentication, refreshTokenData.getValue().authentication());
+    }
+
+    @Test
+    void userinfo_afterTheCodeExchange_returnsTheIdTokenClaimsWithoutProtocolClaims() {
+        exchangeCodeForUserInfo("openid profile", Map.of(
+                "iss", "https://verifier.example.com", "aud", List.of("test-client"), "nonce", "n-1",
+                "auth_time", Instant.now().getEpochSecond(), "sid", "session-1",
+                "sub", "b2f1c3", "name", "GARCIA FERNANDEZ JOSE ANTONIO",
+                "acr", "http://eidas.europa.eu/LoA/high", "amr", List.of("hwk")));
+
+        OidcUserInfoAuthenticationToken result = (OidcUserInfoAuthenticationToken) userInfoProvider()
+                .authenticate(new OidcUserInfoAuthenticationToken(bearer("signed-access-jwt")));
+
+        assertEquals(Map.of("sub", "b2f1c3", "name", "GARCIA FERNANDEZ JOSE ANTONIO",
+                        "acr", "http://eidas.europa.eu/LoA/high", "amr", List.of("hwk")),
+                result.getUserInfo().getClaims());
+    }
+
+    @Test
+    void userinfo_withoutOpenidScope_isRejected() {
+        exchangeCodeForUserInfo("profile", Map.of("sub", "b2f1c3", "name", "NAME"));
+
+        OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                () -> userInfoProvider().authenticate(new OidcUserInfoAuthenticationToken(bearer("signed-access-jwt"))));
+        assertEquals(OAuth2ErrorCodes.INSUFFICIENT_SCOPE, exception.getError().getErrorCode());
+    }
+
+    @Test
+    void userinfo_withAnUnknownAccessToken_isRejected() {
+        exchangeCodeForUserInfo("openid profile", Map.of("sub", "b2f1c3"));
+
+        OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                () -> userInfoProvider().authenticate(new OidcUserInfoAuthenticationToken(bearer("another-access-jwt"))));
+        assertEquals(OAuth2ErrorCodes.INVALID_TOKEN, exception.getError().getErrorCode());
+    }
+
+    private void exchangeCodeForUserInfo(String scope, Map<String, Object> idTokenClaims) {
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(new TokenGenerationWorkflow.Result(
+                        "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
+                        "signed-id-jwt", idTokenClaims, scope, "b2f1c3", Instant.now()));
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put(AUTHENTICATION_RESULT,
+                new CredentialAuthentication(buildEmployeeCredentialV1(), null, Instant.now()));
+        additionalParams.put(OAuth2ParameterNames.AUDIENCE, "test-client");
+        additionalParams.put(OAuth2ParameterNames.SCOPE, scope);
+
+        storeAuthorizationCode("test-code-userinfo");
+        provider.authenticate(new OAuth2AuthorizationCodeAuthenticationToken(
+                "test-code-userinfo", mock(Authentication.class), "https://example.com/callback", additionalParams));
+    }
+
+    private OidcUserInfoAuthenticationProvider userInfoProvider() {
+        OidcUserInfoAuthenticationProvider userInfoProvider = new OidcUserInfoAuthenticationProvider(oAuth2AuthorizationService);
+        userInfoProvider.setUserInfoMapper(new IdTokenUserInfoMapper());
+        return userInfoProvider;
+    }
+
+    private static JwtAuthenticationToken bearer(String tokenValue) {
+        return new JwtAuthenticationToken(Jwt.withTokenValue(tokenValue)
+                .header("alg", "ES256")
+                .subject("b2f1c3")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .build(), List.of());
     }
 
     @Test

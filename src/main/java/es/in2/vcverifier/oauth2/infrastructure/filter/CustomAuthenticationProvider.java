@@ -229,6 +229,12 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                                                       AuthenticationResult authenticationResult,
                                                       RegisteredClient registeredClient) {
         OAuth2RefreshToken oAuth2RefreshToken = issueRefreshToken(tokenResult.issueTime());
+        OAuth2AccessToken userInfoAccessToken = new OAuth2AccessToken(
+                OAuth2AccessToken.TokenType.BEARER,
+                tokenResult.accessTokenJwt(),
+                tokenResult.issueTime(),
+                tokenResult.expirationTime(),
+                grantedScopes(authentication, tokenResult));
 
         RefreshTokenDataCache refreshTokenDataCache = RefreshTokenDataCache.builder()
                 .refreshToken(oAuth2RefreshToken)
@@ -248,6 +254,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                 .principalName(registeredClient.getClientId())
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .token(oAuth2RefreshToken)
+                .token(userInfoAccessToken)
                 .attribute(Principal.class.getName(), authentication.getPrincipal());
 
         // EUDISTACK-551: Spring AS's RP-Initiated Logout (/oidc/logout) resolves the id_token_hint
@@ -263,6 +270,16 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
         oAuth2AuthorizationService.save(authorizationBuilder.build());
         return oAuth2RefreshToken;
+    }
+
+    private static Set<String> grantedScopes(OAuth2AuthorizationGrantAuthenticationToken authentication,
+                                             TokenGenerationWorkflow.Result tokenResult) {
+        Object requested = authentication.getAdditionalParameters().get(OAuth2ParameterNames.SCOPE);
+        String scope = requested instanceof String requestedScope ? requestedScope : tokenResult.scope();
+        if (scope == null || scope.isBlank()) {
+            return Set.of();
+        }
+        return Set.of(scope.trim().split("\s+"));
     }
 
     private String getClientId(OAuth2AuthorizationGrantAuthenticationToken authentication) {

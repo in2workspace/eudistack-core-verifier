@@ -156,6 +156,8 @@ public class AuthorizationServerConfig {
                         metadataEndpoint.authorizationServerMetadataCustomizer(builder -> builder
                                 .claim(AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED, true)))
                 .oidc(oidc -> oidc
+                        .userInfoEndpoint(userInfoEndpoint -> userInfoEndpoint
+                                .userInfoMapper(new IdTokenUserInfoMapper()))
                         // US-06 (AD-1): enganche del Single Logout tras la validación estándar
                         // RP-Initiated Logout (id_token_hint / post_logout_redirect_uri) — no
                         // reimplementa esa validación, solo decora el resultado (éxito/fallo).
