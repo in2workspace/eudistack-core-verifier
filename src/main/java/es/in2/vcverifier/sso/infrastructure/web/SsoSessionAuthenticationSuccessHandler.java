@@ -1,7 +1,7 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
 
-import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
@@ -77,7 +77,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 vpData.holderHash(),
                 vpData.clientId(),
                 correlationId,
-                vpData.credentialJson() != null ? vpData.credentialJson().toString() : null
+                vpData.authentication()
         );
 
         try {
@@ -159,7 +159,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
                     (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
-                    (JsonNode) map.get("credentialJson")
+                    authenticationOf(map)
             );
         }
 
@@ -171,7 +171,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
                     (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
-                    (JsonNode) map.get("credentialJson")
+                    authenticationOf(map)
             );
         }
 
@@ -184,11 +184,15 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
         );
     }
 
+    private static AuthenticationResult authenticationOf(Map<?, ?> map) {
+        return map.get("authentication") instanceof AuthenticationResult authentication ? authentication : null;
+    }
+
     private record VpData(
             String tenant,
             String holderHash,
             String clientId,
             String tenantSlug,
-            JsonNode credentialJson
+            AuthenticationResult authentication
     ) {}
 }

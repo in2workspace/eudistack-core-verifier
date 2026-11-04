@@ -39,6 +39,7 @@ import java.util.Base64;
 import java.util.Set;
 import java.util.logging.Logger;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -90,7 +91,11 @@ class SsoCredentialSnapshotMultiInstanceIT {
                     expires_at     TIMESTAMPTZ NOT NULL,
                     last_used_at   TIMESTAMPTZ NOT NULL,
                     state          VARCHAR(32) NOT NULL,
-                    credential_snapshot BYTEA
+                    credential_snapshot BYTEA,
+                    auth_method    VARCHAR(16) NOT NULL DEFAULT 'wallet',
+                    acr            TEXT,
+                    amr            TEXT[],
+                    certificate_not_after TIMESTAMPTZ
                 )
                 """);
         }
@@ -124,7 +129,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor = establishWorkflow.execute(
                 new SsoSessionCommand(TENANT, HOLDER_SUB, "initiator-client", "corr-1",
-                        "{\"sub\":\"" + HOLDER_SUB + "\"}"));
+                        credential("{\"sub\":\"" + HOLDER_SUB + "\"}")));
 
         assertThat(descriptor).isNotNull();
 
@@ -151,7 +156,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor = establishWorkflow.execute(
                 new SsoSessionCommand(TENANT, HOLDER_SUB, "initiator-client", "corr-2",
-                        "{\"sub\":\"" + HOLDER_SUB + "\"}"));
+                        credential("{\"sub\":\"" + HOLDER_SUB + "\"}")));
 
         assertThat(descriptor).isNotNull();
 

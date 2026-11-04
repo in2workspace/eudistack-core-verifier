@@ -1,5 +1,9 @@
 package es.in2.vcverifier.sso.application.workflow;
 
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
+import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
+import es.in2.vcverifier.sso.application.service.AuthenticationSnapshot;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -37,6 +41,7 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -232,6 +237,50 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
                 eq(NOW.minusSeconds(60)), eq(ISSUER));
         verify(metricsPort).recordReuse(TENANT, CLIENT_ID);
         verify(metricsPort).recordOid4vpAvoided(TENANT);
+    }
+
+    @Test
+    void reuse_typedWalletSnapshot_issuesTheCodeWithItsCredential() throws Exception {
+        String cookieValue = "session-cookie-value";
+        byte[] ciphertext = "ciphertext".getBytes(StandardCharsets.UTF_8);
+        when(sessionRepository.findActiveById(SsoSessionId.of(cookieValue), TENANT))
+                .thenReturn(Optional.of(activeSession(cookieValue, ciphertext)));
+        when(configPort.resolveEligibleClients(TENANT))
+                .thenReturn(TenantSsoCatalog.of(List.of(es.in2.vcverifier.sso.domain.model.SsoEligibleClient.of(CLIENT_ID))));
+        when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext))
+                .thenReturn(Optional.of(AuthenticationSnapshot.write(credential("{\"vc\":\"claims\"}"))));
+        when(authorizationResponseProcessorService.issueCodeForReusedSession(
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(REDIRECT_URI + "?code=abc&state=state-1");
+
+        ReuseSsoSessionWorkflow.Result result =
+                workflow.reuse(TENANT, cookieValue, ctxAllowingReuse(), CLIENT_ID, "corr-7");
+
+        assertEquals(ReuseSsoSessionWorkflow.Result.Status.ALLOWED, result.status());
+        verify(authorizationResponseProcessorService).issueCodeForReusedSession(
+                any(), any(), any(), any(), any(), any(), any(),
+                eq(new ObjectMapper().readTree("{\"vc\":\"claims\"}")), any(), any());
+    }
+
+    @Test
+    void reuse_certificateSession_isNotReusedYetAndAsksForLogin() {
+        String cookieValue = "session-cookie-value";
+        byte[] ciphertext = "ciphertext".getBytes(StandardCharsets.UTF_8);
+        when(sessionRepository.findActiveById(SsoSessionId.of(cookieValue), TENANT))
+                .thenReturn(Optional.of(activeSession(cookieValue, ciphertext)));
+        when(configPort.resolveEligibleClients(TENANT))
+                .thenReturn(TenantSsoCatalog.of(List.of(es.in2.vcverifier.sso.domain.model.SsoEligibleClient.of(CLIENT_ID))));
+        when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext)).thenReturn(Optional.of(
+                AuthenticationSnapshot.write(new CertificateAuthentication("b2f1c3",
+                        new CertificateIdentity("JOSE", "GARCIA", "NAME", null, "ES", "12345678Z"),
+                        "issuer", "ab12", NOW.plusSeconds(86_400), AssuranceLevel.HIGH, List.of("hwk"), NOW))));
+
+        ReuseSsoSessionWorkflow.Result result =
+                workflow.reuse(TENANT, cookieValue, ctxAllowingReuse(), CLIENT_ID, "corr-8");
+
+        assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
+        verify(authorizationResponseProcessorService, never()).issueCodeForReusedSession(
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

@@ -20,6 +20,7 @@ import java.time.Clock;
 import java.util.Optional;
 import java.util.concurrent.*;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -67,8 +68,8 @@ class SsoSessionConcurrencyIT {
 
             CountDownLatch startLatch = new CountDownLatch(1);
 
-            SsoSessionCommand c1 = new SsoSessionCommand(tenant, holderHash, "client", "c1", "{\"sub\":\"holder-xyz\"}");
-            SsoSessionCommand c2 = new SsoSessionCommand(tenant, holderHash, "client", "c2", "{\"sub\":\"holder-xyz\"}");
+            SsoSessionCommand c1 = new SsoSessionCommand(tenant, holderHash, "client", "c1", credential("{\"sub\":\"holder-xyz\"}"));
+            SsoSessionCommand c2 = new SsoSessionCommand(tenant, holderHash, "client", "c2", credential("{\"sub\":\"holder-xyz\"}"));
 
             Future<?> f1 = executor.submit(() -> {
                 startLatch.await();

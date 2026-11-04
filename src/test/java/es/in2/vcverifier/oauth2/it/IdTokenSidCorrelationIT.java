@@ -92,7 +92,11 @@ class IdTokenSidCorrelationIT {
                     expires_at     TIMESTAMPTZ NOT NULL,
                     last_used_at   TIMESTAMPTZ NOT NULL,
                     state          VARCHAR(32) NOT NULL,
-                    credential_snapshot BYTEA
+                    credential_snapshot BYTEA,
+                    auth_method    VARCHAR(16) NOT NULL DEFAULT 'wallet',
+                    acr            TEXT,
+                    amr            TEXT[],
+                    certificate_not_after TIMESTAMPTZ
                 )
                 """);
         }

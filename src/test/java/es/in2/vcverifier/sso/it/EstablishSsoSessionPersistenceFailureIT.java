@@ -27,6 +27,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.time.Clock;
 import java.util.Optional;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,7 +61,7 @@ class EstablishSsoSessionPersistenceFailureIT {
                 "holder-xyz",
                 "client-test",
                 "corr-123",
-                "{\"sub\":\"holder-xyz\"}"
+                credential("{\"sub\":\"holder-xyz\"}")
         );
 
         when(credentialCipherPort.encrypt(any(), any(), any())).thenReturn(new byte[]{1, 2, 3});

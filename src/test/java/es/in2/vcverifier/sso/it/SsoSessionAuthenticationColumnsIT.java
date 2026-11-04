@@ -2,9 +2,15 @@ package es.in2.vcverifier.sso.it;
 
 import es.in2.vcverifier.oauth2.infrastructure.config.ClientLoaderConfig;
 import es.in2.vcverifier.oauth2.infrastructure.filter.CustomErrorResponseHandler;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
+import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCatalogRepositoryPort;
+import es.in2.vcverifier.sso.infrastructure.persistence.SsoSessionJdbcRepository;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import org.junit.jupiter.api.Test;
@@ -21,8 +27,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -57,6 +66,9 @@ class SsoSessionAuthenticationColumnsIT {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private SsoSessionJdbcRepository sessionRepository;
 
     @MockitoBean private TenantSsoConfigPort tenantSsoConfigPort;
     @MockitoBean private SsoAuditPort auditPort;
@@ -99,6 +111,29 @@ class SsoSessionAuthenticationColumnsIT {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT certificate_not_after FROM sso_session WHERE id = ?", OffsetDateTime.class, id))
                 .isEqualTo(notAfter);
+    }
+
+    @Test
+    void repository_savesAndReadsTheAuthenticationOfACertificateSession() {
+        Instant notAfter = Instant.parse("2028-05-01T00:00:00Z");
+        SsoSessionAuthentication authentication =
+                new SsoSessionAuthentication(LoginMethod.X509, AssuranceLevel.HIGH, List.of("hwk"), notAfter);
+        SsoSession session = SsoSession.establish("tenant-a", "holder-" + UUID.randomUUID(), Duration.ofHours(8));
+        session.recordAuthentication(authentication);
+
+        sessionRepository.save(session);
+
+        assertThat(sessionRepository.findById(session.getId()))
+                .hasValueSatisfying(found -> assertThat(found.getAuthentication()).isEqualTo(authentication));
+    }
+
+    @Test
+    void repository_readsASessionWithoutAuthenticationAsAWalletSessionWithoutLevel() {
+        String id = insertSession();
+
+        assertThat(sessionRepository.findById(SsoSessionId.of(id)))
+                .hasValueSatisfying(found -> assertThat(found.getAuthentication())
+                        .isEqualTo(SsoSessionAuthentication.WALLET_WITHOUT_LEVEL));
     }
 
     @Test
