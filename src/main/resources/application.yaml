@@ -181,6 +181,7 @@ verifier:
       credential-encryption-key: ${VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY:}
 
   certificate-login:
+    port: ${VERIFIER_CERTIFICATELOGIN_PORT:8081}
     tenants: {}
 
   dome:
