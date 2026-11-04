@@ -29,4 +29,6 @@ public interface DcqlProfileResolver {
     Optional<AssuranceLevel> highestAssuranceLevel(Collection<String> scopes);
 
     Optional<AssuranceLevel> assuranceLevelOf(Collection<String> scopes, JsonNode credential);
+
+    boolean requestsAttestation(Collection<String> scopes);
 }

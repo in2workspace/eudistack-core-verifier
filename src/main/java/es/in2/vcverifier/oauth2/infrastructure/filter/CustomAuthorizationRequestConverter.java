@@ -197,8 +197,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      *
      * <p>Returns normally only when the caller must continue to the OID4VP/QR flow.
      */
-    private void attemptSsoReuse(HttpServletRequest request, AuthorizationContext ctx,
-                                 RegisteredClient registeredClient, OidcPrompt prompt) {
+    private void attemptSsoReuse(HttpServletRequest request, AuthorizationContext authorizationContext,
+                                 RegisteredClient registeredClient, AuthenticationParameters parameters) {
+        OidcPrompt prompt = parameters.prompt();
         String clientId = registeredClient.getClientId();
         if (prompt.requiresLogin()) {
             log.debug("event=sso_reuse_skipped clientId={} reason=prompt_login", clientId);
@@ -207,13 +208,25 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
             if (prompt.isNone()) {
-                throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
+                throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, authorizationContext);
             }
             return;
         }
+        List<LoginMethod> clientLoginMethods = clientLoginMethods(registeredClient);
+        boolean attestationScopes = dcqlProfileResolver.requestsAttestation(scopesOf(authorizationContext.scope()));
         // The reuse path issues a code without building an OID4VP request, so the scope check that
-        // buildAuthorizationRequest does for the QR path has to run here first.
-        authorizationRequestBuildWorkflow.validateScope(ctx.scope());
+        // buildAuthorizationRequest does for the QR path has to run here first. A client that offers
+        // the certificate may ask for no attestation at all.
+        if (attestationScopes || !clientLoginMethods.contains(LoginMethod.X509)) {
+            authorizationRequestBuildWorkflow.validateScope(authorizationContext.scope());
+        }
+        RequestedAssuranceLevel requestedLevel = parameters.requestedLevel();
+        AuthorizationContext ctx = authorizationContext.toBuilder()
+                .maxAge(parameters.maxAge())
+                .loginMethods(clientLoginMethods)
+                .essentialLevel(requestedLevel != null && requestedLevel.essential() ? requestedLevel.level() : null)
+                .attestationScopes(attestationScopes)
+                .build();
 
         ReuseSsoSessionWorkflow.Result result = prompt.isNone()
                 ? reuseSsoSession(request, ctx, tenant, clientId)
@@ -436,8 +449,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         AuthenticationParameters parameters = parseAuthenticationParameters(rawPrompt, rawMaxAge,
                 request.getParameter(ACR_VALUES_PARAMETER), request.getParameter(CLAIMS_PARAMETER),
                 authorizationContext, registeredClient.getClientId());
-        attemptSsoReuse(request, authorizationContext.toBuilder().maxAge(parameters.maxAge()).build(),
-                registeredClient, parameters.prompt());
+        attemptSsoReuse(request, authorizationContext, registeredClient, parameters);
 
         return continueToLoginPage(authorizationContext, authorizationContext, request, registeredClient,
                 authorizationContext.redirectUri(), parameters);
@@ -464,8 +476,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 requestObjectClaims.get(PROMPT_PARAMETER), requestObjectClaims.get(MAX_AGE_PARAMETER),
                 requestObjectClaims.get(ACR_VALUES_PARAMETER), requestObjectClaims.get(CLAIMS_PARAMETER),
                 reuseContext, registeredClient.getClientId());
-        attemptSsoReuse(request, reuseContext.toBuilder().maxAge(parameters.maxAge()).build(),
-                registeredClient, parameters.prompt());
+        attemptSsoReuse(request, reuseContext, registeredClient, parameters);
 
         return continueToLoginPage(reuseContext, authorizationContext, request, registeredClient,
                 jwtRedirectUri, parameters);
@@ -628,12 +639,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * the same client/redirect_uri (equal non-null binding hashes), done with an atomic compare-and-
      * replace. Request and OID4VP nonce live in this one entry, so they always come from the same call.
      */
-    @SuppressWarnings("unchecked")
     private List<LoginMethod> resolveLoginMethods(RegisteredClient registeredClient, String tenant,
                                                   RequestedAssuranceLevel requestedLevel) {
-        List<LoginMethod> clientMethods = Objects.requireNonNullElse(
-                (List<LoginMethod>) registeredClient.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_METHODS),
-                List.of(LoginMethod.WALLET));
+        List<LoginMethod> clientMethods = clientLoginMethods(registeredClient);
         AssuranceLevel walletLevel = dcqlProfileResolver.highestAssuranceLevel(registeredClient.getScopes()).orElse(null);
         List<LoginMethod> loginMethods = loginMethodsResolver.resolve(clientMethods,
                 tenantLoginMethodsPort.activeLoginMethods(tenant), walletLevel, requestedLevel);
@@ -642,6 +650,17 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 requestedLevel != null ? requestedLevel.level() : null,
                 requestedLevel != null && requestedLevel.essential());
         return loginMethods;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<LoginMethod> clientLoginMethods(RegisteredClient registeredClient) {
+        return Objects.requireNonNullElse(
+                (List<LoginMethod>) registeredClient.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_METHODS),
+                List.of(LoginMethod.WALLET));
+    }
+
+    private static Set<String> scopesOf(String scope) {
+        return scope == null || scope.isBlank() ? Set.of() : Set.copyOf(Arrays.asList(scope.trim().split("\\s+")));
     }
 
     private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, RegisteredClient registeredClient,

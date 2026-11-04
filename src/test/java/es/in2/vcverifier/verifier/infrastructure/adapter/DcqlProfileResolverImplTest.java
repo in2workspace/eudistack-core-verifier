@@ -215,6 +215,14 @@ class DcqlProfileResolverImplTest {
         assertThat(leveled.assuranceLevelOf(null, JsonNodeFactory.instance.objectNode())).isEmpty();
     }
 
+    @Test
+    @DisplayName("requestsAttestation() is true only when a scope has a DCQL profile")
+    void requestsAttestation_isTrueOnlyForScopesWithAProfile() {
+        assertThat(resolver.requestsAttestation(List.of("openid", "learcredential.employee"))).isTrue();
+        assertThat(resolver.requestsAttestation(List.of("openid", "profile", "personal_administrative_number"))).isFalse();
+        assertThat(resolver.requestsAttestation(null)).isFalse();
+    }
+
     private static DcqlProfileResolverImpl resolverWithLevels(Map<String, AssuranceLevel> levels) {
         Map<String, DcqlProfileProperties.DcqlProfile> profiles = new HashMap<>();
         levels.forEach((scope, level) -> profiles.put(scope, new DcqlProfileProperties.DcqlProfile(List.of(

@@ -365,18 +365,20 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson,
-            Instant authTime,
+            AuthenticationResult authentication,
             String issuer
     ) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient == null) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
+        AuthenticationResult reused = authentication instanceof CredentialAuthentication credential && credential.acr() == null
+                ? credentialAuthentication(credential.credential(), scopes, credential.authTime())
+                : authentication;
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
                 registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce,
-                credentialAuthentication(credentialJson, scopes, authTime), issuer));
-        log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
+                reused, issuer));
+        log.info("SSO reuse: authorization code issued directly, method={}", reused.method().value());
         return issuedCode.redirectUrl();
     }
 

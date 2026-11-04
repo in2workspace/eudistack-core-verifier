@@ -291,12 +291,12 @@ class SsoSessionClientTrackingIT {
         when(registeredClientRepository.findByClientId(calleeClientId)).thenReturn(registeredClient);
 
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(redirectUri + "?code=fake-code&state=xyz");
 
         ReuseSsoSessionWorkflowImpl workflow = new ReuseSsoSessionWorkflowImpl(
                 configPort, repository, Clock.systemUTC(), auditPort, metricsPort, registeredClientRepository,
-                authorizationResponseProcessorService, credentialCipherPort, new ObjectMapper());
+                authorizationResponseProcessorService, credentialCipherPort);
 
         AuthorizationContext ctx = AuthorizationContext.builder()
                 .redirectUri(redirectUri)

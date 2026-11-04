@@ -208,12 +208,12 @@ class SsoCredentialSnapshotMultiInstanceIT {
         when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(registeredClient);
 
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(REDIRECT_URI + "?code=fake-code&state=xyz");
 
         ReuseSsoSessionWorkflowImpl workflow = new ReuseSsoSessionWorkflowImpl(
                 configPort, repository, Clock.systemUTC(), mock(SsoAuditPort.class), mock(SsoMetricsPort.class),
-                registeredClientRepository, authorizationResponseProcessorService, cipherPort, new ObjectMapper());
+                registeredClientRepository, authorizationResponseProcessorService, cipherPort);
 
         AuthorizationContext ctx = AuthorizationContext.builder()
                 .redirectUri(REDIRECT_URI)

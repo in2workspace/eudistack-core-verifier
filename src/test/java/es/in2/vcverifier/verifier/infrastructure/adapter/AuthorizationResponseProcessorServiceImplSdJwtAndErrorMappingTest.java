@@ -671,7 +671,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         JsonNode credential = new ObjectMapper().readTree("{\"a\":1}");
 
         String url = service.issueCodeForReusedSession("client-id", REDIRECT_URI,
-                Set.of("read"), "st", "challenge", "S256", "n-1", credential, AUTH_TIME, ISSUER);
+                Set.of("read"), "st", "challenge", "S256", "n-1", new CredentialAuthentication(credential, null, AUTH_TIME), ISSUER);
 
         ArgumentCaptor<OAuth2Authorization> authorization = ArgumentCaptor.forClass(OAuth2Authorization.class);
         verify(authorizationService).save(authorization.capture());
@@ -702,7 +702,8 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         givenCodeIssuance();
 
         String url = service.issueCodeForReusedSession("client-id", REDIRECT_URI,
-                Set.of("read"), "st", null, null, null, new ObjectMapper().readTree("{}"), AUTH_TIME, ISSUER);
+                Set.of("read"), "st", null, null, null,
+                new CredentialAuthentication(new ObjectMapper().readTree("{}"), null, AUTH_TIME), ISSUER);
 
         ArgumentCaptor<OAuth2Authorization> authorization = ArgumentCaptor.forClass(OAuth2Authorization.class);
         verify(authorizationService).save(authorization.capture());
@@ -725,7 +726,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         Set<String> scopes = Set.of();
 
         assertThrows(OAuth2AuthenticationException.class, () -> service.issueCodeForReusedSession("missing",
-                REDIRECT_URI, scopes, "st", null, null, null, null, null, ISSUER));
+                REDIRECT_URI, scopes, "st", null, null, null, null, ISSUER));
 
         assertNoCodeIssued();
     }

@@ -40,5 +40,13 @@ public enum ReuseDecision {
      * {@code login_required} — igual que {@link #REJECT_SESSION}, pero distinguible en
      * auditoría como motivo de rechazo distinto (la sesión en sí es válida).
      */
-    REJECT_MAX_AGE
+    REJECT_MAX_AGE,
+
+    REJECT_LOGIN_METHOD,
+
+    REJECT_LEVEL,
+
+    REJECT_ATTESTATION_SCOPES,
+
+    REJECT_CERTIFICATE_EXPIRED
 }

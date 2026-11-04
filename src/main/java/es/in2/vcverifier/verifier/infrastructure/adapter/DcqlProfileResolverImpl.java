@@ -91,6 +91,11 @@ public class DcqlProfileResolverImpl implements DcqlProfileResolver {
                 .max(Comparator.naturalOrder());
     }
 
+    @Override
+    public boolean requestsAttestation(Collection<String> scopes) {
+        return scopes != null && scopes.stream().anyMatch(dcqlProfileProperties.profiles()::containsKey);
+    }
+
     private static Set<String> credentialTypes(JsonNode credential) {
         Set<String> types = new HashSet<>();
         JsonNode vct = credential.get("vct");

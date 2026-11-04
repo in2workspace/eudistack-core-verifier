@@ -1,8 +1,12 @@
 package es.in2.vcverifier.sso.application.workflow;
 
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
+import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.sso.application.service.AuthenticationSnapshot;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -47,8 +51,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -92,7 +98,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         workflow = new ReuseSsoSessionWorkflowImpl(
                 configPort, sessionRepository, clock, auditPort, metricsPort,
                 registeredClientRepository, authorizationResponseProcessorService,
-                credentialCipherPort, new ObjectMapper());
+                credentialCipherPort);
 
         TenantSsoConfig config = new TenantSsoConfig(
                 TENANT, "example.com", true,
@@ -222,7 +228,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext))
                 .thenReturn(Optional.of("{\"vc\":\"claims\"}"));
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(), any(), any()))
+                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(), any()))
                 .thenReturn(REDIRECT_URI + "?code=abc&state=state-1");
 
         ReuseSsoSessionWorkflow.Result result =
@@ -233,8 +239,8 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         // EUD-300: the code carries the session's original authentication time (auth_time),
         // and the response the /authorize issuer (RFC 9207 iss).
         verify(authorizationResponseProcessorService).issueCodeForReusedSession(
-                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(), any(),
-                eq(NOW.minusSeconds(60)), eq(ISSUER));
+                eq(CLIENT_ID), eq(REDIRECT_URI), any(), eq("state-1"), any(), any(), any(),
+                argThat(authentication -> NOW.minusSeconds(60).equals(authentication.authTime())), eq(ISSUER));
         verify(metricsPort).recordReuse(TENANT, CLIENT_ID);
         verify(metricsPort).recordOid4vpAvoided(TENANT);
     }
@@ -250,7 +256,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext))
                 .thenReturn(Optional.of(AuthenticationSnapshot.write(credential("{\"vc\":\"claims\"}"))));
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(REDIRECT_URI + "?code=abc&state=state-1");
 
         ReuseSsoSessionWorkflow.Result result =
@@ -259,28 +265,108 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
         assertEquals(ReuseSsoSessionWorkflow.Result.Status.ALLOWED, result.status());
         verify(authorizationResponseProcessorService).issueCodeForReusedSession(
                 any(), any(), any(), any(), any(), any(), any(),
-                eq(new ObjectMapper().readTree("{\"vc\":\"claims\"}")), any(), any());
+                argThat(authentication -> authentication instanceof CredentialAuthentication credential
+                        && credential.credential().equals(readTree("{\"vc\":\"claims\"}"))), any());
     }
 
     @Test
-    void reuse_certificateSession_isNotReusedYetAndAsksForLogin() {
+    void reuse_certificateSession_isReusedWithItsCertificateAuthentication() {
         String cookieValue = "session-cookie-value";
-        byte[] ciphertext = "ciphertext".getBytes(StandardCharsets.UTF_8);
-        when(sessionRepository.findActiveById(SsoSessionId.of(cookieValue), TENANT))
-                .thenReturn(Optional.of(activeSession(cookieValue, ciphertext)));
-        when(configPort.resolveEligibleClients(TENANT))
-                .thenReturn(TenantSsoCatalog.of(List.of(es.in2.vcverifier.sso.domain.model.SsoEligibleClient.of(CLIENT_ID))));
-        when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext)).thenReturn(Optional.of(
-                AuthenticationSnapshot.write(new CertificateAuthentication("b2f1c3",
-                        new CertificateIdentity("JOSE", "GARCIA", "NAME", null, "ES", "12345678Z"),
-                        "issuer", "ab12", NOW.plusSeconds(86_400), AssuranceLevel.HIGH, List.of("hwk"), NOW))));
+        givenCertificateSession(cookieValue, AssuranceLevel.HIGH, NOW.plusSeconds(86_400));
+        when(authorizationResponseProcessorService.issueCodeForReusedSession(
+                any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(REDIRECT_URI + "?code=abc&state=state-1");
 
-        ReuseSsoSessionWorkflow.Result result =
-                workflow.reuse(TENANT, cookieValue, ctxAllowingReuse(), CLIENT_ID, "corr-8");
+        ReuseSsoSessionWorkflow.Result result = workflow.reuse(TENANT, cookieValue,
+                certificateContext(List.of(LoginMethod.X509, LoginMethod.WALLET), AssuranceLevel.HIGH, false),
+                CLIENT_ID, "corr-8");
+
+        assertEquals(ReuseSsoSessionWorkflow.Result.Status.ALLOWED, result.status());
+        verify(authorizationResponseProcessorService).issueCodeForReusedSession(
+                any(), any(), any(), any(), any(), any(), any(),
+                argThat(authentication -> authentication instanceof CertificateAuthentication certificate
+                        && "b2f1c3".equals(certificate.subject())), any());
+    }
+
+    @Test
+    void reuse_certificateSessionForAWalletOnlyClient_asksForLoginAndKeepsTheSession() {
+        String cookieValue = "session-cookie-value";
+        givenCertificateSession(cookieValue, AssuranceLevel.HIGH, NOW.plusSeconds(86_400));
+
+        ReuseSsoSessionWorkflow.Result result = workflow.reuse(TENANT, cookieValue,
+                certificateContext(List.of(LoginMethod.WALLET), null, true), CLIENT_ID, "corr-9");
 
         assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
+        verifyNoCodeAndDenied("REJECT_LOGIN_METHOD");
+        verify(sessionRepository, never()).terminateActive(any(), any());
+    }
+
+    @Test
+    void reuse_sessionBelowTheEssentialLevel_asksForLoginAndKeepsTheSession() {
+        String cookieValue = "session-cookie-value";
+        givenCertificateSession(cookieValue, AssuranceLevel.SUBSTANTIAL, NOW.plusSeconds(86_400));
+
+        ReuseSsoSessionWorkflow.Result result = workflow.reuse(TENANT, cookieValue,
+                certificateContext(List.of(LoginMethod.X509), AssuranceLevel.HIGH, false), CLIENT_ID, "corr-10");
+
+        assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
+        verifyNoCodeAndDenied("REJECT_LEVEL");
+        verify(sessionRepository, never()).terminateActive(any(), any());
+    }
+
+    @Test
+    void reuse_certificateSessionAskedForAttestationScopes_asksForLoginAndKeepsTheSession() {
+        String cookieValue = "session-cookie-value";
+        givenCertificateSession(cookieValue, AssuranceLevel.HIGH, NOW.plusSeconds(86_400));
+
+        ReuseSsoSessionWorkflow.Result result = workflow.reuse(TENANT, cookieValue,
+                certificateContext(List.of(LoginMethod.X509, LoginMethod.WALLET), null, true), CLIENT_ID, "corr-11");
+
+        assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
+        verifyNoCodeAndDenied("REJECT_ATTESTATION_SCOPES");
+        verify(sessionRepository, never()).terminateActive(any(), any());
+    }
+
+    @Test
+    void reuse_sessionWithAnExpiredCertificate_terminatesItAndAsksForLogin() {
+        String cookieValue = "session-cookie-value";
+        givenCertificateSession(cookieValue, AssuranceLevel.HIGH, NOW.minusSeconds(1));
+
+        ReuseSsoSessionWorkflow.Result result = workflow.reuse(TENANT, cookieValue,
+                certificateContext(List.of(LoginMethod.X509), null, false), CLIENT_ID, "corr-12");
+
+        assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
+        verifyNoCodeAndDenied("REJECT_CERTIFICATE_EXPIRED");
+        verify(sessionRepository).terminateActive(SsoSessionId.of(cookieValue), TENANT);
+    }
+
+    private void givenCertificateSession(String cookieValue, AssuranceLevel level, Instant notAfter) {
+        byte[] ciphertext = "ciphertext".getBytes(StandardCharsets.UTF_8);
+        SsoSession session = activeSession(cookieValue, ciphertext);
+        session.recordAuthentication(new SsoSessionAuthentication(LoginMethod.X509, level, List.of("hwk"), notAfter));
+        when(sessionRepository.findActiveById(SsoSessionId.of(cookieValue), TENANT)).thenReturn(Optional.of(session));
+        when(configPort.resolveEligibleClients(TENANT))
+                .thenReturn(TenantSsoCatalog.of(List.of(es.in2.vcverifier.sso.domain.model.SsoEligibleClient.of(CLIENT_ID))));
+        lenient().when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext)).thenReturn(Optional.of(
+                AuthenticationSnapshot.write(new CertificateAuthentication("b2f1c3",
+                        new CertificateIdentity("JOSE", "GARCIA", "NAME", null, "ES", "12345678Z"),
+                        "issuer", "ab12", notAfter, level, List.of("hwk"), NOW))));
+    }
+
+    private AuthorizationContext certificateContext(List<LoginMethod> loginMethods, AssuranceLevel essentialLevel,
+                                                    boolean attestationScopes) {
+        return ctxAllowingReuse().toBuilder()
+                .loginMethods(loginMethods)
+                .essentialLevel(essentialLevel)
+                .attestationScopes(attestationScopes)
+                .build();
+    }
+
+    private void verifyNoCodeAndDenied(String outcome) {
         verify(authorizationResponseProcessorService, never()).issueCodeForReusedSession(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(auditPort).publish(argThat(event -> event.getEventType() == SsoAuditEvent.EventType.SSO_REUSE_DENIED
+                && outcome.equals(event.getOutcome())));
     }
 
     @Test
@@ -297,7 +383,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
                 .thenReturn(TenantSsoCatalog.of(List.of(es.in2.vcverifier.sso.domain.model.SsoEligibleClient.of(CLIENT_ID))));
         when(credentialCipherPort.decrypt(TENANT, cookieValue, ciphertext)).thenReturn(Optional.of("{\"vc\":\"claims\"}"));
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(REDIRECT_URI + "?code=abc&state=state-1");
         doThrow(new IllegalStateException("update failed", new SQLException("Key (id)=(" + cookieValue + ")")))
                 .when(sessionRepository).updateLastUsedAt(any(), any(), any());
@@ -357,8 +443,16 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
 
         assertEquals(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED, result.status());
         verify(authorizationResponseProcessorService, never()).issueCodeForReusedSession(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(auditPort).publish(org.mockito.ArgumentMatchers.argThat(e ->
                 "REDIRECT_URI_MISMATCH".equals(e.getOutcome())));
+    }
+
+    private static com.fasterxml.jackson.databind.JsonNode readTree(String json) {
+        try {
+            return new ObjectMapper().readTree(json);
+        } catch (Exception e) {
+            throw new IllegalArgumentException(e);
+        }
     }
 }

@@ -667,6 +667,50 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         assertEquals(true, cached.get("acr_essential"));
     }
 
+    // ---- reuse by login method, level and attestation scopes ----
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_reuse_receivesTheClientMethodsTheEssentialLevelAndTheAttestationScopes(Mode mode) {
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        convertExpectingRedirect(request(mode, Map.of("claims", essentialHighClaims(mode))));
+
+        AuthorizationContext ctx = capturedReuseContext();
+        assertEquals(List.of(LoginMethod.X509, LoginMethod.WALLET), ctx.loginMethods());
+        assertEquals(AssuranceLevel.HIGH, ctx.essentialLevel());
+        assertTrue(ctx.attestationScopes());
+        verify(authorizationRequestBuildWorkflow).validateScope(SCOPE);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_reuseForACertificateClientWithoutAttestationScopes_doesNotRequireADcqlScope(Mode mode) {
+        registerClientWithLoginMethods(List.of(LoginMethod.X509));
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(false);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        convertExpectingRedirect(request(mode, null, null));
+
+        assertFalse(capturedReuseContext().attestationScopes());
+        verify(authorizationRequestBuildWorkflow, never()).validateScope(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_reuseForAWalletOnlyClient_stillValidatesTheScope(Mode mode) {
+        registerClientWithLoginMethods(List.of(LoginMethod.WALLET));
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(false);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        convertExpectingRedirect(request(mode, null, null));
+
+        verify(authorizationRequestBuildWorkflow).validateScope(SCOPE);
+        assertNull(capturedReuseContext().essentialLevel());
+    }
+
     // ---- redirect by login methods ----
 
     @ParameterizedTest
