@@ -155,7 +155,9 @@ public class TokenGenerationWorkflow {
     private static ExtractedClaims certificateClaims(CertificateAuthentication certificate,
                                                      Map<String, Object> additionalParameters) {
         String scope = additionalParameters.get(OAuth2ParameterNames.SCOPE) instanceof String requested ? requested : null;
-        Set<String> scopes = scope == null ? Set.of() : Set.of(scope.trim().split("\s+"));
+        Set<String> scopes = scope == null || scope.isBlank()
+                ? Set.of()
+                : Set.copyOf(Arrays.asList(scope.trim().split("\\s+")));
         Map<String, Object> claims = CertificateClaims.forScopes(certificate.identity(), scopes);
         return ExtractedClaims.builder()
                 .subject(certificate.subject())

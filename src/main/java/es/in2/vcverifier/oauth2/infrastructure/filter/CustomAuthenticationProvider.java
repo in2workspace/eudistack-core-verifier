@@ -279,7 +279,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         if (scope == null || scope.isBlank()) {
             return Set.of();
         }
-        return Set.of(scope.trim().split("\s+"));
+        return Set.copyOf(Arrays.asList(scope.trim().split("\\s+")));
     }
 
     private String getClientId(OAuth2AuthorizationGrantAuthenticationToken authentication) {
