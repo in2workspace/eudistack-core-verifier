@@ -21,6 +21,7 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.PublicClientRefreshTokenAu
 import es.in2.vcverifier.oauth2.infrastructure.filter.PublicClientRefreshTokenAuthenticationProvider;
 import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationProvider;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
@@ -85,6 +86,7 @@ public class AuthorizationServerConfig {
     private final SsoBrowserBindingCookie ssoBrowserBindingCookie;
     private final TenantLoginMethodsPort tenantLoginMethodsPort;
     private final DcqlProfileResolver dcqlProfileResolver;
+    private final WalletLoginWorkflow walletLoginWorkflow;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -117,7 +119,7 @@ public class AuthorizationServerConfig {
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
-                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,safeUrlValidator,reuseSsoSessionWorkflow,ssoBrowserBindingCookie,tenantLoginMethodsPort,dcqlProfileResolver))
+                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginSelectionTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,safeUrlValidator,reuseSsoSessionWorkflow,ssoBrowserBindingCookie,tenantLoginMethodsPort,dcqlProfileResolver,walletLoginWorkflow))
                                 .errorResponseHandler(new CustomErrorResponseHandler(allowedClientsOrigins, backendConfig))
                 )
                 .tokenEndpoint(tokenEndpoint ->

@@ -15,6 +15,7 @@ import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.LoginMethod;
@@ -109,6 +110,8 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     private static final String ACR_VALUES_NOT_A_STRING_REDIRECT = REDIRECT_URI + "?error=invalid_request"
             + "&error_description=acr_values+must+be+a+string&state=" + STATE + ISS_PARAM;
     private static final String HIGH_ACR = "http://eidas.europa.eu/LoA/high";
+    private static final long LOGIN_TIMEOUT_SECONDS = 120L;
+    private static final long SELECTION_TIMEOUT_SECONDS = 600L;
     private static final String UNMET_REDIRECT = REDIRECT_URI + "?error=unmet_authentication_requirements"
             + "&error_description=no+login+method+meets+the+requested+authentication+requirements&state="
             + STATE + ISS_PARAM;
@@ -144,9 +147,10 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     @BeforeEach
     void setUp() {
         converter = new CustomAuthorizationRequestConverter(didService, jwtService, cacheStore, backendConfig,
-                registeredClientRepository, false, 120L, httpClient, authorizationRequestBuildWorkflow,
+                registeredClientRepository, false, SELECTION_TIMEOUT_SECONDS, httpClient, authorizationRequestBuildWorkflow,
                 safeUrlValidator, reuseSsoSessionWorkflow, ssoBrowserBindingCookie, tenantLoginMethodsPort,
-                dcqlProfileResolver);
+                dcqlProfileResolver, new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig));
+        lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(LOGIN_TIMEOUT_SECONDS);
         lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
 
         when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
@@ -701,6 +705,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         verify(authorizationRequestBuildWorkflow).buildAuthorizationRequest(any(), any(), eq(STATE), any());
         assertEquals("vp-nonce", cachedLogin().getAdditionalParameters().get("vp_nonce"));
         assertEquals("openid4vp://...", cachedLogin().getAdditionalParameters().get("wallet_auth_request"));
+        assertExpiresIn(LOGIN_TIMEOUT_SECONDS);
     }
 
     @Test
@@ -735,6 +740,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         // Then
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
         assertFalse(cachedLogin().getAdditionalParameters().containsKey("vp_nonce"));
+        assertExpiresIn(SELECTION_TIMEOUT_SECONDS);
     }
 
     @ParameterizedTest
@@ -1043,6 +1049,13 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
                         .setting(CLIENT_SETTING_LOGIN_METHODS, loginMethods)
                         .build())
                 .build());
+    }
+
+    private void assertExpiresIn(long seconds) {
+        long expiration = ((Number) cachedLogin().getAdditionalParameters().get("expiration")).longValue();
+        long expected = java.time.Instant.now().plusSeconds(seconds).getEpochSecond();
+        assertTrue(expiration >= expected - 1 && expiration <= expected,
+                () -> "expected expiration in " + seconds + " s, got " + (expiration - java.time.Instant.now().getEpochSecond()));
     }
 
     private OAuth2AuthorizationRequest cachedLogin() {

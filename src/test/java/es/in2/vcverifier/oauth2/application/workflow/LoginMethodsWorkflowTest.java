@@ -2,6 +2,7 @@ package es.in2.vcverifier.oauth2.application.workflow;
 
 import es.in2.vcverifier.oauth2.application.workflow.LoginMethodsWorkflow.LoginMethods;
 import es.in2.vcverifier.oauth2.application.workflow.LoginMethodsWorkflow.WalletRequestResult;
+import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static es.in2.vcverifier.shared.domain.util.Constants.WALLET_AUTH_REQUEST;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,13 +53,18 @@ class LoginMethodsWorkflowTest {
     @Mock
     private AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
 
+    @Mock
+    private BackendConfig backendConfig;
+
     private CacheStore<OAuth2AuthorizationRequest> cache;
     private LoginMethodsWorkflow workflow;
 
     @BeforeEach
     void setUp() {
         cache = new CacheStore<>(10, TimeUnit.MINUTES);
-        workflow = new LoginMethodsWorkflow(cache, registeredClientRepository, authorizationRequestBuildWorkflow);
+        workflow = new LoginMethodsWorkflow(cache, registeredClientRepository,
+                new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig));
+        lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(120L);
     }
 
     // ---- loginMethods ----
@@ -124,11 +131,37 @@ class LoginMethodsWorkflowTest {
 
         assertThat(result).isInstanceOfSatisfying(WalletRequestResult.Created.class, created -> {
             assertThat(created.authRequest()).isEqualTo(AUTH_REQUEST);
-            assertThat(created.expiresIn()).isBetween(100L, 120L);
+            assertThat(created.expiresIn()).isBetween(119L, 120L);
         });
         Map<String, Object> stored = cache.getIfPresent(STATE).getAdditionalParameters();
         assertThat(stored).containsEntry(VP_NONCE, "vp-nonce").containsEntry(WALLET_AUTH_REQUEST, AUTH_REQUEST);
         assertThat(stored).containsEntry(LOGIN_METHODS, List.of("x509", "wallet"));
+    }
+
+    @Test
+    void startWallet_startsTheLoginTimeWhenThePersonChoosesTheWallet() {
+        cacheLogin(Map.of(LOGIN_METHODS, List.of("x509", "wallet")), Instant.now().plusSeconds(30));
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(registeredClient());
+        when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(any(), any(), any(), any()))
+                .thenReturn(new AuthorizationRequestBuildWorkflow.Result("jwt", AUTH_REQUEST, "abc", "vp-nonce"));
+
+        WalletRequestResult result = workflow.startWallet(STATE, TENANT);
+
+        assertThat(((WalletRequestResult.Created) result).expiresIn()).isBetween(119L, 120L);
+        assertThat((Long) cache.getIfPresent(STATE).getAdditionalParameters().get(EXPIRATION))
+                .isBetween(Instant.now().plusSeconds(119).getEpochSecond(), Instant.now().plusSeconds(120).getEpochSecond());
+    }
+
+    @Test
+    void startWallet_calledAgain_keepsTheTimeAlreadySpent() {
+        cacheLogin(Map.of(LOGIN_METHODS, List.of("x509", "wallet"), WALLET_AUTH_REQUEST, AUTH_REQUEST, VP_NONCE, "vp-nonce"),
+                Instant.now().plusSeconds(40));
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(registeredClient());
+
+        WalletRequestResult result = workflow.startWallet(STATE, TENANT);
+
+        assertThat(((WalletRequestResult.Created) result).expiresIn()).isBetween(39L, 40L);
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
     }
 
     @Test

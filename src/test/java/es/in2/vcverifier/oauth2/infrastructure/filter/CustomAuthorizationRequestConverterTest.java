@@ -13,6 +13,7 @@ import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -94,7 +95,7 @@ class CustomAuthorizationRequestConverterTest {
     private DcqlProfileResolver dcqlProfileResolver;
 
     private boolean isNonceRequiredOnFapiProfile = true;
-    private long loginTimeoutSeconds = 120L;
+    private long loginSelectionTimeoutSeconds = 600L;
 
     private CustomAuthorizationRequestConverter converter;
 
@@ -107,15 +108,17 @@ class CustomAuthorizationRequestConverterTest {
                 backendConfig,
                 registeredClientRepository,
                 isNonceRequiredOnFapiProfile,
-                loginTimeoutSeconds,
+                loginSelectionTimeoutSeconds,
                 httpClient,
                 authorizationRequestBuildWorkflow,
                 safeUrlValidator,
                 reuseSsoSessionWorkflow,
                 ssoBrowserBindingCookie,
                 tenantLoginMethodsPort,
-                dcqlProfileResolver
+                dcqlProfileResolver,
+                new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig)
         );
+        lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(120L);
         lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
     }
 

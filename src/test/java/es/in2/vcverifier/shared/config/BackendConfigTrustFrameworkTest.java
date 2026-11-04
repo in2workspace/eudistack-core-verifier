@@ -14,7 +14,7 @@ class BackendConfigTrustFrameworkTest {
 
     private static BackendConfig configWith(List<BackendProperties.TrustFramework> trustFrameworks) {
         return new BackendConfig(new BackendProperties("http://localhost", null, null, trustFrameworks,
-                null, null, null, null, null, null));
+                null, null, null, null, null, null, null));
     }
 
     @Test

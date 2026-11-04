@@ -21,7 +21,8 @@ public record BackendProperties(
         Long loginTimeoutSeconds,
         Boolean fapiNonceRequired,
         X5cChainValidation x5cChainValidation,
-        Sso sso
+        Sso sso,
+        Long loginSelectionTimeoutSeconds
 ) {
 
     public record Identity(

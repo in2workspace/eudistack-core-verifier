@@ -2,7 +2,6 @@ package es.in2.vcverifier.oauth2.application.workflow;
 
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.model.LoginMethod;
-import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
@@ -22,7 +21,6 @@ import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_METHODS;
-import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static es.in2.vcverifier.shared.domain.util.Constants.WALLET_AUTH_REQUEST;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
@@ -33,7 +31,7 @@ public class LoginMethodsWorkflow {
 
     private final CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest;
     private final RegisteredClientRepository registeredClientRepository;
-    private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
+    private final WalletLoginWorkflow walletLoginWorkflow;
 
     public record LoginMethods(List<String> methods, String essentialLevel) {
     }
@@ -85,15 +83,11 @@ public class LoginMethodsWorkflow {
 
     private OAuth2AuthorizationRequest withWalletRequest(OAuth2AuthorizationRequest login,
                                                          RegisteredClient registeredClient, String state) {
-        AuthorizationRequestBuildWorkflow.Result walletRequest = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient, String.join(" ", login.getScopes()), state,
-                (String) login.getAdditionalParameters().get(ACCESS_PROFILE));
+        WalletLoginWorkflow.WalletLogin walletLogin = walletLoginWorkflow.start(registeredClient,
+                String.join(" ", login.getScopes()), state, (String) login.getAdditionalParameters().get(ACCESS_PROFILE));
         log.info("event=login_wallet_request_created clientId={}", sanitize(login.getClientId()));
         return OAuth2AuthorizationRequest.from(login)
-                .additionalParameters(parameters -> {
-                    parameters.put(VP_NONCE, walletRequest.vpNonce());
-                    parameters.put(WALLET_AUTH_REQUEST, walletRequest.openid4vpUrl());
-                })
+                .additionalParameters(walletLogin::addTo)
                 .build();
     }
 
