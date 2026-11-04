@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
@@ -35,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 
 import java.net.http.HttpClient;
+import java.util.Arrays;
 import java.util.Set;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
@@ -61,6 +63,8 @@ import org.springframework.security.web.SecurityFilterChain;
 public class AuthorizationServerConfig {
 
     private static final String AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED = "authorization_response_iss_parameter_supported";
+    private static final String ACR_VALUES_SUPPORTED = "acr_values_supported";
+    private static final String CLAIMS_PARAMETER_SUPPORTED = "claims_parameter_supported";
 
     private final CryptoComponent cryptoComponent;
     private final DIDService didService;
@@ -176,6 +180,10 @@ public class AuthorizationServerConfig {
                                         .claim("backchannel_logout_session_supported", true)
                                         .claim("frontchannel_logout_supported", false)
                                         .claim(AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED, true)
+                                        .claim(ACR_VALUES_SUPPORTED, Arrays.stream(AssuranceLevel.values())
+                                                .map(AssuranceLevel::acrValue)
+                                                .toList())
+                                        .claim(CLAIMS_PARAMETER_SUPPORTED, true)
                                 )
                         )
                 );
