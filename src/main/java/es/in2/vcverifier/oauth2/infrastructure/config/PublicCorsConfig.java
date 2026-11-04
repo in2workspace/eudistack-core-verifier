@@ -1,17 +1,24 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
 
+import es.in2.vcverifier.shared.config.CertificatePortFilter;
+import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.util.List;
 
 @Configuration
 @RequiredArgsConstructor
 public class PublicCorsConfig {
+
+    private final CertificateLoginProperties certificateLoginProperties;
 
     @Bean
     public CorsConfigurationSource publicCorsConfigurationSource() {
@@ -53,7 +60,27 @@ public class PublicCorsConfig {
         authResponseConfig.setAllowedHeaders(List.of("Content-Type", "Authorization", "Cache-Control"));
         authResponseConfig.setAllowCredentials(true);
         source.registerCorsConfiguration("/oid4vp/auth-response", authResponseConfig);
-        return source;
+        return request -> isCertificateLogin(request)
+                ? certificateLoginCorsConfiguration(request)
+                : source.getCorsConfiguration(request);
+    }
+
+    private static boolean isCertificateLogin(HttpServletRequest request) {
+        return CertificatePortFilter.CERTIFICATE_LOGIN_PATH.equals(
+                UrlPathHelper.defaultInstance.getLookupPathForRequest(request));
+    }
+
+    private CorsConfiguration certificateLoginCorsConfiguration(HttpServletRequest request) {
+        CorsConfiguration certificateConfig = new CorsConfiguration();
+        String tenant = TenantDomainFilter.getCurrentTenant(request);
+        CertificateLoginProperties.Tenant entry = tenant == null ? null : certificateLoginProperties.tenants().get(tenant);
+        if (entry != null) {
+            certificateConfig.setAllowedOrigins(List.of(entry.loginOrigin()));
+        }
+        certificateConfig.setAllowedMethods(List.of("POST"));
+        certificateConfig.setAllowedHeaders(List.of("Content-Type"));
+        certificateConfig.setAllowCredentials(true);
+        return certificateConfig;
     }
 
 }
