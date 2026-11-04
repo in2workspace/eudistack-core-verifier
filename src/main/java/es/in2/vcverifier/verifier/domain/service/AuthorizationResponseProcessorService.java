@@ -1,9 +1,11 @@
 package es.in2.vcverifier.verifier.domain.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 
 public interface AuthorizationResponseProcessorService {
@@ -45,6 +47,13 @@ public interface AuthorizationResponseProcessorService {
             Instant authTime,
             String issuer
     );
+
+    /**
+     * Consumes the open login of {@code state} and issues its authorization code for a login with a
+     * certificate. Empty when the login is gone, expired, of another tenant or of an unknown client.
+     */
+    Optional<AuthResponseResult> issueCodeForCertificateLogin(String state, String tenant,
+                                                              CertificateAuthentication authentication);
 
     /**
      * EUD-252: invalidates an issued, not yet redeemed authorization code so it can no longer be

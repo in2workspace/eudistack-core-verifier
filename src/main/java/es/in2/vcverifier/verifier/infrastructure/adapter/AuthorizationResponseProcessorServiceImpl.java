@@ -13,6 +13,7 @@ import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
@@ -61,6 +62,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -293,7 +296,33 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             sseEmitterStore.sendValidationFailed(state, "UNAUTHORIZED_CLIENT", "Client not found or not authorized");
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
+        return issueCodeForLogin(state, oAuth2AuthorizationRequest, registeredClient, authentication);
+    }
 
+    @Override
+    public Optional<AuthResponseResult> issueCodeForCertificateLogin(String state, String tenant,
+                                                                     CertificateAuthentication authentication) {
+        OAuth2AuthorizationRequest login = cacheStoreForOAuth2AuthorizationRequest.remove(state);
+        if (login == null) {
+            return Optional.empty();
+        }
+        Map<String, Object> parameters = login.getAdditionalParameters();
+        if (!Objects.equals(parameters.get(AUTHORIZE_TENANT), tenant)
+                || !(parameters.get(EXPIRATION) instanceof Number expiration)
+                || Instant.now().getEpochSecond() >= expiration.longValue()) {
+            log.warn("event=certificate_login_not_open clientId={}", sanitize(login.getClientId()));
+            return Optional.empty();
+        }
+        RegisteredClient registeredClient = registeredClientRepository.findByClientId(login.getClientId());
+        if (registeredClient == null) {
+            log.warn("event=certificate_login_client_not_found clientId={}", sanitize(login.getClientId()));
+            return Optional.empty();
+        }
+        return Optional.of(issueCodeForLogin(state, login, registeredClient, authentication));
+    }
+
+    private AuthResponseResult issueCodeForLogin(String state, OAuth2AuthorizationRequest oAuth2AuthorizationRequest,
+                                                 RegisteredClient registeredClient, AuthenticationResult authentication) {
         String redirectUri = oAuth2AuthorizationRequest.getRedirectUri();
         var addl = oAuth2AuthorizationRequest.getAdditionalParameters();
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
@@ -305,7 +334,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
                 (String) addl.get(NONCE),
                 authentication,
-                // issuer resolved at /authorize (cached with the request), not the wallet POST's host
+                // issuer resolved at /authorize (cached with the request), not the host of this call
                 oAuth2AuthorizationRequest.getAuthorizationUri()
         ));
 

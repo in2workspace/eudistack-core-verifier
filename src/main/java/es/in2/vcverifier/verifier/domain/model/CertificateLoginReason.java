@@ -2,6 +2,9 @@ package es.in2.vcverifier.verifier.domain.model;
 
 public enum CertificateLoginReason {
 
+    CERTIFICATE_MISSING("CertificateMissing"),
+    LOGIN_NOT_FOUND("LoginNotFound"),
+    LEVEL_NOT_MET("LevelNotMet"),
     CERTIFICATE_NOT_NATURAL_PERSON("CertificateNotNaturalPerson"),
     CERTIFICATE_NOT_QUALIFIED("CertificateNotQualified"),
     CERTIFICATE_REVOKED("CertificateRevoked"),
