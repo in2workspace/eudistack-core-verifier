@@ -1,12 +1,14 @@
 package es.in2.vcverifier.sso.application.workflow;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.application.service.AuthenticationSnapshot;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
@@ -216,7 +218,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         // establishment and reuse landed on different replicas). A missing/undecryptable
         // snapshot (session predates this migration, wrong/rotated key, tampered ciphertext)
         // fails closed to LOGIN_REQUIRED rather than issuing a code without claims.
-        JsonNode credentialJson = decryptCredentialSnapshot(tenantSlug, sessionId, session.getCredentialSnapshotCiphertext());
+        JsonNode credentialJson = decryptCredentialSnapshot(
+                tenantSlug, sessionId, session.getCredentialSnapshotCiphertext(), session.getEstablishedAt());
         if (credentialJson == null) {
             auditPort.publish(
                     SsoAuditEvent.builder()
@@ -299,22 +302,21 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
      * ciphertext ausente, clave incorrecta/rotada, ciphertext corrupto, o JSON descifrado
      * pero no parseable.
      */
-    private JsonNode decryptCredentialSnapshot(String tenant, SsoSessionId sessionId, byte[] ciphertext) {
+    private JsonNode decryptCredentialSnapshot(String tenant, SsoSessionId sessionId, byte[] ciphertext,
+                                               Instant establishedAt) {
         if (ciphertext == null) {
             return null;
         }
-        return credentialCipherPort.decrypt(tenant, sessionId.getValue(), ciphertext)
-                .map(json -> {
-                    try {
-                        return objectMapper.readTree(json);
-                    } catch (JsonProcessingException e) {
-                        log.warn("event=sso_credential_snapshot_corrupt tenant={} session={}",
-                                tenant, sessionId.getValue().length() <= 8
-                                        ? sessionId.getValue() : sessionId.getValue().substring(0, 8));
-                        return null;
-                    }
-                })
-                .orElse(null);
+        Optional<String> json = credentialCipherPort.decrypt(tenant, sessionId.getValue(), ciphertext);
+        if (json.isEmpty()) {
+            return null;
+        }
+        Optional<AuthenticationResult> authentication = AuthenticationSnapshot.read(json.get(), establishedAt);
+        if (authentication.isEmpty()) {
+            log.warn("event=sso_credential_snapshot_corrupt tenant={} session={}", tenant, prefix8(sessionId.getValue()));
+            return null;
+        }
+        return authentication.get() instanceof CredentialAuthentication credential ? credential.credential() : null;
     }
 
     /** NFR-S-547-02: the session id is the SSO cookie value — never log it in full, 8-char prefix only. */
