@@ -182,6 +182,7 @@ verifier:
 
   certificate-login:
     port: ${VERIFIER_CERTIFICATELOGIN_PORT:8081}
+    subject-key: ${VERIFIER_CERTIFICATELOGIN_SUBJECTKEY:}
     tenants: {}
 
   trust-validation:

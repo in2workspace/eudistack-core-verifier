@@ -33,7 +33,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         properties = {
                 "spring.flyway.enabled=false",
                 "verifier.certificate-login.tenants.cgcom.host=cgcom-cert.example.com",
-                "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com"
+                "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com",
+                "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef"
         }
 )
 @AutoConfigureMockMvc
