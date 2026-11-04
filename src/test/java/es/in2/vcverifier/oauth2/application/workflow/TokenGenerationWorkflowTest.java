@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
@@ -36,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -261,6 +264,55 @@ class TokenGenerationWorkflowTest {
                     credential, "did:key:client", additionalParams, true, "altia");
 
             assertThat(result.authTime().getEpochSecond()).isEqualTo(originalAuthTime.getEpochSecond());
+        }
+
+        @Test
+        @DisplayName("ID token carries the acr and amr of the authentication instead of a fixed acr")
+        void idTokenCarriesAcrAndAmrOfTheAuthentication() throws Exception {
+            ObjectNode credential = buildSdJwtCredential("learcredential.employee.sd.1");
+            stubIdTokenIssuance(credential, "learcredential.employee.sd.1");
+
+            workflow.issueAccessToken(credential, "did:key:client", Map.of(AUTHENTICATION_RESULT,
+                    new CredentialAuthentication(credential, AssuranceLevel.SUBSTANTIAL, Instant.now())), true, "altia");
+
+            com.fasterxml.jackson.databind.JsonNode idToken = capturedPayload();
+            assertThat(idToken.get("acr").asText()).isEqualTo("http://eidas.europa.eu/LoA/substantial");
+            assertThat(idToken.get("amr")).containsExactly(objectMapper.getNodeFactory().textNode("pop"));
+            assertThat(idToken.has("credential_type")).isTrue();
+            assertThat(idToken.has("vc_json")).isTrue();
+        }
+
+        @Test
+        @DisplayName("ID token omits the acr when the authentication has no known level")
+        void idTokenOmitsAcrWithoutKnownLevel() throws Exception {
+            ObjectNode credential = buildSdJwtCredential("learcredential.employee.sd.1");
+            stubIdTokenIssuance(credential, "learcredential.employee.sd.1");
+
+            workflow.issueAccessToken(credential, "did:key:client", Map.of(AUTHENTICATION_RESULT,
+                    new CredentialAuthentication(credential, null, Instant.now())), true, "altia");
+
+            com.fasterxml.jackson.databind.JsonNode idToken = capturedPayload();
+            assertThat(idToken.has("acr")).isFalse();
+            assertThat(idToken.get("amr")).containsExactly(objectMapper.getNodeFactory().textNode("pop"));
+        }
+
+        private void stubIdTokenIssuance(ObjectNode credential, String credentialType) {
+            when(claimsExtractor.supports(credentialType)).thenReturn(true);
+            when(claimsExtractor.extract(credential)).thenReturn(ExtractedClaims.builder()
+                    .subject("did:key:z6MkSubject")
+                    .scope("openid learcredential")
+                    .idTokenClaims(Map.of())
+                    .accessTokenClaims(Map.of())
+                    .build());
+            when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+            when(accessTokenBuilder.build(any(BuildContext.class))).thenReturn("access-jwt");
+            when(jwtService.issueJWT(anyString())).thenReturn("id-jwt");
+        }
+
+        private com.fasterxml.jackson.databind.JsonNode capturedPayload() throws Exception {
+            ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+            verify(jwtService).issueJWT(payloadCaptor.capture());
+            return objectMapper.readTree(payloadCaptor.getValue());
         }
 
         @Test

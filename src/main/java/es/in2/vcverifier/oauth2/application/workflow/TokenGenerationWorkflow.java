@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
@@ -20,6 +21,7 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -106,7 +108,8 @@ public class TokenGenerationWorkflow {
         Map<String, Object> idTokenClaims = null;
         Instant authTime = null;
         if (generateIdToken) {
-            IdTokenBuildResult idTokenResult = buildIdToken(credentialJson, extractedClaims, subject, audience, additionalParameters, tenant);
+            IdTokenBuildResult idTokenResult = buildIdToken(credentialJson, extractedClaims, subject, audience,
+                    additionalParameters, tenant, buildContext.authentication());
             idTokenJwt = idTokenResult.jwt();
             idTokenClaims = idTokenResult.claims();
             authTime = idTokenResult.authTime();
@@ -153,7 +156,7 @@ public class TokenGenerationWorkflow {
 
     private IdTokenBuildResult buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                  String subject, String audience, Map<String, Object> additionalParameters,
-                                 String tenant) {
+                                 String tenant, AuthenticationResult authentication) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 backendConfig.getIdTokenExpirationSeconds(),
@@ -185,9 +188,15 @@ public class TokenGenerationWorkflow {
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
                 .claim("auth_time", Date.from(authTime))
-                .claim("acr", "0")
                 .claim("credential_type", extractCredentialType(credentialJson))
                 .claim("vc_json", verifiableCredentialJson);
+
+        if (authentication != null) {
+            if (authentication.acr() != null) {
+                idTokenClaimsBuilder.claim(IdTokenClaimNames.ACR, authentication.acr().acrValue());
+            }
+            idTokenClaimsBuilder.claim(IdTokenClaimNames.AMR, authentication.amr());
+        }
 
         if (additionalParameters.containsKey(OAuth2ParameterNames.SCOPE)) {
             extractedClaims.idTokenClaims().forEach(idTokenClaimsBuilder::claim);

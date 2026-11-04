@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.crypto.JWTService;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,9 +19,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.text.ParseException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -91,7 +96,49 @@ class JwsAccessTokenBuilderTest {
         assertTrue(legacyRoot.keySet().contains("tenant"));
     }
 
+    @Test
+    void build_withAuthentication_putsAcrAndAmr() throws ParseException {
+        String configId = "learcredential.employee.sd.1";
+        JsonNode credential = credential(configId);
+        Map<String, Object> additionalParameters = Map.of(AUTHENTICATION_RESULT,
+                new CredentialAuthentication(credential, AssuranceLevel.HIGH, Instant.now()));
+
+        JWTClaimsSet claims = JWTClaimsSet.parse(
+                jwsAccessTokenBuilder.build(buildContext(configId, credential, additionalParameters)));
+
+        assertEquals("http://eidas.europa.eu/LoA/high", claims.getStringClaim("acr"));
+        assertEquals(List.of("pop"), claims.getStringListClaim("amr"));
+    }
+
+    @Test
+    void build_withoutKnownLevel_omitsAcrButKeepsAmr() throws ParseException {
+        String configId = "learcredential.employee.sd.1";
+        JsonNode credential = credential(configId);
+        Map<String, Object> additionalParameters = Map.of(AUTHENTICATION_RESULT,
+                new CredentialAuthentication(credential, null, Instant.now()));
+
+        JWTClaimsSet claims = JWTClaimsSet.parse(
+                jwsAccessTokenBuilder.build(buildContext(configId, credential, additionalParameters)));
+
+        assertFalse(claims.getClaims().containsKey("acr"));
+        assertEquals(List.of("pop"), claims.getStringListClaim("amr"));
+    }
+
+    @Test
+    void build_withoutAuthentication_putsNeitherAcrNorAmr() throws ParseException {
+        String configId = "learcredential.machine.w3c.3";
+
+        JWTClaimsSet claims = JWTClaimsSet.parse(jwsAccessTokenBuilder.build(buildContext(configId, credential(configId))));
+
+        assertFalse(claims.getClaims().containsKey("acr"));
+        assertFalse(claims.getClaims().containsKey("amr"));
+    }
+
     private BuildContext buildContext(String configId, JsonNode credential) {
+        return buildContext(configId, credential, Map.of());
+    }
+
+    private BuildContext buildContext(String configId, JsonNode credential, Map<String, Object> additionalParameters) {
         Instant issue = Instant.parse("2026-05-26T10:00:00Z");
         return new BuildContext(
                 credential,
@@ -106,7 +153,7 @@ class JwsAccessTokenBuilderTest {
                 issue.plusSeconds(900),
                 "audience-client",
                 "dome",
-                Map.of(),
+                additionalParameters,
                 true
         );
     }
