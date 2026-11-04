@@ -12,6 +12,7 @@ Observability aligned with the Wallet EBW, the reference configuration.
 
 ### Changed
 
+- **The service reports as `verifier-core`** (was `eudistack-core-verifier`) in traces, metrics and logs, the name set by the observability convention. OpenObserve filters or dashboards on the previous name must use the new one.
 - **Traces use Spring Boot's native OTLP/gRPC exporter** (`management.otlp.tracing.transport: grpc`). Deployments must set `MANAGEMENT_OTLP_TRACING_EXPORT_ENABLED=true` and remove `SPRING_AUTOCONFIGURE_EXCLUDE`, which would turn this exporter off, `MANAGEMENT_OTLP_GRPC_TRACING_ENABLED` and `OTEL_EXPORTER_OTLP_ENDPOINT`.
 - **Trace sampling reads `OTEL_SAMPLING_PROBABILITY`**, the same variable as the Issuer and the Wallet EBW, instead of `OTEL_TRACES_SAMPLER_ARG`, which is the ADOT agent's sampler. Default still `1.0`. Deployments that set `OTEL_TRACES_SAMPLER_ARG` for Spring must rename it.
 - **Masking**: the replacement is `***`, and authorization codes (`code=` or a JSON `code` field whose value has a digit), `otp`, `id_token` and camelCase token keys are now masked. Unsigned JWTs stay masked. An empty argument array replaces `null` in masked events, and a null MDC no longer fails.
