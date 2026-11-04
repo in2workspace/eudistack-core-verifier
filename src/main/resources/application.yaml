@@ -184,6 +184,11 @@ verifier:
     port: ${VERIFIER_CERTIFICATELOGIN_PORT:8081}
     tenants: {}
 
+  trust-validation:
+    url: ${VERIFIER_TRUSTVALIDATION_URL:}
+    timeout: ${VERIFIER_TRUSTVALIDATION_TIMEOUT:5s}
+    max-list-age: ${VERIFIER_TRUSTVALIDATION_MAXLISTAGE:24h}
+
   dome:
     legacy-read-enabled: ${VERIFIER_DOME_LEGACY_READ_ENABLED:true}
     bumped-read-enabled: ${VERIFIER_DOME_BUMPED_READ_ENABLED:true}
