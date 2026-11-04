@@ -1,5 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
@@ -168,6 +170,49 @@ class DcqlProfileResolverImplTest {
     void highestAssuranceLevel_isEmptyWithoutScopes() {
         assertThat(resolver.highestAssuranceLevel(null)).isEmpty();
         assertThat(resolver.highestAssuranceLevel(List.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("assuranceLevelOf() returns the level of the profile the presented SD-JWT matches by vct")
+    void assuranceLevelOf_sdJwt_returnsTheLevelOfTheMatchingProfile() {
+        DcqlProfileResolverImpl leveled = resolverWithLevels(Map.of(
+                "learcredential", AssuranceLevel.SUBSTANTIAL,
+                "doctorid", AssuranceLevel.HIGH));
+        ObjectNode credential = JsonNodeFactory.instance.objectNode().put("vct", "learcredential.1");
+
+        assertThat(leveled.assuranceLevelOf(List.of("openid", "learcredential", "doctorid"), credential))
+                .contains(AssuranceLevel.SUBSTANTIAL);
+    }
+
+    @Test
+    @DisplayName("assuranceLevelOf() matches a W3C credential when it has every type of the credential definition")
+    void assuranceLevelOf_w3c_matchesByCredentialDefinitionTypes() {
+        DcqlProfileResolverImpl leveled = new DcqlProfileResolverImpl(new DcqlProfileProperties(Map.of(
+                "learcredential", new DcqlProfileProperties.DcqlProfile(List.of(
+                        new DcqlProfileProperties.CredentialEntry("lear_jwt_vc", "jwt_vc_json",
+                                new DcqlProfileProperties.CredentialMeta(null,
+                                        new DcqlProfileProperties.CredentialDefinition(
+                                                List.of("VerifiableCredential", "learcredential.employee.w3c.4"))))),
+                        AssuranceLevel.SUBSTANTIAL))));
+        ObjectNode employee = JsonNodeFactory.instance.objectNode();
+        employee.putArray("type").add("VerifiableCredential").add("learcredential.employee.w3c.4");
+        ObjectNode other = JsonNodeFactory.instance.objectNode();
+        other.putArray("type").add("VerifiableCredential").add("gx.labelcredential.w3c.2");
+
+        assertThat(leveled.assuranceLevelOf(List.of("learcredential"), employee)).contains(AssuranceLevel.SUBSTANTIAL);
+        assertThat(leveled.assuranceLevelOf(List.of("learcredential"), other)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("assuranceLevelOf() is empty when the matching profile declares no level or nothing matches")
+    void assuranceLevelOf_isEmptyWithoutAMatchingLeveledProfile() {
+        DcqlProfileResolverImpl leveled = resolverWithLevels(Map.of("doctorid", AssuranceLevel.HIGH));
+
+        assertThat(leveled.assuranceLevelOf(List.of("doctorid"),
+                JsonNodeFactory.instance.objectNode().put("vct", "learcredential.1"))).isEmpty();
+        assertThat(resolver.assuranceLevelOf(List.of("learcredential.employee"),
+                JsonNodeFactory.instance.objectNode().put("vct", "learcredential.employee.sd.1"))).isEmpty();
+        assertThat(leveled.assuranceLevelOf(null, JsonNodeFactory.instance.objectNode())).isEmpty();
     }
 
     private static DcqlProfileResolverImpl resolverWithLevels(Map<String, AssuranceLevel> levels) {

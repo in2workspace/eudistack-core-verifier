@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.OAuth2M2MAuditEvent;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
@@ -48,6 +49,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -132,9 +134,10 @@ class CustomAuthenticationProviderTest {
                 .thenReturn(tokenResult);
         when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
 
+        CredentialAuthentication authentication = new CredentialAuthentication(vcJson, null, Instant.now());
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
-        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+        additionalParams.put(AUTHENTICATION_RESULT, authentication);
         additionalParams.put(OAuth2ParameterNames.AUDIENCE, "https://rp.example.com");
         additionalParams.put(OAuth2ParameterNames.SCOPE, "openid");
 
@@ -147,7 +150,10 @@ class CustomAuthenticationProviderTest {
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
-        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true), any());
+        verify(tokenGenerationWorkflow).issueAccessToken(eq(vcJson), eq("https://rp.example.com"), anyMap(), eq(true), any());
+        ArgumentCaptor<RefreshTokenDataCache> refreshTokenData = ArgumentCaptor.forClass(RefreshTokenDataCache.class);
+        verify(cacheStoreForRefreshTokenData).add(anyString(), refreshTokenData.capture());
+        assertSame(authentication, refreshTokenData.getValue().authentication());
 
         // EUDISTACK-551 regression guard: Spring AS's RP-Initiated Logout resolves the
         // id_token_hint via OAuth2AuthorizationService#findByToken(..., ID_TOKEN_TOKEN_TYPE).
@@ -206,7 +212,7 @@ class CustomAuthenticationProviderTest {
 
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
-        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+        additionalParams.put(AUTHENTICATION_RESULT, new CredentialAuthentication(vcJson, null, Instant.now()));
 
         storeAuthorizationCode("test-code-no-aud");
 
@@ -219,7 +225,7 @@ class CustomAuthenticationProviderTest {
     @Test
     void authenticate_validRefreshTokenGrant_withCredentialSuppliedByConverter_success() {
         // Mirrors what CustomTokenRequestConverter.handleRefreshTokenGrant actually hands this
-        // provider: the cache lookup/deletion already happened upstream, "vc" is already populated.
+        // provider: the cache lookup/deletion already happened upstream, the authentication is already populated.
         JsonNode vcJson = buildEmployeeCredentialV1();
 
         TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
@@ -229,9 +235,11 @@ class CustomAuthenticationProviderTest {
                 .thenReturn(tokenResult);
         when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
 
+        CredentialAuthentication authentication =
+                new CredentialAuthentication(vcJson, null, Instant.ofEpochSecond(1_700_000_000L));
         Map<String, Object> additionalParams = new HashMap<>();
         additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
-        additionalParams.put("vc", objectMapper.convertValue(vcJson, Map.class));
+        additionalParams.put(AUTHENTICATION_RESULT, authentication);
         additionalParams.put(OAuth2ParameterNames.AUDIENCE, "https://rp.example.com");
 
         OAuth2RefreshTokenAuthenticationToken authToken = new OAuth2RefreshTokenAuthenticationToken(
@@ -241,7 +249,27 @@ class CustomAuthenticationProviderTest {
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
-        verify(tokenGenerationWorkflow).issueAccessToken(any(JsonNode.class), eq("https://rp.example.com"), anyMap(), eq(true), any());
+        verify(tokenGenerationWorkflow).issueAccessToken(eq(vcJson), eq("https://rp.example.com"), anyMap(), eq(true), any());
+        ArgumentCaptor<RefreshTokenDataCache> refreshTokenData = ArgumentCaptor.forClass(RefreshTokenDataCache.class);
+        verify(cacheStoreForRefreshTokenData).add(anyString(), refreshTokenData.capture());
+        assertSame(authentication, refreshTokenData.getValue().authentication());
+    }
+
+    @Test
+    void authenticate_authorizationCodeGrantWithoutAuthentication_throwsInvalidRequest() {
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put(OAuth2ParameterNames.AUDIENCE, "https://rp.example.com");
+
+        storeAuthorizationCode("test-code-no-authentication");
+
+        OAuth2AuthorizationCodeAuthenticationToken authToken = new OAuth2AuthorizationCodeAuthenticationToken(
+                "test-code-no-authentication", mock(Authentication.class), "https://example.com/callback", additionalParams);
+
+        OAuth2AuthenticationException exception =
+                assertThrows(OAuth2AuthenticationException.class, () -> provider.authenticate(authToken));
+        assertEquals(OAuth2ErrorCodes.INVALID_REQUEST, exception.getError().getErrorCode());
+        verifyNoInteractions(tokenGenerationWorkflow);
     }
 
     @Test

@@ -12,6 +12,8 @@ import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
@@ -109,7 +111,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             verificationLogged = true;
             credentialVerificationLogger.logVerifiedOk(configurationId);
 
-            return issueCodeForVerifiedLogin(state, oAuth2AuthorizationRequest, credentialJson);
+            return issueCodeForVerifiedLogin(state, oAuth2AuthorizationRequest,
+                    credentialAuthentication(credentialJson, oAuth2AuthorizationRequest.getScopes(), Instant.now()));
 
         } catch (LoginTenantMismatchException e) {
             // SSE already sent in consumeCachedRequest; must precede NoSuchElementException (its supertype)
@@ -277,8 +280,13 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
     }
 
+    private CredentialAuthentication credentialAuthentication(JsonNode credentialJson, Set<String> scopes, Instant authTime) {
+        return new CredentialAuthentication(credentialJson,
+                dcqlProfileResolver.assuranceLevelOf(scopes, credentialJson).orElse(null), authTime);
+    }
+
     private AuthResponseResult issueCodeForVerifiedLogin(String state, OAuth2AuthorizationRequest oAuth2AuthorizationRequest,
-                                                         JsonNode credentialJson) {
+                                                         CredentialAuthentication authentication) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
 
         if (registeredClient == null) {
@@ -296,8 +304,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
                 (String) addl.get(NONCE),
-                credentialJson,
-                null, // fresh VP presentation: auth_time is the token issue time
+                authentication,
                 // issuer resolved at /authorize (cached with the request), not the wallet POST's host
                 oAuth2AuthorizationRequest.getAuthorizationUri()
         ));
@@ -309,7 +316,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         // the browser — directly to the RP, or first through the browser-bound SSO close step.
         Object browserBindingHash = addl.get(BROWSER_BINDING_HASH);
         return new AuthResponseResult(
-                credentialJson,
+                authentication,
                 issuedCode.redirectUrl(),
                 redirectUri,
                 state,
@@ -338,8 +345,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
-                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson,
-                authTime, issuer));
+                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce,
+                credentialAuthentication(credentialJson, scopes, authTime), issuer));
         log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
         return issuedCode.redirectUrl();
     }
@@ -368,8 +375,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson,
-            Instant authTime,
+            AuthenticationResult authentication,
             String issuer
     ) {
     }
@@ -385,10 +391,10 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     /**
      * Generates a fresh authorization code, builds the {@code redirectUri?code=...&state=...&iss=...} URL,
      * then registers the {@link OAuth2Authorization} (needed at the token endpoint) and caches the
-     * {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow} to read the credential claims from.
+     * {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow} to read the authentication from.
      * Shared by the VP-validated establishment path ({@link #handleAuthResponse}) and the SSO-reuse
      * path ({@link #issueCodeForReusedSession}) — the only difference between them is where
-     * {@code credentialJson} comes from (freshly verified VP vs. cached establishment snapshot).
+     * the credential comes from (freshly verified VP vs. cached establishment snapshot).
      */
     private IssuedCode issueAuthorizationCode(CodeIssuance issuance) {
         RegisteredClient registeredClient = issuance.registeredClient();
@@ -398,7 +404,6 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         String codeChallenge = issuance.codeChallenge();
         String codeChallengeMethod = issuance.codeChallengeMethod();
         String nonce = issuance.nonce();
-        JsonNode credentialJson = issuance.credentialJson();
         Instant issueTime = Instant.now();
 
         // SEC-S9: Authorization codes must not be logged in full.
@@ -464,11 +469,10 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         AuthorizationCodeData.AuthorizationCodeDataBuilder authCodeDataBuilder = AuthorizationCodeData.builder()
                 .state(state)
-                .verifiableCredential(credentialJson)
+                .authentication(issuance.authentication())
                 .oAuth2Authorization(authorization)
                 .requestedScopes(scopes)
-                .clientNonce(nonce)
-                .authTime(issuance.authTime());
+                .clientNonce(nonce);
 
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 

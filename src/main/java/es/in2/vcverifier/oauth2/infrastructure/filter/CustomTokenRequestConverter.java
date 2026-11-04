@@ -2,6 +2,7 @@ package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.shared.config.CacheStore;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.util.LogSanitizer;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
 import es.in2.vcverifier.oauth2.application.workflow.ClientCredentialsValidationWorkflow;
@@ -38,6 +39,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
@@ -113,7 +115,7 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
 
         Map<String, Object> additionalParameters = new HashMap<>();
         additionalParameters.put(OAuth2ParameterNames.CLIENT_ID, clientId);
-        additionalParameters.put("vc", authorizationCodeData.verifiableCredential());
+        putAuthentication(additionalParameters, authorizationCodeData.authentication());
         additionalParameters.put(OAuth2ParameterNames.SCOPE, String.join(" ", authorizationCodeData.requestedScopes()));
         additionalParameters.put(OAuth2ParameterNames.AUDIENCE, clientId);
 
@@ -123,11 +125,6 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         }
         if (codeVerifier != null && !codeVerifier.isBlank()) {
             additionalParameters.put(PkceParameterNames.CODE_VERIFIER, codeVerifier);
-        }
-        // EUD-300: a code issued by SSO reuse carries the original authentication time, so the
-        // ID Token's auth_time is not re-stamped as "now" (OIDC Core §2).
-        if (authorizationCodeData.authTime() != null) {
-            additionalParameters.put(AUTH_TIME_PARAM, authorizationCodeData.authTime().getEpochSecond());
         }
 
         log.info("Authorization code grant successfully handled");
@@ -244,17 +241,17 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
 
         Map<String, Object> additionalParameters = new HashMap<>();
         additionalParameters.put(OAuth2ParameterNames.CLIENT_ID, clientId);
-        additionalParameters.put("vc", refreshTokenDataCache.verifiableCredential());
+        putAuthentication(additionalParameters, refreshTokenDataCache.authentication());
         additionalParameters.put(OAuth2ParameterNames.AUDIENCE, clientId);
-        // Carries the ORIGINAL login's auth_time through so the new id_token reuses it instead of
-        // stamping "now" — see RefreshTokenDataCache.authTimeEpochSeconds.
-        if (refreshTokenDataCache.authTimeEpochSeconds() != null) {
-            additionalParameters.put(AUTH_TIME_PARAM, refreshTokenDataCache.authTimeEpochSeconds());
-        }
         Authentication clientPrincipal = SecurityContextHolder.getContext().getAuthentication();
 
         log.info("Refresh token grant successfully handled");
         return new OAuth2RefreshTokenAuthenticationToken(refreshTokenValue, clientPrincipal, null, additionalParameters);
+    }
+
+    private static void putAuthentication(Map<String, Object> additionalParameters, AuthenticationResult authentication) {
+        additionalParameters.put(AUTHENTICATION_RESULT, authentication);
+        additionalParameters.put(AUTH_TIME_PARAM, authentication.authTime().getEpochSecond());
     }
 
     private static MultiValueMap<String, String> getParameters(HttpServletRequest request) {

@@ -56,6 +56,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -186,10 +187,10 @@ class CrossDeviceSsoLoginIT {
                     cached.getClientId(), cached.getRedirectUri(), cached.getScopes(), state,
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
-                    null, credentialJson, null, cached.getAuthorizationUri());
+                    null, credentialJson, Instant.now(), cached.getAuthorizationUri());
             String code = codeFrom(redirectUrl);
             issuedCodes.put(state, code);
-            return new AuthResponseResult(credentialJson, redirectUrl, cached.getRedirectUri(), state,
+            return new AuthResponseResult(CrossDeviceLoginTestSupport.credentialAuthentication(credentialJson), redirectUrl, cached.getRedirectUri(), state,
                     cached.getClientId(), code, (String) addl.get(BROWSER_BINDING_HASH), cached.getAuthorizationUri());
         }).when(authorizationResponseProcessorService).handleAuthResponse(anyString(), anyString(), any());
     }

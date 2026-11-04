@@ -129,6 +129,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
         lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
         lenient().when(cryptoComponent.getClientId()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
+        lenient().when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString()))
+                .thenReturn(new ObjectMapper().createObjectNode());
     }
 
 
@@ -166,7 +168,6 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -528,7 +529,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -581,7 +581,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 

@@ -1,6 +1,7 @@
 package es.in2.vcverifier.sso.infrastructure.controller;
 
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.sso.application.workflow.SsoLoginCompletionWorkflow;
 import es.in2.vcverifier.sso.domain.model.PendingSsoLogin;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
@@ -97,7 +98,9 @@ public class SsoLoginCompletionController {
         principal.put("clientId", login.tenant());          // fallback: tenant as clientId for audit (unchanged)
         principal.put("tenantSlug", login.tenant());
         // Snapshot for SSO reuse (prompt absent or none, no VP re-presentation) — see ReuseSsoSessionWorkflowImpl.
-        principal.put("credentialJson", login.credentialJson());
+        if (login.authentication() instanceof CredentialAuthentication credentialAuthentication) {
+            principal.put("credentialJson", credentialAuthentication.credential());
+        }
         return new UsernamePasswordAuthenticationToken(principal, null);
     }
 }
