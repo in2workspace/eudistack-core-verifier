@@ -113,6 +113,8 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             Map<String, Object> additionalParameters = authentication.getAdditionalParameters();
             if (additionalParameters.containsKey(OAuth2ParameterNames.AUDIENCE)) {
                 audience = additionalParameters.get(OAuth2ParameterNames.AUDIENCE).toString();
+            } else if (credentialJson == null) {
+                throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
             } else {
                 // Fallback: check credential type via profile — M2M-eligible credentials use verifier as audience
                 String credType = tokenGenerationWorkflow.extractCredentialType(credentialJson);
@@ -398,7 +400,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private static JsonNode credentialOf(AuthenticationResult authenticationResult) {
         return switch (authenticationResult) {
             case CredentialAuthentication credentialAuthentication -> credentialAuthentication.credential();
-            case CertificateAuthentication _ -> throw new OAuth2AuthenticationException(OAuth2ErrorCodes.SERVER_ERROR);
+            case CertificateAuthentication _ -> null;
         };
     }
 

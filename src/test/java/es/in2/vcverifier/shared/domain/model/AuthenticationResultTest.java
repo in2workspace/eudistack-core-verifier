@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthenticationResultTest {
 
+    private static final String SUBJECT = "b2f1c3";
     private static final Instant AUTH_TIME = Instant.ofEpochSecond(1_700_000_000L);
     private static final CertificateIdentity IDENTITY = new CertificateIdentity(
             "JOSE ANTONIO", "GARCIA FERNANDEZ", "GARCIA FERNANDEZ JOSE ANTONIO",
@@ -45,7 +46,7 @@ class AuthenticationResultTest {
     void certificateAuthentication_isTheX509MethodWithItsOwnAmr() {
         List<String> amr = new ArrayList<>(List.of("hwk"));
         CertificateAuthentication authentication = new CertificateAuthentication(
-                IDENTITY, "CN=AC FNMT Usuarios", "ab12", AUTH_TIME.plusSeconds(3600), AssuranceLevel.HIGH, amr, AUTH_TIME);
+                SUBJECT, IDENTITY, "CN=AC FNMT Usuarios", "ab12", AUTH_TIME.plusSeconds(3600), AssuranceLevel.HIGH, amr, AUTH_TIME);
         amr.add("swk");
 
         assertThat(authentication.method()).isEqualTo(LoginMethod.X509);
@@ -54,22 +55,25 @@ class AuthenticationResultTest {
     }
 
     @Test
-    void certificateAuthentication_requiresTheIdentityTheLevelAndTheAuthTime() {
+    void certificateAuthentication_requiresTheSubjectTheIdentityTheLevelAndTheAuthTime() {
         assertThatThrownBy(() -> new CertificateAuthentication(
-                null, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), AUTH_TIME))
+                null, IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), AUTH_TIME))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new CertificateAuthentication(
-                IDENTITY, "issuer", "ab12", AUTH_TIME, null, List.of("hwk"), AUTH_TIME))
+                SUBJECT, null, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), AUTH_TIME))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new CertificateAuthentication(
-                IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), null))
+                SUBJECT, IDENTITY, "issuer", "ab12", AUTH_TIME, null, List.of("hwk"), AUTH_TIME))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new CertificateAuthentication(
+                SUBJECT, IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), null))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void certificateIdentity_neverPrintsThePersonalData() {
         CertificateAuthentication authentication = new CertificateAuthentication(
-                IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), AUTH_TIME);
+                SUBJECT, IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), AUTH_TIME);
 
         assertThat(authentication.toString())
                 .doesNotContain("12345678Z", "GARCIA", "jgarcia@example.com")

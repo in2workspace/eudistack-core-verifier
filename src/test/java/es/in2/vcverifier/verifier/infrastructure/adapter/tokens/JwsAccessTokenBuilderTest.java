@@ -7,6 +7,8 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
+import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.verifier.domain.model.tokens.BuildContext;
 import es.in2.vcverifier.verifier.domain.model.validation.ExtractedClaims;
@@ -132,6 +134,39 @@ class JwsAccessTokenBuilderTest {
 
         assertFalse(claims.getClaims().containsKey("acr"));
         assertFalse(claims.getClaims().containsKey("amr"));
+    }
+
+    @Test
+    void build_certificateLogin_putsItsClaimsWithoutCredential() throws ParseException {
+        Instant issue = Instant.parse("2026-05-26T10:00:00Z");
+        CertificateAuthentication certificate = new CertificateAuthentication("b2f1c3",
+                new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "GARCIA FERNANDEZ JOSE ANTONIO",
+                        null, "ES", "12345678Z"),
+                "CN=AC FNMT Usuarios", "ab12", issue.plusSeconds(3600), AssuranceLevel.SUBSTANTIAL, List.of("swk"), issue);
+        BuildContext context = new BuildContext(
+                null,
+                null,
+                ExtractedClaims.builder()
+                        .subject("b2f1c3")
+                        .scope("openid profile")
+                        .accessTokenClaims(Map.of("given_name", "JOSE ANTONIO"))
+                        .build(),
+                issue,
+                issue.plusSeconds(900),
+                "portal-clientes",
+                "cgcom",
+                Map.of(AUTHENTICATION_RESULT, certificate),
+                true
+        );
+
+        JWTClaimsSet claims = JWTClaimsSet.parse(jwsAccessTokenBuilder.build(context));
+
+        assertEquals("b2f1c3", claims.getSubject());
+        assertEquals("JOSE ANTONIO", claims.getStringClaim("given_name"));
+        assertEquals("http://eidas.europa.eu/LoA/substantial", claims.getStringClaim("acr"));
+        assertEquals(List.of("swk"), claims.getStringListClaim("amr"));
+        assertFalse(claims.getClaims().containsKey("credential_type"));
+        assertFalse(claims.getClaims().containsKey("vc"));
     }
 
     private BuildContext buildContext(String configId, JsonNode credential) {

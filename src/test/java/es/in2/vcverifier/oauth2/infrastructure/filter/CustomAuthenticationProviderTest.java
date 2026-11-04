@@ -10,6 +10,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
+import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.OAuth2M2MAuditEvent;
@@ -46,6 +49,7 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import java.security.Principal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -253,6 +257,58 @@ class CustomAuthenticationProviderTest {
         ArgumentCaptor<RefreshTokenDataCache> refreshTokenData = ArgumentCaptor.forClass(RefreshTokenDataCache.class);
         verify(cacheStoreForRefreshTokenData).add(anyString(), refreshTokenData.capture());
         assertSame(authentication, refreshTokenData.getValue().authentication());
+    }
+
+    @Test
+    void authenticate_authorizationCodeGrant_withCertificate_issuesTokensWithoutCredential() {
+        CertificateAuthentication authentication = new CertificateAuthentication("b2f1c3",
+                new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "GARCIA FERNANDEZ JOSE ANTONIO",
+                        null, "ES", "12345678Z"),
+                "CN=AC FNMT Usuarios", "ab12", Instant.now().plusSeconds(3600), AssuranceLevel.HIGH, List.of("hwk"),
+                Instant.now());
+        TokenGenerationWorkflow.Result tokenResult = new TokenGenerationWorkflow.Result(
+                "signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
+                "signed-id-jwt", Map.of("sub", "b2f1c3"), "openid profile", "b2f1c3", Instant.now());
+        when(tokenGenerationWorkflow.issueAccessToken(isNull(), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResult);
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put(AUTHENTICATION_RESULT, authentication);
+        additionalParams.put(OAuth2ParameterNames.AUDIENCE, "https://rp.example.com");
+
+        storeAuthorizationCode("test-code-certificate");
+
+        OAuth2AuthorizationCodeAuthenticationToken authToken = new OAuth2AuthorizationCodeAuthenticationToken(
+                "test-code-certificate", mock(Authentication.class), "https://example.com/callback", additionalParams);
+
+        Authentication result = provider.authenticate(authToken);
+
+        assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
+        verify(tokenGenerationWorkflow).issueAccessToken(isNull(), eq("https://rp.example.com"), anyMap(), eq(true), any());
+        ArgumentCaptor<RefreshTokenDataCache> refreshTokenData = ArgumentCaptor.forClass(RefreshTokenDataCache.class);
+        verify(cacheStoreForRefreshTokenData).add(anyString(), refreshTokenData.capture());
+        assertSame(authentication, refreshTokenData.getValue().authentication());
+    }
+
+    @Test
+    void authenticate_certificateWithoutAudience_throwsInvalidRequest() {
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put(AUTHENTICATION_RESULT, new CertificateAuthentication("b2f1c3",
+                new CertificateIdentity(null, null, "NAME", null, "ES", "12345678Z"),
+                "issuer", "ab12", Instant.now(), AssuranceLevel.HIGH, List.of("hwk"), Instant.now()));
+
+        storeAuthorizationCode("test-code-certificate-no-aud");
+
+        OAuth2AuthorizationCodeAuthenticationToken authToken = new OAuth2AuthorizationCodeAuthenticationToken(
+                "test-code-certificate-no-aud", mock(Authentication.class), "https://example.com/callback", additionalParams);
+
+        OAuth2AuthenticationException exception =
+                assertThrows(OAuth2AuthenticationException.class, () -> provider.authenticate(authToken));
+        assertEquals(OAuth2ErrorCodes.INVALID_REQUEST, exception.getError().getErrorCode());
+        verifyNoInteractions(tokenGenerationWorkflow);
     }
 
     @Test

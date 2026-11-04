@@ -38,8 +38,11 @@ public class JwsAccessTokenBuilder implements AccessTokenBuilder {
                 .jwtID(UUID.randomUUID().toString())
                 .issueTime(Date.from(buildContext.issueTime()))
                 .expirationTime(Date.from(buildContext.expirationTime()))
-                .claim(OAuth2ParameterNames.SCOPE, extractedClaims.scope())
-                .claim("credential_type", configId);
+                .claim(OAuth2ParameterNames.SCOPE, extractedClaims.scope());
+
+        if (configId != null) {
+            payloadBuilder.claim("credential_type", configId);
+        }
 
         if (extractedClaims.accessTokenClaims() != null) {
             extractedClaims.accessTokenClaims().forEach(payloadBuilder::claim);
@@ -64,7 +67,9 @@ public class JwsAccessTokenBuilder implements AccessTokenBuilder {
             log.warn("Client has no tenant configured. Excluding tenant claim from access token.");
         }
 
-        payloadBuilder.claim("vc", objectMapper.convertValue(buildContext.credential(), Object.class));
+        if (buildContext.credential() != null) {
+            payloadBuilder.claim("vc", objectMapper.convertValue(buildContext.credential(), Object.class));
+        }
 
         JWTClaimsSet payload = payloadBuilder.build();
         return jwtService.issueJWT(payload.toString());
