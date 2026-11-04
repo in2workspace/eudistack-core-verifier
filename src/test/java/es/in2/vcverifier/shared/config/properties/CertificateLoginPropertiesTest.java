@@ -1,4 +1,4 @@
-package es.in2.vcverifier.verifier.infrastructure.config;
+package es.in2.vcverifier.shared.config.properties;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

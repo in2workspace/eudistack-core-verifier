@@ -1,7 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 
 import es.in2.vcverifier.shared.domain.model.LoginMethod;
-import es.in2.vcverifier.verifier.infrastructure.config.CertificateLoginProperties;
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
