@@ -33,7 +33,8 @@ class StarterAuditTrailAdapterTest {
 
     @BeforeEach
     void setUp() {
-        when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        TransactionStatus transaction = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transaction);
         adapter = new StarterAuditTrailAdapter(publisher, transactionManager);
     }
 

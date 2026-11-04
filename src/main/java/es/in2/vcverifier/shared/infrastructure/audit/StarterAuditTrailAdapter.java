@@ -1,7 +1,6 @@
 package es.in2.vcverifier.shared.infrastructure.audit;
 
 import com.eudistack.auditoria.application.AuditPublisher;
-import com.eudistack.auditoria.context.AuditContextScope;
 import com.eudistack.auditoria.context.AuditContexts;
 import com.eudistack.auditoria.domain.AuditDraft;
 import com.eudistack.auditoria.domain.AuditFact;
@@ -9,6 +8,7 @@ import es.in2.vcverifier.shared.domain.model.audit.AuditEntry;
 import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -20,9 +20,13 @@ import static org.springframework.transaction.TransactionDefinition.PROPAGATION_
 /**
  * Hands the entries of the use cases to the audit outbox starter. {@code stage} joins the transaction that
  * is already active; the other staging method opens one of its own, since the starter never does (EC-09).
+ *
+ * <p>The no-op adapter only exists when this one does not; {@code @Primary} states that precedence for
+ * static analysis, which does not evaluate the conditions.
  */
 @Slf4j
 @Component
+@Primary
 @ConditionalOnBooleanProperty("auditoria.publisher.enabled")
 public class StarterAuditTrailAdapter implements AuditTrailPort {
 
@@ -57,14 +61,14 @@ public class StarterAuditTrailAdapter implements AuditTrailPort {
 
     @Override
     public void runWithCorrelationId(String correlationId, Runnable action) {
-        try (AuditContextScope _ = AuditContexts.withCorrelationId(correlationId)) {
+        try (var _ = AuditContexts.withCorrelationId(correlationId)) {
             action.run();
         }
     }
 
     @Override
     public <T> T asSystem(String tenant, String actorId, Supplier<T> action) {
-        try (AuditContextScope _ = AuditContexts.system(tenant, actorId)) {
+        try (var _ = AuditContexts.system(tenant, actorId)) {
             return action.get();
         }
     }
