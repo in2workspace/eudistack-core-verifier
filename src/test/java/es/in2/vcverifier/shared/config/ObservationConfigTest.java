@@ -6,6 +6,8 @@ import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.slf4j.MDC;
 import org.springframework.http.server.observation.ServerRequestObservationContext;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -34,14 +36,19 @@ class ObservationConfigTest {
                 .isEqualTo(KeyValue.of("component", "verifier-backend"));
     }
 
-    @Test
-    void globalObservationFilter_TenantInMdc_AddsTheTenantTag() {
-        MDC.put("tenantDomain", "sandbox");
+    @ParameterizedTest
+    @CsvSource({
+            "sandbox, sandbox",
+            "tenant-123, tenant-123",
+            "127, unknown"
+    })
+    void globalObservationFilter_TenantInMdc_AddsTheExpectedTag(String mdcTenant, String expectedTag) {
+        MDC.put("tenantDomain", mdcTenant);
         Observation.Context context = new Observation.Context();
 
         config.globalObservationFilter().map(context);
 
-        assertThat(context.getLowCardinalityKeyValue("tenant")).isEqualTo(KeyValue.of("tenant", "sandbox"));
+        assertThat(context.getLowCardinalityKeyValue("tenant")).isEqualTo(KeyValue.of("tenant", expectedTag));
     }
 
     @Test
@@ -51,26 +58,6 @@ class ObservationConfigTest {
         config.globalObservationFilter().map(context);
 
         assertThat(context.getLowCardinalityKeyValue("tenant")).isEqualTo(KeyValue.of("tenant", "unknown"));
-    }
-
-    @Test
-    void globalObservationFilter_IpHostInMdc_AddsTheUnknownTenantTag() {
-        MDC.put("tenantDomain", "127");
-        Observation.Context context = new Observation.Context();
-
-        config.globalObservationFilter().map(context);
-
-        assertThat(context.getLowCardinalityKeyValue("tenant")).isEqualTo(KeyValue.of("tenant", "unknown"));
-    }
-
-    @Test
-    void globalObservationFilter_TenantWithDigitsInMdc_AddsTheTenantTag() {
-        MDC.put("tenantDomain", "tenant-123");
-        Observation.Context context = new Observation.Context();
-
-        config.globalObservationFilter().map(context);
-
-        assertThat(context.getLowCardinalityKeyValue("tenant")).isEqualTo(KeyValue.of("tenant", "tenant-123"));
     }
 
     @Test
