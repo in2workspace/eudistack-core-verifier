@@ -706,6 +706,14 @@ class MaskingPatternLayoutTest {
                 .contains(MASK)
                 .hasSize(message.length() - "contact@company.io".length() + MASK.length());
     }
+
+    @Test
+    void mask_UrlEncodedEmailInQueryString_MasksEmail() {
+        String input = "Securing GET /error?client_id=mask.test%40example.com"
+                + "&login_hint=john.doe%2Bfilter%40mail.company.org&response_type=code";
+
+        assertThat(MaskingPatternLayout.mask(input))
+                .isEqualTo("Securing GET /error?client_id=" + MASK
+                        + "&login_hint=" + MASK + "&response_type=code");
+    }
 }
-
-
