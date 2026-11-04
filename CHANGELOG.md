@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.4.2] - 2026-11-03
+## [3.4.2] - 2026-11-04
 
 Observability aligned with the Wallet EBW, the reference configuration.
 
@@ -16,6 +16,8 @@ Observability aligned with the Wallet EBW, the reference configuration.
 - **Traces use Spring Boot's native OTLP/gRPC exporter** (`management.otlp.tracing.transport: grpc`). Deployments must set `MANAGEMENT_OTLP_TRACING_EXPORT_ENABLED=true` and remove `SPRING_AUTOCONFIGURE_EXCLUDE`, which would turn this exporter off, `MANAGEMENT_OTLP_GRPC_TRACING_ENABLED` and `OTEL_EXPORTER_OTLP_ENDPOINT`.
 - **Trace sampling reads `OTEL_SAMPLING_PROBABILITY`**, the same variable as the Issuer and the Wallet EBW, instead of `OTEL_TRACES_SAMPLER_ARG`, which is the ADOT agent's sampler. Default still `1.0`. Deployments that set `OTEL_TRACES_SAMPLER_ARG` for Spring must rename it.
 - **Masking**: the replacement is `***`, and URL-encoded emails (`%40`), which reach the DEBUG logs in query strings, and authorization codes (`code=` or a JSON `code` field whose value has a digit), `otp`, `id_token` and camelCase token keys are now masked. Unsigned JWTs stay masked. An empty argument array replaces `null` in masked events, and a null MDC no longer fails.
+- **Exceptions and key-value pairs are masked on their way to OpenObserve.** The message, causes and suppressed exceptions now travel masked in `exception.type`, `exception.message` and `exception.stacktrace`, which depend on `captureKeyValuePairAttributes`.
+- **More values are masked**: keys with a prefix or in camelCase (`db_password`, `jwtSecret`, `vp_token`), `pre-authorized_code`, `txCode`, `pin`, `Authorization: Basic`, the disclosures and key binding JWT of an SD-JWT, and the whole of a quoted value with spaces. The email rule has bounded lengths, so a long input stays linear.
 - **Console pattern** moved from `logging.pattern.level` to `logback-spring.xml`, with the same content. The `io.micrometer.registry.otlp` and `io.opentelemetry.exporter` loggers leave DEBUG.
 - The logging classes moved to `shared/config/logging`.
 

@@ -7,9 +7,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 class MaskingPatternLayoutTest {
     private static final String MASK = MaskingPatternLayout.REPLACEMENT;
@@ -632,7 +634,7 @@ class MaskingPatternLayoutTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "error_code=expired_code notsecret=value",
+            "error_code=expired_code",
             "Failed to send a verification code: org.springframework.mail.MailSendException",
             "Failed to resolve name. status=Status{code=UNAVAILABLE, description=Unable to resolve host}",
             "{\"code\":\"invalid_request\"}",
@@ -715,5 +717,69 @@ class MaskingPatternLayoutTest {
         assertThat(MaskingPatternLayout.mask(input))
                 .isEqualTo("Securing GET /error?client_id=" + MASK
                         + "&login_hint=" + MASK + "&response_type=code");
+    }
+
+    // ─── mask() – review findings ─────────────────────────────────────────────
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "wallet_access_token=s3cr3tValue",
+            "db_password=s3cr3tValue",
+            "\"db_password\":\"s3cr3tValue\"",
+            "keystorePassword=s3cr3tValue",
+            "jwtSecret=s3cr3tValue",
+            "AUDIT_QUERY_CURSOR_SECRET=s3cr3tValue",
+            "pre-authorized_code=s3cr3tValue",
+            "\"pre-authorized_code\":\"s3cr3tValue\"",
+            "preAuthorizedCode=s3cr3tValue",
+            "Offer[txCode=s3cr3tValue, length=6]",
+            "pin=s3cr3tValue",
+            "\"tx_pin\":\"s3cr3tValue\"",
+            "vp_token=s3cr3tValue",
+            "\"vp_token\":\"s3cr3tValue\"",
+            "Authorization: Basic s3cr3tValue",
+            "password=\"correct horse s3cr3tValue\""
+    })
+    void mask_SecretUnderAnyKeyForm_MasksTheWholeValue(String input) {
+        assertThat(MaskingPatternLayout.mask(input))
+                .contains(MaskingPatternLayout.REPLACEMENT)
+                .doesNotContain("s3cr3tValue");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "spin=keep",
+            "pin_length=6",
+            "totp_enabled=true",
+            "token_type=Bearer",
+            "error_code=expired_code",
+            "grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code&scope=openid"
+    })
+    void mask_KeyThatIsNotASecret_ReturnsUnchanged(String input) {
+        assertThat(MaskingPatternLayout.mask(input)).isEqualTo(input);
+    }
+
+    @Test
+    void mask_SdJwtWithDisclosuresAndKeyBinding_MasksEverySegment() {
+        String sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln"
+                + "~WyJzYWx0IiwiZ2l2ZW5fbmFtZSIsIkpvaG4iXQ"
+                + "~eyJ0eXAiOiJrYitqd3QifQ.eyJub25jZSI6IngifQ.a2Jz";
+
+        assertThat(MaskingPatternLayout.mask(sdJwt)).isEqualTo(MaskingPatternLayout.REPLACEMENT);
+    }
+
+    @Test
+    void mask_JwtWithEmptySignatureSegment_MasksToken() {
+        assertThat(MaskingPatternLayout.mask("eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0."))
+                .isEqualTo(MaskingPatternLayout.REPLACEMENT);
+    }
+
+    @Test
+    void mask_LongRunOfEmailCharactersWithoutAtSign_StaysLinear() {
+        String input = "a".repeat(100_000);
+
+        String result = assertTimeout(Duration.ofSeconds(2), () -> MaskingPatternLayout.mask(input));
+
+        assertThat(result).isEqualTo(input);
     }
 }
