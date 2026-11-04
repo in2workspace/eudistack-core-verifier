@@ -8,6 +8,7 @@ import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -102,6 +103,44 @@ class SsoSessionAuthenticationSuccessHandlerTest {
         ArgumentCaptor<SsoSessionCommand> captor = ArgumentCaptor.forClass(SsoSessionCommand.class);
         verify(establishSsoSessionWorkflow).execute(captor.capture());
         assertSame(loginAuthentication, captor.getValue().authentication());
+    }
+
+    @Test
+    void onAuthenticationSuccess_browserWithASessionCookie_commandCarriesItsSession() throws Exception {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getCookies()).thenReturn(new Cookie[]{
+                new Cookie("__Host-sso-tx", "binding"),
+                new Cookie("__Secure-sso-tenant-a", "session-of-holder-a")});
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(Map.of(
+                "tenant", "tenant-a",
+                "holderHash", "holder-b",
+                "clientId", "client-a"
+        ));
+
+        handler.onAuthenticationSuccess(request, mock(HttpServletResponse.class), authentication);
+
+        ArgumentCaptor<SsoSessionCommand> captor = ArgumentCaptor.forClass(SsoSessionCommand.class);
+        verify(establishSsoSessionWorkflow).execute(captor.capture());
+        assertEquals("session-of-holder-a", captor.getValue().browserSessionId());
+    }
+
+    @Test
+    void onAuthenticationSuccess_browserWithTheCookieOfAnotherTenant_commandCarriesNoSession() throws Exception {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("__Secure-sso-tenant-b", "session-of-tenant-b")});
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(Map.of(
+                "tenant", "tenant-a",
+                "holderHash", "holder-b",
+                "clientId", "client-a"
+        ));
+
+        handler.onAuthenticationSuccess(request, mock(HttpServletResponse.class), authentication);
+
+        ArgumentCaptor<SsoSessionCommand> captor = ArgumentCaptor.forClass(SsoSessionCommand.class);
+        verify(establishSsoSessionWorkflow).execute(captor.capture());
+        assertNull(captor.getValue().browserSessionId());
     }
 
     @Test

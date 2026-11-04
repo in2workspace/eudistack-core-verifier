@@ -11,6 +11,7 @@ import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -77,7 +78,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 vpData.holderHash(),
                 vpData.clientId(),
                 correlationId,
-                vpData.authentication()
+                vpData.authentication(),
+                browserSessionId(request, vpData.tenantSlug())
         );
 
         try {
@@ -182,6 +184,20 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 authentication.getName(),
                 null
         );
+    }
+
+    private static String browserSessionId(HttpServletRequest request, String tenantSlug) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null || tenantSlug == null) {
+            return null;
+        }
+        String name = SsoSessionCookieFactory.cookieName(tenantSlug);
+        for (Cookie cookie : cookies) {
+            if (name.equals(cookie.getName()) && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 
     private static AuthenticationResult authenticationOf(Map<?, ?> map) {

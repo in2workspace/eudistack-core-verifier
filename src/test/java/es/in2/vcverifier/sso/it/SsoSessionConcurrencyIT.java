@@ -92,7 +92,7 @@ class SsoSessionConcurrencyIT {
 
             // THEN (invariante EC-02)
             verify(sessionRepositoryPort, atMost(2))
-                    .supersedeActive(eq(tenant), anyString());
+                    .supersedeActive(eq(tenant), anyString(), any());
 
             verify(sessionRepositoryPort, times(2)).save(any());
 

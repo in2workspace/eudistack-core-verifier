@@ -20,6 +20,7 @@ import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -148,6 +150,18 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
         verify(sessionRepositoryPort).save(sessionCaptor.capture());
         assertEquals(new SsoSessionAuthentication(LoginMethod.WALLET, null, List.of("pop"), null),
                 sessionCaptor.getValue().getAuthentication());
+    }
+
+    @Test
+    void execute_supersedesTheHolderAndTheBrowserSessionBeforeSaving() {
+        when(credentialCipherPort.encrypt(anyString(), anyString(), anyString())).thenReturn(new byte[]{1});
+
+        workflow.execute(new SsoSessionCommand(TENANT, SUB, "client-a", "corr-6",
+                credential("{\"vc\":\"claims\"}"), "session-of-holder-a"));
+
+        InOrder inOrder = inOrder(sessionRepositoryPort);
+        inOrder.verify(sessionRepositoryPort).supersedeActive(TENANT, HASHED_SUB, "session-of-holder-a");
+        inOrder.verify(sessionRepositoryPort).save(any());
     }
 
     @Test

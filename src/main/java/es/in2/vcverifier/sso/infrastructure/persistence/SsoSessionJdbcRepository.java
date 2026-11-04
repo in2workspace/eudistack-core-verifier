@@ -178,7 +178,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
                     log.info("Unique active session exists for tenant={} holderHash={}... - attempting supersede and retry",
                             session.getTenant(), prefix8(session.getHolderHash()));
-                    supersedeActiveInConnection(c, session.getTenant(), session.getHolderHash());
+                    supersedeActiveInConnection(c, session.getTenant(), session.getHolderHash(), null);
 
                     try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
                         bindSession(c, ps2, session);
@@ -375,13 +375,13 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     // =========================================================
 
     @Override
-    public void supersedeActive(String tenant, String holderHash) {
+    public void supersedeActive(String tenant, String holderHash, String browserSessionId) {
         ensureTenantSafe(tenant);
         checkCircuit();
 
         try {
             inTransaction(c -> {
-                supersedeActiveInConnection(c, tenant, holderHash);
+                supersedeActiveInConnection(c, tenant, holderHash, browserSessionId);
                 recordSuccess();
                 return null;
             });
@@ -392,17 +392,19 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     /** Supersede within an already-open connection/transaction — reused by {@link #save} retry path. */
-    private void supersedeActiveInConnection(Connection c, String tenant, String holderHash) throws SQLException {
+    private void supersedeActiveInConnection(Connection c, String tenant, String holderHash, String browserSessionId)
+            throws SQLException {
         String sql = """
             UPDATE sso_session
             SET state = 'SUPERSEDED'
             WHERE tenant = ?
-              AND holder_hash = ?
               AND state = 'ACTIVE'
+              AND (holder_hash = ? OR id = ?)
         """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, tenant);
             ps.setString(2, holderHash);
+            ps.setString(3, browserSessionId);
             int updated = ps.executeUpdate();
             // B6: NFR-S-547-02 — 8-char prefix of holder hash only
             log.info("Superseded {} rows for tenant={} holderHash={}...", updated, tenant, prefix8(holderHash));

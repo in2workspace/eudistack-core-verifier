@@ -78,7 +78,7 @@ class EstablishSsoSessionPersistenceFailureIT {
         when(hashingService.sha256(any())).thenReturn("hash-123");
 
         // fallo SOLO en save (no en supersedeActive)
-        doNothing().when(repository).supersedeActive(any(), any());
+        doNothing().when(repository).supersedeActive(any(), any(), any());
         doThrow(new RuntimeException("DB down"))
                 .when(repository).save(any());
 
@@ -94,7 +94,7 @@ class EstablishSsoSessionPersistenceFailureIT {
                         event.getTenant().equals("tenant-a")
         ));
 
-        verify(repository).supersedeActive(eq("tenant-a"), any());
+        verify(repository).supersedeActive(eq("tenant-a"), any(), any());
         verify(repository).save(any());
 
         verifyNoMoreInteractions(repository);

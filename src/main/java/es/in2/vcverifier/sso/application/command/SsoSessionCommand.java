@@ -7,9 +7,15 @@ public record SsoSessionCommand(
         String sub,
         String clientId,
         String correlationId,
-        AuthenticationResult authentication
+        AuthenticationResult authentication,
+        String browserSessionId
 ) {
+    public SsoSessionCommand(String tenant, String sub, String clientId, String correlationId,
+                             AuthenticationResult authentication) {
+        this(tenant, sub, clientId, correlationId, authentication, null);
+    }
+
     public SsoSessionCommand(String tenant, String sub, String clientId, String correlationId) {
-        this(tenant, sub, clientId, correlationId, null);
+        this(tenant, sub, clientId, correlationId, null, null);
     }
 }

@@ -70,7 +70,7 @@ public class EstablishSsoSessionWorkflow {
         SsoSession session;
 
         try {
-            sessionRepositoryPort.supersedeActive(command.tenant(), holderHash);
+            sessionRepositoryPort.supersedeActive(command.tenant(), holderHash, command.browserSessionId());
 
             session = SsoSession.establish(
                     command.tenant(),
