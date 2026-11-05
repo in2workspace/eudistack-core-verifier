@@ -77,6 +77,16 @@ class OAuth2M2MAuditAdapterTest {
     }
 
     @Test
+    void publish_blankCorrelationId_stagesWithoutItInsteadOfFailingTheAuthentication() {
+        // Arrange & Act
+        adapter.publish(event("machine-1", "ACCEPT", null, " "));
+
+        // Assert
+        assertEquals(1, auditTrail.stagedInNewTransaction().size());
+        assertTrue(auditTrail.correlationIds().isEmpty());
+    }
+
+    @Test
     void publish_rejectedSystem_stagesSystemAuthenticatedDeniedInvalidAttestation() {
         // Arrange & Act
         adapter.publish(event("machine-1", "REJECT", "invalid_proof_of_possession", UUID.randomUUID().toString()));

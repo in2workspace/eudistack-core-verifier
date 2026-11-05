@@ -37,7 +37,7 @@ public class OAuth2M2MAuditAdapter implements OAuth2M2MAuditPort {
     }
 
     private void stage(OAuth2M2MAuditEvent event, AuditEntry entry) {
-        if (event.getCorrelationId() == null) {
+        if (event.getCorrelationId() == null || event.getCorrelationId().isBlank()) {
             auditTrail.stageBestEffort(entry);
             return;
         }
