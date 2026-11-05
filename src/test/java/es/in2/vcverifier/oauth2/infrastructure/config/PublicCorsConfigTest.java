@@ -82,7 +82,7 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Certificate login allows only the login origin of its tenant, with credentials, POST and JSON")
     void getCorsConfiguration_certificateLogin_allowsOnlyTheLoginOriginOfItsTenant() {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
+        MockHttpServletRequest request = certificatePortRequest();
         request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
 
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
@@ -101,7 +101,7 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Certificate login allows no origin for a tenant without certificate login")
     void getCorsConfiguration_certificateLoginOfAnotherTenant_allowsNoOrigin() {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
+        MockHttpServletRequest request = certificatePortRequest();
         request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "kpmg");
 
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
@@ -114,12 +114,25 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Certificate login allows no origin when the request has no tenant")
     void getCorsConfiguration_certificateLoginWithoutTenant_allowsNoOrigin() {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
+        MockHttpServletRequest request = certificatePortRequest();
 
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
 
         assertNotNull(corsConfig);
         assertNull(corsConfig.checkOrigin("https://cgcom.example.com"));
+    }
+
+    @Test
+    @DisplayName("The certificate login path outside the certificate port gets the public config")
+    void getCorsConfiguration_certificateLoginPathOnAnotherPort_returnsWildcardConfig() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
+        request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertEquals(List.of("*"), corsConfig.getAllowedOriginPatterns());
+        assertEquals(Boolean.FALSE, corsConfig.getAllowCredentials());
     }
 
     @Test
@@ -223,5 +236,11 @@ class PublicCorsConfigTest {
 
         assertNotNull(corsConfig);
         assertFalse(Boolean.TRUE.equals(corsConfig.getAllowCredentials()));
+    }
+
+    private static MockHttpServletRequest certificatePortRequest() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
+        request.setLocalPort(CertificateLoginProperties.DEFAULT_PORT);
+        return request;
     }
 }

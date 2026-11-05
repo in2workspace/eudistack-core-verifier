@@ -1,6 +1,5 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
 
-import es.in2.vcverifier.shared.config.CertificatePortFilter;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,7 +11,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.util.UrlPathHelper;
 
 import java.util.List;
 
@@ -70,9 +68,8 @@ public class PublicCorsConfig {
                 : source.getCorsConfiguration(request);
     }
 
-    private static boolean isCertificateLogin(HttpServletRequest request) {
-        return CertificatePortFilter.CERTIFICATE_LOGIN_PATH.equals(
-                UrlPathHelper.defaultInstance.getLookupPathForRequest(request));
+    private boolean isCertificateLogin(HttpServletRequest request) {
+        return request.getLocalPort() == certificateLoginProperties.port();
     }
 
     private CorsConfiguration certificateLoginCorsConfiguration(HttpServletRequest request) {
