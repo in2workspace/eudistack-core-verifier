@@ -212,21 +212,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             }
             return;
         }
-        List<LoginMethod> clientLoginMethods = clientLoginMethods(registeredClient);
-        boolean attestationScopes = dcqlProfileResolver.requestsAttestation(scopesOf(authorizationContext.scope()));
-        // The reuse path issues a code without building an OID4VP request, so the scope check that
-        // buildAuthorizationRequest does for the QR path has to run here first. A client that offers
-        // the certificate may ask for no attestation at all.
-        if (attestationScopes || !clientLoginMethods.contains(LoginMethod.X509)) {
-            authorizationRequestBuildWorkflow.validateScope(authorizationContext.scope());
-        }
-        RequestedAssuranceLevel requestedLevel = parameters.requestedLevel();
-        AuthorizationContext ctx = authorizationContext.toBuilder()
-                .maxAge(parameters.maxAge())
-                .loginMethods(clientLoginMethods)
-                .essentialLevel(requestedLevel != null && requestedLevel.essential() ? requestedLevel.level() : null)
-                .attestationScopes(attestationScopes)
-                .build();
+        AuthorizationContext ctx = reuseContext(authorizationContext, registeredClient, parameters);
 
         ReuseSsoSessionWorkflow.Result result = prompt.isNone()
                 ? reuseSsoSession(request, ctx, tenant, clientId)
@@ -243,6 +229,25 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         }
         log.debug("event=sso_reuse_skipped tenant={} clientId={} reason={}", tenant, clientId,
                 status != null ? status : "reuse_failed");
+    }
+
+    private AuthorizationContext reuseContext(AuthorizationContext authorizationContext,
+                                              RegisteredClient registeredClient, AuthenticationParameters parameters) {
+        List<LoginMethod> clientLoginMethods = clientLoginMethods(registeredClient);
+        boolean attestationScopes = dcqlProfileResolver.requestsAttestation(scopesOf(authorizationContext.scope()));
+        // The reuse path issues a code without building an OID4VP request, so the scope check that
+        // buildAuthorizationRequest does for the QR path has to run here first. A client that offers
+        // the certificate may ask for no attestation at all.
+        if (attestationScopes || !clientLoginMethods.contains(LoginMethod.X509)) {
+            authorizationRequestBuildWorkflow.validateScope(authorizationContext.scope());
+        }
+        RequestedAssuranceLevel requestedLevel = parameters.requestedLevel();
+        return authorizationContext.toBuilder()
+                .maxAge(parameters.maxAge())
+                .loginMethods(clientLoginMethods)
+                .essentialLevel(requestedLevel != null && requestedLevel.essential() ? requestedLevel.level() : null)
+                .attestationScopes(attestationScopes)
+                .build();
     }
 
     private ReuseSsoSessionWorkflow.Result reuseSsoSession(HttpServletRequest request, AuthorizationContext ctx,
@@ -685,25 +690,14 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                     Instant.now().plusSeconds(loginSelectionTimeoutSeconds).getEpochSecond());
         }
 
-        String nonce = authorizationContext.clientNonce();
-        if (nonce != null && !nonce.isBlank()) {
-            additionalParameters.put(NONCE, nonce);
-        }
-        String codeChallenge = authorizationContext.codeChallenge();
-        if (codeChallenge != null && !codeChallenge.isBlank()) {
-            additionalParameters.put(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
-        }
-        String codeChallengeMethod = authorizationContext.codeChallengeMethod();
-        if (codeChallengeMethod != null && !codeChallengeMethod.isBlank()) {
-            additionalParameters.put(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
-        }
+        putIfNotBlank(additionalParameters, NONCE, authorizationContext.clientNonce());
+        putIfNotBlank(additionalParameters, PkceParameterNames.CODE_CHALLENGE, authorizationContext.codeChallenge());
+        putIfNotBlank(additionalParameters, PkceParameterNames.CODE_CHALLENGE_METHOD,
+                authorizationContext.codeChallengeMethod());
         if (loginBinding.browserBindingHash() != null) {
             additionalParameters.put(BROWSER_BINDING_HASH, loginBinding.browserBindingHash());
         }
-        String accessProfile = authorizationContext.accessProfile();
-        if (accessProfile != null && !accessProfile.isBlank()) {
-            additionalParameters.put(ACCESS_PROFILE, accessProfile);
-        }
+        putIfNotBlank(additionalParameters, ACCESS_PROFILE, authorizationContext.accessProfile());
         if (loginBinding.tenant() != null) {
             additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());
         }
@@ -734,6 +728,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 registeredClient.getClientName(), UUID.randomUUID().toString(),
                 authorizationContext.originalRequestURL(), authorizationContext.portalUrl(),
                 authorizationContext.contextPath());
+    }
+
+    private static void putIfNotBlank(Map<String, Object> parameters, String name, String value) {
+        if (value != null && !value.isBlank()) {
+            parameters.put(name, value);
+        }
     }
 
     private static boolean isSameBrowserRetry(OAuth2AuthorizationRequest existing, OAuth2AuthorizationRequest candidate) {
