@@ -115,7 +115,7 @@ public class ClientCertificateReader {
                     .filter(value -> !value.isBlank())
                     .findFirst()
                     .orElse(null);
-        } catch (CertificateParsingException e) {
+        } catch (CertificateParsingException _) {
             return null;
         }
     }

@@ -31,6 +31,8 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,17 +51,20 @@ class DssCertificateTrustValidationAdapterTest {
     private final AtomicReference<String> receivedBody = new AtomicReference<>();
     private volatile int status = 200;
     private volatile String responseBody = PASSED_WITH_QSCD;
-    private volatile long delayMillis;
+    private volatile boolean answerLate;
+    private final CountDownLatch releaseLateAnswer = new CountDownLatch(1);
 
     @BeforeEach
     void startDss() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/dss" + DssCertificateTrustValidationAdapter.VALIDATE_CERTIFICATE_PATH, exchange -> {
             receivedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            try {
-                Thread.sleep(delayMillis);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            if (answerLate) {
+                try {
+                    releaseLateAnswer.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException _) {
+                    Thread.currentThread().interrupt();
+                }
             }
             byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -72,6 +77,7 @@ class DssCertificateTrustValidationAdapterTest {
 
     @AfterEach
     void stopDss() {
+        releaseLateAnswer.countDown();
         server.stop(0);
     }
 
@@ -116,7 +122,7 @@ class DssCertificateTrustValidationAdapterTest {
 
     @Test
     void validate_noAnswerWithinTheTimeout_isUnavailable() throws Exception {
-        delayMillis = 1_000;
+        answerLate = true;
 
         assertThat(adapter(Duration.ofMillis(200)).validate(certificate(false), List.of()))
                 .isEqualTo(new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));

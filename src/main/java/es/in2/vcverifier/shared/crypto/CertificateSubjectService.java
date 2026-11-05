@@ -2,7 +2,7 @@ package es.in2.vcverifier.shared.crypto;
 
 import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Base64;
 
-@Component
+@Service
 public class CertificateSubjectService {
 
     public static final String SUBJECT_KEY_PROPERTY = "verifier.certificate-login.subject-key";

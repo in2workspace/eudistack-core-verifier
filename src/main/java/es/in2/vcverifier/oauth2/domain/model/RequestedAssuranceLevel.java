@@ -12,11 +12,11 @@ import java.util.stream.Stream;
 
 public record RequestedAssuranceLevel(AssuranceLevel level, boolean essential) {
 
-    private static final String ID_TOKEN = "id_token";
-    private static final String ACR = "acr";
-    private static final String ESSENTIAL = "essential";
-    private static final String VALUE = "value";
-    private static final String VALUES = "values";
+    private static final String ID_TOKEN_MEMBER = "id_token";
+    private static final String ACR_MEMBER = "acr";
+    private static final String ESSENTIAL_MEMBER = "essential";
+    private static final String VALUE_MEMBER = "value";
+    private static final String VALUES_MEMBER = "values";
 
     public RequestedAssuranceLevel {
         Objects.requireNonNull(level, "level");
@@ -32,21 +32,21 @@ public record RequestedAssuranceLevel(AssuranceLevel level, boolean essential) {
     }
 
     private static Optional<RequestedAssuranceLevel> fromClaims(Map<String, Object> claims) {
-        if (claims == null || claims.get(ID_TOKEN) == null) {
+        if (claims == null || claims.get(ID_TOKEN_MEMBER) == null) {
             return Optional.empty();
         }
-        if (!(claims.get(ID_TOKEN) instanceof Map<?, ?> idToken)) {
+        if (!(claims.get(ID_TOKEN_MEMBER) instanceof Map<?, ?> idToken)) {
             throw new IllegalArgumentException("claims.id_token must be an object");
         }
-        Object acr = idToken.get(ACR);
+        Object acr = idToken.get(ACR_MEMBER);
         if (acr == null) {
             return Optional.empty();
         }
         if (!(acr instanceof Map<?, ?> acrRequest)) {
             throw new IllegalArgumentException("claims.id_token.acr must be an object or null");
         }
-        boolean essential = essential(acrRequest.get(ESSENTIAL));
-        return lowestLevel(Stream.concat(singleValue(acrRequest.get(VALUE)), multipleValues(acrRequest.get(VALUES))))
+        boolean essential = essential(acrRequest.get(ESSENTIAL_MEMBER));
+        return lowestLevel(Stream.concat(singleValue(acrRequest.get(VALUE_MEMBER)), multipleValues(acrRequest.get(VALUES_MEMBER))))
                 .map(level -> new RequestedAssuranceLevel(level, essential));
     }
 

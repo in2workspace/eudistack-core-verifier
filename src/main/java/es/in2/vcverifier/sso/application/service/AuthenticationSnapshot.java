@@ -32,7 +32,7 @@ public final class AuthenticationSnapshot {
         switch (authentication) {
             case CredentialAuthentication credential -> {
                 snapshot.put(TYPE, CREDENTIAL);
-                snapshot.set("credential", credential.credential());
+                snapshot.set(CREDENTIAL, credential.credential());
             }
             case CertificateAuthentication certificate -> {
                 snapshot.put(TYPE, CERTIFICATE);
@@ -67,7 +67,7 @@ public final class AuthenticationSnapshot {
         JsonNode snapshot;
         try {
             snapshot = MAPPER.readTree(json);
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException _) {
             return Optional.empty();
         }
         if (snapshot == null || !snapshot.isObject()) {
@@ -80,11 +80,11 @@ public final class AuthenticationSnapshot {
         try {
             return switch (type.asText()) {
                 case CREDENTIAL -> Optional.of(new CredentialAuthentication(
-                        snapshot.get("credential"), acr(snapshot), authTime(snapshot, establishedAt)));
+                        snapshot.get(CREDENTIAL), acr(snapshot), authTime(snapshot, establishedAt)));
                 case CERTIFICATE -> Optional.of(certificate(snapshot, establishedAt));
                 default -> Optional.empty();
             };
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             return Optional.empty();
         }
     }

@@ -96,7 +96,7 @@ final class DssReportTranslator {
         }
         try {
             return Instant.parse(value);
-        } catch (DateTimeParseException e) {
+        } catch (DateTimeParseException _) {
             return null;
         }
     }

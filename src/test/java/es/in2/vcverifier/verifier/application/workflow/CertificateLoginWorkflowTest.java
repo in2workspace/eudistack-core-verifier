@@ -72,8 +72,10 @@ class CertificateLoginWorkflowTest {
     @Mock
     private SsoLoginCompletionWorkflow ssoLoginCompletionWorkflow;
 
-    private final X509Certificate leaf = mock(X509Certificate.class);
-    private final X509Certificate issuer = mock(X509Certificate.class);
+    @Mock
+    private X509Certificate leaf;
+    @Mock
+    private X509Certificate issuer;
     private CertificateLoginWorkflow workflow;
 
     @BeforeEach

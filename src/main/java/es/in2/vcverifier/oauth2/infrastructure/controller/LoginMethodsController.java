@@ -73,8 +73,8 @@ public class LoginMethodsController {
         return switch (result) {
             case WalletRequestResult.Created created ->
                     ResponseEntity.ok(new WalletRequestResponse(created.authRequest(), created.expiresIn()));
-            case WalletRequestResult.LoginNotFound ignored -> error(HttpStatus.NOT_FOUND, LOGIN_NOT_FOUND);
-            case WalletRequestResult.MethodNotOffered ignored -> error(HttpStatus.CONFLICT, METHOD_NOT_OFFERED);
+            case WalletRequestResult.LoginNotFound _ -> error(HttpStatus.NOT_FOUND, LOGIN_NOT_FOUND);
+            case WalletRequestResult.MethodNotOffered _ -> error(HttpStatus.CONFLICT, METHOD_NOT_OFFERED);
         };
     }
 

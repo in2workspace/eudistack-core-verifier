@@ -329,7 +329,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     @SuppressWarnings("unchecked")
     private static Map<String, Object> toClaimsObject(Object rawClaims) throws ParseException {
         if (rawClaims == null || (rawClaims instanceof String s && s.isBlank())) {
-            return null;
+            return Map.of();
         }
         if (rawClaims instanceof String json) {
             return JSONObjectUtils.parse(json);

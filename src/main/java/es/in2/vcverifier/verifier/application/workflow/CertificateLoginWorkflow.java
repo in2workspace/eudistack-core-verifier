@@ -68,7 +68,7 @@ public class CertificateLoginWorkflow {
         List<X509Certificate> chain;
         try {
             chain = clientCertificateReader.readChain(certificateHeader);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             log.warn("event=certificate_login_unreadable_certificate clientId={}", sanitize(login.get().getClientId()));
             return rejected(CertificateLoginReason.CERTIFICATE_MISSING);
         }
@@ -104,7 +104,7 @@ public class CertificateLoginWorkflow {
             log.info("event=certificate_login_completed clientId={} level={}",
                     sanitize(issued.get().clientId()), trusted.level().name());
             return new Outcome.Completed(redirectUri);
-        } catch (LoginCompletionUnavailableException e) {
+        } catch (LoginCompletionUnavailableException _) {
             return rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
         }
     }

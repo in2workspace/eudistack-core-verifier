@@ -62,7 +62,7 @@ public class DssCertificateTrustValidationAdapter implements CertificateTrustVal
                     hasOrganizationIdentifier(certificate), clock.instant(), trustValidationProperties.maxListAge());
             log.info("event=trust_validation_done result={}", describe(trust));
             return trust;
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             log.warn("event=trust_validation_interrupted");
             return new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);

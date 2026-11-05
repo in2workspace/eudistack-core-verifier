@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -18,6 +20,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PublicCorsConfig {
 
+    private static final List<String> PUBLIC_ALLOWED_HEADERS =
+            List.of(HttpHeaders.CONTENT_TYPE, HttpHeaders.AUTHORIZATION, HttpHeaders.CACHE_CONTROL);
+
     private final CertificateLoginProperties certificateLoginProperties;
 
     @Bean
@@ -26,8 +31,8 @@ public class PublicCorsConfig {
         // Configure public endpoints
         CorsConfiguration publicConfig = new CorsConfiguration();
         publicConfig.setAllowedOriginPatterns(List.of("*")); //NOSONAR: CORS Config is intentional to allow access to all Wallets
-        publicConfig.setAllowedMethods(List.of("GET", "POST"));
-        publicConfig.setAllowedHeaders(List.of("Content-Type", "Authorization", "Cache-Control"));
+        publicConfig.setAllowedMethods(List.of(HttpMethod.GET.name(), HttpMethod.POST.name()));
+        publicConfig.setAllowedHeaders(PUBLIC_ALLOWED_HEADERS);
         publicConfig.setAllowCredentials(false);
         source.registerCorsConfiguration("/health", publicConfig);
         source.registerCorsConfiguration("/.well-known/**", publicConfig);
@@ -56,8 +61,8 @@ public class PublicCorsConfig {
         // forbids pairing with credentials (setAllowedOrigins("*") would not work here).
         CorsConfiguration authResponseConfig = new CorsConfiguration();
         authResponseConfig.setAllowedOriginPatterns(List.of("*")); //NOSONAR: any wallet must be able to call this, see comment above
-        authResponseConfig.setAllowedMethods(List.of("POST"));
-        authResponseConfig.setAllowedHeaders(List.of("Content-Type", "Authorization", "Cache-Control"));
+        authResponseConfig.setAllowedMethods(List.of(HttpMethod.POST.name()));
+        authResponseConfig.setAllowedHeaders(PUBLIC_ALLOWED_HEADERS);
         authResponseConfig.setAllowCredentials(true);
         source.registerCorsConfiguration("/oid4vp/auth-response", authResponseConfig);
         return request -> isCertificateLogin(request)
@@ -77,8 +82,8 @@ public class PublicCorsConfig {
         if (entry != null) {
             certificateConfig.setAllowedOrigins(List.of(entry.loginOrigin()));
         }
-        certificateConfig.setAllowedMethods(List.of("POST"));
-        certificateConfig.setAllowedHeaders(List.of("Content-Type"));
+        certificateConfig.setAllowedMethods(List.of(HttpMethod.POST.name()));
+        certificateConfig.setAllowedHeaders(List.of(HttpHeaders.CONTENT_TYPE));
         certificateConfig.setAllowCredentials(true);
         return certificateConfig;
     }
