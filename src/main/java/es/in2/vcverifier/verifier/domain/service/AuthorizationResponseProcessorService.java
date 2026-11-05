@@ -1,6 +1,5 @@
 package es.in2.vcverifier.verifier.domain.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;

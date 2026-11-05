@@ -1,6 +1,5 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;

@@ -1,6 +1,5 @@
 package es.in2.vcverifier.sso.it;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
