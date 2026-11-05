@@ -3,6 +3,7 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.trustvalidation;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.CertificateLoginReason;
 import es.in2.vcverifier.verifier.domain.model.CertificateTrust;
 import es.in2.vcverifier.verifier.domain.port.CertificateTrustValidationPort;
@@ -96,8 +97,8 @@ public class DssCertificateTrustValidationAdapter implements CertificateTrustVal
 
     private static String describe(CertificateTrust trust) {
         return switch (trust) {
-            case CertificateTrust.Trusted trusted -> "trusted level=" + trusted.level().name();
-            case CertificateTrust.Rejected rejected -> rejected.reason().value();
+            case CertificateTrust.Trusted(AssuranceLevel level, _) -> "trusted level=" + level.name();
+            case CertificateTrust.Rejected(CertificateLoginReason reason) -> reason.value();
         };
     }
 

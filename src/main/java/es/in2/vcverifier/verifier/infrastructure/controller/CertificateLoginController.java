@@ -52,9 +52,9 @@ public class CertificateLoginController {
                 TenantDomainFilter.getCurrentTenant(request),
                 request.getHeader(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER));
         return switch (outcome) {
-            case Outcome.Completed completed -> ResponseEntity.ok(new CertificateLoginResponse(completed.redirectUri()));
-            case Outcome.Rejected rejected -> ResponseEntity.status(status(rejected.reason()))
-                    .body(new ErrorResponse(rejected.reason().value()));
+            case Outcome.Completed(String redirectUri) -> ResponseEntity.ok(new CertificateLoginResponse(redirectUri));
+            case Outcome.Rejected(CertificateLoginReason reason) -> ResponseEntity.status(status(reason))
+                    .body(new ErrorResponse(reason.value()));
         };
     }
 

@@ -71,8 +71,8 @@ public class LoginMethodsController {
             HttpServletRequest request) {
         WalletRequestResult result = loginMethodsWorkflow.startWallet(state, TenantDomainFilter.getCurrentTenant(request));
         return switch (result) {
-            case WalletRequestResult.Created created ->
-                    ResponseEntity.ok(new WalletRequestResponse(created.authRequest(), created.expiresIn()));
+            case WalletRequestResult.Created(String authRequest, long expiresIn) ->
+                    ResponseEntity.ok(new WalletRequestResponse(authRequest, expiresIn));
             case WalletRequestResult.LoginNotFound _ -> error(HttpStatus.NOT_FOUND, LOGIN_NOT_FOUND);
             case WalletRequestResult.MethodNotOffered _ -> error(HttpStatus.CONFLICT, METHOD_NOT_OFFERED);
         };

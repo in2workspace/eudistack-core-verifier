@@ -71,7 +71,7 @@ public class CertificateLoginWorkflow {
         }
 
         CertificateTrust trust = certificateTrustValidationPort.validate(chain.getFirst(), chain.subList(1, chain.size()));
-        if (!(trust instanceof CertificateTrust.Trusted trusted)) {
+        if (!(trust instanceof CertificateTrust.Trusted(AssuranceLevel level, List<String> amr))) {
             return rejected(((CertificateTrust.Rejected) trust).reason());
         }
 
@@ -81,14 +81,14 @@ public class CertificateLoginWorkflow {
             log.warn("event=certificate_login_without_number clientId={}", sanitize(login.get().getClientId()));
             return rejected(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED);
         }
-        if (!meetsEssentialLevel(login.get(), trusted.level())) {
+        if (!meetsEssentialLevel(login.get(), level)) {
             return rejected(CertificateLoginReason.LEVEL_NOT_MET);
         }
 
         String subject = certificateSubjectService.subject(tenant, identity.country(), identity.personalAdministrativeNumber());
         CertificateAuthentication authentication = new CertificateAuthentication(subject, identity,
                 certificate.issuer(), certificate.fingerprintSha256(), certificate.notAfter(),
-                trusted.level(), trusted.amr(), clock.instant());
+                level, amr, clock.instant());
 
         Optional<AuthResponseResult> issued =
                 authorizationResponseProcessorService.issueCodeForCertificateLogin(state, tenant, authentication);
@@ -99,7 +99,7 @@ public class CertificateLoginWorkflow {
             String redirectUri = ssoLoginCompletionWorkflow.resolveBrowserRedirect(
                     tenant, issued.get(), () -> subject, UUID.randomUUID().toString());
             log.info("event=certificate_login_completed clientId={} level={}",
-                    sanitize(issued.get().clientId()), trusted.level().name());
+                    sanitize(issued.get().clientId()), level.name());
             return new Outcome.Completed(redirectUri);
         } catch (LoginCompletionUnavailableException _) {
             return rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
