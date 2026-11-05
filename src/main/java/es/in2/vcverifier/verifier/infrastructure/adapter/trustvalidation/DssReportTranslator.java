@@ -51,9 +51,9 @@ final class DssReportTranslator {
             case PASSED -> fromQualification(text(certificate.path("qualificationAtValidation")),
                     subjectHasOrganizationIdentifier);
             case FAILED -> rejected(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED);
-            case INDETERMINATE -> NO_CERTIFICATE_CHAIN_FOUND.equals(subIndication)
-                    ? rejected(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED)
-                    : rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
+            case INDETERMINATE -> rejected(NO_CERTIFICATE_CHAIN_FOUND.equals(subIndication)
+                    ? CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED
+                    : CertificateLoginReason.VALIDATION_UNAVAILABLE);
             default -> rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
         };
     }

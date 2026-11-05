@@ -246,7 +246,7 @@ class ReuseSsoSessionWorkflowImpl_CredentialSnapshotTest {
     }
 
     @Test
-    void reuse_typedWalletSnapshot_issuesTheCodeWithItsCredential() throws Exception {
+    void reuse_typedWalletSnapshot_issuesTheCodeWithItsCredential() {
         String cookieValue = "session-cookie-value";
         byte[] ciphertext = "ciphertext".getBytes(StandardCharsets.UTF_8);
         when(sessionRepository.findActiveById(SsoSessionId.of(cookieValue), TENANT))

@@ -134,8 +134,10 @@ class LoginMethodsWorkflowTest {
             assertThat(created.expiresIn()).isBetween(119L, 120L);
         });
         Map<String, Object> stored = cache.getIfPresent(STATE).getAdditionalParameters();
-        assertThat(stored).containsEntry(VP_NONCE, "vp-nonce").containsEntry(WALLET_AUTH_REQUEST, AUTH_REQUEST);
-        assertThat(stored).containsEntry(LOGIN_METHODS, List.of("x509", "wallet"));
+        assertThat(stored)
+                .containsEntry(VP_NONCE, "vp-nonce")
+                .containsEntry(WALLET_AUTH_REQUEST, AUTH_REQUEST)
+                .containsEntry(LOGIN_METHODS, List.of("x509", "wallet"));
     }
 
     @Test
