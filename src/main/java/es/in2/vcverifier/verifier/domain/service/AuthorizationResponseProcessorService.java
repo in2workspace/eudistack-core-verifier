@@ -4,7 +4,6 @@ import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 
-import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 

@@ -23,6 +23,7 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
@@ -71,19 +72,26 @@ public class ClientLoaderConfig {
         return new InMemoryRegisteredClientRepository(clients);
     }
 
+    private static Optional<List<LoginMethod>> loginMethodsOf(ClientData clientData) {
+        try {
+            return Optional.of(LoginMethod.fromValues(clientData.loginMethods()));
+        } catch (IllegalArgumentException e) {
+            log.error("Client '{}' not loaded: {}", clientData.clientId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     private List<RegisteredClient> retrieveClients() {
         try {
             ExternalTrustedListYamlData clientsYamlData = clientRegistryProvider.retrieveClients();
             List<RegisteredClient> registeredClients = new ArrayList<>();
             Set<String> freshOrigins = new java.util.HashSet<>();
             for (ClientData clientData : clientsYamlData.clients()) {
-                List<LoginMethod> loginMethods;
-                try {
-                    loginMethods = LoginMethod.fromValues(clientData.loginMethods());
-                } catch (IllegalArgumentException e) {
-                    log.error("Client '{}' not loaded: {}", clientData.clientId(), e.getMessage());
+                Optional<List<LoginMethod>> clientLoginMethods = loginMethodsOf(clientData);
+                if (clientLoginMethods.isEmpty()) {
                     continue;
                 }
+                List<LoginMethod> loginMethods = clientLoginMethods.get();
                 // Stable across scheduled refreshClients() reloads: OAuth2Authorization records
                 // (in-memory, no expiry) store this id as registeredClientId, so a fresh random
                 // UUID on every reload would orphan every in-flight authorization/id_token as soon

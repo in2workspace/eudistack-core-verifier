@@ -675,12 +675,12 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         Set<String> scopes = Set.of("openid");
         ObjectNode verifiableCredential = new ObjectMapper().createObjectNode();
-        Instant authTime = Instant.now();
+        CredentialAuthentication authentication = new CredentialAuthentication(verifiableCredential, null, Instant.now());
 
         // When
         assertThrows(IllegalArgumentException.class, () -> authorizationResponseProcessorService.issueCodeForReusedSession(
                 "client-id", redirectUri, scopes, "state-1", null, null, null,
-                new CredentialAuthentication(verifiableCredential, null, authTime), "https://tenant-a.example.com/verifier"));
+                authentication, "https://tenant-a.example.com/verifier"));
 
         // Then: no orphan code left behind
         verify(oAuth2AuthorizationService, never()).save(any());
