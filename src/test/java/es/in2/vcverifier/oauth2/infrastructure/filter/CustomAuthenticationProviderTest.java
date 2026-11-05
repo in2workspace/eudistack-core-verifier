@@ -317,8 +317,11 @@ class CustomAuthenticationProviderTest {
     void userinfo_withoutOpenidScope_isRejected() {
         exchangeCodeForUserInfo("profile", Map.of("sub", "b2f1c3", "name", "NAME"));
 
+        OidcUserInfoAuthenticationProvider userInfoProvider = userInfoProvider();
+        OidcUserInfoAuthenticationToken userInfoRequest = new OidcUserInfoAuthenticationToken(bearer("signed-access-jwt"));
+
         OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
-                () -> userInfoProvider().authenticate(new OidcUserInfoAuthenticationToken(bearer("signed-access-jwt"))));
+                () -> userInfoProvider.authenticate(userInfoRequest));
         assertEquals(OAuth2ErrorCodes.INSUFFICIENT_SCOPE, exception.getError().getErrorCode());
     }
 
@@ -326,8 +329,11 @@ class CustomAuthenticationProviderTest {
     void userinfo_withAnUnknownAccessToken_isRejected() {
         exchangeCodeForUserInfo("openid profile", Map.of("sub", "b2f1c3"));
 
+        OidcUserInfoAuthenticationProvider userInfoProvider = userInfoProvider();
+        OidcUserInfoAuthenticationToken userInfoRequest = new OidcUserInfoAuthenticationToken(bearer("another-access-jwt"));
+
         OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
-                () -> userInfoProvider().authenticate(new OidcUserInfoAuthenticationToken(bearer("another-access-jwt"))));
+                () -> userInfoProvider.authenticate(userInfoRequest));
         assertEquals(OAuth2ErrorCodes.INVALID_TOKEN, exception.getError().getErrorCode());
     }
 

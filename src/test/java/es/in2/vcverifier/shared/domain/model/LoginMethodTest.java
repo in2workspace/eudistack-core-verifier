@@ -33,7 +33,9 @@ class LoginMethodTest {
 
     @Test
     void fromValues_withUnknownValue_namesIt() {
-        assertThatThrownBy(() -> LoginMethod.fromValues(List.of("x509", "clave")))
+        List<String> values = List.of("x509", "clave");
+
+        assertThatThrownBy(() -> LoginMethod.fromValues(values))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("'clave'");
     }

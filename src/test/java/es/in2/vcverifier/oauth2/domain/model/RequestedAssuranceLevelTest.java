@@ -98,34 +98,44 @@ class RequestedAssuranceLevelTest {
 
     @Test
     void from_idTokenNotAnObject_isInvalid() {
-        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, Map.of("id_token", "acr")))
+        Map<String, Object> claims = Map.of("id_token", "acr");
+
+        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, claims))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void from_acrNotAnObject_isInvalid() {
-        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, Map.of("id_token", Map.of("acr", HIGH))))
+        Map<String, Object> claims = Map.of("id_token", Map.of("acr", HIGH));
+
+        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, claims))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void from_essentialNotABoolean_isInvalid() {
-        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null,
-                acrClaim(Map.of("essential", "true", "value", HIGH))))
+        Map<String, Object> claims = acrClaim(Map.of("essential", "true", "value", HIGH));
+
+        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, claims))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void from_valueNotAString_isInvalid() {
-        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, acrClaim(Map.of("value", List.of(HIGH)))))
+        Map<String, Object> claims = acrClaim(Map.of("value", List.of(HIGH)));
+
+        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, claims))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void from_valuesNotAnArrayOfStrings_isInvalid() {
-        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, acrClaim(Map.of("values", HIGH))))
+        Map<String, Object> notAnArray = acrClaim(Map.of("values", HIGH));
+        Map<String, Object> notStrings = acrClaim(Map.of("values", List.of(1)));
+
+        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, notAnArray))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, acrClaim(Map.of("values", List.of(1)))))
+        assertThatThrownBy(() -> RequestedAssuranceLevel.from(null, notStrings))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

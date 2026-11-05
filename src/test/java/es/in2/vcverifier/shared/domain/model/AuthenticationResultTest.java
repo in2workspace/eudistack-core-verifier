@@ -1,6 +1,7 @@
 package es.in2.vcverifier.shared.domain.model;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -36,9 +37,11 @@ class AuthenticationResultTest {
 
     @Test
     void credentialAuthentication_requiresTheCredentialAndTheAuthTime() {
+        ObjectNode credential = JsonNodeFactory.instance.objectNode();
+
         assertThatThrownBy(() -> new CredentialAuthentication(null, null, AUTH_TIME))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new CredentialAuthentication(JsonNodeFactory.instance.objectNode(), null, null))
+        assertThatThrownBy(() -> new CredentialAuthentication(credential, null, null))
                 .isInstanceOf(NullPointerException.class);
     }
 
@@ -56,17 +59,19 @@ class AuthenticationResultTest {
 
     @Test
     void certificateAuthentication_requiresTheSubjectTheIdentityTheLevelAndTheAuthTime() {
+        List<String> amr = List.of("hwk");
+
         assertThatThrownBy(() -> new CertificateAuthentication(
-                null, IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), AUTH_TIME))
+                null, IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, amr, AUTH_TIME))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new CertificateAuthentication(
-                SUBJECT, null, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), AUTH_TIME))
+                SUBJECT, null, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, amr, AUTH_TIME))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new CertificateAuthentication(
-                SUBJECT, IDENTITY, "issuer", "ab12", AUTH_TIME, null, List.of("hwk"), AUTH_TIME))
+                SUBJECT, IDENTITY, "issuer", "ab12", AUTH_TIME, null, amr, AUTH_TIME))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new CertificateAuthentication(
-                SUBJECT, IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, List.of("hwk"), null))
+                SUBJECT, IDENTITY, "issuer", "ab12", AUTH_TIME, AssuranceLevel.HIGH, amr, null))
                 .isInstanceOf(NullPointerException.class);
     }
 
