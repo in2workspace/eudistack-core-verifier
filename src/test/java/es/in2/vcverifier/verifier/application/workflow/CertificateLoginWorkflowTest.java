@@ -148,6 +148,7 @@ class CertificateLoginWorkflowTest {
     @Test
     void login_withoutCertificateHeader_isCertificateMissing() {
         givenOpenLogin(Map.of());
+        when(clientCertificateReader.readChain(null)).thenThrow(new IllegalArgumentException("empty"));
 
         assertThat(workflow.login(STATE, TENANT, null)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_MISSING));
         verifyNoInteractions(certificateTrustValidationPort);

@@ -62,9 +62,6 @@ public class CertificateLoginWorkflow {
         if (login.isEmpty()) {
             return rejected(CertificateLoginReason.LOGIN_NOT_FOUND);
         }
-        if (certificateHeader == null || certificateHeader.isBlank()) {
-            return rejected(CertificateLoginReason.CERTIFICATE_MISSING);
-        }
         List<X509Certificate> chain;
         try {
             chain = clientCertificateReader.readChain(certificateHeader);
