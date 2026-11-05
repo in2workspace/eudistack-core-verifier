@@ -1,5 +1,6 @@
 package es.in2.vcverifier.shared.config;
 
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -10,12 +11,16 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.MDC;
 
+import java.util.Map;
+
 import static es.in2.vcverifier.shared.config.TenantDomainFilter.TENANT_ATTRIBUTE;
 import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class TenantDomainFilterTest {
+
+    private static final int CERTIFICATE_PORT = 8081;
 
     private TenantDomainFilter filter;
     private HttpServletRequest request;
@@ -24,10 +29,80 @@ class TenantDomainFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new TenantDomainFilter();
+        filter = new TenantDomainFilter(new CertificateLoginProperties(CERTIFICATE_PORT, Map.of(
+                "cgcom", new CertificateLoginProperties.Tenant(
+                        "login-cgcom.certificados.example.com", "https://cgcom.example.com"))));
         request = mock(HttpServletRequest.class);
         response = mock(HttpServletResponse.class);
         chain = mock(FilterChain.class);
+    }
+
+    @Nested
+    class CertificatePort {
+
+        @BeforeEach
+        void onTheCertificatePort() {
+            when(request.getLocalPort()).thenReturn(CERTIFICATE_PORT);
+        }
+
+        @Test
+        void doFilterInternal_certificateSubdomain_dropsTheCertSuffix() throws Exception {
+            when(request.getServerName()).thenReturn("kpmg-cert.eudistack.net");
+
+            filter.doFilterInternal(request, response, chain);
+
+            verify(request).setAttribute(TENANT_ATTRIBUTE, "kpmg");
+            verify(chain).doFilter(request, response);
+        }
+
+        @Test
+        void doFilterInternal_configuredCertificateHost_usesItsTenant() throws Exception {
+            when(request.getServerName()).thenReturn("LOGIN-CGCOM.certificados.example.com");
+
+            filter.doFilterInternal(request, response, chain);
+
+            verify(request).setAttribute(TENANT_ATTRIBUTE, "cgcom");
+        }
+
+        @Test
+        void doFilterInternal_tenantHeader_isIgnored() throws Exception {
+            when(request.getServerName()).thenReturn("kpmg-cert.eudistack.net");
+            when(request.getHeader(X_TENANT_HEADER)).thenReturn("cgcom");
+
+            filter.doFilterInternal(request, response, chain);
+
+            verify(request).setAttribute(TENANT_ATTRIBUTE, "kpmg");
+            verify(request, never()).setAttribute(TENANT_ATTRIBUTE, "cgcom");
+        }
+
+        @Test
+        void doFilterInternal_tenantHeaderWithoutUsableHost_setsNoTenant() throws Exception {
+            when(request.getServerName()).thenReturn("localhost");
+            when(request.getHeader(X_TENANT_HEADER)).thenReturn("cgcom");
+
+            filter.doFilterInternal(request, response, chain);
+
+            verify(request, never()).setAttribute(eq(TENANT_ATTRIBUTE), any());
+            verify(chain).doFilter(request, response);
+        }
+
+        @Test
+        void doFilterInternal_onlyTheCertSuffix_setsNoTenant() throws Exception {
+            when(request.getServerName()).thenReturn("-cert.eudistack.net");
+
+            filter.doFilterInternal(request, response, chain);
+
+            verify(request, never()).setAttribute(eq(TENANT_ATTRIBUTE), any());
+        }
+
+        @Test
+        void doFilterInternal_hostWithoutTheCertSuffix_usesTheFirstSegment() throws Exception {
+            when(request.getServerName()).thenReturn("dome.127.0.0.1.nip.io");
+
+            filter.doFilterInternal(request, response, chain);
+
+            verify(request).setAttribute(TENANT_ATTRIBUTE, "dome");
+        }
     }
 
     // ──────────────────────────────────────────────────────────

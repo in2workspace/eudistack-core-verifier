@@ -15,7 +15,12 @@ import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,6 +44,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequ
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContext;
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
 
@@ -48,8 +54,12 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -60,6 +70,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -94,6 +105,16 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
             + "&error_description=max_age+must+be+a+non-negative+integer&state=" + STATE + ISS_PARAM;
     private static final String PROMPT_NOT_A_STRING_REDIRECT = REDIRECT_URI + "?error=invalid_request"
             + "&error_description=prompt+must+be+a+string&state=" + STATE + ISS_PARAM;
+    private static final String CLAIMS_INVALID_REDIRECT = REDIRECT_URI + "?error=invalid_request"
+            + "&error_description=claims+must+be+a+valid+claims+request&state=" + STATE + ISS_PARAM;
+    private static final String ACR_VALUES_NOT_A_STRING_REDIRECT = REDIRECT_URI + "?error=invalid_request"
+            + "&error_description=acr_values+must+be+a+string&state=" + STATE + ISS_PARAM;
+    private static final String HIGH_ACR = "http://eidas.europa.eu/LoA/high";
+    private static final long LOGIN_TIMEOUT_SECONDS = 120L;
+    private static final long SELECTION_TIMEOUT_SECONDS = 600L;
+    private static final String UNMET_REDIRECT = REDIRECT_URI + "?error=unmet_authentication_requirements"
+            + "&error_description=no+login+method+meets+the+requested+authentication+requirements&state="
+            + STATE + ISS_PARAM;
     /** SsoTtlRange.MAX_ABSOLUTE (24 h) + 1 s. */
     private static final long MAX_AGE_ABOVE_CAP = 86_401L;
     private static final String NONE_COMBINED_REDIRECT = REDIRECT_URI + "?error=invalid_request"
@@ -109,6 +130,8 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     @Mock private SafeUrlValidator safeUrlValidator;
     @Mock private ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
     @Mock private SsoBrowserBindingCookie ssoBrowserBindingCookie;
+    @Mock private TenantLoginMethodsPort tenantLoginMethodsPort;
+    @Mock private DcqlProfileResolver dcqlProfileResolver;
 
     private CustomAuthorizationRequestConverter converter;
     private AuthorizationRedirectException thrown;
@@ -124,8 +147,11 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     @BeforeEach
     void setUp() {
         converter = new CustomAuthorizationRequestConverter(didService, jwtService, cacheStore, backendConfig,
-                registeredClientRepository, false, 120L, httpClient, authorizationRequestBuildWorkflow,
-                safeUrlValidator, reuseSsoSessionWorkflow, ssoBrowserBindingCookie);
+                registeredClientRepository, false, SELECTION_TIMEOUT_SECONDS, httpClient, authorizationRequestBuildWorkflow,
+                safeUrlValidator, reuseSsoSessionWorkflow, ssoBrowserBindingCookie, tenantLoginMethodsPort,
+                dcqlProfileResolver, new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig));
+        lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(LOGIN_TIMEOUT_SECONDS);
+        lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
 
         when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
                 .clientId(CLIENT_ID)
@@ -509,6 +535,316 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
     }
 
+    static Stream<Arguments> malformedClaims() {
+        return Stream.of(
+                Arguments.of(Mode.PLAIN, "{not json"),
+                Arguments.of(Mode.PLAIN, "{\"id_token\":{\"acr\":\"" + HIGH_ACR + "\"}}"),
+                Arguments.of(Mode.PLAIN, "{\"id_token\":{\"acr\":{\"essential\":\"yes\"}}}"),
+                Arguments.of(Mode.JAR, Map.of("id_token", Map.of("acr", Map.of("values", HIGH_ACR)))),
+                Arguments.of(Mode.JAR, List.of("acr")));
+    }
+
+    @ParameterizedTest(name = "{0} claims={1}")
+    @MethodSource("malformedClaims")
+    void convert_malformedClaims_returnsInvalidRequestToClient(Mode mode, Object claims) {
+        // Given
+        HttpServletRequest request = request(mode, Map.of("claims", claims));
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then
+        assertEquals("invalid_request", error.getErrorCode());
+        assertEquals(CLAIMS_INVALID_REDIRECT, error.getUri());
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+    }
+
+    @Test
+    void convert_jarAcrValuesNotAString_returnsInvalidRequestToClient() {
+        // Given
+        HttpServletRequest request = request(Mode.JAR, Map.of("acr_values", List.of(HIGH_ACR)));
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then
+        assertEquals(ACR_VALUES_NOT_A_STRING_REDIRECT, error.getUri());
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+    }
+
+    static Stream<Arguments> wellFormedRequestedLevel() {
+        return Stream.of(
+                Arguments.of(Mode.PLAIN, Map.of("acr_values", HIGH_ACR)),
+                Arguments.of(Mode.PLAIN, Map.of("claims",
+                        "{\"id_token\":{\"acr\":{\"essential\":true,\"values\":[\"" + HIGH_ACR + "\"]}}}")),
+                Arguments.of(Mode.PLAIN, Map.of("acr_values", "urn:example:unknown")),
+                Arguments.of(Mode.JAR, Map.of("acr_values", HIGH_ACR)),
+                Arguments.of(Mode.JAR, Map.of("claims",
+                        Map.of("id_token", Map.of("acr", Map.of("essential", true, "values", List.of(HIGH_ACR)))))));
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("wellFormedRequestedLevel")
+    void convert_wellFormedRequestedLevel_continuesToQr(Mode mode, Map<String, Object> parameters) {
+        // Given: a wallet whose attestations meet the requested level
+        when(dcqlProfileResolver.highestAssuranceLevel(any())).thenReturn(Optional.of(AssuranceLevel.HIGH));
+        HttpServletRequest request = request(mode, parameters);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When / Then
+        assertQrRedirect(convertExpectingRedirect(request));
+    }
+
+    // ---- login methods ----
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_clientWithoutLoginMethods_cachesOnlyTheWalletAndNoLevel(Mode mode) {
+        // Given
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        Map<String, Object> cached = cachedLogin().getAdditionalParameters();
+        assertEquals(List.of("wallet"), cached.get("login_methods"));
+        assertFalse(cached.containsKey("acr_requested"));
+        assertFalse(cached.containsKey("acr_essential"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_clientWithBothMethods_cachesThemInTheirOrder(Mode mode) {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertStateOnlyRedirect(convertExpectingRedirect(request));
+
+        // Then
+        assertEquals(List.of("x509", "wallet"), cachedLogin().getAdditionalParameters().get("login_methods"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_tenantWithoutCertificate_cachesOnlyTheWallet(Mode mode) {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        assertEquals(List.of("wallet"), cachedLogin().getAdditionalParameters().get("login_methods"));
+    }
+
+    @Test
+    void convert_essentialLevelOnlyTheCertificateMeets_cachesTheCertificateAndTheRequestedLevel() {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        when(dcqlProfileResolver.highestAssuranceLevel(any())).thenReturn(Optional.of(AssuranceLevel.SUBSTANTIAL));
+        HttpServletRequest request = request(Mode.PLAIN, Map.of("claims",
+                "{\"id_token\":{\"acr\":{\"essential\":true,\"value\":\"" + HIGH_ACR + "\"}}}"));
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertStateOnlyRedirect(convertExpectingRedirect(request));
+
+        // Then
+        Map<String, Object> cached = cachedLogin().getAdditionalParameters();
+        assertEquals(List.of("x509"), cached.get("login_methods"));
+        assertEquals(HIGH_ACR, cached.get("acr_requested"));
+        assertEquals(true, cached.get("acr_essential"));
+    }
+
+    // ---- reuse by login method, level and attestation scopes ----
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_reuse_receivesTheClientMethodsTheEssentialLevelAndTheAttestationScopes(Mode mode) {
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        convertExpectingRedirect(request(mode, Map.of("claims", essentialHighClaims(mode))));
+
+        AuthorizationContext ctx = capturedReuseContext();
+        assertEquals(List.of(LoginMethod.X509, LoginMethod.WALLET), ctx.loginMethods());
+        assertEquals(AssuranceLevel.HIGH, ctx.essentialLevel());
+        assertTrue(ctx.attestationScopes());
+        verify(authorizationRequestBuildWorkflow).validateScope(SCOPE);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_reuseForACertificateClientWithoutAttestationScopes_doesNotRequireADcqlScope(Mode mode) {
+        registerClientWithLoginMethods(List.of(LoginMethod.X509));
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(false);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        convertExpectingRedirect(request(mode, null, null));
+
+        assertFalse(capturedReuseContext().attestationScopes());
+        verify(authorizationRequestBuildWorkflow, never()).validateScope(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_reuseForAWalletOnlyClient_stillValidatesTheScope(Mode mode) {
+        registerClientWithLoginMethods(List.of(LoginMethod.WALLET));
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(false);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        convertExpectingRedirect(request(mode, null, null));
+
+        verify(authorizationRequestBuildWorkflow).validateScope(SCOPE);
+        assertNull(capturedReuseContext().essentialLevel());
+    }
+
+    // ---- redirect by login methods ----
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_noLoginMethodLeft_returnsUnmetAuthenticationRequirementsToClient(Mode mode) {
+        // Given: a wallet-only client whose attestations fall short of the essential level
+        registerClientWithLoginMethods(List.of(LoginMethod.WALLET));
+        when(dcqlProfileResolver.highestAssuranceLevel(any())).thenReturn(Optional.of(AssuranceLevel.SUBSTANTIAL));
+        HttpServletRequest request = request(mode, Map.of("claims", essentialHighClaims(mode)));
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        OAuth2Error error = convertExpectingError(request);
+
+        // Then: error to the validated redirect_uri with its state — no wallet request, no cached login
+        assertEquals("unmet_authentication_requirements", error.getErrorCode());
+        assertEquals(UNMET_REDIRECT, error.getUri());
+        assertFalse(thrown.isLoginPage());
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+        verify(cacheStore, never()).putIfAbsent(any(), any());
+        verifyNoInteractions(ssoBrowserBindingCookie);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_onlyTheWallet_signsTheWalletRequestAndRedirectsWithIt(Mode mode) {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        verify(authorizationRequestBuildWorkflow).buildAuthorizationRequest(any(), any(), eq(STATE), any());
+        assertEquals("vp-nonce", cachedLogin().getAdditionalParameters().get("vp_nonce"));
+        assertEquals("openid4vp://...", cachedLogin().getAdditionalParameters().get("wallet_auth_request"));
+        assertExpiresIn(LOGIN_TIMEOUT_SECONDS);
+    }
+
+    @Test
+    void convert_withAccessProfile_cachesItForALaterWalletRequest() {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(Mode.PLAIN, Map.of("access_profile", "issuer_access"));
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertStateOnlyRedirect(convertExpectingRedirect(request));
+
+        // Then
+        Map<String, Object> cached = cachedLogin().getAdditionalParameters();
+        assertEquals("issuer_access", cached.get("access_profile"));
+        assertFalse(cached.containsKey("wallet_auth_request"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_twoMethods_redirectsWithOnlyTheStateWithoutSigningTheWalletRequest(Mode mode) {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertStateOnlyRedirect(convertExpectingRedirect(request));
+
+        // Then
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+        assertFalse(cachedLogin().getAdditionalParameters().containsKey("vp_nonce"));
+        assertExpiresIn(SELECTION_TIMEOUT_SECONDS);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_onlyTheCertificate_redirectsWithOnlyTheStateWithoutSigningTheWalletRequest(Mode mode) {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.X509));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertStateOnlyRedirect(convertExpectingRedirect(request));
+
+        // Then
+        verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+        assertEquals(List.of("x509"), cachedLogin().getAdditionalParameters().get("login_methods"));
+    }
+
+    @Test
+    void convert_stateOnlyRedirect_usesTheClientLoginPage() {
+        // Given
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
+                .clientId(CLIENT_ID)
+                .clientName("Client A")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(REDIRECT_URI)
+                .clientSettings(ClientSettings.builder()
+                        .setting(CLIENT_SETTING_LOGIN_METHODS, List.of(LoginMethod.X509, LoginMethod.WALLET))
+                        .setting(CLIENT_SETTING_LOGIN_PAGE_URI, "https://login.tenant-a.example.com/login")
+                        .build())
+                .build());
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET, LoginMethod.X509));
+        HttpServletRequest request = request(Mode.PLAIN, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        OAuth2Error error = convertExpectingRedirect(request);
+
+        // Then
+        assertEquals("https://login.tenant-a.example.com/login?state=" + STATE, error.getUri());
+        assertTrue(thrown.isLoginPage());
+    }
+
+    @Test
+    void convert_walletLevelComesFromTheClientScopes() {
+        // Given
+        registerClientWithLoginMethods(List.of(LoginMethod.WALLET));
+        when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET));
+        HttpServletRequest request = request(Mode.PLAIN, Map.of("acr_values", HIGH_ACR));
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
+
+        // When
+        assertQrRedirect(convertExpectingRedirect(request));
+
+        // Then
+        verify(dcqlProfileResolver).highestAssuranceLevel(Set.of("openid", "learcredential"));
+        assertEquals(false, cachedLogin().getAdditionalParameters().get("acr_essential"));
+    }
+
     @ParameterizedTest
     @EnumSource(Mode.class)
     void convert_malformedMaxAgeWithPromptLogin_isStillInvalidRequest(Mode mode) {
@@ -691,6 +1027,15 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     }
 
     private HttpServletRequest request(Mode mode, Object prompt, Object maxAge, String redirectUri) {
+        return request(mode, prompt, maxAge, redirectUri, Map.of());
+    }
+
+    private HttpServletRequest request(Mode mode, Map<String, Object> extraParameters) {
+        return request(mode, null, null, REDIRECT_URI, extraParameters);
+    }
+
+    private HttpServletRequest request(Mode mode, Object prompt, Object maxAge, String redirectUri,
+                                       Map<String, Object> extraParameters) {
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURL()).thenReturn(new StringBuffer("https://verifier.example.com/oidc/authorize"));
         when(request.getHeader("X-Forwarded-Host")).thenReturn("verifier.example.com");
@@ -707,6 +1052,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
             when(request.getParameter("request")).thenReturn(null);
             when(request.getParameter("prompt")).thenReturn(prompt == null ? null : prompt.toString());
             when(request.getParameter("max_age")).thenReturn(maxAge == null ? null : maxAge.toString());
+            extraParameters.forEach((name, value) -> when(request.getParameter(name)).thenReturn(value.toString()));
             return request;
         }
 
@@ -721,6 +1067,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         if (maxAge != null) {
             claims.put("max_age", maxAge); // as given: Long = JSON integer, Double = JSON decimal, ...
         }
+        claims.putAll(extraParameters);
         SignedJWT signedJwt = mock(SignedJWT.class);
         Payload payload = mock(Payload.class);
         when(jwtService.parseJWT(JWT)).thenReturn(signedJwt);
@@ -732,6 +1079,33 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         PublicKey publicKey = mock(PublicKey.class);
         when(didService.resolvePublicKeyFromDid(CLIENT_ID)).thenReturn(publicKey);
         return request;
+    }
+
+    private void registerClientWithLoginMethods(List<LoginMethod> loginMethods) {
+        when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
+                .clientId(CLIENT_ID)
+                .clientName("Client A")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri(REDIRECT_URI)
+                .scope("openid")
+                .scope("learcredential")
+                .clientSettings(ClientSettings.builder()
+                        .setting(CLIENT_SETTING_LOGIN_METHODS, loginMethods)
+                        .build())
+                .build());
+    }
+
+    private void assertExpiresIn(long seconds) {
+        long expiration = ((Number) cachedLogin().getAdditionalParameters().get("expiration")).longValue();
+        long expected = java.time.Instant.now().plusSeconds(seconds).getEpochSecond();
+        assertTrue(expiration >= expected - 1 && expiration <= expected,
+                () -> "expected expiration in " + seconds + " s, got " + (expiration - java.time.Instant.now().getEpochSecond()));
+    }
+
+    private OAuth2AuthorizationRequest cachedLogin() {
+        ArgumentCaptor<OAuth2AuthorizationRequest> captor = ArgumentCaptor.forClass(OAuth2AuthorizationRequest.class);
+        verify(cacheStore).putIfAbsent(eq(STATE), captor.capture());
+        return captor.getValue();
     }
 
     private void stubReuse(ReuseSsoSessionWorkflow.Result.Status status) {
@@ -757,6 +1131,18 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     private OAuth2Error convertExpectingError(HttpServletRequest request) {
         thrown = assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
         return thrown.getError();
+    }
+
+    private void assertStateOnlyRedirect(OAuth2Error error) {
+        assertEquals("https://verifier.example.com/login?state=" + STATE, error.getUri());
+        assertTrue(thrown.isLoginPage());
+        verify(ssoBrowserBindingCookie).bindIfSsoEnabled(any());
+    }
+
+    private static Object essentialHighClaims(Mode mode) {
+        return mode == Mode.PLAIN
+                ? "{\"id_token\":{\"acr\":{\"essential\":true,\"value\":\"" + HIGH_ACR + "\"}}}"
+                : Map.of("id_token", Map.of("acr", Map.of("essential", true, "value", HIGH_ACR)));
     }
 
     private void assertQrRedirect(OAuth2Error error) {

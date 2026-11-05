@@ -129,6 +129,10 @@ public class BackendConfig {
         return properties.loginTimeoutSeconds() != null ? properties.loginTimeoutSeconds() : 120L;
     }
 
+    public long getLoginSelectionTimeoutSeconds() {
+        return properties.loginSelectionTimeoutSeconds() != null ? properties.loginSelectionTimeoutSeconds() : 600L;
+    }
+
     /**
      * Lifetime of the login SSE stream: the login timeout plus a grace period. A presentation
      * accepted just before the timeout may still be under validation (revocation checks, etc.)

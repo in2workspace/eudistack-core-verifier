@@ -45,6 +45,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
@@ -90,7 +91,11 @@ class SsoSessionClientTrackingIT {
                     expires_at     TIMESTAMPTZ NOT NULL,
                     last_used_at   TIMESTAMPTZ NOT NULL,
                     state          VARCHAR(32) NOT NULL,
-                    credential_snapshot BYTEA
+                    credential_snapshot BYTEA,
+                    auth_method    VARCHAR(16) NOT NULL DEFAULT 'wallet',
+                    acr            TEXT,
+                    amr            TEXT[],
+                    certificate_not_after TIMESTAMPTZ
                 )
                 """);
             // Mirrors V6__create_sso_session_client.sql
@@ -222,7 +227,7 @@ class SsoSessionClientTrackingIT {
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor =
                 workflow.execute(new SsoSessionCommand(tenant, "sub-value", "initiator-client", "corr-1",
-                        "{\"sub\":\"sub-value\"}"));
+                        credential("{\"sub\":\"sub-value\"}")));
 
         assertThat(descriptor).isNotNull();
 
@@ -286,12 +291,12 @@ class SsoSessionClientTrackingIT {
         when(registeredClientRepository.findByClientId(calleeClientId)).thenReturn(registeredClient);
 
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(redirectUri + "?code=fake-code&state=xyz");
 
         ReuseSsoSessionWorkflowImpl workflow = new ReuseSsoSessionWorkflowImpl(
                 configPort, repository, Clock.systemUTC(), auditPort, metricsPort, registeredClientRepository,
-                authorizationResponseProcessorService, credentialCipherPort, new ObjectMapper());
+                authorizationResponseProcessorService, credentialCipherPort);
 
         AuthorizationContext ctx = AuthorizationContext.builder()
                 .redirectUri(redirectUri)

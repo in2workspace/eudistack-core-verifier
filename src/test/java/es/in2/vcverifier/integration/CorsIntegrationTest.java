@@ -10,7 +10,9 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -29,7 +31,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(
         properties = {
-                "spring.flyway.enabled=false"
+                "spring.flyway.enabled=false",
+                "verifier.certificate-login.tenants.cgcom.host=cgcom-cert.example.com",
+                "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com",
+                "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef"
         }
 )
 @AutoConfigureMockMvc
@@ -149,6 +154,64 @@ class CorsIntegrationTest {
                             .header("Origin", "https://wallet.example.com")
                             .header("Access-Control-Request-Method", "GET"))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Certificate login on the certificate port (exact login origin)")
+    class CertificateLoginCors {
+
+        @Test
+        @DisplayName("allows the login origin of the tenant, with credentials")
+        void certificateLogin_loginOriginOfItsTenant_corsAllowedWithCredentials() throws Exception {
+            mockMvc.perform(options("/api/login/certificate")
+                            .with(onCertificatePort("cgcom-cert.example.com"))
+                            .header("Origin", "https://cgcom.example.com")
+                            .header("Access-Control-Request-Method", "POST")
+                            .header("Access-Control-Request-Headers", "Content-Type"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", "https://cgcom.example.com"))
+                    .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
+        }
+
+        @Test
+        @DisplayName("rejects any other origin")
+        void certificateLogin_otherOrigin_corsRejected() throws Exception {
+            mockMvc.perform(options("/api/login/certificate")
+                            .with(onCertificatePort("cgcom-cert.example.com"))
+                            .header("Origin", "https://any-spa.example.com")
+                            .header("Access-Control-Request-Method", "POST"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+        }
+
+        @Test
+        @DisplayName("rejects the login origin of the tenant on the host of another tenant")
+        void certificateLogin_originOfAnotherTenant_corsRejected() throws Exception {
+            mockMvc.perform(options("/api/login/certificate")
+                            .with(onCertificatePort("kpmg-cert.example.com"))
+                            .header("Origin", "https://cgcom.example.com")
+                            .header("Access-Control-Request-Method", "POST"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+        }
+
+        @Test
+        @DisplayName("rejects a method other than POST")
+        void certificateLogin_otherMethod_corsRejected() throws Exception {
+            mockMvc.perform(options("/api/login/certificate")
+                            .with(onCertificatePort("cgcom-cert.example.com"))
+                            .header("Origin", "https://cgcom.example.com")
+                            .header("Access-Control-Request-Method", "PUT"))
+                    .andExpect(status().isForbidden());
+        }
+
+        private RequestPostProcessor onCertificatePort(String host) {
+            return request -> {
+                request.setServerName(host);
+                request.setLocalPort(CertificateLoginProperties.DEFAULT_PORT);
+                return request;
+            };
         }
     }
 }

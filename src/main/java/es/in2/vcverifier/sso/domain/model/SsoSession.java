@@ -36,6 +36,8 @@ public class SsoSession {
     @ToString.Exclude
     private byte[] credentialSnapshotCiphertext;
 
+    private SsoSessionAuthentication authentication = SsoSessionAuthentication.WALLET_WITHOUT_LEVEL;
+
     private SsoSession(
             SsoSessionId id,
             String tenant,
@@ -174,6 +176,10 @@ public class SsoSession {
      */
     public void attachCredentialSnapshot(byte[] ciphertext) {
         this.credentialSnapshotCiphertext = ciphertext;
+    }
+
+    public void recordAuthentication(SsoSessionAuthentication authentication) {
+        this.authentication = Objects.requireNonNull(authentication, "authentication cannot be null");
     }
 
     // =========================

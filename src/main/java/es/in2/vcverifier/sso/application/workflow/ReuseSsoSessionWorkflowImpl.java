@@ -1,12 +1,12 @@
 package es.in2.vcverifier.sso.application.workflow;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
+import es.in2.vcverifier.sso.application.service.AuthenticationSnapshot;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
@@ -29,6 +29,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -50,7 +51,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
     private final RegisteredClientRepository registeredClientRepository;
     private final AuthorizationResponseProcessorService authorizationResponseProcessorService;
     private final SsoCredentialCipherPort credentialCipherPort;
-    private final ObjectMapper objectMapper;
 
     public ReuseSsoSessionWorkflowImpl(
             TenantSsoConfigPort configPort,
@@ -60,8 +60,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             SsoMetricsPort metricsPort,
             RegisteredClientRepository registeredClientRepository,
             AuthorizationResponseProcessorService authorizationResponseProcessorService,
-            SsoCredentialCipherPort credentialCipherPort,
-            ObjectMapper objectMapper
+            SsoCredentialCipherPort credentialCipherPort
     ) {
         this.configPort = configPort;
         this.sessionRepository = sessionRepository;
@@ -71,7 +70,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         this.registeredClientRepository = registeredClientRepository;
         this.authorizationResponseProcessorService = authorizationResponseProcessorService;
         this.credentialCipherPort = credentialCipherPort;
-        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -189,6 +187,29 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
+        ReuseDecision authenticationDecision = policy.evaluateAuthentication(
+                session.getAuthentication(),
+                ctx != null && ctx.loginMethods() != null ? ctx.loginMethods() : List.of(LoginMethod.WALLET),
+                ctx != null ? ctx.essentialLevel() : null,
+                ctx != null && ctx.attestationScopes());
+        if (authenticationDecision != ReuseDecision.ALLOWED) {
+            if (authenticationDecision == ReuseDecision.REJECT_CERTIFICATE_EXPIRED) {
+                terminateExpiredCertificateSession(sessionId, tenantSlug);
+            }
+            auditPort.publish(
+                    SsoAuditEvent.builder()
+                            .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
+                            .tenant(tenantSlug)
+                            .clientId(clientId)
+                            .holderHash(session.getHolderHash())
+                            .outcome(authenticationDecision.name())
+                            .correlationId(correlationId)
+                            .occurredAt(now)
+                            .build()
+            );
+            return new Result(Result.Status.LOGIN_REQUIRED, null);
+        }
+
         // 6. THROTTLE UPDATE — non-blocking (R-3 / NFR-P-549-01): la respuesta al cliente
         // no espera el UPDATE; el fallo se registra pero no afecta al resultado de reuse.
         // ADR-108/DELTA-02: piggyback de recordClientActivity en el mismo bloque async —
@@ -216,8 +237,9 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
         // establishment and reuse landed on different replicas). A missing/undecryptable
         // snapshot (session predates this migration, wrong/rotated key, tampered ciphertext)
         // fails closed to LOGIN_REQUIRED rather than issuing a code without claims.
-        JsonNode credentialJson = decryptCredentialSnapshot(tenantSlug, sessionId, session.getCredentialSnapshotCiphertext());
-        if (credentialJson == null) {
+        AuthenticationResult authentication = decryptAuthenticationSnapshot(
+                tenantSlug, sessionId, session.getCredentialSnapshotCiphertext(), session.getEstablishedAt());
+        if (authentication == null) {
             auditPort.publish(
                     SsoAuditEvent.builder()
                             .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
@@ -269,8 +291,7 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                 ctx.codeChallenge(),
                 ctx.codeChallengeMethod(),
                 ctx.clientNonce(),
-                credentialJson,
-                session.getEstablishedAt(),
+                authentication,
                 ctx.issuer()
         );
 
@@ -299,22 +320,31 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
      * ciphertext ausente, clave incorrecta/rotada, ciphertext corrupto, o JSON descifrado
      * pero no parseable.
      */
-    private JsonNode decryptCredentialSnapshot(String tenant, SsoSessionId sessionId, byte[] ciphertext) {
+    private AuthenticationResult decryptAuthenticationSnapshot(String tenant, SsoSessionId sessionId, byte[] ciphertext,
+                                                               Instant establishedAt) {
         if (ciphertext == null) {
             return null;
         }
-        return credentialCipherPort.decrypt(tenant, sessionId.getValue(), ciphertext)
-                .map(json -> {
-                    try {
-                        return objectMapper.readTree(json);
-                    } catch (JsonProcessingException e) {
-                        log.warn("event=sso_credential_snapshot_corrupt tenant={} session={}",
-                                tenant, sessionId.getValue().length() <= 8
-                                        ? sessionId.getValue() : sessionId.getValue().substring(0, 8));
-                        return null;
-                    }
-                })
-                .orElse(null);
+        Optional<String> json = credentialCipherPort.decrypt(tenant, sessionId.getValue(), ciphertext);
+        if (json.isEmpty()) {
+            return null;
+        }
+        Optional<AuthenticationResult> authentication = AuthenticationSnapshot.read(json.get(), establishedAt);
+        if (authentication.isEmpty()) {
+            log.warn("event=sso_credential_snapshot_corrupt tenant={} session={}", tenant, prefix8(sessionId.getValue()));
+            return null;
+        }
+        return authentication.get();
+    }
+
+    private void terminateExpiredCertificateSession(SsoSessionId sessionId, String tenant) {
+        try {
+            sessionRepository.terminateActive(sessionId, tenant);
+            log.info("event=sso_session_certificate_expired tenant={} session={}", tenant, prefix8(sessionId.getValue()));
+        } catch (RuntimeException e) {
+            log.warn("event=sso_session_terminate_failed tenant={} session={} error={}", tenant,
+                    prefix8(sessionId.getValue()), e.getClass().getSimpleName());
+        }
     }
 
     /** NFR-S-547-02: the session id is the SSO cookie value — never log it in full, 8-char prefix only. */

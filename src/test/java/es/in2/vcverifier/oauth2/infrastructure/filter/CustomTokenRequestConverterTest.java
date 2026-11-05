@@ -23,6 +23,7 @@ import es.in2.vcverifier.oauth2.domain.exception.InvalidProofOfPossessionExcepti
 import es.in2.vcverifier.oauth2.domain.exception.UnsupportedGrantTypeException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,9 +46,11 @@ import org.springframework.security.oauth2.server.authorization.authentication.O
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -95,15 +98,18 @@ class CustomTokenRequestConverterTest {
         when(cacheStoreForAuthorizationCodeData.get("code")).thenReturn(authorizationCodeData);
         when(authorizationCodeData.state()).thenReturn("state");
 
-        JsonNode jsonNodeMock = mock(JsonNode.class);
-        when(authorizationCodeData.verifiableCredential()).thenReturn(jsonNodeMock);
+        CredentialAuthentication authentication =
+                new CredentialAuthentication(mock(JsonNode.class), null, Instant.ofEpochSecond(1_700_000_000L));
+        when(authorizationCodeData.authentication()).thenReturn(authentication);
 
         Authentication result = customTokenRequestConverter.convert(mockRequest);
 
         assertNotNull(result);
         assertInstanceOf(OAuth2AuthorizationCodeAuthenticationToken.class, result);
-        assertFalse(((OAuth2AuthorizationCodeAuthenticationToken) result).getAdditionalParameters()
-                .containsKey("auth_time"));
+        Map<String, Object> additionalParameters =
+                ((OAuth2AuthorizationCodeAuthenticationToken) result).getAdditionalParameters();
+        assertSame(authentication, additionalParameters.get(AUTHENTICATION_RESULT));
+        assertFalse(additionalParameters.containsKey("vc"));
     }
 
     @Test
@@ -153,9 +159,8 @@ class CustomTokenRequestConverterTest {
         AuthorizationCodeData authorizationCodeData = mock(AuthorizationCodeData.class);
         when(cacheStoreForAuthorizationCodeData.get("code")).thenReturn(authorizationCodeData);
         when(authorizationCodeData.state()).thenReturn("state");
-        JsonNode verifiableCredential = mock(JsonNode.class);
-        when(authorizationCodeData.verifiableCredential()).thenReturn(verifiableCredential);
-        when(authorizationCodeData.authTime()).thenReturn(java.time.Instant.ofEpochSecond(1_700_000_000L));
+        when(authorizationCodeData.authentication()).thenReturn(
+                new CredentialAuthentication(mock(JsonNode.class), null, Instant.ofEpochSecond(1_700_000_000L)));
 
         OAuth2AuthorizationCodeAuthenticationToken token =
                 (OAuth2AuthorizationCodeAuthenticationToken) customTokenRequestConverter.convert(mockRequest);
@@ -216,11 +221,11 @@ class CustomTokenRequestConverterTest {
             parameters.add(OAuth2ParameterNames.CLIENT_ID, CLIENT_ID);
             when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
 
-            JsonNode vc = buildMachineCredentialJsonNode();
+            CredentialAuthentication authentication = new CredentialAuthentication(
+                    buildMachineCredentialJsonNode(), null, Instant.ofEpochSecond(1_700_000_000L));
             RefreshTokenDataCache cached = RefreshTokenDataCache.builder()
                     .clientId(CLIENT_ID)
-                    .verifiableCredential(vc)
-                    .authTimeEpochSeconds(1_700_000_000L)
+                    .authentication(authentication)
                     .build();
             when(refreshTokenDataCacheCacheStore.get(REFRESH_TOKEN_VALUE)).thenReturn(cached);
 
@@ -229,36 +234,10 @@ class CustomTokenRequestConverterTest {
             assertInstanceOf(OAuth2RefreshTokenAuthenticationToken.class, result);
             OAuth2RefreshTokenAuthenticationToken token = (OAuth2RefreshTokenAuthenticationToken) result;
             assertEquals(REFRESH_TOKEN_VALUE, token.getRefreshToken());
-            assertEquals(vc, token.getAdditionalParameters().get("vc"));
+            assertSame(authentication, token.getAdditionalParameters().get(AUTHENTICATION_RESULT));
             assertEquals(CLIENT_ID, token.getAdditionalParameters().get(OAuth2ParameterNames.CLIENT_ID));
             assertEquals(1_700_000_000L, token.getAdditionalParameters().get("auth_time"));
             verify(refreshTokenDataCacheCacheStore).delete(REFRESH_TOKEN_VALUE);
-        }
-
-        @Test
-        @DisplayName("omits auth_time when the cached entry predates it")
-        void convert_refreshTokenGrant_withoutCachedAuthTime_omitsAuthTimeParam() {
-            HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-            Authentication clientPrincipal = mock(Authentication.class);
-            SecurityContextHolder.getContext().setAuthentication(clientPrincipal);
-
-            MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
-            parameters.add(OAuth2ParameterNames.GRANT_TYPE, "refresh_token");
-            parameters.add(OAuth2ParameterNames.REFRESH_TOKEN, REFRESH_TOKEN_VALUE);
-            parameters.add(OAuth2ParameterNames.CLIENT_ID, CLIENT_ID);
-            when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
-
-            RefreshTokenDataCache cached = RefreshTokenDataCache.builder()
-                    .clientId(CLIENT_ID)
-                    .verifiableCredential(buildMachineCredentialJsonNode())
-                    .authTimeEpochSeconds(null)
-                    .build();
-            when(refreshTokenDataCacheCacheStore.get(REFRESH_TOKEN_VALUE)).thenReturn(cached);
-
-            Authentication result = customTokenRequestConverter.convert(mockRequest);
-
-            OAuth2RefreshTokenAuthenticationToken token = (OAuth2RefreshTokenAuthenticationToken) result;
-            assertFalse(token.getAdditionalParameters().containsKey("auth_time"));
         }
 
         @Test
@@ -274,7 +253,7 @@ class CustomTokenRequestConverterTest {
 
             RefreshTokenDataCache cached = RefreshTokenDataCache.builder()
                     .clientId(CLIENT_ID)
-                    .verifiableCredential(buildMachineCredentialJsonNode())
+                    .authentication(new CredentialAuthentication(buildMachineCredentialJsonNode(), null, Instant.now()))
                     .build();
             when(refreshTokenDataCacheCacheStore.get(REFRESH_TOKEN_VALUE)).thenReturn(cached);
 

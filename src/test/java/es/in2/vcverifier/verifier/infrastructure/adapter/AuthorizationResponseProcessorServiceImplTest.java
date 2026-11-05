@@ -1,4 +1,5 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.service.VpService;
@@ -129,6 +130,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
         lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
         lenient().when(cryptoComponent.getClientId()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
+        lenient().when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString()))
+                .thenReturn(new ObjectMapper().createObjectNode());
     }
 
 
@@ -166,7 +169,6 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -528,7 +530,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -581,7 +582,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -675,12 +675,12 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         Set<String> scopes = Set.of("openid");
         ObjectNode verifiableCredential = new ObjectMapper().createObjectNode();
-        Instant authTime = Instant.now();
+        CredentialAuthentication authentication = new CredentialAuthentication(verifiableCredential, null, Instant.now());
 
         // When
         assertThrows(IllegalArgumentException.class, () -> authorizationResponseProcessorService.issueCodeForReusedSession(
                 "client-id", redirectUri, scopes, "state-1", null, null, null,
-                verifiableCredential, authTime, "https://tenant-a.example.com/verifier"));
+                authentication, "https://tenant-a.example.com/verifier"));
 
         // Then: no orphan code left behind
         verify(oAuth2AuthorizationService, never()).save(any());

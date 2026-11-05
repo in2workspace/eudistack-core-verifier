@@ -1,5 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.controller;
 
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import es.in2.vcverifier.shared.config.I18nConfig;
 import es.in2.vcverifier.verifier.infrastructure.controller.ResolverController;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -9,6 +10,7 @@ import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -36,6 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         )
 )
 @AutoConfigureMockMvc(addFilters = false)  // Disable security filters for the test
+@EnableConfigurationProperties(CertificateLoginProperties.class)
 class ResolverControllerTest {
 
     @Autowired

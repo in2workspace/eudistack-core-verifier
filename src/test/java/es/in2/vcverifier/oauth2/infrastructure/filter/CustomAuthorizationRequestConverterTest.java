@@ -13,7 +13,10 @@ import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +42,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.PublicKey;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -83,8 +88,14 @@ class CustomAuthorizationRequestConverterTest {
     @Mock
     private SsoBrowserBindingCookie ssoBrowserBindingCookie;
 
+    @Mock
+    private TenantLoginMethodsPort tenantLoginMethodsPort;
+
+    @Mock
+    private DcqlProfileResolver dcqlProfileResolver;
+
     private boolean isNonceRequiredOnFapiProfile = true;
-    private long loginTimeoutSeconds = 120L;
+    private long loginSelectionTimeoutSeconds = 600L;
 
     private CustomAuthorizationRequestConverter converter;
 
@@ -97,13 +108,18 @@ class CustomAuthorizationRequestConverterTest {
                 backendConfig,
                 registeredClientRepository,
                 isNonceRequiredOnFapiProfile,
-                loginTimeoutSeconds,
+                loginSelectionTimeoutSeconds,
                 httpClient,
                 authorizationRequestBuildWorkflow,
                 safeUrlValidator,
                 reuseSsoSessionWorkflow,
-                ssoBrowserBindingCookie
+                ssoBrowserBindingCookie,
+                tenantLoginMethodsPort,
+                dcqlProfileResolver,
+                new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig)
         );
+        lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(120L);
+        lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
     }
 
     @Test

@@ -123,6 +123,18 @@ class OidcMetadataPerTenantHostIT {
 
 
     @Test
+    @DisplayName("EUD-313: la metadata OIDC anuncia los dos niveles de eIDAS y el parámetro claims.")
+    void shouldAdvertiseAcrValuesAndClaimsParameter() throws Exception {
+        mockMvc.perform(get("/.well-known/openid-configuration")
+                        .header("X-Forwarded-Host", "idp.tenant-a.com")
+                        .header("X-Forwarded-Proto", "https"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.acr_values_supported").value(org.hamcrest.Matchers.contains(
+                        "http://eidas.europa.eu/LoA/substantial", "http://eidas.europa.eu/LoA/high")))
+                .andExpect(jsonPath("$.claims_parameter_supported").value(true));
+    }
+
+    @Test
     @DisplayName("Con el host legacy de eudistack → el issuer sigue siendo el de eudistack, sin regresión.")
     void shouldReturnIssuerForLegacyHost() throws Exception {
         mockMvc.perform(get("/.well-known/openid-configuration")

@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.JWTClaimsSet;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
+import es.in2.vcverifier.oauth2.domain.service.CertificateClaims;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
@@ -20,12 +23,14 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
@@ -84,8 +89,15 @@ public class TokenGenerationWorkflow {
                 ChronoUnit.SECONDS
         );
 
-        String credentialConfigurationId = extractCredentialType(credentialJson);
-        ExtractedClaims extractedClaims = extractClaims(credentialConfigurationId, credentialJson);
+        String credentialConfigurationId;
+        ExtractedClaims extractedClaims;
+        if (additionalParameters.get(AUTHENTICATION_RESULT) instanceof CertificateAuthentication certificate) {
+            credentialConfigurationId = null;
+            extractedClaims = certificateClaims(certificate, additionalParameters);
+        } else {
+            credentialConfigurationId = extractCredentialType(credentialJson);
+            extractedClaims = extractClaims(credentialConfigurationId, credentialJson);
+        }
         String subject = extractedClaims.subject();
 
         BuildContext buildContext = new BuildContext(
@@ -106,7 +118,8 @@ public class TokenGenerationWorkflow {
         Map<String, Object> idTokenClaims = null;
         Instant authTime = null;
         if (generateIdToken) {
-            IdTokenBuildResult idTokenResult = buildIdToken(credentialJson, extractedClaims, subject, audience, additionalParameters, tenant);
+            IdTokenBuildResult idTokenResult = buildIdToken(credentialJson, extractedClaims, subject, audience,
+                    additionalParameters, tenant, buildContext.authentication());
             idTokenJwt = idTokenResult.jwt();
             idTokenClaims = idTokenResult.claims();
             authTime = idTokenResult.authTime();
@@ -139,6 +152,21 @@ public class TokenGenerationWorkflow {
 
 
 
+    private static ExtractedClaims certificateClaims(CertificateAuthentication certificate,
+                                                     Map<String, Object> additionalParameters) {
+        String scope = additionalParameters.get(OAuth2ParameterNames.SCOPE) instanceof String requested ? requested : null;
+        Set<String> scopes = scope == null || scope.isBlank()
+                ? Set.of()
+                : Set.copyOf(Arrays.asList(scope.trim().split("\\s+")));
+        Map<String, Object> claims = CertificateClaims.forScopes(certificate.identity(), scopes);
+        return ExtractedClaims.builder()
+                .subject(certificate.subject())
+                .idTokenClaims(claims)
+                .accessTokenClaims(claims)
+                .scope(scope)
+                .build();
+    }
+
     private ExtractedClaims extractClaims(String credentialType, JsonNode credentialJson) {
         for (ClaimsExtractor extractor : claimsExtractors) {
             if (extractor.supports(credentialType)) {
@@ -153,27 +181,20 @@ public class TokenGenerationWorkflow {
 
     private IdTokenBuildResult buildIdToken(JsonNode credentialJson, ExtractedClaims extractedClaims,
                                  String subject, String audience, Map<String, Object> additionalParameters,
-                                 String tenant) {
+                                 String tenant, AuthenticationResult authentication) {
         Instant issueTime = Instant.now();
         Instant expirationTime = issueTime.plus(
                 backendConfig.getIdTokenExpirationSeconds(),
                 ChronoUnit.SECONDS
         );
 
-        String verifiableCredentialJson;
-        try {
-            verifiableCredentialJson = objectMapper.writeValueAsString(credentialJson);
-        } catch (Exception e) {
-            throw new JsonConversionException("Error converting Verifiable Credential to JSON: " + e.getMessage());
-        }
-
         // OIDC Core 12.2: on a refresh, auth_time MUST stay identical to the original
         // authentication's value, not be re-stamped as "now" — angular-auth-oidc-client's
         // pre/post id_token claims check rejects the refresh outright otherwise. The original
-        // value is carried through additionalParameters by CustomTokenRequestConverter
-        // (see RefreshTokenDataCache.authTimeEpochSeconds). The same holds for a code issued by
-        // SSO reuse (EUD-300, AuthorizationCodeData.authTime = session establishment). Absent
-        // it, this IS the original authentication, so "now" is correct.
+        // value is carried through additionalParameters by CustomTokenRequestConverter, from the
+        // AuthenticationResult of the code or the refresh token. The same holds for a code issued by
+        // SSO reuse (EUD-300, auth_time = session establishment). Absent it, this IS the original
+        // authentication, so "now" is correct.
         Instant authTime = additionalParameters.containsKey(AUTH_TIME_PARAM)
                 ? Instant.ofEpochSecond(((Number) additionalParameters.get(AUTH_TIME_PARAM)).longValue())
                 : issueTime;
@@ -184,10 +205,20 @@ public class TokenGenerationWorkflow {
                 .audience(audience)
                 .issueTime(Date.from(issueTime))
                 .expirationTime(Date.from(expirationTime))
-                .claim("auth_time", Date.from(authTime))
-                .claim("acr", "0")
-                .claim("credential_type", extractCredentialType(credentialJson))
-                .claim("vc_json", verifiableCredentialJson);
+                .claim("auth_time", Date.from(authTime));
+
+        if (credentialJson != null) {
+            idTokenClaimsBuilder
+                    .claim("credential_type", extractCredentialType(credentialJson))
+                    .claim("vc_json", toJson(credentialJson));
+        }
+
+        if (authentication != null) {
+            if (authentication.acr() != null) {
+                idTokenClaimsBuilder.claim(IdTokenClaimNames.ACR, authentication.acr().acrValue());
+            }
+            idTokenClaimsBuilder.claim(IdTokenClaimNames.AMR, authentication.amr());
+        }
 
         if (additionalParameters.containsKey(OAuth2ParameterNames.SCOPE)) {
             extractedClaims.idTokenClaims().forEach(idTokenClaimsBuilder::claim);
@@ -206,6 +237,14 @@ public class TokenGenerationWorkflow {
         JWTClaimsSet idTokenClaims = idTokenClaimsBuilder.build();
         String jwt = jwtService.issueJWT(idTokenClaims.toString());
         return new IdTokenBuildResult(jwt, idTokenClaims.toJSONObject(), authTime);
+    }
+
+    private String toJson(JsonNode credentialJson) {
+        try {
+            return objectMapper.writeValueAsString(credentialJson);
+        } catch (Exception e) {
+            throw new JsonConversionException("Error converting Verifiable Credential to JSON: " + e.getMessage());
+        }
     }
 
     /**

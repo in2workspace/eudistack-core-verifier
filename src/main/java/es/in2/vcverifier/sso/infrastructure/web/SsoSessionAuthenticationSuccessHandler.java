@@ -1,7 +1,7 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
 
-import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
@@ -11,6 +11,7 @@ import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -77,7 +78,8 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                 vpData.holderHash(),
                 vpData.clientId(),
                 correlationId,
-                vpData.credentialJson() != null ? vpData.credentialJson().toString() : null
+                vpData.authentication(),
+                browserSessionId(request, vpData.tenantSlug())
         );
 
         try {
@@ -159,7 +161,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
                     (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
-                    (JsonNode) map.get("credentialJson")
+                    authenticationOf(map)
             );
         }
 
@@ -171,7 +173,7 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
                     (String) map.get("holderHash"),
                     (String) map.get("clientId"),
                     (String) (map.get("tenantSlug") != null ? map.get("tenantSlug") : map.get("tenant")),
-                    (JsonNode) map.get("credentialJson")
+                    authenticationOf(map)
             );
         }
 
@@ -184,11 +186,29 @@ public class SsoSessionAuthenticationSuccessHandler implements AuthenticationSuc
         );
     }
 
+    private static String browserSessionId(HttpServletRequest request, String tenantSlug) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null || tenantSlug == null) {
+            return null;
+        }
+        String name = SsoSessionCookieFactory.cookieName(tenantSlug);
+        for (Cookie cookie : cookies) {
+            if (name.equals(cookie.getName()) && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+                return cookie.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static AuthenticationResult authenticationOf(Map<?, ?> map) {
+        return map.get("authentication") instanceof AuthenticationResult authentication ? authentication : null;
+    }
+
     private record VpData(
             String tenant,
             String holderHash,
             String clientId,
             String tenantSlug,
-            JsonNode credentialJson
+            AuthenticationResult authentication
     ) {}
 }
