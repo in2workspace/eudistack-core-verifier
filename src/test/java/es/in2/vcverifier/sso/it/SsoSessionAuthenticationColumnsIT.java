@@ -86,7 +86,7 @@ class SsoSessionAuthenticationColumnsIT {
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "SELECT auth_method, acr, amr, certificate_not_after FROM sso_session WHERE id = ?", id);
 
-        assertThat(row.get("auth_method")).isEqualTo("wallet");
+        assertThat(row).containsEntry("auth_method", "wallet");
         assertThat(row.get("acr")).isNull();
         assertThat(row.get("amr")).isNull();
         assertThat(row.get("certificate_not_after")).isNull();
@@ -105,9 +105,9 @@ class SsoSessionAuthenticationColumnsIT {
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "SELECT auth_method, acr, array_to_string(amr, ' ') AS amr, certificate_not_after FROM sso_session WHERE id = ?", id);
-        assertThat(row.get("auth_method")).isEqualTo("x509");
-        assertThat(row.get("acr")).isEqualTo("http://eidas.europa.eu/LoA/high");
-        assertThat(row.get("amr")).isEqualTo("hwk");
+        assertThat(row).containsEntry("auth_method", "x509");
+        assertThat(row).containsEntry("acr", "http://eidas.europa.eu/LoA/high");
+        assertThat(row).containsEntry("amr", "hwk");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT certificate_not_after FROM sso_session WHERE id = ?", OffsetDateTime.class, id))
                 .isEqualTo(notAfter);
