@@ -3,7 +3,9 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.trustframework;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.model.audit.ExternalSystemTarget;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
+import es.in2.vcverifier.shared.infrastructure.audit.ExternalHttpAccessRecorder;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.shared.domain.exception.JsonConversionException;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerAttribute;
@@ -31,11 +33,14 @@ import java.util.List;
 public class EbsiV4TrustedIssuersProvider implements TrustedIssuersProvider {
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    /** The issuer id is not part of the operation: it names who is being checked, not what is called. */
+    private static final String TRUSTED_ISSUER_OPERATION = "issuers/{id}";
 
     private final BackendConfig backendConfig;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final SafeUrlValidator safeUrlValidator;
+    private final ExternalHttpAccessRecorder accessRecorder;
 
     @Override
     public List<IssuerCredentialsCapabilities> getIssuerCapabilities(String issuerId) {
@@ -48,7 +53,9 @@ public class EbsiV4TrustedIssuersProvider implements TrustedIssuersProvider {
                     .timeout(REQUEST_TIMEOUT)
                     .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = accessRecorder.send(
+                    ExternalSystemTarget.trustedList(request.uri().getHost()), TRUSTED_ISSUER_OPERATION,
+                    httpClient, request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
                 IssuerResponse issuerResponse = objectMapper.readValue(response.body(), IssuerResponse.class);

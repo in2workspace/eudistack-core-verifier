@@ -3,7 +3,12 @@ package es.in2.vcverifier.verifier.infrastructure.adapter.trustframework;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
+import es.in2.vcverifier.shared.domain.model.audit.AuditEntry;
+import es.in2.vcverifier.shared.domain.model.audit.AuditEventType;
+import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.shared.domain.port.RecordingAuditTrail;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
+import es.in2.vcverifier.shared.infrastructure.audit.ExternalHttpAccessRecorder;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +21,7 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -33,12 +39,14 @@ class EbsiV4TrustedIssuersProviderTest {
     @Mock private HttpResponse<String> httpResponse;
     @Mock private SafeUrlValidator safeUrlValidator;
 
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
     private EbsiV4TrustedIssuersProvider provider;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        provider = new EbsiV4TrustedIssuersProvider(backendConfig, objectMapper, httpClient, safeUrlValidator);
+        provider = new EbsiV4TrustedIssuersProvider(
+                backendConfig, objectMapper, httpClient, safeUrlValidator, new ExternalHttpAccessRecorder(auditTrail));
     }
 
     @Test
@@ -57,6 +65,15 @@ class EbsiV4TrustedIssuersProviderTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).credentialsType()).isEqualTo("LEARCredentialEmployee");
+
+        AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
+        assertThat(entry.type()).isEqualTo(AuditEventType.EXTERNAL_SYSTEM_ACCESS);
+        assertThat(entry.result()).isEqualTo(AuditResult.SUCCESS);
+        assertThat(entry.details()).containsEntry("system_type", "TrustedList")
+                .containsEntry("system", "trusted-issuers.example.com")
+                .containsEntry("operation", "issuers/{id}");
+        assertThat(entry.details().toString()).doesNotContain("VATES-FOO");
+        assertThat(auditTrail.systemScopes()).isEmpty();
     }
 
     @Test
@@ -69,6 +86,10 @@ class EbsiV4TrustedIssuersProviderTest {
         assertThatThrownBy(() -> provider.getIssuerCapabilities("did:elsi:UNKNOWN"))
                 .isInstanceOf(IssuerNotAuthorizedException.class)
                 .hasMessageContaining("UNKNOWN");
+
+        assertThat(auditTrail.stagedInNewTransaction().getFirst().result())
+                .as("the list answered that it does not know the issuer, so the access itself worked")
+                .isEqualTo(AuditResult.SUCCESS);
     }
 
     @Test
@@ -80,6 +101,23 @@ class EbsiV4TrustedIssuersProviderTest {
 
         assertThatThrownBy(() -> provider.getIssuerCapabilities("did:elsi:VATES-FOO"))
                 .isInstanceOf(FailedCommunicationException.class);
+
+        AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
+        assertThat(entry.result()).isEqualTo(AuditResult.FAILURE);
+        assertThat(entry.reason()).isEqualTo("ErrorResponse");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getIssuerCapabilities_timeout_stagesAFailureTimeout() throws Exception {
+        when(backendConfig.getTrustedIssuerListUri()).thenReturn("https://trusted-issuers.example.com/issuers/");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenThrow(new HttpTimeoutException("request timed out"));
+
+        assertThatThrownBy(() -> provider.getIssuerCapabilities("did:elsi:VATES-FOO"))
+                .isInstanceOf(FailedCommunicationException.class);
+
+        assertThat(auditTrail.stagedInNewTransaction().getFirst().reason()).isEqualTo("Timeout");
     }
 
     @Test

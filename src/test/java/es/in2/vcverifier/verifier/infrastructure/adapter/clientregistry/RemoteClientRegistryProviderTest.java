@@ -1,6 +1,11 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter.clientregistry;
 
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.domain.model.audit.AuditEntry;
+import es.in2.vcverifier.shared.domain.model.audit.AuditEventType;
+import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.shared.domain.port.RecordingAuditTrail;
+import es.in2.vcverifier.shared.infrastructure.audit.ExternalHttpAccessRecorder;
 import es.in2.vcverifier.verifier.domain.exception.RemoteFileFetchException;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -26,11 +32,13 @@ class RemoteClientRegistryProviderTest {
     @Mock private HttpClient httpClient;
     @Mock private HttpResponse<String> httpResponse;
 
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
+
     private RemoteClientRegistryProvider provider;
 
     @BeforeEach
     void setUp() {
-        provider = new RemoteClientRegistryProvider(backendConfig, httpClient);
+        provider = new RemoteClientRegistryProvider(backendConfig, httpClient, new ExternalHttpAccessRecorder(auditTrail));
     }
 
     @Test
@@ -58,6 +66,15 @@ class RemoteClientRegistryProviderTest {
         assertThat(result).isNotNull();
         assertThat(result.clients()).hasSize(1);
         assertThat(result.clients().get(0).clientId()).isEqualTo("test-client");
+
+        assertThat(auditTrail.systemScopes()).containsExactly("platform/verifier");
+        AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
+        assertThat(entry.type()).isEqualTo(AuditEventType.EXTERNAL_SYSTEM_ACCESS);
+        assertThat(entry.result()).isEqualTo(AuditResult.SUCCESS);
+        assertThat(entry.details()).containsEntry("system_type", "ClientRegistry")
+                .containsEntry("system", "remote.example.com")
+                .containsEntry("operation", "/clients.yaml")
+                .containsEntry("authentication_method", "None");
     }
 
     @Test
@@ -70,6 +87,39 @@ class RemoteClientRegistryProviderTest {
         assertThatThrownBy(() -> provider.retrieveClients())
                 .isInstanceOf(RemoteFileFetchException.class)
                 .hasMessageContaining("500");
+
+        AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
+        assertThat(entry.result()).isEqualTo(AuditResult.FAILURE);
+        assertThat(entry.reason()).isEqualTo("ErrorResponse");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void retrieveClients_registryUnreachable_stagesAFailureUnreachableAndKeepsTheError() throws Exception {
+        when(backendConfig.getClientsRepositoryUri()).thenReturn("https://remote.example.com/clients.yaml");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenThrow(new ConnectException("refused"));
+
+        assertThatThrownBy(() -> provider.retrieveClients()).isInstanceOf(RemoteFileFetchException.class);
+
+        AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
+        assertThat(entry.result()).isEqualTo(AuditResult.FAILURE);
+        assertThat(entry.reason()).isEqualTo("Unreachable");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void retrieveClients_auditChannelBroken_stillReturnsTheClients() throws Exception {
+        RemoteClientRegistryProvider providerWithBrokenAudit = new RemoteClientRegistryProvider(
+                backendConfig, httpClient, new ExternalHttpAccessRecorder(new RecordingAuditTrail().failingOnNewTransaction()));
+        when(backendConfig.getClientsRepositoryUri()).thenReturn("https://remote.example.com/clients.yaml");
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn("clients: []");
+
+        ExternalTrustedListYamlData result = providerWithBrokenAudit.retrieveClients();
+
+        assertThat(result).isNotNull();
     }
 
     @Test
