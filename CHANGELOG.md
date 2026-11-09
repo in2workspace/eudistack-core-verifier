@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **EUD-313 — login with a qualified certificate**: each client declares its `loginMethods` (`wallet`, `x509`) and the tenant enables `x509` in `verifier.certificate-login.tenants`. A second port (8081) only serves `POST /api/login/certificate`, which reads the certificate from `X-Amzn-Mtls-Clientcert`, validates it with the trust validation service (DSS) and completes the login. The `sub` is an HMAC of tenant, country and identification number.
+- **eIDAS level in the login**: `acr_values` and `claims.id_token.acr` are read (essential or not), the tokens carry `acr` and `amr`, DCQL profiles declare an `assuranceLevel`, and discovery advertises both levels and `claims_parameter_supported`.
+- **`GET /api/login/methods` and `POST /api/login/wallet`** for the login screen; the wallet request is created only when the person chooses it.
+- **SSO session with method and level** (Flyway `V9`): a session is reused only for a method and level the new login accepts, and a session of an expired certificate is ended.
+
+### Changed
+
+- **Login API errors** are `application/problem+json` with snake_case codes (`login_not_found`, `certificate_revoked`, …); `trust_validation_unavailable` carries `Retry-After`.
+- **SD-JWT presentations require a KB-JWT.**
+
+### Fixed
+
+- `userinfo` answers with the claims of the ID token, the token request splits its scope on any whitespace, and the wallet login timer starts when the person chooses the wallet.
+
 ## [3.4.2] - 2026-11-05
 
 EUD-26 — Observability aligned with the Wallet EBW, the reference configuration.
