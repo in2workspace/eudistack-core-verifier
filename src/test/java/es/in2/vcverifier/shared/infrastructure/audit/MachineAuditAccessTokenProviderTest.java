@@ -149,18 +149,20 @@ class MachineAuditAccessTokenProviderTest {
 
     @Test
     void constructor_withoutATenant_failsBecauseTheVerifierResolvesTheMachineByIt() {
+        RestClient restClient = RestClient.create();
         MachineClientAssertionFactory factory = null;
 
         assertThrows(IllegalArgumentException.class, () -> new MachineAuditAccessTokenProvider(
-                RestClient.create(), clock, TOKEN_URL, " ", CLIENT_ID, factory));
+                restClient, clock, TOKEN_URL, " ", CLIENT_ID, factory));
     }
 
     @Test
     void constructor_withoutATokenUrl_failsNamingTheVariable() {
+        RestClient restClient = RestClient.create();
         MachineClientAssertionFactory factory = null;
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> new MachineAuditAccessTokenProvider(RestClient.create(), clock, "", "dome", CLIENT_ID, factory));
+                () -> new MachineAuditAccessTokenProvider(restClient, clock, "", "dome", CLIENT_ID, factory));
 
         assertEquals("AUDIT_M2M_TOKEN_URL is not set", error.getMessage());
     }
