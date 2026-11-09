@@ -20,8 +20,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class TenantServerRequestObservationConvention extends DefaultServerRequestObservationConvention {
 
-    private static final String UNKNOWN_TENANT = "unknown";
-
     @Override
     public KeyValues getLowCardinalityKeyValues(ServerRequestObservationContext context) {
         return super.getLowCardinalityKeyValues(context).and(tenant(context));
@@ -30,6 +28,6 @@ public class TenantServerRequestObservationConvention extends DefaultServerReque
     private KeyValue tenant(ServerRequestObservationContext context) {
         HttpServletRequest request = context.getCarrier();
         String tenant = request != null ? TenantDomainFilter.getCurrentTenant(request) : null;
-        return KeyValue.of("tenant", tenant == null || tenant.isBlank() ? UNKNOWN_TENANT : tenant);
+        return KeyValue.of("tenant", ObservationConfig.tenantTagValue(tenant));
     }
 }
