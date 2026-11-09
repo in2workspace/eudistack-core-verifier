@@ -2,6 +2,7 @@ package es.in2.vcverifier.verifier.infrastructure.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.shared.infrastructure.audit.ExternalHttpAccessRecorder;
 import es.in2.vcverifier.verifier.domain.service.TrustedIssuersProvider;
 import es.in2.vcverifier.verifier.infrastructure.adapter.trustframework.EbsiV4TrustedIssuersProvider;
 import es.in2.vcverifier.verifier.infrastructure.adapter.trustframework.LocalTrustedIssuersProvider;
@@ -29,9 +30,9 @@ public class TrustedIssuersConfig {
 
     @Bean
     @ConditionalOnProperty(name = "verifier.backend.trustFrameworks[0].trustedIssuersListUrl")
-    public TrustedIssuersProvider ebsiV4TrustedIssuersProvider(BackendConfig backendConfig, ObjectMapper objectMapper, HttpClient httpClient, SafeUrlValidator safeUrlValidator) {
+    public TrustedIssuersProvider ebsiV4TrustedIssuersProvider(BackendConfig backendConfig, ObjectMapper objectMapper, HttpClient httpClient, SafeUrlValidator safeUrlValidator, ExternalHttpAccessRecorder accessRecorder) {
         log.info("Using EBSI v4 Trusted Issuers Provider (remote)");
-        return new EbsiV4TrustedIssuersProvider(backendConfig, objectMapper, httpClient, safeUrlValidator);
+        return new EbsiV4TrustedIssuersProvider(backendConfig, objectMapper, httpClient, safeUrlValidator, accessRecorder);
     }
 
     @Bean
