@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OAuth2M2MAuditAdapterTest {
@@ -107,10 +108,20 @@ class OAuth2M2MAuditAdapterTest {
     }
 
     @Test
-    void publish_stagingFails_stillCompletesBecauseTheAuthenticationAttemptMustNotDependOnTheAudit() {
+    void publish_acceptedAndStagingFails_failsSoNoTokenLeavesWithoutItsTrace() {
         // Arrange
         OAuth2M2MAuditAdapter brokenAdapter = new OAuth2M2MAuditAdapter(new RecordingAuditTrail().failingOnNewTransaction());
         OAuth2M2MAuditEvent event = event("machine-1", "ACCEPT", null, UUID.randomUUID().toString());
+
+        // Act & Assert
+        assertThrows(IllegalStateException.class, () -> brokenAdapter.publish(event));
+    }
+
+    @Test
+    void publish_rejectedAndStagingFails_stillCompletesBecauseNoTokenIsIssuedAnyway() {
+        // Arrange
+        OAuth2M2MAuditAdapter brokenAdapter = new OAuth2M2MAuditAdapter(new RecordingAuditTrail().failingOnNewTransaction());
+        OAuth2M2MAuditEvent event = event("machine-1", "REJECT", "invalid_proof_of_possession", UUID.randomUUID().toString());
 
         // Act & Assert
         assertDoesNotThrow(() -> brokenAdapter.publish(event));
