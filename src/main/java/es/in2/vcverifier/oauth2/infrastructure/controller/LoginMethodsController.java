@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -27,8 +30,6 @@ import java.util.List;
 @Tag(name = "Login", description = "Login methods offered by the login screen")
 public class LoginMethodsController {
 
-    private static final String LOGIN_NOT_FOUND = "LoginNotFound";
-    private static final String METHOD_NOT_OFFERED = "MethodNotOffered";
 
     private final LoginMethodsWorkflow loginMethodsWorkflow;
 
@@ -43,9 +44,6 @@ public class LoginMethodsController {
             @JsonProperty("expires_in") long expiresIn) {
     }
 
-    public record ErrorResponse(String reason) {
-    }
-
     @Operation(summary = "List the methods offered in an open login")
     @ApiResponse(responseCode = "200", description = "Methods offered, in the order of the client registration")
     @ApiResponse(responseCode = "404", description = "No open login for this state in the tenant")
@@ -56,7 +54,7 @@ public class LoginMethodsController {
         return loginMethodsWorkflow.loginMethods(state, TenantDomainFilter.getCurrentTenant(request))
                 .<ResponseEntity<Object>>map(login ->
                         ResponseEntity.ok(new LoginMethodsResponse(login.methods(), login.essentialLevel())))
-                .orElseGet(() -> error(HttpStatus.NOT_FOUND, LOGIN_NOT_FOUND));
+                .orElseGet(() -> loginNotFound(request));
     }
 
     @Operation(summary = "Create the wallet request of an open login",
@@ -73,12 +71,23 @@ public class LoginMethodsController {
         return switch (result) {
             case WalletRequestResult.Created(String authRequest, long expiresIn) ->
                     ResponseEntity.ok(new WalletRequestResponse(authRequest, expiresIn));
-            case WalletRequestResult.LoginNotFound _ -> error(HttpStatus.NOT_FOUND, LOGIN_NOT_FOUND);
-            case WalletRequestResult.MethodNotOffered _ -> error(HttpStatus.CONFLICT, METHOD_NOT_OFFERED);
+            case WalletRequestResult.LoginNotFound _ -> loginNotFound(request);
+            case WalletRequestResult.MethodNotOffered _ -> error(HttpStatus.CONFLICT, "method_not_offered",
+                    "Method not offered", "This login does not offer the wallet.", request);
         };
     }
 
-    private static ResponseEntity<Object> error(HttpStatus status, String reason) {
-        return ResponseEntity.status(status).body(new ErrorResponse(reason));
+    private static ResponseEntity<Object> loginNotFound(HttpServletRequest request) {
+        return error(HttpStatus.NOT_FOUND, "login_not_found",
+                "Login not found", "There is no open login for this state.", request);
+    }
+
+    private static ResponseEntity<Object> error(HttpStatus status, String type, String title, String detail,
+                                                HttpServletRequest request) {
+        ProblemDetail body = ProblemDetail.forStatusAndDetail(status, detail);
+        body.setType(URI.create(type));
+        body.setTitle(title);
+        body.setInstance(URI.create(request.getRequestURI()));
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(body);
     }
 }

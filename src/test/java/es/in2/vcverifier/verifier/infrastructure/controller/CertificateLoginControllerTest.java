@@ -12,8 +12,13 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+
+import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
@@ -45,23 +50,54 @@ class CertificateLoginControllerTest {
 
     @ParameterizedTest
     @CsvSource({
-            "CERTIFICATE_MISSING, 401, CertificateMissing",
-            "LOGIN_NOT_FOUND, 404, LoginNotFound",
-            "VALIDATION_UNAVAILABLE, 503, ValidationUnavailable",
-            "LEVEL_NOT_MET, 403, LevelNotMet",
-            "CERTIFICATE_NOT_NATURAL_PERSON, 403, CertificateNotNaturalPerson",
-            "CERTIFICATE_NOT_QUALIFIED, 403, CertificateNotQualified",
-            "CERTIFICATE_REVOKED, 403, CertificateRevoked",
-            "CERTIFICATE_EXPIRED, 403, CertificateExpired"
+            "CERTIFICATE_MISSING, 401, certificate_missing, No certificate",
+            "LOGIN_NOT_FOUND, 404, login_not_found, Login not found",
+            "VALIDATION_UNAVAILABLE, 503, trust_validation_unavailable, Trust validation unavailable",
+            "LEVEL_NOT_MET, 403, level_not_met, Level not met",
+            "CERTIFICATE_NOT_NATURAL_PERSON, 403, certificate_not_natural_person, Certificate not accepted",
+            "CERTIFICATE_NOT_QUALIFIED, 403, certificate_not_qualified, Certificate not accepted",
+            "CERTIFICATE_REVOKED, 403, certificate_revoked, Certificate not accepted",
+            "CERTIFICATE_EXPIRED, 403, certificate_expired, Certificate not accepted"
     })
-    void certificate_rejectedLogin_returnsItsStatusAndReason(CertificateLoginReason reason, int status, String body) {
+    void certificate_rejectedLogin_returnsAProblemWithItsCode(CertificateLoginReason reason, int status,
+                                                              String type, String title) {
         when(workflow.login("s-1", "cgcom", HEADER)).thenReturn(new Outcome.Rejected(reason));
 
         ResponseEntity<Object> response = controller.certificate(
                 new CertificateLoginController.CertificateLoginRequest("s-1"), request());
 
         assertThat(response.getStatusCode().value()).isEqualTo(status);
-        assertThat(response.getBody()).isEqualTo(new CertificateLoginController.ErrorResponse(body));
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(response.getBody()).isInstanceOfSatisfying(ProblemDetail.class, problem -> {
+            assertThat(problem.getType()).isEqualTo(URI.create(type));
+            assertThat(problem.getTitle()).isEqualTo(title);
+            assertThat(problem.getStatus()).isEqualTo(status);
+            assertThat(problem.getDetail()).isNotBlank();
+            assertThat(problem.getInstance()).isEqualTo(URI.create("/verifier/api/login/certificate"));
+        });
+    }
+
+    @Test
+    void certificate_trustValidationUnavailable_tellsWhenToRetry() {
+        when(workflow.login("s-1", "cgcom", HEADER))
+                .thenReturn(new Outcome.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
+
+        ResponseEntity<Object> response = controller.certificate(
+                new CertificateLoginController.CertificateLoginRequest("s-1"), request());
+
+        assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER))
+                .isEqualTo(CertificateLoginController.RETRY_AFTER_SECONDS);
+    }
+
+    @Test
+    void certificate_rejectedCertificate_doesNotTellWhenToRetry() {
+        when(workflow.login("s-1", "cgcom", HEADER))
+                .thenReturn(new Outcome.Rejected(CertificateLoginReason.CERTIFICATE_REVOKED));
+
+        ResponseEntity<Object> response = controller.certificate(
+                new CertificateLoginController.CertificateLoginRequest("s-1"), request());
+
+        assertThat(response.getHeaders().containsKey(HttpHeaders.RETRY_AFTER)).isFalse();
     }
 
     @Test

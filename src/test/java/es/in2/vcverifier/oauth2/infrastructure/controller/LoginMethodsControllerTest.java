@@ -13,8 +13,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +31,8 @@ class LoginMethodsControllerTest {
 
     private static final String TENANT = "cgcom";
     private static final String HIGH = "http://eidas.europa.eu/LoA/high";
+    private static final String METHODS_PATH = "/verifier/api/login/methods";
+    private static final String WALLET_PATH = "/verifier/api/login/wallet";
 
     @Mock
     private LoginMethodsWorkflow loginMethodsWorkflow;
@@ -41,6 +46,7 @@ class LoginMethodsControllerTest {
     void setUp() {
         request = mock(HttpServletRequest.class);
         lenient().when(request.getAttribute(TenantDomainFilter.TENANT_ATTRIBUTE)).thenReturn(TENANT);
+        lenient().when(request.getRequestURI()).thenReturn(METHODS_PATH);
     }
 
     @Test
@@ -61,8 +67,7 @@ class LoginMethodsControllerTest {
 
         ResponseEntity<Object> response = controller.methods("unknown", request);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(response.getBody()).isEqualTo(new LoginMethodsController.ErrorResponse("LoginNotFound"));
+        assertProblem(response, HttpStatus.NOT_FOUND, "login_not_found", "Login not found", METHODS_PATH);
     }
 
     @Test
@@ -80,21 +85,21 @@ class LoginMethodsControllerTest {
     @Test
     void wallet_unknownLogin_returnsLoginNotFound() {
         when(loginMethodsWorkflow.startWallet("unknown", TENANT)).thenReturn(new WalletRequestResult.LoginNotFound());
+        when(request.getRequestURI()).thenReturn(WALLET_PATH);
 
         ResponseEntity<Object> response = controller.wallet("unknown", request);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(response.getBody()).isEqualTo(new LoginMethodsController.ErrorResponse("LoginNotFound"));
+        assertProblem(response, HttpStatus.NOT_FOUND, "login_not_found", "Login not found", WALLET_PATH);
     }
 
     @Test
     void wallet_notOffered_returnsMethodNotOffered() {
         when(loginMethodsWorkflow.startWallet("s1", TENANT)).thenReturn(new WalletRequestResult.MethodNotOffered());
+        when(request.getRequestURI()).thenReturn(WALLET_PATH);
 
         ResponseEntity<Object> response = controller.wallet("s1", request);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(response.getBody()).isEqualTo(new LoginMethodsController.ErrorResponse("MethodNotOffered"));
+        assertProblem(response, HttpStatus.CONFLICT, "method_not_offered", "Method not offered", WALLET_PATH);
     }
 
     @Test
@@ -110,5 +115,18 @@ class LoginMethodsControllerTest {
         assertThat(objectMapper.writeValueAsString(
                 new LoginMethodsController.WalletRequestResponse("openid4vp://request", 95)))
                 .isEqualTo("{\"authRequest\":\"openid4vp://request\",\"expires_in\":95}");
+    }
+
+    private static void assertProblem(ResponseEntity<Object> response, HttpStatus status, String type, String title,
+                                      String instance) {
+        assertThat(response.getStatusCode()).isEqualTo(status);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(response.getBody()).isInstanceOfSatisfying(ProblemDetail.class, problem -> {
+            assertThat(problem.getType()).isEqualTo(URI.create(type));
+            assertThat(problem.getTitle()).isEqualTo(title);
+            assertThat(problem.getStatus()).isEqualTo(status.value());
+            assertThat(problem.getDetail()).isNotBlank();
+            assertThat(problem.getInstance()).isEqualTo(URI.create(instance));
+        });
     }
 }
