@@ -12,6 +12,7 @@ import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -40,7 +42,13 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -50,6 +58,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         "spring.flyway.enabled=false",
         "verifier.certificate-login.tenants.cgcom.host=" + CertificateLoginIT.CERTIFICATE_HOST,
         "verifier.certificate-login.tenants.cgcom.login-origin=" + CertificateLoginIT.LOGIN_ORIGIN,
+        "verifier.certificate-login.tenants.kpmg.host=" + CertificateLoginIT.OTHER_CERTIFICATE_HOST,
+        "verifier.certificate-login.tenants.kpmg.login-origin=" + CertificateLoginIT.OTHER_LOGIN_ORIGIN,
         "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef",
         "verifier.trust-validation.timeout=PT2S",
         "verifier.dcql.profiles.learcredential.credentials[0].id=learcredential",
@@ -65,11 +75,20 @@ class CertificateLoginIT {
     static final String HOST = "cgcom.example.com";
     static final String CERTIFICATE_HOST = "cgcom-cert.example.com";
     static final String LOGIN_ORIGIN = "https://cgcom.example.com";
+    static final String OTHER_CERTIFICATE_HOST = "kpmg-cert.example.com";
+    static final String OTHER_LOGIN_ORIGIN = "https://kpmg.example.com";
+    private static final int CERTIFICATE_PORT = 8081;
     private static final String CLIENT_ID = "issuance-portal-cgcom";
+    private static final String WALLET_CLIENT_ID = "wallet-portal-cgcom";
+    private static final String LEGACY_CLIENT_ID = "legacy-portal-cgcom";
+    private static final String DCQL_SCOPE = "learcredential";
+    private static final String AUTH_REQUEST = "authRequest";
     private static final String REDIRECT_URI = "https://cgcom.example.com/issuance-portal/callback";
     private static final String NUMBER_SCOPE = "personal_administrative_number";
     private static final String HIGH = "http://eidas.europa.eu/LoA/high";
     private static final String SUBSTANTIAL = "http://eidas.europa.eu/LoA/substantial";
+    private static final String ESSENTIAL_HIGH =
+            "{\"id_token\":{\"acr\":{\"essential\":true,\"values\":[\"" + HIGH + "\"]}}}";
     private static final Person PERSON = new Person("99999999R", "JOSE ANTONIO", "GARCIA FERNANDEZ", "jgarcia@example.com");
 
     private static final DssStub DSS = new DssStub();
@@ -105,7 +124,10 @@ class CertificateLoginIT {
         @Primary
         ClientRegistryProvider testClientRegistryProvider() {
             return () -> new ExternalTrustedListYamlData(List.of(
-                    client(CLIENT_ID, List.of("openid", "profile", "email", NUMBER_SCOPE), List.of("x509", "wallet"))));
+                    client(CLIENT_ID, List.of("openid", "profile", "email", NUMBER_SCOPE, DCQL_SCOPE),
+                            List.of("x509", "wallet")),
+                    client(WALLET_CLIENT_ID, List.of("openid", DCQL_SCOPE), List.of("wallet")),
+                    client(LEGACY_CLIENT_ID, List.of("openid", DCQL_SCOPE), null)));
         }
     }
 
@@ -233,6 +255,183 @@ class CertificateLoginIT {
                 TestCertificates.header(accepted), TestCertificates.header(revoked));
     }
 
+    @Test
+    void essentialLevelNotMet_isRejectedAndTheLoginStaysOpen() throws Exception {
+        X509Certificate software = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        Login login = openLogin(CLIENT_ID, "openid", Map.of("claims", ESSENTIAL_HIGH));
+
+        assertRejected(certificateLogin(login, TestCertificates.header(software)), 403, "level_not_met");
+
+        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
+    }
+
+    @Test
+    @Disabled("M2: without SSO the login has no browser binding, so /api/login/abort cannot cancel it")
+    void rejectedLogin_canBeAbortedSoTheApplicationReceivesAccessDenied() throws Exception {
+        X509Certificate software = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        Login login = openLogin(CLIENT_ID, "openid", Map.of("claims", ESSENTIAL_HIGH));
+        certificateLogin(login, TestCertificates.header(software));
+
+        MvcResult abort = mockMvc.perform(post("/api/login/abort").with(host(HOST)).param("state", login.state()))
+                .andReturn();
+        assertThat(abort.getResponse().getStatus()).isEqualTo(200);
+        String redirectUrl = objectMapper.readTree(abort.getResponse().getContentAsString()).path("redirectUrl").asText();
+        assertThat(redirectUrl).startsWith(REDIRECT_URI).contains("error=access_denied");
+    }
+
+    @Test
+    void certificateHeaderOnTheNormalPort_isRejected() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, true), DssStub.QC_WITH_QSCD);
+        String header = TestCertificates.header(certificate);
+        int callsBefore = DSS.calls();
+
+        assertThat(status(get("/api/login/methods").param("state", "s").with(host(HOST))
+                .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, header))).isEqualTo(400);
+        assertThat(status(post("/oidc/token").with(host(HOST))
+                .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, header))).isEqualTo(400);
+        assertThat(status(post("/api/login/certificate").with(host(HOST))
+                .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, header)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"s\"}"))).isEqualTo(400);
+        assertThat(DSS.calls()).isEqualTo(callsBefore);
+    }
+
+    @Test
+    void certificateLogin_doesNotExistOnTheNormalPort() throws Exception {
+        assertThat(status(post("/api/login/certificate").with(host(HOST))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"s\"}"))).isEqualTo(404);
+    }
+
+    @Test
+    void certificatePort_servesOnlyTheCertificateLogin() throws Exception {
+        assertThat(status(get("/oidc/authorize").with(certificatePort(CERTIFICATE_HOST)))).isEqualTo(404);
+        assertThat(status(post("/oidc/token").with(certificatePort(CERTIFICATE_HOST)))).isEqualTo(404);
+        assertThat(status(post("/api/login/wallet").param("state", "s").with(certificatePort(CERTIFICATE_HOST))))
+                .isEqualTo(404);
+    }
+
+    @Test
+    void tenantHeaderOnTheCertificatePort_isIgnored() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        Login login = openLogin("openid");
+
+        MvcResult result = certificateLogin(login.state(), TestCertificates.header(certificate), CERTIFICATE_HOST,
+                LOGIN_ORIGIN, Map.of("X-Tenant", "kpmg"));
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void unknownState_isNotFoundWithoutCallingTheTrustValidation() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        int callsBefore = DSS.calls();
+
+        assertRejected(certificateLogin("state-that-does-not-exist", TestCertificates.header(certificate),
+                CERTIFICATE_HOST, LOGIN_ORIGIN, Map.of()), 404, "login_not_found");
+        assertThat(DSS.calls()).isEqualTo(callsBefore);
+    }
+
+    @Test
+    void loginThatDoesNotOfferTheCertificate_isNotFound() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        Login walletLogin = openLogin(WALLET_CLIENT_ID, "openid " + DCQL_SCOPE, Map.of());
+        int callsBefore = DSS.calls();
+
+        assertRejected(certificateLogin(walletLogin, TestCertificates.header(certificate)), 404, "login_not_found");
+        assertThat(DSS.calls()).isEqualTo(callsBefore);
+    }
+
+    @Test
+    void loginOfAnotherTenant_isNotFound() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        Login login = openLogin("openid");
+        int callsBefore = DSS.calls();
+
+        assertRejected(certificateLogin(login.state(), TestCertificates.header(certificate), OTHER_CERTIFICATE_HOST,
+                OTHER_LOGIN_ORIGIN, Map.of()), 404, "login_not_found");
+        assertThat(DSS.calls()).isEqualTo(callsBefore);
+    }
+
+    @Test
+    void loginMethods_followTheClientRegistration() throws Exception {
+        Login selection = openLogin(CLIENT_ID, "openid " + DCQL_SCOPE, Map.of());
+        Login walletOnly = openLogin(WALLET_CLIENT_ID, "openid " + DCQL_SCOPE, Map.of());
+
+        assertThat(selection.query()).doesNotContainKey(AUTH_REQUEST);
+        assertThat(methods(selection).path("methods").toString()).isEqualTo("[\"x509\",\"wallet\"]");
+        assertThat(walletOnly.query()).containsKey(AUTH_REQUEST);
+    }
+
+    @Test
+    void essentialLevelOnlyTheCertificateMeets_offersOnlyTheCertificate() throws Exception {
+        Login login = openLogin(CLIENT_ID, "openid " + DCQL_SCOPE, Map.of("claims", ESSENTIAL_HIGH));
+
+        JsonNode methods = methods(login);
+
+        assertThat(login.query()).doesNotContainKey(AUTH_REQUEST);
+        assertThat(methods.path("methods").toString()).isEqualTo("[\"x509\"]");
+        assertThat(methods.path("essential_level").asText()).isEqualTo(HIGH);
+    }
+
+    @Test
+    void essentialLevelNoMethodMeets_returnsUnmetAuthenticationRequirements() throws Exception {
+        Login login = openLogin(WALLET_CLIENT_ID, "openid " + DCQL_SCOPE, Map.of("claims", ESSENTIAL_HIGH));
+
+        assertThat(login.location()).startsWith(REDIRECT_URI);
+        assertThat(login.query()).containsEntry("error", "unmet_authentication_requirements");
+    }
+
+    @Test
+    void levelAsAPreference_isIgnoredWhenNoMethodMeetsIt() throws Exception {
+        Login withAcrValues = openLogin(WALLET_CLIENT_ID, "openid " + DCQL_SCOPE, Map.of("acr_values", HIGH));
+        Login withoutEssential = openLogin(WALLET_CLIENT_ID, "openid " + DCQL_SCOPE,
+                Map.of("claims", "{\"id_token\":{\"acr\":{\"values\":[\"" + HIGH + "\"]}}}"));
+
+        assertThat(withAcrValues.query()).containsKey(AUTH_REQUEST);
+        assertThat(withoutEssential.query()).containsKey(AUTH_REQUEST);
+    }
+
+    @Test
+    void clientWithoutLoginMethods_goesStraightToTheWallet() throws Exception {
+        Login login = openLogin(LEGACY_CLIENT_ID, "openid " + DCQL_SCOPE, Map.of());
+
+        assertThat(login.query()).containsKey(AUTH_REQUEST);
+    }
+
+    @Test
+    void concurrentCompletionsOfOneLogin_issueASingleCode() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        Login login = openLogin(CLIENT_ID, "openid " + DCQL_SCOPE, Map.of());
+        String header = TestCertificates.header(certificate);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Integer> attempt = () -> {
+                start.await();
+                return certificateLogin(login, header).getResponse().getStatus();
+            };
+            Future<Integer> first = executor.submit(attempt);
+            Future<Integer> second = executor.submit(attempt);
+            start.countDown();
+
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(200, 404);
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(status(post("/api/login/wallet").param("state", login.state()).with(host(HOST)))).isEqualTo(404);
+    }
+
+    private JsonNode methods(Login login) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/login/methods").param("state", login.state()).with(host(HOST)))
+                .andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private int status(MockHttpServletRequestBuilder request) throws Exception {
+        return mockMvc.perform(request).andReturn().getResponse().getStatus();
+    }
+
     private JsonNode loginAndExchange(X509Certificate certificate, String scope) throws Exception {
         Login login = openLogin(scope);
         MvcResult result = certificateLogin(login, TestCertificates.header(certificate));
@@ -256,35 +455,45 @@ class CertificateLoginIT {
     }
 
     private Login openLogin(String scope) throws Exception {
+        return openLogin(CLIENT_ID, scope, Map.of());
+    }
+
+    private Login openLogin(String clientId, String scope, Map<String, String> parameters) throws Exception {
         String codeVerifier = UUID.randomUUID() + "-" + UUID.randomUUID();
-        String state = "state-" + UUID.randomUUID();
-        MvcResult result = mockMvc.perform(get("/oidc/authorize")
-                        .with(host(HOST))
-                        .param("response_type", "code")
-                        .param("client_id", CLIENT_ID)
-                        .param("redirect_uri", REDIRECT_URI)
-                        .param("scope", scope)
-                        .param("state", state)
-                        .param("nonce", "nonce-" + UUID.randomUUID())
-                        .param("code_challenge", challenge(codeVerifier))
-                        .param("code_challenge_method", "S256"))
-                .andReturn();
-        String location = result.getResponse().getHeader(HttpHeaders.LOCATION);
+        var request = get("/oidc/authorize")
+                .with(host(HOST))
+                .param("response_type", "code")
+                .param("client_id", clientId)
+                .param("redirect_uri", REDIRECT_URI)
+                .param("scope", scope)
+                .param("state", "state-" + UUID.randomUUID())
+                .param("nonce", "nonce-" + UUID.randomUUID())
+                .param("code_challenge", challenge(codeVerifier))
+                .param("code_challenge_method", "S256");
+        parameters.forEach(request::param);
+        String location = mockMvc.perform(request).andReturn().getResponse().getHeader(HttpHeaders.LOCATION);
         assertThat(location).as("authorization redirect").isNotNull();
-        String loginState = UriComponentsBuilder.fromUriString(location).build().getQueryParams().getFirst("state");
-        assertThat(loginState).as("login state in %s", location).isNotBlank();
-        return new Login(loginState, codeVerifier);
+        Map<String, String> query = UriComponentsBuilder.fromUriString(location).build().getQueryParams()
+                .toSingleValueMap();
+        assertThat(query.get("state")).as("state in %s", location).isNotBlank();
+        return new Login(query.get("state"), codeVerifier, location, query);
     }
 
     private MvcResult certificateLogin(Login login, String certificateHeader) throws Exception {
+        return certificateLogin(login.state(), certificateHeader, CERTIFICATE_HOST, LOGIN_ORIGIN, Map.of());
+    }
+
+    private MvcResult certificateLogin(String state, String certificateHeader, String certificateHost, String origin,
+                                       Map<String, String> headers) throws Exception {
         var request = post("/api/login/certificate")
-                .with(certificatePort())
-                .header(HttpHeaders.ORIGIN, LOGIN_ORIGIN)
+                .with(certificatePort(certificateHost))
+                .header(HttpHeaders.ORIGIN, origin)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("state", login.state())));
+                .content(objectMapper.writeValueAsString(Map.of("state", state)));
         if (certificateHeader != null) {
             request.header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, certificateHeader);
         }
+        headers.forEach(request::header);
         return mockMvc.perform(request).andReturn();
     }
 
@@ -310,10 +519,10 @@ class CertificateLoginIT {
         };
     }
 
-    private static RequestPostProcessor certificatePort() {
+    private static RequestPostProcessor certificatePort(String certificateHost) {
         return request -> {
-            host(CERTIFICATE_HOST).postProcessRequest(request);
-            request.setLocalPort(8081);
+            host(certificateHost).postProcessRequest(request);
+            request.setLocalPort(CERTIFICATE_PORT);
             return request;
         };
     }
@@ -334,6 +543,6 @@ class CertificateLoginIT {
                 loginMethods);
     }
 
-    private record Login(String state, String codeVerifier) {
+    private record Login(String state, String codeVerifier, String location, Map<String, String> query) {
     }
 }
