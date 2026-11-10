@@ -57,6 +57,23 @@ class DcqlProfileResolverImplTest {
     }
 
     @Test
+    @DisplayName("resolve() ignores the identification number scope of the certificate login")
+    void resolve_ignoresTheIdentificationNumberScope() {
+        DcqlQuery result = resolver.resolve("openid profile personal_administrative_number learcredential.employee");
+
+        assertThat(result.credentials()).hasSize(1);
+        assertThat(result.credentials().get(0).id()).isEqualTo("lear_employee_sd_jwt");
+    }
+
+    @Test
+    @DisplayName("resolve() finds no attestation when only the identification number scope is requested")
+    void resolve_throwsWhenOnlyTheIdentificationNumberScopeIsRequested() {
+        assertThatThrownBy(() -> resolver.resolve("openid personal_administrative_number"))
+                .isInstanceOf(InvalidScopeException.class)
+                .hasMessageContaining("No OID4VP scope found");
+    }
+
+    @Test
     @DisplayName("resolve() merges credentials from multiple OID4VP scopes")
     void resolve_mergesMultipleScopes() {
         DcqlQuery result = resolver.resolve("openid learcredential.employee learcredential.machine");

@@ -161,6 +161,7 @@ class CrossDeviceSsoLoginIT {
 
     @BeforeEach
     void setUp() {
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
         jdbcTemplate.execute("DELETE FROM sso_session");
         reset(auditPort);
         clearInvocations(sseEmitterStore);

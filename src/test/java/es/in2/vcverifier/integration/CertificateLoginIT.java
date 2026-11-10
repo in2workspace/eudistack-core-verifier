@@ -391,6 +391,34 @@ class CertificateLoginIT {
     }
 
     @Test
+    void loginThatAsksForNoAttestation_offersOnlyTheCertificate() throws Exception {
+        Login login = openLogin(CLIENT_ID, "openid profile " + NUMBER_SCOPE, Map.of());
+
+        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
+        assertThat(status(post("/api/login/wallet").param("state", login.state()).with(host(HOST)))).isEqualTo(409);
+    }
+
+    @Test
+    void loginThatAsksForAnAttestationAndTheNumber_offersBothMethodsAndCreatesTheWalletRequest() throws Exception {
+        Login login = openLogin(CLIENT_ID, "openid profile " + NUMBER_SCOPE + " " + DCQL_SCOPE, Map.of());
+
+        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\",\"wallet\"]");
+        MvcResult wallet = mockMvc.perform(post("/api/login/wallet").param("state", login.state()).with(host(HOST)))
+                .andReturn();
+        assertThat(wallet.getResponse().getStatus()).isEqualTo(200);
+        assertThat(objectMapper.readTree(wallet.getResponse().getContentAsString()).path(AUTH_REQUEST).asText())
+                .isNotBlank();
+    }
+
+    @Test
+    void walletOnlyLoginThatAsksForNoAttestation_returnsInvalidScopeToTheApplication() throws Exception {
+        Login login = openLogin(WALLET_CLIENT_ID, "openid", Map.of());
+
+        assertThat(login.location()).startsWith(REDIRECT_URI);
+        assertThat(login.query()).containsEntry("error", "invalid_scope");
+    }
+
+    @Test
     void clientWithoutLoginMethods_goesStraightToTheWallet() throws Exception {
         Login login = openLogin(LEGACY_CLIENT_ID, "openid " + DCQL_SCOPE, Map.of());
 

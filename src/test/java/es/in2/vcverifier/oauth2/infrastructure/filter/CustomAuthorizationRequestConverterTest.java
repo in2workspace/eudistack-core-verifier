@@ -52,6 +52,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HAS
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
@@ -101,6 +102,7 @@ class CustomAuthorizationRequestConverterTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
         converter = new CustomAuthorizationRequestConverter(
                 didService,
                 jwtService,

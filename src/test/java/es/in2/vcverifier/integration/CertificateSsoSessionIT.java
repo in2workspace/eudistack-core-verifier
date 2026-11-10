@@ -192,7 +192,7 @@ class CertificateSsoSessionIT {
         Login login = authorize(SECOND_CLIENT, "openid profile", Map.of());
 
         assertThat(login.query()).doesNotContainKeys("code", "authRequest");
-        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\",\"wallet\"]");
+        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
         assertThat(activeSessions()).isZero();
     }
 

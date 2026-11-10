@@ -13,6 +13,7 @@ import es.in2.vcverifier.oauth2.domain.model.OidcPrompt;
 import es.in2.vcverifier.oauth2.domain.model.RequestedAssuranceLevel;
 import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.oauth2.domain.service.LoginMethodsResolver;
+import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
@@ -92,6 +93,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final String ACR_VALUES_NOT_A_STRING_DESCRIPTION = "acr_values must be a string";
     private static final String CLAIMS_INVALID_DESCRIPTION = "claims must be a valid claims request";
     private static final String UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION = "no login method meets the requested authentication requirements";
+    private static final String NO_ATTESTATION_REQUESTED_DESCRIPTION = "the requested scopes ask for no attestation the wallet can present";
     private static final List<LoginMethod> WALLET_ONLY = List.of(LoginMethod.WALLET);
     private static final Pattern DIGITS = Pattern.compile("\\d+");
     private static final BigDecimal MAX_AGE_LIMIT = BigDecimal.valueOf(SsoTtlRange.MAX_ABSOLUTE.toSeconds());
@@ -239,7 +241,13 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // buildAuthorizationRequest does for the QR path has to run here first. A client that offers
         // the certificate may ask for no attestation at all.
         if (attestationScopes || !clientLoginMethods.contains(LoginMethod.X509)) {
-            authorizationRequestBuildWorkflow.validateScope(authorizationContext.scope());
+            try {
+                authorizationRequestBuildWorkflow.validateScope(authorizationContext.scope());
+            } catch (InvalidScopeException _) {
+                log.info("event=authorize_no_attestation_requested clientId={}", registeredClient.getClientId());
+                throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_SCOPE, NO_ATTESTATION_REQUESTED_DESCRIPTION,
+                        authorizationContext);
+            }
         }
         RequestedAssuranceLevel requestedLevel = parameters.requestedLevel();
         return authorizationContext.toBuilder()
@@ -493,12 +501,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                                                RegisteredClient registeredClient,
                                                String redirectUri,
                                                AuthenticationParameters parameters) {
+        boolean attestationRequested = dcqlProfileResolver.requestsAttestation(scopesOf(authorizationContext.scope()));
         List<LoginMethod> loginMethods = resolveLoginMethods(registeredClient,
-                TenantDomainFilter.getCurrentTenant(request), parameters.requestedLevel());
+                TenantDomainFilter.getCurrentTenant(request), parameters.requestedLevel(), attestationRequested);
         if (loginMethods.isEmpty()) {
-            log.info("event=authorize_unmet_authentication_requirements clientId={}", registeredClient.getClientId());
-            throw oidcErrorRedirect(UNMET_AUTHENTICATION_REQUIREMENTS, UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION,
-                    errorContext);
+            throw noLoginMethod(registeredClient, attestationRequested, errorContext);
         }
 
         WalletLoginWorkflow.WalletLogin walletLogin = loginMethods.equals(WALLET_ONLY)
@@ -644,9 +651,25 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * the same client/redirect_uri (equal non-null binding hashes), done with an atomic compare-and-
      * replace. Request and OID4VP nonce live in this one entry, so they always come from the same call.
      */
+    private AuthorizationRedirectException noLoginMethod(RegisteredClient registeredClient,
+                                                         boolean attestationRequested,
+                                                         AuthorizationContext errorContext) {
+        if (!attestationRequested && clientLoginMethods(registeredClient).contains(LoginMethod.WALLET)) {
+            log.info("event=authorize_no_attestation_requested clientId={}", registeredClient.getClientId());
+            return oidcErrorRedirect(OAuth2ErrorCodes.INVALID_SCOPE, NO_ATTESTATION_REQUESTED_DESCRIPTION,
+                    errorContext);
+        }
+        log.info("event=authorize_unmet_authentication_requirements clientId={}", registeredClient.getClientId());
+        return oidcErrorRedirect(UNMET_AUTHENTICATION_REQUIREMENTS, UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION,
+                errorContext);
+    }
+
     private List<LoginMethod> resolveLoginMethods(RegisteredClient registeredClient, String tenant,
-                                                  RequestedAssuranceLevel requestedLevel) {
-        List<LoginMethod> clientMethods = clientLoginMethods(registeredClient);
+                                                  RequestedAssuranceLevel requestedLevel,
+                                                  boolean attestationRequested) {
+        List<LoginMethod> clientMethods = clientLoginMethods(registeredClient).stream()
+                .filter(method -> attestationRequested || method != LoginMethod.WALLET)
+                .toList();
         AssuranceLevel walletLevel = dcqlProfileResolver.highestAssuranceLevel(registeredClient.getScopes()).orElse(null);
         List<LoginMethod> loginMethods = loginMethodsResolver.resolve(clientMethods,
                 tenantLoginMethodsPort.activeLoginMethods(tenant), walletLevel, requestedLevel);

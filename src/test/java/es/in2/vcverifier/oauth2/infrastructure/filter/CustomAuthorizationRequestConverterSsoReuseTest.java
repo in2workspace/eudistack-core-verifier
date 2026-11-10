@@ -146,6 +146,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
         converter = new CustomAuthorizationRequestConverter(didService, jwtService, cacheStore, backendConfig,
                 registeredClientRepository, false, SELECTION_TIMEOUT_SECONDS, httpClient, authorizationRequestBuildWorkflow,
                 safeUrlValidator, reuseSsoSessionWorkflow, ssoBrowserBindingCookie, tenantLoginMethodsPort,
@@ -455,7 +456,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         doThrow(new InvalidScopeException("unsupported")).when(authorizationRequestBuildWorkflow).validateScope(SCOPE);
 
         // When / Then
-        assertThrows(InvalidScopeException.class, () -> converter.convert(request));
+        assertEquals("invalid_scope", convertExpectingError(request).getErrorCode());
         verifyNoInteractions(reuseSsoSessionWorkflow);
     }
 

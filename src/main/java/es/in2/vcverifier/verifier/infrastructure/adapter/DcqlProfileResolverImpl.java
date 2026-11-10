@@ -22,7 +22,8 @@ import java.util.*;
 public class DcqlProfileResolverImpl implements DcqlProfileResolver {
 
     private static final Set<String> OIDC_STANDARD_SCOPES = Set.of(
-            "openid", "profile", "email", "offline_access", "role", "address", "phone"
+            "openid", "profile", "email", "offline_access", "role", "address", "phone",
+            "personal_administrative_number"
     );
 
     private final DcqlProfileProperties dcqlProfileProperties;
