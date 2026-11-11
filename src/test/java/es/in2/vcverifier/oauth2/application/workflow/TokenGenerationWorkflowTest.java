@@ -319,7 +319,7 @@ class TokenGenerationWorkflowTest {
             assertThat(idToken.get("acr").asText()).isEqualTo("http://eidas.europa.eu/LoA/high");
             assertThat(idToken.get("amr")).containsExactly(objectMapper.getNodeFactory().textNode("hwk"));
             assertThat(idToken.get("given_name").asText()).isEqualTo("JOSE ANTONIO");
-            assertThat(idToken.get("name").asText()).isEqualTo("GARCIA FERNANDEZ JOSE ANTONIO");
+            assertThat(idToken.get("name").asText()).isEqualTo("JOSE ANTONIO GARCIA FERNANDEZ");
             assertThat(idToken.has("email")).isFalse();
             assertThat(idToken.has("personal_administrative_number")).isFalse();
             assertThat(idToken.has("credential_type")).isFalse();

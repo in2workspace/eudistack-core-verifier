@@ -12,6 +12,8 @@ public final class CertificateClaims {
 
     public static final String PERSONAL_ADMINISTRATIVE_NUMBER = "personal_administrative_number";
 
+    private static final String NUMBER_SEPARATOR = " - ";
+
     private CertificateClaims() {
     }
 
@@ -20,7 +22,7 @@ public final class CertificateClaims {
         if (scopes.contains(OidcScopes.PROFILE)) {
             putIfPresent(claims, StandardClaimNames.GIVEN_NAME, identity.givenName());
             putIfPresent(claims, StandardClaimNames.FAMILY_NAME, identity.surname());
-            putIfPresent(claims, StandardClaimNames.NAME, identity.commonName());
+            putIfPresent(claims, StandardClaimNames.NAME, displayName(identity));
         }
         if (scopes.contains(OidcScopes.EMAIL)) {
             putIfPresent(claims, StandardClaimNames.EMAIL, identity.email());
@@ -31,8 +33,30 @@ public final class CertificateClaims {
         return claims;
     }
 
+    private static String displayName(CertificateIdentity identity) {
+        if (hasText(identity.givenName()) && hasText(identity.surname())) {
+            return identity.givenName() + " " + identity.surname();
+        }
+        return withoutNumber(identity.commonName(), identity.personalAdministrativeNumber());
+    }
+
+    private static String withoutNumber(String commonName, String number) {
+        if (commonName == null || number == null) {
+            return commonName;
+        }
+        int separator = commonName.lastIndexOf(NUMBER_SEPARATOR);
+        if (separator < 0 || !commonName.substring(separator).contains(number)) {
+            return commonName;
+        }
+        return commonName.substring(0, separator).trim();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private static void putIfPresent(Map<String, Object> claims, String name, String value) {
-        if (value != null && !value.isBlank()) {
+        if (hasText(value)) {
             claims.put(name, value);
         }
     }
