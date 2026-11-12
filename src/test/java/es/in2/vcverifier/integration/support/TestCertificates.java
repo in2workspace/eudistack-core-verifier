@@ -16,8 +16,6 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 import java.math.BigInteger;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
@@ -78,7 +76,7 @@ public final class TestCertificates {
     }
 
     public static String header(X509Certificate certificate) {
-        return URLEncoder.encode(pem(certificate), StandardCharsets.UTF_8).replace("+", "%20");
+        return ":" + base64(certificate) + ":";
     }
 
     public static String base64(X509Certificate certificate) {
@@ -133,20 +131,6 @@ public final class TestCertificates {
         type.add(new DERSequence(QC_TYPE_ESIGN));
         statements.add(new DERSequence(type));
         return new DERSequence(statements);
-    }
-
-    private static String pem(X509Certificate certificate) {
-        return "-----BEGIN CERTIFICATE-----\n"
-                + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII)).encodeToString(encoded(certificate))
-                + "\n-----END CERTIFICATE-----\n";
-    }
-
-    private static byte[] encoded(X509Certificate certificate) {
-        try {
-            return certificate.getEncoded();
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
     }
 
     private static KeyPair keyPair() {

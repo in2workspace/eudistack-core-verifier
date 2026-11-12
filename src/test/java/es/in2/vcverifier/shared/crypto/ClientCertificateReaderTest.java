@@ -16,8 +16,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigInteger;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
@@ -94,29 +92,66 @@ class ClientCertificateReaderTest {
     }
 
     @Test
-    void readChain_urlEncodedPemChain_givesTheCertificatesInOrder() throws Exception {
+    void readChain_certificateWithoutChain_givesOnlyTheCertificate() throws Exception {
         X509Certificate leaf = personCertificate("IDCES-12345678Z", null);
-        X509Certificate issuer = personCertificate(null, null);
 
-        List<X509Certificate> chain = reader.readChain(albHeader(pem(leaf) + pem(issuer)));
-
-        assertThat(chain).containsExactly(leaf, issuer);
+        assertThat(reader.readChain(byteSequence(leaf), List.of())).containsExactly(leaf);
     }
 
     @Test
-    void readChain_pemWithUnencodedPlusSigns_isStillRead() throws Exception {
+    void readChain_chainAsAList_givesTheCertificatesInOrder() throws Exception {
         X509Certificate leaf = personCertificate("IDCES-12345678Z", null);
-        String header = albHeader(pem(leaf)).replace("%2B", "+");
+        X509Certificate intermediate = personCertificate(null, null);
+        X509Certificate root = personCertificate(null, null);
 
-        assertThat(reader.readChain(header)).containsExactly(leaf);
+        List<X509Certificate> chain = reader.readChain(byteSequence(leaf),
+                List.of(byteSequence(intermediate) + ", " + byteSequence(root)));
+
+        assertThat(chain).containsExactly(leaf, intermediate, root);
     }
 
     @Test
-    void readChain_unreadableHeader_failsWithoutEchoingIt() {
-        assertThatThrownBy(() -> reader.readChain("-----BEGIN%20CERTIFICATE-----%0Asecret-value%0A"))
+    void readChain_chainSplitInSeveralHeaders_keepsTheirOrder() throws Exception {
+        X509Certificate leaf = personCertificate("IDCES-12345678Z", null);
+        X509Certificate intermediate = personCertificate(null, null);
+        X509Certificate root = personCertificate(null, null);
+
+        List<X509Certificate> chain = reader.readChain(" " + byteSequence(leaf) + " ",
+                List.of(byteSequence(intermediate), byteSequence(root)));
+
+        assertThat(chain).containsExactly(leaf, intermediate, root);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "MIIBsecretvalue | not a byte sequence",
+            ":MIIB secret-value: | not base64",
+            ":c2VjcmV0LXZhbHVl: | not an X.509 certificate",
+            ": | not a byte sequence"
+    })
+    void readChain_unreadableCertificate_failsSayingWhyWithoutEchoingIt(String header, String reason) {
+        assertThatThrownBy(() -> reader.readChain(header, List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageNotContaining("secret-value");
-        assertThatThrownBy(() -> reader.readChain(" "))
+                .hasMessageContaining(reason)
+                .hasMessageNotContaining("secret")
+                .hasMessageNotContaining("c2VjcmV0");
+    }
+
+    @Test
+    void readChain_unreadableChainMember_fails() throws Exception {
+        String leaf = byteSequence(personCertificate("IDCES-12345678Z", null));
+
+        assertThatThrownBy(() -> reader.readChain(leaf, List.of(":c2VjcmV0LXZhbHVl:")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> reader.readChain(leaf, List.of(leaf + ",")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void readChain_withoutCertificate_fails() {
+        assertThatThrownBy(() -> reader.readChain(null, List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> reader.readChain(" ", List.of()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -142,13 +177,7 @@ class ClientCertificateReaderTest {
                 builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(keyPair.getPrivate())));
     }
 
-    private static String albHeader(String pem) {
-        return URLEncoder.encode(pem, StandardCharsets.UTF_8).replace("+", "%20");
-    }
-
-    private static String pem(X509Certificate certificate) throws Exception {
-        return "-----BEGIN CERTIFICATE-----\n"
-                + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII)).encodeToString(certificate.getEncoded())
-                + "\n-----END CERTIFICATE-----\n";
+    private static String byteSequence(X509Certificate certificate) throws Exception {
+        return ":" + Base64.getEncoder().encodeToString(certificate.getEncoded()) + ":";
     }
 }

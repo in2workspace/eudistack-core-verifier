@@ -236,7 +236,7 @@ class CertificateSsoSessionIT {
                 .header(CertificateLoginFilter.SECURE_ORIGIN_HEADER, SECURE_ORIGIN)
                 .header(X_TENANT_HEADER, TENANT)
                 .header(HttpHeaders.ORIGIN, LOGIN_ORIGIN)
-                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, TestCertificates.header(certificate))
+                .header(CertificateLoginFilter.CLIENT_CERT_HEADER, TestCertificates.header(certificate))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("state", login.state()))));
     }

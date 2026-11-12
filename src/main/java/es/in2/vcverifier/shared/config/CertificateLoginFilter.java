@@ -20,7 +20,8 @@ import java.security.MessageDigest;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CertificateLoginFilter extends OncePerRequestFilter {
 
-    public static final String MTLS_CLIENT_CERT_HEADER = "X-Amzn-Mtls-Clientcert";
+    public static final String CLIENT_CERT_HEADER = "Client-Cert";
+    public static final String CLIENT_CERT_CHAIN_HEADER = "Client-Cert-Chain";
     public static final String SECURE_ORIGIN_HEADER = "X-Secure-Origin";
     public static final String CERTIFICATE_LOGIN_PATH = "/api/login/certificate";
 
@@ -41,7 +42,7 @@ public class CertificateLoginFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         boolean certificateLogin = isCertificateLogin(request);
-        if (certificateLogin ? !fromSecureOrigin(request) : request.getHeader(MTLS_CLIENT_CERT_HEADER) != null) {
+        if (certificateLogin ? !fromSecureOrigin(request) : carriesCertificate(request)) {
             log.warn("event=certificate_login_forbidden method={} certificateLoginPath={}",
                     request.getMethod(), certificateLogin);
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
@@ -54,5 +55,9 @@ public class CertificateLoginFilter extends OncePerRequestFilter {
         String presented = request.getHeader(SECURE_ORIGIN_HEADER);
         return secureOrigin.length > 0 && presented != null
                 && MessageDigest.isEqual(secureOrigin, presented.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static boolean carriesCertificate(HttpServletRequest request) {
+        return request.getHeader(CLIENT_CERT_HEADER) != null || request.getHeader(CLIENT_CERT_CHAIN_HEADER) != null;
     }
 }

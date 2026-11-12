@@ -11,16 +11,15 @@ import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.cert.Certificate;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HexFormat;
 import java.util.List;
@@ -40,24 +39,36 @@ public class ClientCertificateReader {
     private record PersonalNumber(String country, String number) {
     }
 
-    public List<X509Certificate> readChain(String header) {
-        if (header == null || header.isBlank()) {
-            throw new IllegalArgumentException("Empty client certificate header");
+    public List<X509Certificate> readChain(String clientCert, List<String> clientCertChain) {
+        if (clientCert == null || clientCert.isBlank()) {
+            throw new IllegalArgumentException("No client certificate header");
         }
-        String pem = URLDecoder.decode(header.replace("+", "%2B"), StandardCharsets.UTF_8);
-        try {
-            Collection<? extends Certificate> certificates = CertificateFactory.getInstance("X.509")
-                    .generateCertificates(new ByteArrayInputStream(pem.getBytes(StandardCharsets.US_ASCII)));
-            List<X509Certificate> chain = certificates.stream()
-                    .filter(X509Certificate.class::isInstance)
-                    .map(X509Certificate.class::cast)
-                    .toList();
-            if (chain.isEmpty()) {
-                throw new IllegalArgumentException("No certificate in the client certificate header");
+        List<X509Certificate> chain = new ArrayList<>();
+        chain.add(certificate(clientCert.strip()));
+        for (String header : clientCertChain) {
+            for (String member : header.split(",", -1)) {
+                chain.add(certificate(member.strip()));
             }
-            return chain;
-        } catch (CertificateException e) {
-            throw new IllegalArgumentException("Unreadable client certificate header", e);
+        }
+        return List.copyOf(chain);
+    }
+
+    private static X509Certificate certificate(String byteSequence) {
+        if (byteSequence.length() < 2 || byteSequence.charAt(0) != ':'
+                || byteSequence.charAt(byteSequence.length() - 1) != ':') {
+            throw new IllegalArgumentException("Client certificate header member is not a byte sequence");
+        }
+        byte[] der;
+        try {
+            der = Base64.getDecoder().decode(byteSequence.substring(1, byteSequence.length() - 1));
+        } catch (IllegalArgumentException _) {
+            throw new IllegalArgumentException("Client certificate header member is not base64");
+        }
+        try {
+            return (X509Certificate) CertificateFactory.getInstance("X.509")
+                    .generateCertificate(new ByteArrayInputStream(der));
+        } catch (CertificateException | ClassCastException _) {
+            throw new IllegalArgumentException("Client certificate header member is not an X.509 certificate");
         }
     }
 

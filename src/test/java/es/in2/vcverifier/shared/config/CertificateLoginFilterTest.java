@@ -21,7 +21,7 @@ class CertificateLoginFilterTest {
 
     private static final String SECURE_ORIGIN = "s3cr3t-0f-th3-s3cur3-0r1g1n-d1str1but10n";
     private static final String LOGIN_PATH = "/api/login/certificate";
-    private static final String CERTIFICATE = "-----BEGIN%20CERTIFICATE-----";
+    private static final String CERTIFICATE = ":MIIB:";
 
     private final CertificateLoginFilter filter = new CertificateLoginFilter(new CertificateLoginProperties(
             SECURE_ORIGIN, Map.of("cgcom", new CertificateLoginProperties.Tenant("https://cgcom.example.com"))));
@@ -31,7 +31,8 @@ class CertificateLoginFilterTest {
     void certificateLogin_fromTheSecureOrigin_isLetThrough(String method) throws Exception {
         MockHttpServletRequest request = request(method, LOGIN_PATH);
         request.addHeader(CertificateLoginFilter.SECURE_ORIGIN_HEADER, SECURE_ORIGIN);
-        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, CERTIFICATE);
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_HEADER, CERTIFICATE);
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_CHAIN_HEADER, ":MIIC:");
 
         assertLetThrough(filter, request);
     }
@@ -49,7 +50,7 @@ class CertificateLoginFilterTest {
     void certificateLogin_withAWrongSecureOrigin_isForbidden(String secureOrigin) throws Exception {
         MockHttpServletRequest request = request("POST", LOGIN_PATH);
         request.addHeader(CertificateLoginFilter.SECURE_ORIGIN_HEADER, secureOrigin);
-        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, CERTIFICATE);
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_HEADER, CERTIFICATE);
 
         assertForbidden(filter, request);
     }
@@ -57,7 +58,7 @@ class CertificateLoginFilterTest {
     @Test
     void certificateLogin_withoutSecureOrigin_isForbidden() throws Exception {
         MockHttpServletRequest request = request("POST", LOGIN_PATH);
-        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, CERTIFICATE);
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_HEADER, CERTIFICATE);
 
         assertForbidden(filter, request);
     }
@@ -73,17 +74,17 @@ class CertificateLoginFilterTest {
 
     @ParameterizedTest
     @CsvSource({
-            "GET, /oidc/authorize",
-            "POST, /oidc/token",
-            "POST, /api/login/wallet",
-            "GET, /health",
-            "POST, /api/login/certificate/x"
+            "GET, /oidc/authorize, Client-Cert",
+            "POST, /oidc/token, Client-Cert",
+            "POST, /api/login/wallet, Client-Cert-Chain",
+            "GET, /health, Client-Cert",
+            "POST, /api/login/certificate/x, Client-Cert"
     })
-    void otherPath_withTheCertificateHeader_isForbiddenEvenFromTheSecureOrigin(String method, String path)
+    void otherPath_withACertificateHeader_isForbiddenEvenFromTheSecureOrigin(String method, String path, String header)
             throws Exception {
         MockHttpServletRequest request = request(method, path);
         request.addHeader(CertificateLoginFilter.SECURE_ORIGIN_HEADER, SECURE_ORIGIN);
-        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, CERTIFICATE);
+        request.addHeader(header, CERTIFICATE);
 
         assertForbidden(filter, request);
     }

@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.Collections;
 
 @RestController
 @RequestMapping("/api/login")
@@ -57,7 +58,8 @@ public class CertificateLoginController {
         Outcome outcome = certificateLoginWorkflow.login(
                 body == null ? null : body.state(),
                 TenantDomainFilter.getCurrentTenant(request),
-                request.getHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER));
+                request.getHeader(CertificateLoginFilter.CLIENT_CERT_HEADER),
+                Collections.list(request.getHeaders(CertificateLoginFilter.CLIENT_CERT_CHAIN_HEADER)));
         return switch (outcome) {
             case Outcome.Completed(String redirectUri) -> ResponseEntity.ok(new CertificateLoginResponse(redirectUri));
             case Outcome.Rejected(CertificateLoginReason reason) -> rejected(problem(reason), request);

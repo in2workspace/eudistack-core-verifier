@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.net.URI;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
@@ -27,7 +28,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class CertificateLoginControllerTest {
 
-    private static final String HEADER = "-----BEGIN%20CERTIFICATE-----";
+    private static final String HEADER = ":MIIB:";
+    private static final List<String> CHAIN = List.of(":MIIC:", ":MIID:");
 
     @Mock
     private CertificateLoginWorkflow workflow;
@@ -37,7 +39,7 @@ class CertificateLoginControllerTest {
 
     @Test
     void certificate_completedLogin_returnsTheRedirectUri() {
-        when(workflow.login("s-1", "cgcom", HEADER)).thenReturn(new Outcome.Completed("https://portal.example.com/cb?code=c"));
+        when(workflow.login("s-1", "cgcom", HEADER, CHAIN)).thenReturn(new Outcome.Completed("https://portal.example.com/cb?code=c"));
 
         ResponseEntity<Object> response = controller.certificate(
                 new CertificateLoginController.CertificateLoginRequest("s-1"), request());
@@ -45,7 +47,7 @@ class CertificateLoginControllerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody())
                 .isEqualTo(new CertificateLoginController.CertificateLoginResponse("https://portal.example.com/cb?code=c"));
-        verify(workflow).login("s-1", "cgcom", HEADER);
+        verify(workflow).login("s-1", "cgcom", HEADER, CHAIN);
     }
 
     @ParameterizedTest
@@ -61,7 +63,7 @@ class CertificateLoginControllerTest {
     })
     void certificate_rejectedLogin_returnsAProblemWithItsCode(CertificateLoginReason reason, int status,
                                                               String type, String title) {
-        when(workflow.login("s-1", "cgcom", HEADER)).thenReturn(new Outcome.Rejected(reason));
+        when(workflow.login("s-1", "cgcom", HEADER, CHAIN)).thenReturn(new Outcome.Rejected(reason));
 
         ResponseEntity<Object> response = controller.certificate(
                 new CertificateLoginController.CertificateLoginRequest("s-1"), request());
@@ -79,7 +81,7 @@ class CertificateLoginControllerTest {
 
     @Test
     void certificate_trustValidationUnavailable_tellsWhenToRetry() {
-        when(workflow.login("s-1", "cgcom", HEADER))
+        when(workflow.login("s-1", "cgcom", HEADER, CHAIN))
                 .thenReturn(new Outcome.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
 
         ResponseEntity<Object> response = controller.certificate(
@@ -91,7 +93,7 @@ class CertificateLoginControllerTest {
 
     @Test
     void certificate_rejectedCertificate_doesNotTellWhenToRetry() {
-        when(workflow.login("s-1", "cgcom", HEADER))
+        when(workflow.login("s-1", "cgcom", HEADER, CHAIN))
                 .thenReturn(new Outcome.Rejected(CertificateLoginReason.CERTIFICATE_REVOKED));
 
         ResponseEntity<Object> response = controller.certificate(
@@ -102,15 +104,30 @@ class CertificateLoginControllerTest {
 
     @Test
     void certificate_withoutBody_passesNoState() {
-        when(workflow.login(null, "cgcom", HEADER)).thenReturn(new Outcome.Rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+        when(workflow.login(null, "cgcom", HEADER, CHAIN)).thenReturn(new Outcome.Rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
 
         assertThat(controller.certificate(null, request()).getStatusCode().value()).isEqualTo(404);
+    }
+
+    @Test
+    void certificate_withoutChain_passesAnEmptyChain() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/verifier/api/login/certificate");
+        request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_HEADER, HEADER);
+        when(workflow.login("s-1", "cgcom", HEADER, List.of()))
+                .thenReturn(new Outcome.Rejected(CertificateLoginReason.CERTIFICATE_REVOKED));
+
+        controller.certificate(new CertificateLoginController.CertificateLoginRequest("s-1"), request);
+
+        verify(workflow).login("s-1", "cgcom", HEADER, List.of());
     }
 
     private static MockHttpServletRequest request() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/verifier/api/login/certificate");
         request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
-        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, HEADER);
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_HEADER, HEADER);
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_CHAIN_HEADER, CHAIN.get(0));
+        request.addHeader(CertificateLoginFilter.CLIENT_CERT_CHAIN_HEADER, CHAIN.get(1));
         return request;
     }
 }

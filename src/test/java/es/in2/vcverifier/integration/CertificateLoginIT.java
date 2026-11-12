@@ -147,6 +147,26 @@ class CertificateLoginIT {
     }
 
     @Test
+    void certificateWithItsChain_sendsTheChainToTheTrustValidation() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, true), DssStub.QC_WITH_QSCD);
+        X509Certificate intermediate = TestCertificates.selfSigned(PERSON);
+        X509Certificate root = TestCertificates.selfSigned(PERSON);
+        Login login = openLogin("openid");
+
+        MvcResult result = certificateLogin(login.state(), TestCertificates.header(certificate), TENANT, LOGIN_ORIGIN,
+                Map.of(CertificateLoginFilter.CLIENT_CERT_CHAIN_HEADER,
+                        TestCertificates.header(intermediate) + ", " + TestCertificates.header(root)));
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        assertThat(DSS.lastChain()).containsExactly(TestCertificates.base64(intermediate), TestCertificates.base64(root));
+    }
+
+    @Test
+    void unreadableCertificate_isRejectedAsMissing() throws Exception {
+        assertRejected(certificateLogin(openLogin("openid"), ":not-a-certificate:"), 401, "certificate_missing");
+    }
+
+    @Test
     void softwareCertificate_logsInWithSubstantialLevelAndSoftwareKey() throws Exception {
         X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
 
@@ -296,9 +316,9 @@ class CertificateLoginIT {
         int callsBefore = DSS.calls();
 
         assertForbidden(get("/api/login/methods").param("state", "s").with(host(HOST))
-                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, header));
+                .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header));
         assertForbidden(post("/oidc/token").with(fromSecureOrigin(SECURE_HOST))
-                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, header));
+                .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header));
         assertThat(DSS.calls()).isEqualTo(callsBefore);
     }
 
@@ -312,12 +332,12 @@ class CertificateLoginIT {
 
         assertForbidden(post("/api/login/certificate").with(host(HOST))
                 .header(X_TENANT_HEADER, TENANT)
-                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, header)
+                .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header)
                 .contentType(MediaType.APPLICATION_JSON).content(body));
         assertForbidden(post("/api/login/certificate").with(host(SECURE_HOST))
                 .header(CertificateLoginFilter.SECURE_ORIGIN_HEADER, "not-the-secure-origin-of-the-distribution")
                 .header(X_TENANT_HEADER, TENANT)
-                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, header)
+                .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header)
                 .contentType(MediaType.APPLICATION_JSON).content(body));
         assertThat(DSS.calls()).isEqualTo(callsBefore);
 
@@ -560,7 +580,7 @@ class CertificateLoginIT {
             request.header(HttpHeaders.ORIGIN, origin);
         }
         if (certificateHeader != null) {
-            request.header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, certificateHeader);
+            request.header(CertificateLoginFilter.CLIENT_CERT_HEADER, certificateHeader);
         }
         headers.forEach(request::header);
         return mockMvc.perform(request).andReturn();

@@ -57,16 +57,20 @@ public class CertificateLoginWorkflow {
         }
     }
 
-    public Outcome login(String state, String tenant, String certificateHeader) {
+    public Outcome login(String state, String tenant, String clientCert, List<String> clientCertChain) {
         Optional<OAuth2AuthorizationRequest> login = openCertificateLogin(state, tenant);
         if (login.isEmpty()) {
             return rejected(CertificateLoginReason.LOGIN_NOT_FOUND);
         }
         List<X509Certificate> chain;
         try {
-            chain = clientCertificateReader.readChain(certificateHeader);
-        } catch (IllegalArgumentException _) {
-            log.warn("event=certificate_login_unreadable_certificate clientId={}", sanitize(login.get().getClientId()));
+            chain = clientCertificateReader.readChain(clientCert, clientCertChain);
+        } catch (IllegalArgumentException e) {
+            log.warn("event=certificate_login_unreadable_certificate clientId={} reason=\"{}\" certificateLength={} "
+                            + "chainHeaders={} chainLength={}",
+                    sanitize(login.get().getClientId()), e.getMessage(),
+                    clientCert == null ? 0 : clientCert.length(),
+                    clientCertChain.size(), clientCertChain.stream().mapToInt(String::length).sum());
             return rejected(CertificateLoginReason.CERTIFICATE_MISSING);
         }
 

@@ -11,10 +11,13 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class DssStub implements AutoCloseable {
 
@@ -41,6 +44,7 @@ public final class DssStub implements AutoCloseable {
     private final Map<String, Report> reports = new ConcurrentHashMap<>();
     private final AtomicBoolean available = new AtomicBoolean(true);
     private final AtomicInteger calls = new AtomicInteger();
+    private final AtomicReference<List<String>> lastChain = new AtomicReference<>(List.of());
     private final HttpServer server;
 
     public DssStub() {
@@ -70,6 +74,10 @@ public final class DssStub implements AutoCloseable {
         return calls.get();
     }
 
+    public List<String> lastChain() {
+        return lastChain.get();
+    }
+
     @Override
     public void close() {
         server.stop(0);
@@ -84,6 +92,9 @@ public final class DssStub implements AutoCloseable {
             }
             JsonNode request = objectMapper.readTree(exchange.getRequestBody());
             String certificate = request.path("certificate").path("encodedCertificate").asText();
+            List<String> chain = new ArrayList<>();
+            request.path("certificateChain").forEach(member -> chain.add(member.path("encodedCertificate").asText()));
+            lastChain.set(List.copyOf(chain));
             byte[] body = objectMapper.writeValueAsBytes(response(reports.getOrDefault(certificate, NO_CHAIN)));
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, body.length);

@@ -54,7 +54,8 @@ class CertificateLoginWorkflowTest {
     private static final Instant NOW = Instant.parse("2026-11-04T10:00:00Z");
     private static final String STATE = "s-1";
     private static final String TENANT = "cgcom";
-    private static final String HEADER = "-----BEGIN%20CERTIFICATE-----";
+    private static final String HEADER = ":MIIB:";
+    private static final List<String> CHAIN = List.of(":MIIC:");
     private static final String SUBJECT = "b2f1c3";
     private static final CertificateIdentity IDENTITY = new CertificateIdentity(
             "JOSE ANTONIO", "GARCIA FERNANDEZ", "GARCIA FERNANDEZ JOSE ANTONIO", null, "ES", "12345678Z");
@@ -95,7 +96,7 @@ class CertificateLoginWorkflowTest {
         when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq(TENANT), eq(issued), any(), anyString()))
                 .thenReturn("https://portal.example.com/callback?code=c&state=s-1");
 
-        Outcome outcome = workflow.login(STATE, TENANT, HEADER);
+        Outcome outcome = workflow.login(STATE, TENANT, HEADER, CHAIN);
 
         assertThat(outcome).isEqualTo(new Outcome.Completed("https://portal.example.com/callback?code=c&state=s-1"));
         verify(certificateTrustValidationPort).validate(leaf, List.of(issuer));
@@ -111,7 +112,7 @@ class CertificateLoginWorkflowTest {
 
     @Test
     void login_unknownState_isLoginNotFoundWithoutValidating() {
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
         verifyNoInteractions(certificateTrustValidationPort, authorizationResponseProcessorService);
     }
 
@@ -119,7 +120,7 @@ class CertificateLoginWorkflowTest {
     void login_loginOfAnotherTenant_isLoginNotFoundWithoutValidating() {
         givenOpenLogin(Map.of(AUTHORIZE_TENANT, "kpmg"));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
         verifyNoInteractions(certificateTrustValidationPort);
     }
 
@@ -127,7 +128,7 @@ class CertificateLoginWorkflowTest {
     void login_expiredLogin_isLoginNotFound() {
         givenOpenLogin(Map.of(EXPIRATION, NOW.getEpochSecond()));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
         verifyNoInteractions(certificateTrustValidationPort);
     }
 
@@ -135,42 +136,42 @@ class CertificateLoginWorkflowTest {
     void login_loginThatDoesNotOfferTheCertificate_isLoginNotFound() {
         givenOpenLogin(Map.of(LOGIN_METHODS, List.of("wallet")));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
         verifyNoInteractions(certificateTrustValidationPort);
     }
 
     @Test
     void login_requestWithoutTenant_isLoginNotFound() {
-        assertThat(workflow.login(STATE, null, HEADER)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+        assertThat(workflow.login(STATE, null, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
         verifyNoInteractions(cache, certificateTrustValidationPort);
     }
 
     @Test
     void login_withoutCertificateHeader_isCertificateMissing() {
         givenOpenLogin(Map.of());
-        when(clientCertificateReader.readChain(null)).thenThrow(new IllegalArgumentException("empty"));
+        when(clientCertificateReader.readChain(null, List.of())).thenThrow(new IllegalArgumentException("empty"));
 
-        assertThat(workflow.login(STATE, TENANT, null)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_MISSING));
+        assertThat(workflow.login(STATE, TENANT, null, List.of())).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_MISSING));
         verifyNoInteractions(certificateTrustValidationPort);
     }
 
     @Test
     void login_unreadableCertificateHeader_isCertificateMissing() {
         givenOpenLogin(Map.of());
-        when(clientCertificateReader.readChain(HEADER)).thenThrow(new IllegalArgumentException("unreadable"));
+        when(clientCertificateReader.readChain(HEADER, CHAIN)).thenThrow(new IllegalArgumentException("unreadable"));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_MISSING));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_MISSING));
         verifyNoInteractions(certificateTrustValidationPort);
     }
 
     @Test
     void login_rejectedByTheTrustValidation_returnsItsReasonWithoutIssuingACode() {
         givenOpenLogin(Map.of());
-        when(clientCertificateReader.readChain(HEADER)).thenReturn(List.of(leaf, issuer));
+        when(clientCertificateReader.readChain(HEADER, CHAIN)).thenReturn(List.of(leaf, issuer));
         when(certificateTrustValidationPort.validate(leaf, List.of(issuer)))
                 .thenReturn(new CertificateTrust.Rejected(CertificateLoginReason.CERTIFICATE_REVOKED));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_REVOKED));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_REVOKED));
         verifyNoInteractions(authorizationResponseProcessorService);
     }
 
@@ -180,7 +181,7 @@ class CertificateLoginWorkflowTest {
         givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.HIGH, List.of("hwk")),
                 new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "NAME", null, null, null));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED));
         verifyNoInteractions(authorizationResponseProcessorService);
     }
 
@@ -189,7 +190,7 @@ class CertificateLoginWorkflowTest {
         givenOpenLogin(Map.of(ACR_REQUESTED, AssuranceLevel.HIGH.acrValue(), ACR_ESSENTIAL, true));
         givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.SUBSTANTIAL, List.of("swk")), IDENTITY);
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.LEVEL_NOT_MET));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.LEVEL_NOT_MET));
         verifyNoInteractions(authorizationResponseProcessorService);
     }
 
@@ -203,7 +204,7 @@ class CertificateLoginWorkflowTest {
         when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq(TENANT), eq(issued), any(), anyString()))
                 .thenReturn("https://portal.example.com/callback");
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isInstanceOf(Outcome.Completed.class);
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isInstanceOf(Outcome.Completed.class);
     }
 
     @Test
@@ -213,7 +214,7 @@ class CertificateLoginWorkflowTest {
         when(authorizationResponseProcessorService.issueCodeForCertificateLogin(eq(STATE), eq(TENANT), any()))
                 .thenReturn(Optional.empty());
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
         verifyNoInteractions(ssoLoginCompletionWorkflow);
     }
 
@@ -227,7 +228,7 @@ class CertificateLoginWorkflowTest {
         when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq(TENANT), eq(issued), any(), anyString()))
                 .thenThrow(new LoginCompletionUnavailableException("unavailable"));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER)).isEqualTo(rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
     }
 
     private void givenOpenLogin(Map<String, Object> overrides) {
@@ -245,7 +246,7 @@ class CertificateLoginWorkflowTest {
     }
 
     private void givenCertificate(CertificateTrust trust, CertificateIdentity identity) {
-        when(clientCertificateReader.readChain(HEADER)).thenReturn(List.of(leaf, issuer));
+        when(clientCertificateReader.readChain(HEADER, CHAIN)).thenReturn(List.of(leaf, issuer));
         when(certificateTrustValidationPort.validate(leaf, List.of(issuer))).thenReturn(trust);
         when(clientCertificateReader.read(leaf)).thenReturn(
                 new ClientCertificate(identity, "CN=AC FNMT Usuarios", "ab12", NOW.plusSeconds(86_400)));
