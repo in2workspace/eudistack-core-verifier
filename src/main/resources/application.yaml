@@ -33,6 +33,7 @@ springdoc:
 server:
   port: 8082
   forward-headers-strategy: framework
+  max-http-request-header-size: 32KB
   servlet:
     context-path: ${APP_CONTEXT_PATH:/verifier}
 
