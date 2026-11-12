@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.integration.support.DssStub;
 import es.in2.vcverifier.integration.support.TestCertificates;
 import es.in2.vcverifier.integration.support.TestCertificates.Person;
-import es.in2.vcverifier.shared.config.CertificatePortFilter;
+import es.in2.vcverifier.shared.config.CertificateLoginFilter;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
@@ -295,11 +295,11 @@ class CertificateLoginIT {
         int callsBefore = DSS.calls();
 
         assertThat(status(get("/api/login/methods").param("state", "s").with(host(HOST))
-                .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, header))).isEqualTo(400);
+                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, header))).isEqualTo(400);
         assertThat(status(post("/oidc/token").with(host(HOST))
-                .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, header))).isEqualTo(400);
+                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, header))).isEqualTo(400);
         assertThat(status(post("/api/login/certificate").with(host(HOST))
-                .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, header)
+                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, header)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"s\"}"))).isEqualTo(400);
         assertThat(DSS.calls()).isEqualTo(callsBefore);
     }
@@ -540,7 +540,7 @@ class CertificateLoginIT {
             request.header(HttpHeaders.ORIGIN, origin);
         }
         if (certificateHeader != null) {
-            request.header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, certificateHeader);
+            request.header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, certificateHeader);
         }
         headers.forEach(request::header);
         return mockMvc.perform(request).andReturn();

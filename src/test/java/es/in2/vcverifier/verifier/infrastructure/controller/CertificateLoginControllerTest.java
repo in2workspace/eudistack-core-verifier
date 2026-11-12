@@ -1,6 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.controller;
 
-import es.in2.vcverifier.shared.config.CertificatePortFilter;
+import es.in2.vcverifier.shared.config.CertificateLoginFilter;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow.Outcome;
@@ -110,7 +110,7 @@ class CertificateLoginControllerTest {
     private static MockHttpServletRequest request() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/verifier/api/login/certificate");
         request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
-        request.addHeader(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, HEADER);
+        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, HEADER);
         return request;
     }
 }

@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.integration.support.DssStub;
 import es.in2.vcverifier.integration.support.TestCertificates;
 import es.in2.vcverifier.integration.support.TestCertificates.Person;
-import es.in2.vcverifier.shared.config.CertificatePortFilter;
+import es.in2.vcverifier.shared.config.CertificateLoginFilter;
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
@@ -234,7 +234,7 @@ class CertificateSsoSessionIT {
                 .with(origin(SECURE_HOST, CERTIFICATE_PORT))
                 .header(X_TENANT_HEADER, TENANT)
                 .header(HttpHeaders.ORIGIN, LOGIN_ORIGIN)
-                .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, TestCertificates.header(certificate))
+                .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, TestCertificates.header(certificate))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("state", login.state()))));
     }

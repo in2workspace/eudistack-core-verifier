@@ -14,13 +14,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-class CertificatePortFilterTest {
+class CertificateLoginFilterTest {
 
     private static final int NORMAL_PORT = 8080;
     private static final int CERTIFICATE_PORT = 8081;
 
-    private final CertificatePortFilter filter =
-            new CertificatePortFilter(new CertificateLoginProperties(CERTIFICATE_PORT, null));
+    private final CertificateLoginFilter filter =
+            new CertificateLoginFilter(new CertificateLoginProperties(CERTIFICATE_PORT, null));
 
     @ParameterizedTest
     @CsvSource({
@@ -65,7 +65,7 @@ class CertificatePortFilterTest {
     void certificatePort_acceptsTheCertificateHeader() throws Exception {
         FilterChain chain = mock(FilterChain.class);
         MockHttpServletRequest request = request(CERTIFICATE_PORT, "POST", "/api/login/certificate");
-        request.addHeader(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, "-----BEGIN%20CERTIFICATE-----");
+        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, "-----BEGIN%20CERTIFICATE-----");
 
         filter.doFilter(request, new MockHttpServletResponse(), chain);
 
@@ -82,7 +82,7 @@ class CertificatePortFilterTest {
         FilterChain chain = mock(FilterChain.class);
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockHttpServletRequest request = request(NORMAL_PORT, method, path);
-        request.addHeader(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, "-----BEGIN%20CERTIFICATE-----");
+        request.addHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, "-----BEGIN%20CERTIFICATE-----");
 
         filter.doFilter(request, response, chain);
 

@@ -1,7 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.controller;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import es.in2.vcverifier.shared.config.CertificatePortFilter;
+import es.in2.vcverifier.shared.config.CertificateLoginFilter;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow.Outcome;
@@ -57,7 +57,7 @@ public class CertificateLoginController {
         Outcome outcome = certificateLoginWorkflow.login(
                 body == null ? null : body.state(),
                 TenantDomainFilter.getCurrentTenant(request),
-                request.getHeader(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER));
+                request.getHeader(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER));
         return switch (outcome) {
             case Outcome.Completed(String redirectUri) -> ResponseEntity.ok(new CertificateLoginResponse(redirectUri));
             case Outcome.Rejected(CertificateLoginReason reason) -> rejected(problem(reason), request);

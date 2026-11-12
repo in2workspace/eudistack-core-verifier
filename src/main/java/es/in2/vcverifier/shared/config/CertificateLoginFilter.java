@@ -17,7 +17,7 @@ import java.io.IOException;
 @Slf4j
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
-public class CertificatePortFilter extends OncePerRequestFilter {
+public class CertificateLoginFilter extends OncePerRequestFilter {
 
     public static final String MTLS_CLIENT_CERT_HEADER = "X-Amzn-Mtls-Clientcert";
     public static final String CERTIFICATE_LOGIN_PATH = "/api/login/certificate";
@@ -25,7 +25,7 @@ public class CertificatePortFilter extends OncePerRequestFilter {
 
     private final int certificatePort;
 
-    public CertificatePortFilter(CertificateLoginProperties certificateLoginProperties) {
+    public CertificateLoginFilter(CertificateLoginProperties certificateLoginProperties) {
         this.certificatePort = certificateLoginProperties.port();
     }
 
