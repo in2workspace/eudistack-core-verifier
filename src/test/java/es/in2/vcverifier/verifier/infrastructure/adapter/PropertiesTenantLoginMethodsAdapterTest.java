@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PropertiesTenantLoginMethodsAdapterTest {
 
     private final PropertiesTenantLoginMethodsAdapter adapter = new PropertiesTenantLoginMethodsAdapter(
-            new CertificateLoginProperties(null, Map.of(
+            new CertificateLoginProperties("test-secure-origin-0123456789abcdef0123", Map.of(
                     "cgcom", new CertificateLoginProperties.Tenant("https://cgcom.stg.eudistack.net"))));
 
     @Test

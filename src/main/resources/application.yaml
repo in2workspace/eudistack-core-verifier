@@ -173,7 +173,7 @@ verifier:
       credential-encryption-key: ${VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY:}
 
   certificate-login:
-    port: ${VERIFIER_CERTIFICATELOGIN_PORT:8081}
+    secure-origin: ${VERIFIER_CERTIFICATELOGIN_SECUREORIGIN:}
     subject-key: ${VERIFIER_CERTIFICATELOGIN_SUBJECTKEY:}
     tenants: {}
 

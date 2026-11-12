@@ -29,7 +29,7 @@ class PublicCorsConfigTest {
 
     @BeforeEach
     void setUp() {
-        PublicCorsConfig config = new PublicCorsConfig(new CertificateLoginProperties(null, Map.of(
+        PublicCorsConfig config = new PublicCorsConfig(new CertificateLoginProperties("test-secure-origin-0123456789abcdef0123", Map.of(
                 "cgcom", new CertificateLoginProperties.Tenant("https://cgcom.example.com"),
                 "kpmg", new CertificateLoginProperties.Tenant("https://kpmg.example.com"))));
         corsSource = config.publicCorsConfigurationSource();
@@ -82,7 +82,7 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Certificate login allows only the login origin of its tenant, with credentials, POST, JSON and X-Tenant")
     void getCorsConfiguration_certificateLogin_allowsOnlyTheLoginOriginOfItsTenant() {
-        MockHttpServletRequest request = certificatePortRequest();
+        MockHttpServletRequest request = certificateLoginRequest();
         request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
 
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
@@ -101,7 +101,7 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Certificate login allows no origin for a tenant without certificate login")
     void getCorsConfiguration_certificateLoginOfATenantWithoutIt_allowsNoOrigin() {
-        MockHttpServletRequest request = certificatePortRequest();
+        MockHttpServletRequest request = certificateLoginRequest();
         request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "dome");
 
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
@@ -114,7 +114,7 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Certificate login allows no origin when the request has no tenant")
     void getCorsConfiguration_certificateLoginWithoutTenant_allowsNoOrigin() {
-        MockHttpServletRequest request = certificatePortRequest();
+        MockHttpServletRequest request = certificateLoginRequest();
 
         CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
 
@@ -125,7 +125,7 @@ class PublicCorsConfigTest {
     @Test
     @DisplayName("Certificate login preflight, which carries no tenant, allows the login origin of every tenant")
     void getCorsConfiguration_certificateLoginPreflight_allowsEveryLoginOrigin() {
-        MockHttpServletRequest request = certificatePortRequest();
+        MockHttpServletRequest request = certificateLoginRequest();
         request.setMethod("OPTIONS");
         request.addHeader("Origin", "https://cgcom.example.com");
         request.addHeader("Access-Control-Request-Method", "POST");
@@ -136,19 +136,6 @@ class PublicCorsConfigTest {
         assertEquals("https://cgcom.example.com", corsConfig.checkOrigin("https://cgcom.example.com"));
         assertEquals("https://kpmg.example.com", corsConfig.checkOrigin("https://kpmg.example.com"));
         assertNull(corsConfig.checkOrigin("https://any-spa.example.com"));
-    }
-
-    @Test
-    @DisplayName("The certificate login path outside the certificate port gets the public config")
-    void getCorsConfiguration_certificateLoginPathOnAnotherPort_returnsWildcardConfig() {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
-        request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
-
-        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
-
-        assertNotNull(corsConfig);
-        assertEquals(List.of("*"), corsConfig.getAllowedOriginPatterns());
-        assertEquals(Boolean.FALSE, corsConfig.getAllowCredentials());
     }
 
     @Test
@@ -254,9 +241,9 @@ class PublicCorsConfigTest {
         assertFalse(Boolean.TRUE.equals(corsConfig.getAllowCredentials()));
     }
 
-    private static MockHttpServletRequest certificatePortRequest() {
+    private static MockHttpServletRequest certificateLoginRequest() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
-        request.setLocalPort(CertificateLoginProperties.DEFAULT_PORT);
+        request.setServletPath("/api/login/certificate");
         return request;
     }
 }

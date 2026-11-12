@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
 
+import es.in2.vcverifier.shared.config.CertificateLoginFilter;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import jakarta.servlet.http.HttpServletRequest;
@@ -66,13 +67,9 @@ public class PublicCorsConfig {
         authResponseConfig.setAllowedHeaders(PUBLIC_ALLOWED_HEADERS);
         authResponseConfig.setAllowCredentials(true);
         source.registerCorsConfiguration("/oid4vp/auth-response", authResponseConfig);
-        return request -> isCertificateLogin(request)
+        return request -> CertificateLoginFilter.isCertificateLogin(request)
                 ? certificateLoginCorsConfiguration(request)
                 : source.getCorsConfiguration(request);
-    }
-
-    private boolean isCertificateLogin(HttpServletRequest request) {
-        return request.getLocalPort() == certificateLoginProperties.port();
     }
 
     private CorsConfiguration certificateLoginCorsConfiguration(HttpServletRequest request) {

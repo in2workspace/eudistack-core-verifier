@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CertificateSubjectServiceTest {
 
     private static final String KEY = "0123456789abcdef0123456789abcdef";
-    private static final CertificateLoginProperties CGCOM_WITH_X509 = new CertificateLoginProperties(null, Map.of(
+    private static final CertificateLoginProperties CGCOM_WITH_X509 = new CertificateLoginProperties("test-secure-origin-0123456789abcdef0123", Map.of(
             "cgcom", new CertificateLoginProperties.Tenant("https://cgcom.example.com")));
     private static final CertificateLoginProperties NO_X509 = new CertificateLoginProperties(null, null);
 
@@ -61,6 +61,7 @@ class CertificateSubjectServiceTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
+                        "verifier.certificate-login.secure-origin=test-secure-origin-0123456789abcdef0123",
                         "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com")
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure().rootCause()
@@ -82,6 +83,7 @@ class CertificateSubjectServiceTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
+                        "verifier.certificate-login.secure-origin=test-secure-origin-0123456789abcdef0123",
                         "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com",
                         CertificateSubjectService.SUBJECT_KEY_PROPERTY + "=" + KEY)
                 .run(context -> assertThat(context.getBean(CertificateSubjectService.class)

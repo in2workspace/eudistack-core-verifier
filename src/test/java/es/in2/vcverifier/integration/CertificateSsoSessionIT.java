@@ -56,6 +56,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 @SpringBootTest(properties = {
+        "verifier.certificate-login.secure-origin=" + CertificateSsoSessionIT.SECURE_ORIGIN,
         "verifier.certificate-login.tenants.cgcom.login-origin=" + CertificateSsoSessionIT.LOGIN_ORIGIN,
         "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef",
         "verifier.dcql.profiles.learcredential.credentials[0].id=learcredential",
@@ -70,6 +71,7 @@ class CertificateSsoSessionIT {
 
     static final String HOST = "cgcom.example.com";
     static final String SECURE_HOST = "secure.example.com";
+    static final String SECURE_ORIGIN = "test-secure-origin-0123456789abcdef0123";
     static final String LOGIN_ORIGIN = "https://cgcom.example.com";
     private static final String TENANT = "cgcom";
     private static final String FIRST_CLIENT = "issuance-portal-cgcom";
@@ -82,7 +84,6 @@ class CertificateSsoSessionIT {
             "{\"id_token\":{\"acr\":{\"essential\":true,\"values\":[\"" + HIGH + "\"]}}}";
     private static final String COMPLETION_PATH = "/api/login/complete";
     private static final String SESSION_COOKIE = "__Secure-sso-" + TENANT;
-    private static final int CERTIFICATE_PORT = 8081;
     private static final Person PERSON = new Person("99999999R", "JOSE ANTONIO", "GARCIA FERNANDEZ", "jgarcia@example.com");
 
     @Container
@@ -231,7 +232,8 @@ class CertificateSsoSessionIT {
 
     private MvcResult certificate(Login login, X509Certificate certificate) throws Exception {
         return perform(post("/api/login/certificate")
-                .with(origin(SECURE_HOST, CERTIFICATE_PORT))
+                .with(origin(SECURE_HOST, 443))
+                .header(CertificateLoginFilter.SECURE_ORIGIN_HEADER, SECURE_ORIGIN)
                 .header(X_TENANT_HEADER, TENANT)
                 .header(HttpHeaders.ORIGIN, LOGIN_ORIGIN)
                 .header(CertificateLoginFilter.MTLS_CLIENT_CERT_HEADER, TestCertificates.header(certificate))
