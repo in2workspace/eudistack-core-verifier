@@ -12,8 +12,7 @@ class PropertiesTenantLoginMethodsAdapterTest {
 
     private final PropertiesTenantLoginMethodsAdapter adapter = new PropertiesTenantLoginMethodsAdapter(
             new CertificateLoginProperties(null, Map.of(
-                    "cgcom", new CertificateLoginProperties.Tenant(
-                            "cgcom-cert.stg.eudistack.net", "https://cgcom.stg.eudistack.net"))));
+                    "cgcom", new CertificateLoginProperties.Tenant("https://cgcom.stg.eudistack.net"))));
 
     @Test
     void activeLoginMethods_withCertificateLoginEntry_offersWalletAndCertificate() {

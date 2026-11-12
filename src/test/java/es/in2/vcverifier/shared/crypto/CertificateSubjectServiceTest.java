@@ -16,7 +16,7 @@ class CertificateSubjectServiceTest {
 
     private static final String KEY = "0123456789abcdef0123456789abcdef";
     private static final CertificateLoginProperties CGCOM_WITH_X509 = new CertificateLoginProperties(null, Map.of(
-            "cgcom", new CertificateLoginProperties.Tenant("cgcom-cert.example.com", "https://cgcom.example.com")));
+            "cgcom", new CertificateLoginProperties.Tenant("https://cgcom.example.com")));
     private static final CertificateLoginProperties NO_X509 = new CertificateLoginProperties(null, null);
 
     private final CertificateSubjectService service = new CertificateSubjectService(KEY, CGCOM_WITH_X509);
@@ -61,7 +61,6 @@ class CertificateSubjectServiceTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
-                        "verifier.certificate-login.tenants.cgcom.host=cgcom-cert.example.com",
                         "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com")
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure().rootCause()
@@ -83,7 +82,6 @@ class CertificateSubjectServiceTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(TestConfig.class)
                 .withPropertyValues(
-                        "verifier.certificate-login.tenants.cgcom.host=cgcom-cert.example.com",
                         "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com",
                         CertificateSubjectService.SUBJECT_KEY_PROPERTY + "=" + KEY)
                 .run(context -> assertThat(context.getBean(CertificateSubjectService.class)

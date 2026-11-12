@@ -50,12 +50,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 @SpringBootTest(properties = {
-        "verifier.certificate-login.tenants.cgcom.host=" + CertificateSsoSessionIT.CERTIFICATE_HOST,
         "verifier.certificate-login.tenants.cgcom.login-origin=" + CertificateSsoSessionIT.LOGIN_ORIGIN,
         "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef",
         "verifier.dcql.profiles.learcredential.credentials[0].id=learcredential",
@@ -69,7 +69,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class CertificateSsoSessionIT {
 
     static final String HOST = "cgcom.example.com";
-    static final String CERTIFICATE_HOST = "cgcom-cert.example.com";
+    static final String SECURE_HOST = "secure.example.com";
     static final String LOGIN_ORIGIN = "https://cgcom.example.com";
     private static final String TENANT = "cgcom";
     private static final String FIRST_CLIENT = "issuance-portal-cgcom";
@@ -231,7 +231,8 @@ class CertificateSsoSessionIT {
 
     private MvcResult certificate(Login login, X509Certificate certificate) throws Exception {
         return perform(post("/api/login/certificate")
-                .with(origin(CERTIFICATE_HOST, CERTIFICATE_PORT))
+                .with(origin(SECURE_HOST, CERTIFICATE_PORT))
+                .header(X_TENANT_HEADER, TENANT)
                 .header(HttpHeaders.ORIGIN, LOGIN_ORIGIN)
                 .header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, TestCertificates.header(certificate))
                 .contentType(MediaType.APPLICATION_JSON)

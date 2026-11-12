@@ -10,9 +10,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
+
+import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
 
 @Configuration
 @RequiredArgsConstructor
@@ -74,15 +77,25 @@ public class PublicCorsConfig {
 
     private CorsConfiguration certificateLoginCorsConfiguration(HttpServletRequest request) {
         CorsConfiguration certificateConfig = new CorsConfiguration();
-        String tenant = TenantDomainFilter.getCurrentTenant(request);
-        CertificateLoginProperties.Tenant entry = tenant == null ? null : certificateLoginProperties.tenants().get(tenant);
-        if (entry != null) {
-            certificateConfig.setAllowedOrigins(List.of(entry.loginOrigin()));
-        }
+        certificateConfig.setAllowedOrigins(CorsUtils.isPreFlightRequest(request)
+                ? allLoginOrigins()
+                : loginOriginOfTenant(TenantDomainFilter.getCurrentTenant(request)));
         certificateConfig.setAllowedMethods(List.of(HttpMethod.POST.name()));
-        certificateConfig.setAllowedHeaders(List.of(HttpHeaders.CONTENT_TYPE));
+        certificateConfig.setAllowedHeaders(List.of(HttpHeaders.CONTENT_TYPE, X_TENANT_HEADER));
         certificateConfig.setAllowCredentials(true);
         return certificateConfig;
+    }
+
+    private List<String> allLoginOrigins() {
+        return certificateLoginProperties.tenants().values().stream()
+                .map(CertificateLoginProperties.Tenant::loginOrigin)
+                .distinct()
+                .toList();
+    }
+
+    private List<String> loginOriginOfTenant(String tenant) {
+        CertificateLoginProperties.Tenant entry = tenant == null ? null : certificateLoginProperties.tenants().get(tenant);
+        return entry == null ? List.of() : List.of(entry.loginOrigin());
     }
 
 }

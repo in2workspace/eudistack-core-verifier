@@ -1,11 +1,9 @@
 package es.in2.vcverifier.shared.config;
 
-import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
@@ -27,10 +25,6 @@ import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
  *   <li>First hostname segment, validated and normalized to lowercase.</li>
  * </ol>
  *
- * <p>On the certificate port the tenant header is ignored: the tenant is the one whose
- * configured certificate host is the request host or, otherwise, the first hostname
- * segment without its {@code -cert} suffix.
- *
  * <p>Atlassian-style hostname resolution: the tenant is the first hostname segment.
  * Examples:
  * <ul>
@@ -47,7 +41,6 @@ import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class TenantDomainFilter extends OncePerRequestFilter {
 
@@ -55,9 +48,6 @@ public class TenantDomainFilter extends OncePerRequestFilter {
 
     private static final String MDC_TENANT_DOMAIN = "tenantDomain";
     private static final String TENANT_PATTERN = "^[a-zA-Z0-9_-]+$";
-    private static final String CERTIFICATE_HOST_SUFFIX = "-cert";
-
-    private final CertificateLoginProperties certificateLoginProperties;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -65,14 +55,9 @@ public class TenantDomainFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        String tenant;
-        if (request.getLocalPort() == certificateLoginProperties.port()) {
-            tenant = extractTenantFromCertificateHost(request);
-        } else {
-            tenant = extractTenantFromHeader(request);
-            if (tenant == null) {
-                tenant = extractTenantFromHostname(request);
-            }
+        String tenant = extractTenantFromHeader(request);
+        if (tenant == null) {
+            tenant = extractTenantFromHostname(request);
         }
 
         if (tenant != null) {
@@ -100,45 +85,22 @@ public class TenantDomainFilter extends OncePerRequestFilter {
         return tenant;
     }
 
-    private String extractTenantFromCertificateHost(HttpServletRequest request) {
-        String hostname = request.getServerName();
-        String tenant = certificateLoginProperties.tenantForHost(hostname)
-                .map(configured -> validateTenant(configured, "certificate host"))
-                .orElseGet(() -> {
-                    String segment = firstHostnameSegment(hostname);
-                    if (segment == null) {
-                        return null;
-                    }
-                    if (segment.toLowerCase().endsWith(CERTIFICATE_HOST_SUFFIX)) {
-                        segment = segment.substring(0, segment.length() - CERTIFICATE_HOST_SUFFIX.length());
-                    }
-                    return segment.isEmpty() ? null : validateTenant(segment, "certificate hostname");
-                });
-        if (tenant != null) {
-            log.debug("Verifier: Resolved tenant '{}' from the certificate host", tenant);
-        }
-        return tenant;
-    }
-
     private String extractTenantFromHostname(HttpServletRequest request) {
-        String segment = firstHostnameSegment(request.getServerName());
-        if (segment == null) {
+        String hostname = request.getServerName();
+        if (hostname == null || hostname.isBlank()) {
             return null;
         }
 
-        String tenant = validateTenant(segment, "hostname");
+        int dotIndex = hostname.indexOf('.');
+        if (dotIndex <= 0) {
+            return null;
+        }
+
+        String tenant = validateTenant(hostname.substring(0, dotIndex), "hostname");
         if (tenant != null) {
             log.debug("Verifier: Resolved tenant '{}' from request hostname", tenant);
         }
         return tenant;
-    }
-
-    private static String firstHostnameSegment(String hostname) {
-        if (hostname == null || hostname.isBlank()) {
-            return null;
-        }
-        int dotIndex = hostname.indexOf('.');
-        return dotIndex <= 0 ? null : hostname.substring(0, dotIndex);
     }
 
     private String validateTenant(String candidate, String source) {

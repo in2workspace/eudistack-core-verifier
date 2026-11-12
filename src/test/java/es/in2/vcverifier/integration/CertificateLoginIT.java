@@ -52,15 +52,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 @SpringBootTest(properties = {
         "spring.flyway.enabled=false",
-        "verifier.certificate-login.tenants.cgcom.host=" + CertificateLoginIT.CERTIFICATE_HOST,
         "verifier.certificate-login.tenants.cgcom.login-origin=" + CertificateLoginIT.LOGIN_ORIGIN,
-        "verifier.certificate-login.tenants.kpmg.host=" + CertificateLoginIT.OTHER_CERTIFICATE_HOST,
         "verifier.certificate-login.tenants.kpmg.login-origin=" + CertificateLoginIT.OTHER_LOGIN_ORIGIN,
         "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef",
         "verifier.trust-validation.timeout=PT2S",
@@ -75,9 +74,8 @@ class CertificateLoginIT {
 
     static final String TENANT = "cgcom";
     static final String HOST = "cgcom.example.com";
-    static final String CERTIFICATE_HOST = "cgcom-cert.example.com";
+    static final String SECURE_HOST = "secure.example.com";
     static final String LOGIN_ORIGIN = "https://cgcom.example.com";
-    static final String OTHER_CERTIFICATE_HOST = "kpmg-cert.example.com";
     static final String OTHER_LOGIN_ORIGIN = "https://kpmg.example.com";
     private static final int CERTIFICATE_PORT = 8081;
     private static final String CLIENT_ID = "issuance-portal-cgcom";
@@ -314,21 +312,21 @@ class CertificateLoginIT {
 
     @Test
     void certificatePort_servesOnlyTheCertificateLogin() throws Exception {
-        assertThat(status(get("/oidc/authorize").with(certificatePort(CERTIFICATE_HOST)))).isEqualTo(404);
-        assertThat(status(post("/oidc/token").with(certificatePort(CERTIFICATE_HOST)))).isEqualTo(404);
-        assertThat(status(post("/api/login/wallet").param("state", "s").with(certificatePort(CERTIFICATE_HOST))))
+        assertThat(status(get("/oidc/authorize").with(certificatePort(SECURE_HOST)))).isEqualTo(404);
+        assertThat(status(post("/oidc/token").with(certificatePort(SECURE_HOST)))).isEqualTo(404);
+        assertThat(status(post("/api/login/wallet").param("state", "s").with(certificatePort(SECURE_HOST))))
                 .isEqualTo(404);
     }
 
     @Test
-    void tenantHeaderOnTheCertificatePort_isIgnored() throws Exception {
+    void certificateLoginWithoutTenantHeader_isNotFoundWithoutCallingTheTrustValidation() throws Exception {
         X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
         Login login = openLogin("openid");
+        int callsBefore = DSS.calls();
 
-        MvcResult result = certificateLogin(login.state(), TestCertificates.header(certificate), CERTIFICATE_HOST,
-                LOGIN_ORIGIN, Map.of("X-Tenant", "kpmg"));
-
-        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        assertRejected(certificateLogin(login.state(), TestCertificates.header(certificate), null, null, Map.of()),
+                404, "login_not_found");
+        assertThat(DSS.calls()).isEqualTo(callsBefore);
     }
 
     @Test
@@ -337,7 +335,7 @@ class CertificateLoginIT {
         int callsBefore = DSS.calls();
 
         assertRejected(certificateLogin("state-that-does-not-exist", TestCertificates.header(certificate),
-                CERTIFICATE_HOST, LOGIN_ORIGIN, Map.of()), 404, "login_not_found");
+                TENANT, LOGIN_ORIGIN, Map.of()), 404, "login_not_found");
         assertThat(DSS.calls()).isEqualTo(callsBefore);
     }
 
@@ -357,7 +355,7 @@ class CertificateLoginIT {
         Login login = openLogin("openid");
         int callsBefore = DSS.calls();
 
-        assertRejected(certificateLogin(login.state(), TestCertificates.header(certificate), OTHER_CERTIFICATE_HOST,
+        assertRejected(certificateLogin(login.state(), TestCertificates.header(certificate), "kpmg",
                 OTHER_LOGIN_ORIGIN, Map.of()), 404, "login_not_found");
         assertThat(DSS.calls()).isEqualTo(callsBefore);
     }
@@ -526,16 +524,21 @@ class CertificateLoginIT {
     }
 
     private MvcResult certificateLogin(Login login, String certificateHeader) throws Exception {
-        return certificateLogin(login.state(), certificateHeader, CERTIFICATE_HOST, LOGIN_ORIGIN, Map.of());
+        return certificateLogin(login.state(), certificateHeader, TENANT, LOGIN_ORIGIN, Map.of());
     }
 
-    private MvcResult certificateLogin(String state, String certificateHeader, String certificateHost, String origin,
+    private MvcResult certificateLogin(String state, String certificateHeader, String tenant, String origin,
                                        Map<String, String> headers) throws Exception {
         var request = post("/api/login/certificate")
-                .with(certificatePort(certificateHost))
-                .header(HttpHeaders.ORIGIN, origin)
+                .with(certificatePort(SECURE_HOST))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("state", state)));
+        if (tenant != null) {
+            request.header(X_TENANT_HEADER, tenant);
+        }
+        if (origin != null) {
+            request.header(HttpHeaders.ORIGIN, origin);
+        }
         if (certificateHeader != null) {
             request.header(CertificatePortFilter.MTLS_CLIENT_CERT_HEADER, certificateHeader);
         }
@@ -572,9 +575,9 @@ class CertificateLoginIT {
         };
     }
 
-    private static RequestPostProcessor certificatePort(String certificateHost) {
+    private static RequestPostProcessor certificatePort(String host) {
         return request -> {
-            host(certificateHost).postProcessRequest(request);
+            host(host).postProcessRequest(request);
             request.setLocalPort(CERTIFICATE_PORT);
             return request;
         };
