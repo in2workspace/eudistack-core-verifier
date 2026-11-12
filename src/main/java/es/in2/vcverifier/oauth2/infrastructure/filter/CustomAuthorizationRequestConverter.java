@@ -175,13 +175,13 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         return context != null && context.getIssuer() != null ? context.getIssuer() : backendConfig.getUrl();
     }
 
-    /** Tenant resolved at /authorize + browser binding (null when the tenant has no SSO). */
+    /** Tenant resolved at /authorize + browser binding. */
     private record LoginBinding(String tenant, String browserBindingHash) {
     }
 
     private LoginBinding bindLogin(HttpServletRequest request) {
         return new LoginBinding(TenantDomainFilter.getCurrentTenant(request),
-                ssoBrowserBindingCookie.bindIfSsoEnabled(request));
+                ssoBrowserBindingCookie.bind(request));
     }
 
     /**

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Login API errors** are `application/problem+json` with snake_case codes (`login_not_found`, `certificate_revoked`, …); `trust_validation_unavailable` carries `Retry-After`.
 - **SD-JWT presentations require a KB-JWT.**
+- **`/authorize` binds the browser (`__Host-sso-tx`) in every tenant**, with or without SSO, so a login in progress can be cancelled from the browser that started it. The return to the application now goes through `/api/login/complete` in every tenant; SSO reuse still requires SSO.
 
 ### Fixed
 

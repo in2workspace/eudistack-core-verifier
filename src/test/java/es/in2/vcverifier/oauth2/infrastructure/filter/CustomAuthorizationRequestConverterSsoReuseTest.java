@@ -1137,7 +1137,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     private void assertStateOnlyRedirect(OAuth2Error error) {
         assertEquals("https://verifier.example.com/login?state=" + STATE, error.getUri());
         assertTrue(thrown.isLoginPage());
-        verify(ssoBrowserBindingCookie).bindIfSsoEnabled(any());
+        verify(ssoBrowserBindingCookie).bind(any());
     }
 
     private static Object essentialHighClaims(Mode mode) {
@@ -1149,6 +1149,6 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     private void assertQrRedirect(OAuth2Error error) {
         assertTrue(error.getUri().contains(QR_REDIRECT_MARKER), () -> "expected QR redirect, got " + error.getUri());
         assertTrue(thrown.isLoginPage());
-        verify(ssoBrowserBindingCookie).bindIfSsoEnabled(any());
+        verify(ssoBrowserBindingCookie).bind(any());
     }
 }

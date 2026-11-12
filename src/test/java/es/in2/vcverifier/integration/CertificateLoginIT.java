@@ -6,13 +6,14 @@ import es.in2.vcverifier.integration.support.DssStub;
 import es.in2.vcverifier.integration.support.TestCertificates;
 import es.in2.vcverifier.integration.support.TestCertificates.Person;
 import es.in2.vcverifier.shared.config.CertificatePortFilter;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -84,6 +86,7 @@ class CertificateLoginIT {
     private static final String DCQL_SCOPE = "learcredential";
     private static final String AUTH_REQUEST = "authRequest";
     private static final String REDIRECT_URI = "https://cgcom.example.com/issuance-portal/callback";
+    private static final String COMPLETION_PATH = "/api/login/complete";
     private static final String NUMBER_SCOPE = "personal_administrative_number";
     private static final String HIGH = "http://eidas.europa.eu/LoA/high";
     private static final String SUBSTANTIAL = "http://eidas.europa.eu/LoA/substantial";
@@ -266,17 +269,25 @@ class CertificateLoginIT {
     }
 
     @Test
-    @Disabled("M2: without SSO the login has no browser binding, so /api/login/abort cannot cancel it")
     void rejectedLogin_canBeAbortedSoTheApplicationReceivesAccessDenied() throws Exception {
         X509Certificate software = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
         Login login = openLogin(CLIENT_ID, "openid", Map.of("claims", ESSENTIAL_HIGH));
         certificateLogin(login, TestCertificates.header(software));
 
-        MvcResult abort = mockMvc.perform(post("/api/login/abort").with(host(HOST)).param("state", login.state()))
+        MvcResult abort = mockMvc.perform(post("/api/login/abort").with(host(HOST)).with(browser(login))
+                        .param("state", login.state()))
                 .andReturn();
         assertThat(abort.getResponse().getStatus()).isEqualTo(200);
         String redirectUrl = objectMapper.readTree(abort.getResponse().getContentAsString()).path("redirectUrl").asText();
         assertThat(redirectUrl).startsWith(REDIRECT_URI).contains("error=access_denied");
+    }
+
+    @Test
+    void loginInProgress_cannotBeAbortedFromAnotherBrowser() throws Exception {
+        Login login = openLogin("openid");
+
+        assertThat(status(post("/api/login/abort").with(host(HOST)).param("state", login.state()))).isEqualTo(404);
+        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
     }
 
     @Test
@@ -466,7 +477,12 @@ class CertificateLoginIT {
         assertThat(result.getResponse().getStatus()).isEqualTo(200);
         String redirectUri = objectMapper.readTree(result.getResponse().getContentAsString())
                 .path("redirect_uri").asText();
-        String code = UriComponentsBuilder.fromUriString(redirectUri).build().getQueryParams().getFirst("code");
+        assertThat(redirectUri).contains(COMPLETION_PATH);
+        String location = mockMvc.perform(get(redirectUri.substring(redirectUri.indexOf(COMPLETION_PATH)))
+                        .with(host(HOST)).with(browser(login)))
+                .andReturn().getResponse().getHeader(HttpHeaders.LOCATION);
+        assertThat(location).as("completion redirect").startsWith(REDIRECT_URI);
+        String code = UriComponentsBuilder.fromUriString(location).build().getQueryParams().getFirst("code");
         assertThat(code).isNotBlank();
 
         MvcResult token = mockMvc.perform(post("/oidc/token")
@@ -499,12 +515,14 @@ class CertificateLoginIT {
                 .param("code_challenge", challenge(codeVerifier))
                 .param("code_challenge_method", "S256");
         parameters.forEach(request::param);
-        String location = mockMvc.perform(request).andReturn().getResponse().getHeader(HttpHeaders.LOCATION);
+        MockHttpServletResponse response = mockMvc.perform(request).andReturn().getResponse();
+        String location = response.getHeader(HttpHeaders.LOCATION);
         assertThat(location).as("authorization redirect").isNotNull();
         Map<String, String> query = UriComponentsBuilder.fromUriString(location).build().getQueryParams()
                 .toSingleValueMap();
         assertThat(query.get("state")).as("state in %s", location).isNotBlank();
-        return new Login(query.get("state"), codeVerifier, location, query);
+        Cookie binding = response.getCookie(SsoBrowserBindingCookie.COOKIE_NAME);
+        return new Login(query.get("state"), codeVerifier, location, query, binding == null ? null : binding.getValue());
     }
 
     private MvcResult certificateLogin(Login login, String certificateHeader) throws Exception {
@@ -547,6 +565,13 @@ class CertificateLoginIT {
         };
     }
 
+    private static RequestPostProcessor browser(Login login) {
+        return request -> {
+            request.setCookies(new Cookie(SsoBrowserBindingCookie.COOKIE_NAME, login.binding()));
+            return request;
+        };
+    }
+
     private static RequestPostProcessor certificatePort(String certificateHost) {
         return request -> {
             host(certificateHost).postProcessRequest(request);
@@ -571,6 +596,7 @@ class CertificateLoginIT {
                 loginMethods);
     }
 
-    private record Login(String state, String codeVerifier, String location, Map<String, String> query) {
+    private record Login(String state, String codeVerifier, String location, Map<String, String> query,
+                         String binding) {
     }
 }

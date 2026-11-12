@@ -740,7 +740,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null))
                 .thenReturn(new AuthorizationRequestBuildWorkflow.Result("signed-jwt", "openid4vp://...", "nonce"));
-        when(ssoBrowserBindingCookie.bindIfSsoEnabled(request)).thenReturn("binding-hash");
+        when(ssoBrowserBindingCookie.bind(request)).thenReturn("binding-hash");
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
@@ -784,7 +784,7 @@ class CustomAuthorizationRequestConverterTest {
         lenient().when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         lenient().when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(any(), any(), any(), any()))
                 .thenReturn(new AuthorizationRequestBuildWorkflow.Result("jwt", "openid4vp://...", "qr", "vp-nonce-new"));
-        lenient().when(ssoBrowserBindingCookie.bindIfSsoEnabled(request)).thenReturn(bindingHash);
+        lenient().when(ssoBrowserBindingCookie.bind(request)).thenReturn(bindingHash);
         return request;
     }
 
