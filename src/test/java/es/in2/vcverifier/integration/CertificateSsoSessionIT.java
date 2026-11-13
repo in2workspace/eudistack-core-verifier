@@ -209,7 +209,7 @@ class CertificateSsoSessionIT {
         JsonNode idToken = completeWithCertificate(SECOND_CLIENT, login, second);
 
         assertThat(idToken.path(StandardClaimNames.GIVEN_NAME).asText()).isEqualTo("ANA");
-        assertThat(browser.get(SESSION_COOKIE)).isNotEqualTo(firstCookie);
+        assertThat(browser).doesNotContainEntry(SESSION_COOKIE, firstCookie);
         assertThat(activeSessions()).isEqualTo(1);
     }
 
