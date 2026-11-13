@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -199,6 +200,17 @@ class DcqlProfileResolverImplTest {
 
         assertThat(leveled.assuranceLevelOf(List.of("openid", "learcredential", "doctorid"), credential))
                 .contains(AssuranceLevel.SUBSTANTIAL);
+    }
+
+    @Test
+    @DisplayName("assuranceLevelOf() reads the scopes of an authorization request kept as one space-separated value")
+    void assuranceLevelOf_splitsTheScopeOfTheAuthorizationRequest() {
+        DcqlProfileResolverImpl leveled = resolverWithLevels(Map.of("learcredential", AssuranceLevel.SUBSTANTIAL));
+        ObjectNode credential = JsonNodeFactory.instance.objectNode().put("vct", "learcredential.1");
+
+        assertThat(leveled.assuranceLevelOf(Set.of("openid learcredential"), credential))
+                .contains(AssuranceLevel.SUBSTANTIAL);
+        assertThat(leveled.highestAssuranceLevel(Set.of("openid  learcredential "))).contains(AssuranceLevel.SUBSTANTIAL);
     }
 
     @Test

@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * Resolves OIDC scopes to DCQL queries using pre-configured profiles from application YAML.
@@ -69,9 +70,7 @@ public class DcqlProfileResolverImpl implements DcqlProfileResolver {
         if (scopes == null) {
             return Optional.empty();
         }
-        return scopes.stream()
-                .map(dcqlProfileProperties.profiles()::get)
-                .filter(Objects::nonNull)
+        return profilesOf(scopes)
                 .map(DcqlProfileProperties.DcqlProfile::assuranceLevel)
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder());
@@ -83,9 +82,7 @@ public class DcqlProfileResolverImpl implements DcqlProfileResolver {
             return Optional.empty();
         }
         Set<String> credentialTypes = credentialTypes(credential);
-        return scopes.stream()
-                .map(dcqlProfileProperties.profiles()::get)
-                .filter(Objects::nonNull)
+        return profilesOf(scopes)
                 .filter(profile -> profile.assuranceLevel() != null)
                 .filter(profile -> profile.credentials().stream().anyMatch(entry -> matches(entry, credentialTypes)))
                 .map(DcqlProfileProperties.DcqlProfile::assuranceLevel)
@@ -95,6 +92,14 @@ public class DcqlProfileResolverImpl implements DcqlProfileResolver {
     @Override
     public boolean requestsAttestation(Collection<String> scopes) {
         return scopes != null && scopes.stream().anyMatch(dcqlProfileProperties.profiles()::containsKey);
+    }
+
+    private Stream<DcqlProfileProperties.DcqlProfile> profilesOf(Collection<String> scopes) {
+        return scopes.stream()
+                .filter(Objects::nonNull)
+                .flatMap(scope -> Arrays.stream(scope.trim().split("\\s+")))
+                .map(dcqlProfileProperties.profiles()::get)
+                .filter(Objects::nonNull);
     }
 
     private static Set<String> credentialTypes(JsonNode credential) {

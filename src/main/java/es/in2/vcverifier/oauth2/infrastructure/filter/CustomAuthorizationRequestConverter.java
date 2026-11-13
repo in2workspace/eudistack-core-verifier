@@ -501,9 +501,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                                                RegisteredClient registeredClient,
                                                String redirectUri,
                                                AuthenticationParameters parameters) {
-        boolean attestationRequested = dcqlProfileResolver.requestsAttestation(scopesOf(authorizationContext.scope()));
+        Set<String> requestedScopes = scopesOf(authorizationContext.scope());
+        boolean attestationRequested = dcqlProfileResolver.requestsAttestation(requestedScopes);
         List<LoginMethod> loginMethods = resolveLoginMethods(registeredClient,
-                TenantDomainFilter.getCurrentTenant(request), parameters.requestedLevel(), attestationRequested);
+                TenantDomainFilter.getCurrentTenant(request), parameters.requestedLevel(), requestedScopes);
         if (loginMethods.isEmpty()) {
             throw noLoginMethod(registeredClient, attestationRequested, errorContext);
         }
@@ -666,11 +667,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     private List<LoginMethod> resolveLoginMethods(RegisteredClient registeredClient, String tenant,
                                                   RequestedAssuranceLevel requestedLevel,
-                                                  boolean attestationRequested) {
+                                                  Set<String> requestedScopes) {
+        boolean attestationRequested = dcqlProfileResolver.requestsAttestation(requestedScopes);
         List<LoginMethod> clientMethods = clientLoginMethods(registeredClient).stream()
                 .filter(method -> attestationRequested || method != LoginMethod.WALLET)
                 .toList();
-        AssuranceLevel walletLevel = dcqlProfileResolver.highestAssuranceLevel(registeredClient.getScopes()).orElse(null);
+        AssuranceLevel walletLevel = dcqlProfileResolver.highestAssuranceLevel(requestedScopes).orElse(null);
         List<LoginMethod> loginMethods = loginMethodsResolver.resolve(clientMethods,
                 tenantLoginMethodsPort.activeLoginMethods(tenant), walletLevel, requestedLevel);
         log.info("event=authorize_login_methods clientId={} methods={} requestedLevel={} essential={}",

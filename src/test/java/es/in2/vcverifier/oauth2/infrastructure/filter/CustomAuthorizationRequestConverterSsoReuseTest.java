@@ -831,9 +831,9 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
     }
 
     @Test
-    void convert_walletLevelComesFromTheClientScopes() {
+    void convert_walletLevelComesFromTheRequestedScopes() {
         // Given
-        registerClientWithLoginMethods(List.of(LoginMethod.WALLET));
+        registerClientWithLoginMethods(List.of(LoginMethod.WALLET), "doctorid");
         when(tenantLoginMethodsPort.activeLoginMethods(TENANT)).thenReturn(Set.of(LoginMethod.WALLET));
         HttpServletRequest request = request(Mode.PLAIN, Map.of("acr_values", HIGH_ACR));
         stubReuse(ReuseSsoSessionWorkflow.Result.Status.LOGIN_REQUIRED);
@@ -1082,7 +1082,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         return request;
     }
 
-    private void registerClientWithLoginMethods(List<LoginMethod> loginMethods) {
+    private void registerClientWithLoginMethods(List<LoginMethod> loginMethods, String... otherScopes) {
         when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(RegisteredClient.withId("1")
                 .clientId(CLIENT_ID)
                 .clientName("Client A")
@@ -1090,6 +1090,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
                 .redirectUri(REDIRECT_URI)
                 .scope("openid")
                 .scope("learcredential")
+                .scopes(scopes -> scopes.addAll(List.of(otherScopes)))
                 .clientSettings(ClientSettings.builder()
                         .setting(CLIENT_SETTING_LOGIN_METHODS, loginMethods)
                         .build())

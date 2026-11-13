@@ -10,8 +10,10 @@ import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
+import es.in2.vcverifier.oauth2.domain.exception.LevelNotMetException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
@@ -115,8 +117,10 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             verificationLogged = true;
             credentialVerificationLogger.logVerifiedOk(configurationId);
 
-            return issueCodeForVerifiedLogin(state, oAuth2AuthorizationRequest,
-                    credentialAuthentication(credentialJson, oAuth2AuthorizationRequest.getScopes(), Instant.now()));
+            CredentialAuthentication authentication =
+                    credentialAuthentication(credentialJson, oAuth2AuthorizationRequest.getScopes(), Instant.now());
+            requireEssentialLevel(state, oAuth2AuthorizationRequest, authentication.acr());
+            return issueCodeForVerifiedLogin(state, oAuth2AuthorizationRequest, authentication);
 
         } catch (LoginTenantMismatchException e) {
             // SSE already sent in consumeCachedRequest; must precede NoSuchElementException (its supertype)
@@ -144,7 +148,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             sseEmitterStore.sendValidationFailed(state, "ISSUER_NOT_TRUSTED", "The credential issuer is not trusted");
             verificationFailure = e;
             throw e;
-        } catch (LoginTimeoutException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException
+        } catch (LoginTimeoutException | LevelNotMetException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException
                  | LegacyFormatSunsetClosedException | BumpedFormatTemporarilyDisabledException | UnknownCredentialFormatException e) {
             // Already sent SSE event in the step that failed, just re-throw
             verificationFailure = e;
@@ -282,6 +286,23 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             sseEmitterStore.sendValidationFailed(state, "FORMAT_GATED", e.getMessage());
             throw e;
         }
+    }
+
+    private void requireEssentialLevel(String state, OAuth2AuthorizationRequest login, AssuranceLevel acr) {
+        Map<String, Object> parameters = login.getAdditionalParameters();
+        if (!Boolean.TRUE.equals(parameters.get(ACR_ESSENTIAL))
+                || !(parameters.get(ACR_REQUESTED) instanceof String requested)) {
+            return;
+        }
+        Optional<AssuranceLevel> required = AssuranceLevel.fromAcrValue(requested);
+        if (required.isEmpty() || (acr != null && acr.satisfies(required.get()))) {
+            return;
+        }
+        log.warn("event=wallet_login_level_not_met clientId={} required={} acr={}",
+                sanitize(login.getClientId()), required.get().acrValue(), acr == null ? null : acr.acrValue());
+        sseEmitterStore.sendValidationFailed(state, "LEVEL_NOT_MET",
+                "The credential does not meet the level the application requires");
+        throw new LevelNotMetException("The credential does not meet the essential level of the login");
     }
 
     private CredentialAuthentication credentialAuthentication(JsonNode credentialJson, Set<String> scopes, Instant authTime) {
