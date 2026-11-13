@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ClientCertificateReaderTest {
 
+    private static final List<String> NO_CHAIN = List.of();
     private static final Instant NOT_AFTER = Instant.parse("2028-05-01T00:00:00Z");
     private static final X500Name ISSUER = new X500NameBuilder(BCStyle.INSTANCE)
             .addRDN(BCStyle.CN, "AC FNMT Usuarios")
@@ -122,7 +123,9 @@ class ClientCertificateReaderTest {
     void readChain_longerChain_failsBeforeReadingIt() throws Exception {
         String leaf = byteSequence(personCertificate("IDCES-12345678Z", null));
 
-        assertThatThrownBy(() -> reader.readChain(leaf, List.of(":a:, :b:", ":c:, :d:")))
+        List<String> fiveCertificates = List.of(":a:, :b:", ":c:, :d:");
+
+        assertThatThrownBy(() -> reader.readChain(leaf, fiveCertificates))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Client certificate chain has more than 4 certificates");
     }
@@ -147,7 +150,7 @@ class ClientCertificateReaderTest {
             ": | not a byte sequence"
     })
     void readChain_unreadableCertificate_failsSayingWhyWithoutEchoingIt(String header, String reason) {
-        assertThatThrownBy(() -> reader.readChain(header, List.of()))
+        assertThatThrownBy(() -> reader.readChain(header, NO_CHAIN))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(reason)
                 .hasMessageNotContaining("secret")
@@ -158,17 +161,20 @@ class ClientCertificateReaderTest {
     void readChain_unreadableChainMember_fails() throws Exception {
         String leaf = byteSequence(personCertificate("IDCES-12345678Z", null));
 
-        assertThatThrownBy(() -> reader.readChain(leaf, List.of(":c2VjcmV0LXZhbHVl:")))
+        List<String> notACertificate = List.of(":c2VjcmV0LXZhbHVl:");
+        List<String> emptyMember = List.of(leaf + ",");
+
+        assertThatThrownBy(() -> reader.readChain(leaf, notACertificate))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> reader.readChain(leaf, List.of(leaf + ",")))
+        assertThatThrownBy(() -> reader.readChain(leaf, emptyMember))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void readChain_withoutCertificate_fails() {
-        assertThatThrownBy(() -> reader.readChain(null, List.of()))
+        assertThatThrownBy(() -> reader.readChain(null, NO_CHAIN))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> reader.readChain(" ", List.of()))
+        assertThatThrownBy(() -> reader.readChain(" ", NO_CHAIN))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
