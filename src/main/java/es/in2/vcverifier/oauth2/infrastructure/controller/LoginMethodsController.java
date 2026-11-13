@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import es.in2.vcverifier.oauth2.application.workflow.LoginMethodsWorkflow;
 import es.in2.vcverifier.oauth2.application.workflow.LoginMethodsWorkflow.WalletRequestResult;
+import es.in2.vcverifier.shared.config.LoginApi;
+import es.in2.vcverifier.shared.config.LoginApiProblems;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -12,8 +14,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,9 +21,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 import java.util.List;
 
+@LoginApi
 @RestController
 @RequestMapping("/api/login")
 @RequiredArgsConstructor
@@ -46,6 +46,7 @@ public class LoginMethodsController {
 
     @Operation(summary = "List the methods offered in an open login")
     @ApiResponse(responseCode = "200", description = "Methods offered, in the order of the client registration")
+    @ApiResponse(responseCode = "400", description = "The state parameter is missing")
     @ApiResponse(responseCode = "404", description = "No open login for this state in the tenant")
     @GetMapping("/methods")
     public ResponseEntity<Object> methods(
@@ -61,6 +62,7 @@ public class LoginMethodsController {
             description = "Creates the OID4VP request for the login when the person chooses the wallet. "
                     + "Calling it again returns the same request while it is valid.")
     @ApiResponse(responseCode = "200", description = "Wallet request, shown as a QR code or opened on the same device")
+    @ApiResponse(responseCode = "400", description = "The state parameter is missing")
     @ApiResponse(responseCode = "404", description = "No open login for this state in the tenant")
     @ApiResponse(responseCode = "409", description = "The login does not offer the wallet method")
     @PostMapping("/wallet")
@@ -84,10 +86,6 @@ public class LoginMethodsController {
 
     private static ResponseEntity<Object> error(HttpStatus status, String type, String title, String detail,
                                                 HttpServletRequest request) {
-        ProblemDetail body = ProblemDetail.forStatusAndDetail(status, detail);
-        body.setType(URI.create(type));
-        body.setTitle(title);
-        body.setInstance(URI.create(request.getRequestURI()));
-        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(body);
+        return LoginApiProblems.problem(status, type, title, detail, request);
     }
 }

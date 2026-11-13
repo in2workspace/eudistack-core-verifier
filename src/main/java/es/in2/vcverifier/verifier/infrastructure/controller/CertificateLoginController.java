@@ -2,6 +2,8 @@ package es.in2.vcverifier.verifier.infrastructure.controller;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import es.in2.vcverifier.shared.config.CertificateLoginFilter;
+import es.in2.vcverifier.shared.config.LoginApi;
+import es.in2.vcverifier.shared.config.LoginApiProblems;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow.Outcome;
@@ -14,16 +16,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 import java.util.Collections;
 
+@LoginApi
 @RestController
 @RequestMapping("/api/login")
 @RequiredArgsConstructor
@@ -32,6 +33,7 @@ public class CertificateLoginController {
 
     static final String RETRY_AFTER_SECONDS = "30";
     private static final String CERTIFICATE_NOT_ACCEPTED = "Certificate not accepted";
+    private static final String STATE = "state";
 
     private final CertificateLoginWorkflow certificateLoginWorkflow;
 
@@ -48,15 +50,20 @@ public class CertificateLoginController {
             description = "Completes the open login of the state when the certificate is a valid qualified "
                     + "certificate of a natural person that meets the level the application requires as essential.")
     @ApiResponse(responseCode = "200", description = "Login completed; the login screen goes to redirect_uri")
+    @ApiResponse(responseCode = "400", description = "The body is missing or not valid, or it has no state")
     @ApiResponse(responseCode = "401", description = "No client certificate in the connection")
     @ApiResponse(responseCode = "403", description = "Certificate rejected, or level not met")
     @ApiResponse(responseCode = "404", description = "No open login for this state in the tenant, or it does not offer the certificate")
     @ApiResponse(responseCode = "503", description = "The trust validation service is not available")
-    @PostMapping(path = "/certificate", consumes = MediaType.APPLICATION_JSON_VALUE,
+    @PostMapping(path = "/certificate",
             produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE})
     public ResponseEntity<Object> certificate(@RequestBody CertificateLoginRequest body, HttpServletRequest request) {
+        if (body.state() == null || body.state().isBlank()) {
+            return LoginApiProblems.invalidRequest(HttpStatus.BAD_REQUEST, "The request body is not valid.", STATE,
+                    request);
+        }
         Outcome outcome = certificateLoginWorkflow.login(
-                body == null ? null : body.state(),
+                body.state(),
                 TenantDomainFilter.getCurrentTenant(request),
                 request.getHeader(CertificateLoginFilter.CLIENT_CERT_HEADER),
                 Collections.list(request.getHeaders(CertificateLoginFilter.CLIENT_CERT_CHAIN_HEADER)));
@@ -67,16 +74,12 @@ public class CertificateLoginController {
     }
 
     private static ResponseEntity<Object> rejected(Problem problem, HttpServletRequest request) {
-        ProblemDetail body = ProblemDetail.forStatusAndDetail(problem.status(), problem.detail());
-        body.setType(URI.create(problem.type()));
-        body.setTitle(problem.title());
-        body.setInstance(URI.create(request.getRequestURI()));
-        ResponseEntity.BodyBuilder response = ResponseEntity.status(problem.status())
-                .contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        ResponseEntity.BodyBuilder response = LoginApiProblems.response(problem.status());
         if (problem.status() == HttpStatus.SERVICE_UNAVAILABLE) {
             response.header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
         }
-        return response.body(body);
+        return response.body(LoginApiProblems.body(problem.status(), problem.type(), problem.title(), problem.detail(),
+                request));
     }
 
     private static Problem problem(CertificateLoginReason reason) {

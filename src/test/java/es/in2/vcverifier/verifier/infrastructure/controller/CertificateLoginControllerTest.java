@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,6 +25,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -102,11 +105,16 @@ class CertificateLoginControllerTest {
         assertThat(response.getHeaders().containsKey(HttpHeaders.RETRY_AFTER)).isFalse();
     }
 
-    @Test
-    void certificate_withoutBody_passesNoState() {
-        when(workflow.login(null, "cgcom", HEADER, CHAIN)).thenReturn(new Outcome.Rejected(CertificateLoginReason.LOGIN_NOT_FOUND));
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = " ")
+    void certificate_withoutState_isAnInvalidRequest(String state) {
+        ResponseEntity<Object> response = controller.certificate(
+                new CertificateLoginController.CertificateLoginRequest(state), request());
 
-        assertThat(controller.certificate(null, request()).getStatusCode().value()).isEqualTo(404);
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(((ProblemDetail) response.getBody()).getType()).hasToString("invalid_request");
+        verifyNoInteractions(workflow);
     }
 
     @Test

@@ -525,6 +525,38 @@ class CertificateLoginIT {
         return mockMvc.perform(request).andReturn().getResponse().getStatus();
     }
 
+    @Test
+    void malformedCertificateLogin_isAnInvalidRequestProblem() throws Exception {
+        int dssCalls = DSS.calls();
+        assertRejected(mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+                .header(X_TENANT_HEADER, TENANT).contentType(MediaType.APPLICATION_JSON)).andReturn(),
+                400, "invalid_request");
+        assertRejected(mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+                .header(X_TENANT_HEADER, TENANT).contentType(MediaType.APPLICATION_JSON).content("{\"state\":")).andReturn(),
+                400, "invalid_request");
+        assertRejected(mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+                .header(X_TENANT_HEADER, TENANT).contentType(MediaType.TEXT_PLAIN).content("state")).andReturn(),
+                415, "invalid_request");
+
+        MvcResult withoutState = mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+                .header(X_TENANT_HEADER, TENANT).contentType(MediaType.APPLICATION_JSON).content("{}")).andReturn();
+        assertRejected(withoutState, 400, "invalid_request");
+        assertThat(objectMapper.readTree(withoutState.getResponse().getContentAsString()).path("violations").toString())
+                .isEqualTo("[{\"field\":\"state\",\"message\":\"required\"}]");
+        assertThat(DSS.calls()).as("no trust validation for an invalid request").isEqualTo(dssCalls);
+    }
+
+    @Test
+    void loginMethodsWithoutState_isAnInvalidRequestProblem() throws Exception {
+        MvcResult methods = mockMvc.perform(get("/api/login/methods").with(host(HOST))).andReturn();
+        MvcResult wallet = mockMvc.perform(post("/api/login/wallet").with(host(HOST))).andReturn();
+
+        assertRejected(methods, 400, "invalid_request");
+        assertRejected(wallet, 400, "invalid_request");
+        assertThat(objectMapper.readTree(methods.getResponse().getContentAsString()).path("violations").toString())
+                .isEqualTo("[{\"field\":\"state\",\"message\":\"required\"}]");
+    }
+
     private JsonNode loginAndExchange(X509Certificate certificate, String scope) throws Exception {
         return claims(loginAndExchangeTokens(CLIENT_ID, certificate, scope).path("id_token").asText());
     }
