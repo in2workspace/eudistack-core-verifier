@@ -82,6 +82,7 @@ class CertificateLoginIT {
     private static final String CLIENT_ID = "issuance-portal-cgcom";
     private static final String WALLET_CLIENT_ID = "wallet-portal-cgcom";
     private static final String LEGACY_CLIENT_ID = "legacy-portal-cgcom";
+    private static final String NO_NUMBER_CLIENT_ID = "certificate-portal-cgcom";
     private static final String DCQL_SCOPE = "learcredential";
     private static final String AUTH_REQUEST = "authRequest";
     private static final String REDIRECT_URI = "https://cgcom.example.com/issuance-portal/callback";
@@ -129,7 +130,8 @@ class CertificateLoginIT {
                     client(CLIENT_ID, List.of("openid", "profile", "email", NUMBER_SCOPE, DCQL_SCOPE),
                             List.of("x509", "wallet")),
                     client(WALLET_CLIENT_ID, List.of("openid", DCQL_SCOPE), List.of("wallet")),
-                    client(LEGACY_CLIENT_ID, List.of("openid", DCQL_SCOPE), null)));
+                    client(LEGACY_CLIENT_ID, List.of("openid", DCQL_SCOPE), null),
+                    client(NO_NUMBER_CLIENT_ID, List.of("openid", "profile"), List.of("x509"))));
         }
     }
 
@@ -185,6 +187,20 @@ class CertificateLoginIT {
 
         assertThat(withScope.path(NUMBER_SCOPE).asText()).isEqualTo(PERSON.number());
         assertThat(withoutScope.has(NUMBER_SCOPE)).isFalse();
+    }
+
+    @Test
+    void identificationNumber_isNotReleasedToAClientWithoutItsScopeInTheRegistration() throws Exception {
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+
+        JsonNode tokens = loginAndExchangeTokens(NO_NUMBER_CLIENT_ID, certificate, "openid profile " + NUMBER_SCOPE);
+
+        JsonNode idToken = claims(tokens.path("id_token").asText());
+        JsonNode accessToken = claims(tokens.path("access_token").asText());
+        assertThat(idToken.has(NUMBER_SCOPE)).isFalse();
+        assertThat(idToken.path("given_name").asText()).isEqualTo(PERSON.givenName());
+        assertThat(accessToken.has(NUMBER_SCOPE)).isFalse();
+        assertThat(accessToken.path("scope").asText()).isEqualTo("openid profile");
     }
 
     @Test
@@ -510,7 +526,12 @@ class CertificateLoginIT {
     }
 
     private JsonNode loginAndExchange(X509Certificate certificate, String scope) throws Exception {
-        Login login = openLogin(scope);
+        return claims(loginAndExchangeTokens(CLIENT_ID, certificate, scope).path("id_token").asText());
+    }
+
+    private JsonNode loginAndExchangeTokens(String clientId, X509Certificate certificate, String scope)
+            throws Exception {
+        Login login = openLogin(clientId, scope, Map.of());
         MvcResult result = certificateLogin(login, TestCertificates.header(certificate));
         assertThat(result.getResponse().getStatus()).isEqualTo(200);
         String redirectUri = objectMapper.readTree(result.getResponse().getContentAsString())
@@ -529,11 +550,11 @@ class CertificateLoginIT {
                         .param("grant_type", "authorization_code")
                         .param("code", code)
                         .param("redirect_uri", REDIRECT_URI)
-                        .param("client_id", CLIENT_ID)
+                        .param("client_id", clientId)
                         .param("code_verifier", login.codeVerifier()))
                 .andReturn();
         assertThat(token.getResponse().getStatus()).isEqualTo(200);
-        return claims(objectMapper.readTree(token.getResponse().getContentAsString()).path("id_token").asText());
+        return objectMapper.readTree(token.getResponse().getContentAsString());
     }
 
     private Login openLogin(String scope) throws Exception {

@@ -59,6 +59,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -430,7 +431,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     private IssuedCode issueAuthorizationCode(CodeIssuance issuance) {
         RegisteredClient registeredClient = issuance.registeredClient();
         String redirectUri = issuance.redirectUri();
-        Set<String> scopes = issuance.scopes();
+        Set<String> scopes = grantedScopes(issuance);
         String state = issuance.state();
         String codeChallenge = issuance.codeChallenge();
         String codeChallengeMethod = issuance.codeChallengeMethod();
@@ -508,6 +509,24 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 
         return new IssuedCode(code, redirectUrl);
+    }
+
+    private static Set<String> grantedScopes(CodeIssuance issuance) {
+        if (!(issuance.authentication() instanceof CertificateAuthentication)) {
+            return issuance.scopes();
+        }
+        Set<String> registered = issuance.registeredClient().getScopes();
+        Set<String> requested = new LinkedHashSet<>();
+        issuance.scopes().forEach(scope -> requested.addAll(List.of(scope.trim().split("\\s+"))));
+        requested.remove("");
+        Set<String> granted = new LinkedHashSet<>(requested);
+        granted.retainAll(registered);
+        if (granted.size() < requested.size()) {
+            List<String> dropped = requested.stream().filter(scope -> !registered.contains(scope)).sorted().toList();
+            log.warn("event=certificate_login_scope_not_registered clientId={} dropped={}",
+                    sanitize(issuance.registeredClient().getClientId()), sanitize(String.join(" ", dropped)));
+        }
+        return granted;
     }
 
     private boolean isSdJwt(String token) {
