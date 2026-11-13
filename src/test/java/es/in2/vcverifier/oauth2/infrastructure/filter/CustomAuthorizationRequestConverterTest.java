@@ -46,6 +46,7 @@ import java.util.Set;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
+import static es.in2.vcverifier.shared.domain.util.Constants.STATE_MAX_LENGTH;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
@@ -1310,6 +1311,43 @@ class CustomAuthorizationRequestConverterTest {
         assertEquals("https://client.example.com/callback?error=invalid_request"
                 + "&error_description=max_age+must+be+a+non-negative+integer"
                 + "&iss=https%3A%2F%2Fauth.server.com", exception.getError().getUri());
+    }
+
+    @Test
+    void convert_standardRequestWithTooLongStateAndUnregisteredRedirectUri_showsTheVerifierErrorPage() {
+        // EUD-363: the state length is only checked once the redirect_uri is validated, so an
+        // unregistered redirect_uri is never sent the invalid_request (RFC 6749 §4.1.2.1).
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String tooLongState = "s".repeat(STATE_MAX_LENGTH + 1);
+        stubPkceParamsNull(request);
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=" + tooLongState);
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(tooLongState);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn("learcredential");
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn("https://attacker.example.com/callback");
+        when(request.getParameter(NONCE)).thenReturn(null);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName("Test Client")
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri("https://client.example.com/callback")
+                .build();
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+        AuthorizationRedirectException exception =
+                assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
+
+        assertEquals("invalid_client_authentication", exception.getError().getErrorCode());
+        assertTrue(exception.getError().getDescription().contains("The redirect_uri does not match"));
+        assertFalse(exception.getError().getUri().startsWith("https://attacker.example.com"));
+        verifyNoInteractions(authorizationRequestBuildWorkflow, cacheStoreForOAuth2AuthorizationRequest);
     }
 
     @Test

@@ -265,7 +265,8 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     /**
      * OIDC Core 1.0 §3.1.2.1 / §3.1.2.6: parses {@code prompt} and {@code max_age} — query parameters
-     * (plain) or request-object claims (JAR). A malformed value is answered with {@code invalid_request}
+     * (plain) or request-object claims (JAR) — after checking the length of the query {@code state}
+     * (EUD-363, {@link #validateStateLength}). A malformed value is answered with {@code invalid_request}
      * to {@code ctx.redirectUri()}, so this must only run once the request is validated (client,
      * redirect_uri, and for JAR the request-object signature), and it runs whatever the prompt: a
      * malformed request is malformed even with {@code prompt=login}.
