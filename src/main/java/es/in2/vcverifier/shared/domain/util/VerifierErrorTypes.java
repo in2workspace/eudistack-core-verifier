@@ -21,6 +21,7 @@ public enum VerifierErrorTypes {
     INVALID_SCOPE("invalid_scope"),
     INVALID_VP_TOKEN("invalid_vp_token"),
     LOGIN_TIMEOUT("login_timeout"),
+    LEVEL_NOT_MET("level_not_met"),
     STATUS_LIST_ERROR("status_list_error"),
     SSRF_PROTECTION("ssrf_protection"),
     FAILED_COMMUNICATION("failed_communication");

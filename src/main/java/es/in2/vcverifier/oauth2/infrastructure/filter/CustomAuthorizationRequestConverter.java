@@ -1,6 +1,7 @@
 package es.in2.vcverifier.oauth2.infrastructure.filter;
 
 import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.util.JSONObjectUtils;
 import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
@@ -9,6 +10,12 @@ import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.oauth2.domain.model.OidcPrompt;
+import es.in2.vcverifier.oauth2.domain.model.RequestedAssuranceLevel;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
+import es.in2.vcverifier.oauth2.domain.service.LoginMethodsResolver;
+import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -16,6 +23,8 @@ import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import io.micrometer.common.util.StringUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,12 +51,19 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
+import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.ACCESS_PROFILE;
+import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
+import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
+import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_METHODS;
+import static es.in2.vcverifier.shared.domain.util.Constants.UNMET_AUTHENTICATION_REQUIREMENTS;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
@@ -56,7 +72,6 @@ import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRE
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
-import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 import static org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames.NONCE;
@@ -73,6 +88,13 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final String PROMPT_NONE_COMBINED_DESCRIPTION = "prompt=none cannot be combined with other values";
     private static final String PROMPT_NOT_A_STRING_DESCRIPTION = "prompt must be a string";
     private static final String MAX_AGE_INVALID_DESCRIPTION = "max_age must be a non-negative integer";
+    private static final String ACR_VALUES_PARAMETER = "acr_values";
+    private static final String CLAIMS_PARAMETER = "claims";
+    private static final String ACR_VALUES_NOT_A_STRING_DESCRIPTION = "acr_values must be a string";
+    private static final String CLAIMS_INVALID_DESCRIPTION = "claims must be a valid claims request";
+    private static final String UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION = "no login method meets the requested authentication requirements";
+    private static final String NO_ATTESTATION_REQUESTED_DESCRIPTION = "the requested scopes ask for no attestation the wallet can present";
+    private static final List<LoginMethod> WALLET_ONLY = List.of(LoginMethod.WALLET);
     private static final Pattern DIGITS = Pattern.compile("\\d+");
     private static final BigDecimal MAX_AGE_LIMIT = BigDecimal.valueOf(SsoTtlRange.MAX_ABSOLUTE.toSeconds());
     private static final String LOGIN_REQUIRED_DESCRIPTION = "prompt=none: end-user authentication is required";
@@ -84,12 +106,16 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final BackendConfig backendConfig;
     private final RegisteredClientRepository registeredClientRepository;
     private final boolean isNonceRequiredOnFapiProfile;
-    private final long loginTimeoutSeconds;
+    private final long loginSelectionTimeoutSeconds;
     private final HttpClient httpClient;
     private final AuthorizationRequestBuildWorkflow authorizationRequestBuildWorkflow;
     private final SafeUrlValidator safeUrlValidator;
     private final ReuseSsoSessionWorkflow reuseSsoSessionWorkflow;
     private final SsoBrowserBindingCookie ssoBrowserBindingCookie;
+    private final TenantLoginMethodsPort tenantLoginMethodsPort;
+    private final DcqlProfileResolver dcqlProfileResolver;
+    private final WalletLoginWorkflow walletLoginWorkflow;
+    private final LoginMethodsResolver loginMethodsResolver = new LoginMethodsResolver();
 
     @Override
     public Authentication convert(HttpServletRequest request) {
@@ -149,13 +175,13 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         return context != null && context.getIssuer() != null ? context.getIssuer() : backendConfig.getUrl();
     }
 
-    /** Tenant resolved at /authorize + browser binding (null when the tenant has no SSO). */
+    /** Tenant resolved at /authorize + browser binding. */
     private record LoginBinding(String tenant, String browserBindingHash) {
     }
 
     private LoginBinding bindLogin(HttpServletRequest request) {
         return new LoginBinding(TenantDomainFilter.getCurrentTenant(request),
-                ssoBrowserBindingCookie.bindIfSsoEnabled(request));
+                ssoBrowserBindingCookie.bind(request));
     }
 
     /**
@@ -173,8 +199,9 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      *
      * <p>Returns normally only when the caller must continue to the OID4VP/QR flow.
      */
-    private void attemptSsoReuse(HttpServletRequest request, AuthorizationContext ctx,
-                                 RegisteredClient registeredClient, OidcPrompt prompt) {
+    private void attemptSsoReuse(HttpServletRequest request, AuthorizationContext authorizationContext,
+                                 RegisteredClient registeredClient, AuthenticationParameters parameters) {
+        OidcPrompt prompt = parameters.prompt();
         String clientId = registeredClient.getClientId();
         if (prompt.requiresLogin()) {
             log.debug("event=sso_reuse_skipped clientId={} reason=prompt_login", clientId);
@@ -183,13 +210,11 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         if (tenant == null || tenant.isBlank()) {
             if (prompt.isNone()) {
-                throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, ctx);
+                throw oidcErrorRedirect(LOGIN_REQUIRED, LOGIN_REQUIRED_DESCRIPTION, authorizationContext);
             }
             return;
         }
-        // The reuse path issues a code without building an OID4VP request, so the scope check that
-        // buildAuthorizationRequest does for the QR path has to run here first.
-        authorizationRequestBuildWorkflow.validateScope(ctx.scope());
+        AuthorizationContext ctx = reuseContext(authorizationContext, registeredClient, parameters);
 
         ReuseSsoSessionWorkflow.Result result = prompt.isNone()
                 ? reuseSsoSession(request, ctx, tenant, clientId)
@@ -206,6 +231,31 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         }
         log.debug("event=sso_reuse_skipped tenant={} clientId={} reason={}", tenant, clientId,
                 status != null ? status : "reuse_failed");
+    }
+
+    private AuthorizationContext reuseContext(AuthorizationContext authorizationContext,
+                                              RegisteredClient registeredClient, AuthenticationParameters parameters) {
+        List<LoginMethod> clientLoginMethods = clientLoginMethods(registeredClient);
+        boolean attestationScopes = dcqlProfileResolver.requestsAttestation(scopesOf(authorizationContext.scope()));
+        // The reuse path issues a code without building an OID4VP request, so the scope check that
+        // buildAuthorizationRequest does for the QR path has to run here first. A client that offers
+        // the certificate may ask for no attestation at all.
+        if (attestationScopes || !clientLoginMethods.contains(LoginMethod.X509)) {
+            try {
+                authorizationRequestBuildWorkflow.validateScope(authorizationContext.scope());
+            } catch (InvalidScopeException _) {
+                log.info("event=authorize_no_attestation_requested clientId={}", registeredClient.getClientId());
+                throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_SCOPE, NO_ATTESTATION_REQUESTED_DESCRIPTION,
+                        authorizationContext);
+            }
+        }
+        RequestedAssuranceLevel requestedLevel = parameters.requestedLevel();
+        return authorizationContext.toBuilder()
+                .maxAge(parameters.maxAge())
+                .loginMethods(clientLoginMethods)
+                .essentialLevel(requestedLevel != null && requestedLevel.essential() ? requestedLevel.level() : null)
+                .attestationScopes(attestationScopes)
+                .build();
     }
 
     private ReuseSsoSessionWorkflow.Result reuseSsoSession(HttpServletRequest request, AuthorizationContext ctx,
@@ -258,7 +308,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     }
 
     /** {@code prompt} and {@code max_age} of a validated request; {@code maxAge} null = absent or not enforceable. */
-    private record AuthenticationParameters(OidcPrompt prompt, Long maxAge) {
+    private record AuthenticationParameters(OidcPrompt prompt, Long maxAge, RequestedAssuranceLevel requestedLevel) {
     }
 
     /**
@@ -269,8 +319,38 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * malformed request is malformed even with {@code prompt=login}.
      */
     private AuthenticationParameters parseAuthenticationParameters(Object rawPrompt, Object rawMaxAge,
+                                                                   Object rawAcrValues, Object rawClaims,
                                                                    AuthorizationContext ctx, String clientId) {
-        return new AuthenticationParameters(parsePrompt(rawPrompt, ctx, clientId), parseMaxAge(rawMaxAge, ctx, clientId));
+        return new AuthenticationParameters(parsePrompt(rawPrompt, ctx, clientId), parseMaxAge(rawMaxAge, ctx, clientId),
+                parseRequestedLevel(rawAcrValues, rawClaims, ctx, clientId));
+    }
+
+    private RequestedAssuranceLevel parseRequestedLevel(Object rawAcrValues, Object rawClaims,
+                                                        AuthorizationContext ctx, String clientId) {
+        if (rawAcrValues != null && !(rawAcrValues instanceof String)) {
+            log.warn("event=authorize_acr_invalid clientId={} reason=acr_values_not_a_string", clientId);
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, ACR_VALUES_NOT_A_STRING_DESCRIPTION, ctx);
+        }
+        try {
+            return RequestedAssuranceLevel.from((String) rawAcrValues, toClaimsObject(rawClaims)).orElse(null);
+        } catch (IllegalArgumentException | ParseException e) {
+            log.warn("event=authorize_acr_invalid clientId={} reason={}", clientId, sanitize(e.getMessage()));
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, CLAIMS_INVALID_DESCRIPTION, ctx);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> toClaimsObject(Object rawClaims) throws ParseException {
+        if (rawClaims == null || (rawClaims instanceof String s && s.isBlank())) {
+            return Map.of();
+        }
+        if (rawClaims instanceof String json) {
+            return JSONObjectUtils.parse(json);
+        }
+        if (rawClaims instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        throw new IllegalArgumentException("claims must be a JSON object");
     }
 
     private OidcPrompt parsePrompt(Object rawPrompt, AuthorizationContext ctx, String clientId) {
@@ -380,22 +460,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         String rawMaxAge = request.getParameter(MAX_AGE_PARAMETER);
         String rawPrompt = request.getParameter(PROMPT_PARAMETER);
         AuthenticationParameters parameters = parseAuthenticationParameters(rawPrompt, rawMaxAge,
+                request.getParameter(ACR_VALUES_PARAMETER), request.getParameter(CLAIMS_PARAMETER),
                 authorizationContext, registeredClient.getClientId());
-        attemptSsoReuse(request, authorizationContext.toBuilder().maxAge(parameters.maxAge()).build(),
-                registeredClient, parameters.prompt());
+        attemptSsoReuse(request, authorizationContext, registeredClient, parameters);
 
-        // Delegate JWT building, signing and URL generation to the workflow
-        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient, authorizationContext.scope(), authorizationContext.state(),
-                authorizationContext.accessProfile());
-
-        // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
-        // carry the login-page browser-binding cookie.
-        cacheAuthorizationRequest(authorizationContext, registeredClient, authorizationContext.redirectUri(),
-                bindLogin(request), result.vpNonce());
-
-        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
-                authorizationContext.portalUrl(), authorizationContext.contextPath());
+        return continueToLoginPage(authorizationContext, authorizationContext, request, registeredClient,
+                authorizationContext.redirectUri(), parameters);
     }
 
     private Authentication processAuthorizationFlow(AuthorizationContext authorizationContext,
@@ -417,24 +487,44 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .build();
         AuthenticationParameters parameters = parseAuthenticationParameters(
                 requestObjectClaims.get(PROMPT_PARAMETER), requestObjectClaims.get(MAX_AGE_PARAMETER),
+                requestObjectClaims.get(ACR_VALUES_PARAMETER), requestObjectClaims.get(CLAIMS_PARAMETER),
                 reuseContext, registeredClient.getClientId());
-        attemptSsoReuse(request, reuseContext.toBuilder().maxAge(parameters.maxAge()).build(),
-                registeredClient, parameters.prompt());
+        attemptSsoReuse(request, reuseContext, registeredClient, parameters);
 
-        // Delegate JWT building, signing and URL generation to the workflow
-        AuthorizationRequestBuildWorkflow.Result result = authorizationRequestBuildWorkflow.buildAuthorizationRequest(
-                registeredClient, authorizationContext.scope(), authorizationContext.state(),
-                authorizationContext.accessProfile());
+        return continueToLoginPage(reuseContext, authorizationContext, request, registeredClient,
+                jwtRedirectUri, parameters);
+    }
 
-        // EUD-252: bound only AFTER the reuse branch, same as the plain path.
-        cacheAuthorizationRequest(authorizationContext, registeredClient, jwtRedirectUri,
-                bindLogin(request), result.vpNonce());
+    private Authentication continueToLoginPage(AuthorizationContext errorContext,
+                                               AuthorizationContext authorizationContext,
+                                               HttpServletRequest request,
+                                               RegisteredClient registeredClient,
+                                               String redirectUri,
+                                               AuthenticationParameters parameters) {
+        Set<String> requestedScopes = scopesOf(authorizationContext.scope());
+        boolean attestationRequested = dcqlProfileResolver.requestsAttestation(requestedScopes);
+        List<LoginMethod> loginMethods = resolveLoginMethods(registeredClient,
+                TenantDomainFilter.getCurrentTenant(request), parameters.requestedLevel(), requestedScopes);
+        if (loginMethods.isEmpty()) {
+            throw noLoginMethod(registeredClient, attestationRequested, errorContext);
+        }
 
-        return throwRedirectAuthentication(authorizationContext.state(), result, registeredClient,
+        WalletLoginWorkflow.WalletLogin walletLogin = loginMethods.equals(WALLET_ONLY)
+                ? walletLoginWorkflow.start(registeredClient, authorizationContext.scope(), authorizationContext.state(),
+                        authorizationContext.accessProfile())
+                : null;
+
+        // EUD-252: bound only AFTER the reuse branch — an SSO-reuse redirect to the RP must not
+        // carry the login-page browser-binding cookie.
+        cacheAuthorizationRequest(authorizationContext, registeredClient, redirectUri, bindLogin(request),
+                walletLogin, loginMethods, parameters.requestedLevel());
+
+        return throwRedirectAuthentication(authorizationContext.state(),
+                walletLogin != null ? walletLogin.authRequest() : null, registeredClient,
                 authorizationContext.portalUrl(), authorizationContext.contextPath());
     }
 
-    private Authentication throwRedirectAuthentication(String state, AuthorizationRequestBuildWorkflow.Result result,
+    private Authentication throwRedirectAuthentication(String state, String openid4vpUrl,
                                                        RegisteredClient registeredClient, String portalUrl,
                                                        String contextPath) {
         Map<String, Object> clientSettings = registeredClient.getClientSettings().getSettings();
@@ -442,25 +532,15 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 ? (String) clientSettings.get(CLIENT_SETTING_LOGIN_PAGE_URI)
                 : null;
 
-        String redirectUrl;
-        if (loginPageUri != null) {
-            redirectUrl = String.format(
-                    "%s?authRequest=%s&state=%s",
-                    loginPageUri,
-                    URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
-                    URLEncoder.encode(state, StandardCharsets.UTF_8)
-            );
-        } else {
-            redirectUrl = String.format(
-                    "%s%s/login?authRequest=%s&state=%s",
-                    portalUrl,
-                    nullSafeContextPath(contextPath),
-                    URLEncoder.encode(result.openid4vpUrl(), StandardCharsets.UTF_8),
-                    URLEncoder.encode(state, StandardCharsets.UTF_8)
-            );
-        }
+        String loginPage = loginPageUri != null
+                ? loginPageUri
+                : portalUrl + nullSafeContextPath(contextPath) + "/login";
+        String authRequest = openid4vpUrl != null
+                ? "authRequest=" + URLEncoder.encode(openid4vpUrl, StandardCharsets.UTF_8) + "&"
+                : "";
 
-        throw AuthorizationRedirectException.toLoginPage(redirectUrl);
+        throw AuthorizationRedirectException.toLoginPage(
+                loginPage + "?" + authRequest + "state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
     }
 
     // --- Validation methods (framework-level, kept in filter) ---
@@ -572,8 +652,51 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
      * the same client/redirect_uri (equal non-null binding hashes), done with an atomic compare-and-
      * replace. Request and OID4VP nonce live in this one entry, so they always come from the same call.
      */
+    private AuthorizationRedirectException noLoginMethod(RegisteredClient registeredClient,
+                                                         boolean attestationRequested,
+                                                         AuthorizationContext errorContext) {
+        if (!attestationRequested && clientLoginMethods(registeredClient).contains(LoginMethod.WALLET)) {
+            log.info("event=authorize_no_attestation_requested clientId={}", registeredClient.getClientId());
+            return oidcErrorRedirect(OAuth2ErrorCodes.INVALID_SCOPE, NO_ATTESTATION_REQUESTED_DESCRIPTION,
+                    errorContext);
+        }
+        log.info("event=authorize_unmet_authentication_requirements clientId={}", registeredClient.getClientId());
+        return oidcErrorRedirect(UNMET_AUTHENTICATION_REQUIREMENTS, UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION,
+                errorContext);
+    }
+
+    private List<LoginMethod> resolveLoginMethods(RegisteredClient registeredClient, String tenant,
+                                                  RequestedAssuranceLevel requestedLevel,
+                                                  Set<String> requestedScopes) {
+        boolean attestationRequested = dcqlProfileResolver.requestsAttestation(requestedScopes);
+        List<LoginMethod> clientMethods = clientLoginMethods(registeredClient).stream()
+                .filter(method -> attestationRequested || method != LoginMethod.WALLET)
+                .toList();
+        AssuranceLevel walletLevel = dcqlProfileResolver.highestAssuranceLevel(requestedScopes).orElse(null);
+        List<LoginMethod> loginMethods = loginMethodsResolver.resolve(clientMethods,
+                tenantLoginMethodsPort.activeLoginMethods(tenant), walletLevel, requestedLevel);
+        log.info("event=authorize_login_methods clientId={} methods={} requestedLevel={} essential={}",
+                registeredClient.getClientId(), loginMethods,
+                requestedLevel != null ? requestedLevel.level() : null,
+                requestedLevel != null && requestedLevel.essential());
+        return loginMethods;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<LoginMethod> clientLoginMethods(RegisteredClient registeredClient) {
+        return Objects.requireNonNullElse(
+                (List<LoginMethod>) registeredClient.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_METHODS),
+                List.of(LoginMethod.WALLET));
+    }
+
+    private static Set<String> scopesOf(String scope) {
+        return scope == null || scope.isBlank() ? Set.of() : Set.copyOf(Arrays.asList(scope.trim().split("\\s+")));
+    }
+
     private void cacheAuthorizationRequest(AuthorizationContext authorizationContext, RegisteredClient registeredClient,
-                                           String redirectUri, LoginBinding loginBinding, String vpNonce) {
+                                           String redirectUri, LoginBinding loginBinding,
+                                           WalletLoginWorkflow.WalletLogin walletLogin,
+                                           List<LoginMethod> loginMethods, RequestedAssuranceLevel requestedLevel) {
         OAuth2AuthorizationRequest.Builder builder = OAuth2AuthorizationRequest
                 .authorizationCode()
                 .state(authorizationContext.state())
@@ -585,28 +708,28 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .authorizationUri(authorizationContext.issuer());
 
         Map<String, Object> additionalParameters = new HashMap<>();
-        additionalParameters.put(EXPIRATION, Instant.now().plusSeconds(loginTimeoutSeconds).getEpochSecond());
+        if (walletLogin != null) {
+            walletLogin.addTo(additionalParameters);
+        } else {
+            additionalParameters.put(EXPIRATION,
+                    Instant.now().plusSeconds(loginSelectionTimeoutSeconds).getEpochSecond());
+        }
 
-        String nonce = authorizationContext.clientNonce();
-        if (nonce != null && !nonce.isBlank()) {
-            additionalParameters.put(NONCE, nonce);
-        }
-        String codeChallenge = authorizationContext.codeChallenge();
-        if (codeChallenge != null && !codeChallenge.isBlank()) {
-            additionalParameters.put(PkceParameterNames.CODE_CHALLENGE, codeChallenge);
-        }
-        String codeChallengeMethod = authorizationContext.codeChallengeMethod();
-        if (codeChallengeMethod != null && !codeChallengeMethod.isBlank()) {
-            additionalParameters.put(PkceParameterNames.CODE_CHALLENGE_METHOD, codeChallengeMethod);
-        }
+        putIfNotBlank(additionalParameters, NONCE, authorizationContext.clientNonce());
+        putIfNotBlank(additionalParameters, PkceParameterNames.CODE_CHALLENGE, authorizationContext.codeChallenge());
+        putIfNotBlank(additionalParameters, PkceParameterNames.CODE_CHALLENGE_METHOD,
+                authorizationContext.codeChallengeMethod());
         if (loginBinding.browserBindingHash() != null) {
             additionalParameters.put(BROWSER_BINDING_HASH, loginBinding.browserBindingHash());
         }
-        if (vpNonce != null) {
-            additionalParameters.put(VP_NONCE, vpNonce);
-        }
+        putIfNotBlank(additionalParameters, ACCESS_PROFILE, authorizationContext.accessProfile());
         if (loginBinding.tenant() != null) {
             additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());
+        }
+        additionalParameters.put(LOGIN_METHODS, loginMethods.stream().map(LoginMethod::value).toList());
+        if (requestedLevel != null) {
+            additionalParameters.put(ACR_REQUESTED, requestedLevel.level().acrValue());
+            additionalParameters.put(ACR_ESSENTIAL, requestedLevel.essential());
         }
 
         builder.additionalParameters(additionalParameters);
@@ -630,6 +753,12 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 registeredClient.getClientName(), UUID.randomUUID().toString(),
                 authorizationContext.originalRequestURL(), authorizationContext.portalUrl(),
                 authorizationContext.contextPath());
+    }
+
+    private static void putIfNotBlank(Map<String, Object> parameters, String name, String value) {
+        if (value != null && !value.isBlank()) {
+            parameters.put(name, value);
+        }
     }
 
     private static boolean isSameBrowserRetry(OAuth2AuthorizationRequest existing, OAuth2AuthorizationRequest candidate) {

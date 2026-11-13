@@ -8,9 +8,12 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Optional;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
@@ -25,7 +28,8 @@ import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
  * and completion are mutually exclusive: when the presentation wins, abort returns empty and
  * the redirect reaches the browser over SSE.
  *
- * <p>Only an expired login can be aborted: a login still in progress is left untouched.
+ * <p>An expired login can be aborted from anywhere. A login still in progress can only be aborted
+ * from the browser that started it, proved by its browser-binding cookie.
  */
 @Slf4j
 @Service
@@ -33,6 +37,7 @@ import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 public class AbortLoginWorkflow {
 
     private static final String LOGIN_TIMEOUT_DESCRIPTION = "login_timeout";
+    private static final String LOGIN_CANCELLED_DESCRIPTION = "login_cancelled";
 
     /**
      * The browser's countdown starts after {@code /authorize} set the expiration, so it never
@@ -47,15 +52,23 @@ public class AbortLoginWorkflow {
      *         or it has not expired yet
      */
     public Optional<String> abort(String state) {
-        // The endpoint is public and the state is not a secret (the wallet sees it): only an
-        // expired login may be aborted, or anyone could cut a login in progress.
+        return abort(state, null);
+    }
+
+    /**
+     * @param browserBindingHash SHA-256 (hex) of the browser-binding cookie of the request, or {@code null}
+     */
+    public Optional<String> abort(String state, String browserBindingHash) {
+        // The endpoint is public and the state is not a secret (the wallet sees it): a login in
+        // progress may only be aborted by the browser that started it, or anyone could cut it.
         OAuth2AuthorizationRequest pending = cacheStoreForOAuth2AuthorizationRequest.getIfPresent(state);
         if (pending == null) {
             log.debug("No pending login to abort for state={}", sanitize(state));
             return Optional.empty();
         }
-        if (!hasExpired(pending)) {
-            log.warn("Rejected abort of a login that has not expired yet, state={}", sanitize(state));
+        boolean expired = hasExpired(pending);
+        if (!expired && !startedBy(pending, browserBindingHash)) {
+            log.warn("Rejected abort of a login in progress from another browser, state={}", sanitize(state));
             return Optional.empty();
         }
         // Remove only the entry just checked: a wallet presentation may have taken it, or a
@@ -68,7 +81,16 @@ public class AbortLoginWorkflow {
         log.info("Login aborted for client={}", sanitize(pending.getClientId()));
         // iss (RFC 9207): the issuer of the /authorize request, cached with it.
         return Optional.of(AuthorizationResponseUri.error(pending.getRedirectUri(), OAuth2ErrorCodes.ACCESS_DENIED,
-                LOGIN_TIMEOUT_DESCRIPTION, state, pending.getAuthorizationUri()));
+                expired ? LOGIN_TIMEOUT_DESCRIPTION : LOGIN_CANCELLED_DESCRIPTION, state, pending.getAuthorizationUri()));
+    }
+
+    private static boolean startedBy(OAuth2AuthorizationRequest authorizationRequest, String browserBindingHash) {
+        if (browserBindingHash == null
+                || !(authorizationRequest.getAdditionalParameters().get(BROWSER_BINDING_HASH) instanceof String expected)) {
+            return false;
+        }
+        return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
+                browserBindingHash.getBytes(StandardCharsets.UTF_8));
     }
 
     private boolean hasExpired(OAuth2AuthorizationRequest authorizationRequest) {

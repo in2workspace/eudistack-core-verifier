@@ -2,10 +2,13 @@ package es.in2.vcverifier.oauth2.infrastructure.config;
 
 import es.in2.vcverifier.verifier.domain.model.ClientData;
 import es.in2.vcverifier.verifier.domain.model.ExternalTrustedListYamlData;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.verifier.domain.service.ClientRegistryProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
@@ -16,6 +19,7 @@ import java.util.Set;
 import es.in2.vcverifier.oauth2.domain.exception.ClientLoadingException;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI;
+import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,7 +43,7 @@ class ClientLoaderConfigTest {
                 List.of("https://app.dome.example.com"),
                 true, null, null,
                 "dome", null,
-                null, null
+                null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -71,7 +75,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null, null
+                null, null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -103,7 +107,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "INVALID TENANT WITH SPACES!", null, null, null
+                "INVALID TENANT WITH SPACES!", null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -131,7 +135,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                "my-tenant-123", null, null, null
+                "my-tenant-123", null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -164,7 +168,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, loginPageUri, null, null
+                null, loginPageUri, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -203,7 +207,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://main-app.example.com"),
                 true, null, null,
-                null, null, null, null
+                null, null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -241,7 +245,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null, null
+                null, null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -274,7 +278,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, "http://insecure.example.com/login", null, null
+                null, "http://insecure.example.com/login", null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -302,7 +306,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null, null
+                null, null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -335,7 +339,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://main-app.example.com"),
                 true, null, null,
-                null, null, null, null
+                null, null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -372,7 +376,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null, backchannelLogoutUri
+                null, null, null, backchannelLogoutUri, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -405,7 +409,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null, "http://insecure.example.com/backchannel-logout"
+                null, null, null, "http://insecure.example.com/backchannel-logout", null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -441,7 +445,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, null, null, null
+                null, null, null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -479,7 +483,7 @@ class ClientLoaderConfigTest {
                 false,
                 List.of("https://app.example.com"),
                 true, null, null,
-                null, "HTTPS://custom-login.example.com/auth", null, null
+                null, "HTTPS://custom-login.example.com/auth", null, null, null
         );
 
         ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
@@ -496,5 +500,78 @@ class ClientLoaderConfigTest {
         assertThat(allowedOrigins)
                 .as("loginPageUri scheme comparison must be case-insensitive (RFC 3986 3.1)")
                 .contains("https://custom-login.example.com");
+    }
+
+    @Test
+    void retrieveClients_withoutLoginMethods_offersOnlyTheWallet() {
+        RegisteredClientRepository repo = loadClients(clientWithLoginMethods("vc-auth-client-default", null));
+
+        assertThat(loginMethodsOf(repo, "vc-auth-client-default")).containsExactly(LoginMethod.WALLET);
+    }
+
+    @Test
+    void retrieveClients_withLoginMethods_storesThemInTheirOrder() {
+        RegisteredClientRepository repo = loadClients(
+                clientWithLoginMethods("vc-auth-client-both", List.of("x509", "wallet")));
+
+        assertThat(loginMethodsOf(repo, "vc-auth-client-both"))
+                .containsExactly(LoginMethod.X509, LoginMethod.WALLET);
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void retrieveClients_withUnknownLoginMethod_skipsOnlyThatClientAndLogsTheValue(CapturedOutput output) {
+        RegisteredClientRepository repo = loadClients(
+                clientWithLoginMethods("vc-auth-client-unknown", List.of("x509", "clave")),
+                clientWithLoginMethods("vc-auth-client-valid", List.of("wallet")));
+
+        assertThat(repo.findByClientId("vc-auth-client-unknown")).isNull();
+        assertThat(repo.findByClientId("vc-auth-client-valid")).isNotNull();
+        assertThat(output).contains("vc-auth-client-unknown").contains("'clave'");
+    }
+
+    @Test
+    void retrieveClients_withUnknownLoginMethod_doesNotAddTheClientOrigins() {
+        Set<String> allowedOrigins = new HashSet<>();
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(ExternalTrustedListYamlData.builder()
+                .clients(List.of(
+                        clientWithLoginMethods("vc-auth-client-unknown", List.of("clave")),
+                        clientWithLoginMethods("vc-auth-client-valid", null)))
+                .build());
+
+        new ClientLoaderConfig(provider, allowedOrigins).getRegisteredClientRepository();
+
+        assertThat(allowedOrigins).containsExactly("https://vc-auth-client-valid.example.com");
+    }
+
+    private static RegisteredClientRepository loadClients(ClientData... clients) {
+        ClientRegistryProvider provider = mock(ClientRegistryProvider.class);
+        when(provider.retrieveClients()).thenReturn(
+                ExternalTrustedListYamlData.builder().clients(List.of(clients)).build());
+        return new ClientLoaderConfig(provider, new HashSet<>()).getRegisteredClientRepository();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<LoginMethod> loginMethodsOf(RegisteredClientRepository repo, String clientId) {
+        RegisteredClient registered = repo.findByClientId(clientId);
+        assertThat(registered).isNotNull();
+        return (List<LoginMethod>) registered.getClientSettings().getSetting(CLIENT_SETTING_LOGIN_METHODS);
+    }
+
+    private static ClientData clientWithLoginMethods(String clientId, List<String> loginMethods) {
+        String url = "https://" + clientId + ".example.com";
+        return new ClientData(
+                null, url,
+                clientId, null,
+                List.of(url + "/callback"),
+                List.of("openid"),
+                List.of("none"),
+                List.of("authorization_code"),
+                false,
+                List.of(url),
+                true, null, null,
+                "sandbox", null, null, null, loginMethods
+        );
     }
 }

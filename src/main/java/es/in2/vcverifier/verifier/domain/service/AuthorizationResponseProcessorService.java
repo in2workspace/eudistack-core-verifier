@@ -1,9 +1,10 @@
 package es.in2.vcverifier.verifier.domain.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 
-import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 
 public interface AuthorizationResponseProcessorService {
@@ -22,13 +23,13 @@ public interface AuthorizationResponseProcessorService {
 
     /**
      * Issues an authorization code directly for an already-authenticated SSO-reused session — no VP
-     * is re-presented. Mirrors the code-issuance tail of {@link #handleAuthResponse}, using a
-     * credential snapshot captured at the original establishment instead of a freshly-verified VP.
+     * or certificate is presented again. Mirrors the code-issuance tail of {@link #handleAuthResponse},
+     * using the authentication snapshot captured at the original establishment.
      * The caller MUST have already validated {@code redirectUri} against the client's registered
      * redirect URIs — this method does not repeat that check.
      *
-     * @param authTime when the holder actually authenticated (the SSO session's establishment), so
-     *                 the ID Token's {@code auth_time} reflects the original login, not this reuse
+     * @param authentication authentication of the session, whose {@code auth_time} is the original
+     *                       login, not this reuse
      * @param issuer   issuer of the {@code /oidc/authorize} request, sent as {@code iss} (RFC 9207)
      *
      * @return the redirect URL ({@code redirectUri?code=...&state=...&iss=...}) to send back to the RP
@@ -41,10 +42,16 @@ public interface AuthorizationResponseProcessorService {
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson,
-            Instant authTime,
+            AuthenticationResult authentication,
             String issuer
     );
+
+    /**
+     * Consumes the open login of {@code state} and issues its authorization code for a login with a
+     * certificate. Empty when the login is gone, expired, of another tenant or of an unknown client.
+     */
+    Optional<AuthResponseResult> issueCodeForCertificateLogin(String state, String tenant,
+                                                              CertificateAuthentication authentication);
 
     /**
      * EUD-252: invalidates an issued, not yet redeemed authorization code so it can no longer be

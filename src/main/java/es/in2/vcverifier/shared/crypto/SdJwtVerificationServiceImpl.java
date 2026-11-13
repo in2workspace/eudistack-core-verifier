@@ -68,11 +68,10 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
 
             // 5. Validate KB-JWT
             ECKey holderKey = extractHolderKey(claims);
-            if (sdJwt.keyBindingJwt() != null) {
-                validateKeyBindingJwt(sdJwt, holderKey, expectedAud, expectedNonce);
-            } else {
-                log.warn("No KB-JWT present in SD-JWT presentation — skipping holder binding check");
+            if (sdJwt.keyBindingJwt() == null) {
+                throw new JWTVerificationException("SD-JWT presentation without KB-JWT: holder binding is required");
             }
+            validateKeyBindingJwt(sdJwt, holderKey, expectedAud, expectedNonce);
 
             // 6. Resolve claims
             Map<String, Object> resolved = resolveClaims(claims, sdJwt.disclosures());

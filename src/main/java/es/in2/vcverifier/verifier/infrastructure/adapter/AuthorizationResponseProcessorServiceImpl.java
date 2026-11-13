@@ -10,8 +10,13 @@ import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
+import es.in2.vcverifier.oauth2.domain.exception.LevelNotMetException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
@@ -56,9 +61,12 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -109,7 +117,10 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             verificationLogged = true;
             credentialVerificationLogger.logVerifiedOk(configurationId);
 
-            return issueCodeForVerifiedLogin(state, oAuth2AuthorizationRequest, credentialJson);
+            CredentialAuthentication authentication =
+                    credentialAuthentication(credentialJson, oAuth2AuthorizationRequest.getScopes(), Instant.now());
+            requireEssentialLevel(state, oAuth2AuthorizationRequest, authentication.acr());
+            return issueCodeForVerifiedLogin(state, oAuth2AuthorizationRequest, authentication);
 
         } catch (LoginTenantMismatchException e) {
             // SSE already sent in consumeCachedRequest; must precede NoSuchElementException (its supertype)
@@ -137,7 +148,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             sseEmitterStore.sendValidationFailed(state, "ISSUER_NOT_TRUSTED", "The credential issuer is not trusted");
             verificationFailure = e;
             throw e;
-        } catch (LoginTimeoutException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException
+        } catch (LoginTimeoutException | LevelNotMetException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException
                  | LegacyFormatSunsetClosedException | BumpedFormatTemporarilyDisabledException | UnknownCredentialFormatException e) {
             // Already sent SSE event in the step that failed, just re-throw
             verificationFailure = e;
@@ -277,15 +288,63 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         }
     }
 
+    private void requireEssentialLevel(String state, OAuth2AuthorizationRequest login, AssuranceLevel acr) {
+        Map<String, Object> parameters = login.getAdditionalParameters();
+        if (!Boolean.TRUE.equals(parameters.get(ACR_ESSENTIAL))
+                || !(parameters.get(ACR_REQUESTED) instanceof String requested)) {
+            return;
+        }
+        Optional<AssuranceLevel> required = AssuranceLevel.fromAcrValue(requested);
+        if (required.isEmpty() || (acr != null && acr.satisfies(required.get()))) {
+            return;
+        }
+        log.warn("event=wallet_login_level_not_met clientId={} required={} acr={}",
+                sanitize(login.getClientId()), required.get().acrValue(), acr == null ? null : acr.acrValue());
+        sseEmitterStore.sendValidationFailed(state, "LEVEL_NOT_MET",
+                "The credential does not meet the level the application requires");
+        throw new LevelNotMetException("The credential does not meet the essential level of the login");
+    }
+
+    private CredentialAuthentication credentialAuthentication(JsonNode credentialJson, Set<String> scopes, Instant authTime) {
+        return new CredentialAuthentication(credentialJson,
+                dcqlProfileResolver.assuranceLevelOf(scopes, credentialJson).orElse(null), authTime);
+    }
+
     private AuthResponseResult issueCodeForVerifiedLogin(String state, OAuth2AuthorizationRequest oAuth2AuthorizationRequest,
-                                                         JsonNode credentialJson) {
+                                                         CredentialAuthentication authentication) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(oAuth2AuthorizationRequest.getClientId());
 
         if (registeredClient == null) {
             sseEmitterStore.sendValidationFailed(state, "UNAUTHORIZED_CLIENT", "Client not found or not authorized");
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
+        return issueCodeForLogin(state, oAuth2AuthorizationRequest, registeredClient, authentication);
+    }
 
+    @Override
+    public Optional<AuthResponseResult> issueCodeForCertificateLogin(String state, String tenant,
+                                                                     CertificateAuthentication authentication) {
+        OAuth2AuthorizationRequest login = cacheStoreForOAuth2AuthorizationRequest.remove(state);
+        if (login == null) {
+            return Optional.empty();
+        }
+        Map<String, Object> parameters = login.getAdditionalParameters();
+        if (!Objects.equals(parameters.get(AUTHORIZE_TENANT), tenant)
+                || !(parameters.get(EXPIRATION) instanceof Number expiration)
+                || Instant.now().getEpochSecond() >= expiration.longValue()) {
+            log.warn("event=certificate_login_not_open clientId={}", sanitize(login.getClientId()));
+            return Optional.empty();
+        }
+        RegisteredClient registeredClient = registeredClientRepository.findByClientId(login.getClientId());
+        if (registeredClient == null) {
+            log.warn("event=certificate_login_client_not_found clientId={}", sanitize(login.getClientId()));
+            return Optional.empty();
+        }
+        return Optional.of(issueCodeForLogin(state, login, registeredClient, authentication));
+    }
+
+    private AuthResponseResult issueCodeForLogin(String state, OAuth2AuthorizationRequest oAuth2AuthorizationRequest,
+                                                 RegisteredClient registeredClient, AuthenticationResult authentication) {
         String redirectUri = oAuth2AuthorizationRequest.getRedirectUri();
         var addl = oAuth2AuthorizationRequest.getAdditionalParameters();
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
@@ -296,9 +355,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                 (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
                 (String) addl.get(NONCE),
-                credentialJson,
-                null, // fresh VP presentation: auth_time is the token issue time
-                // issuer resolved at /authorize (cached with the request), not the wallet POST's host
+                authentication,
+                // issuer resolved at /authorize (cached with the request), not the host of this call
                 oAuth2AuthorizationRequest.getAuthorizationUri()
         ));
 
@@ -309,7 +367,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
         // the browser — directly to the RP, or first through the browser-bound SSO close step.
         Object browserBindingHash = addl.get(BROWSER_BINDING_HASH);
         return new AuthResponseResult(
-                credentialJson,
+                authentication,
                 issuedCode.redirectUrl(),
                 redirectUri,
                 state,
@@ -329,18 +387,20 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson,
-            Instant authTime,
+            AuthenticationResult authentication,
             String issuer
     ) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient == null) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
         }
+        AuthenticationResult reused = authentication instanceof CredentialAuthentication credential && credential.acr() == null
+                ? credentialAuthentication(credential.credential(), scopes, credential.authTime())
+                : authentication;
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
-                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce, credentialJson,
-                authTime, issuer));
-        log.info("SSO reuse: authorization code issued directly, no VP re-presentation");
+                registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce,
+                reused, issuer));
+        log.info("SSO reuse: authorization code issued directly, method={}", reused.method().value());
         return issuedCode.redirectUrl();
     }
 
@@ -368,8 +428,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallenge,
             String codeChallengeMethod,
             String nonce,
-            JsonNode credentialJson,
-            Instant authTime,
+            AuthenticationResult authentication,
             String issuer
     ) {
     }
@@ -385,20 +444,19 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
     /**
      * Generates a fresh authorization code, builds the {@code redirectUri?code=...&state=...&iss=...} URL,
      * then registers the {@link OAuth2Authorization} (needed at the token endpoint) and caches the
-     * {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow} to read the credential claims from.
+     * {@link AuthorizationCodeData} for {@code TokenGenerationWorkflow} to read the authentication from.
      * Shared by the VP-validated establishment path ({@link #handleAuthResponse}) and the SSO-reuse
      * path ({@link #issueCodeForReusedSession}) — the only difference between them is where
-     * {@code credentialJson} comes from (freshly verified VP vs. cached establishment snapshot).
+     * the credential comes from (freshly verified VP vs. cached establishment snapshot).
      */
     private IssuedCode issueAuthorizationCode(CodeIssuance issuance) {
         RegisteredClient registeredClient = issuance.registeredClient();
         String redirectUri = issuance.redirectUri();
-        Set<String> scopes = issuance.scopes();
+        Set<String> scopes = grantedScopes(issuance);
         String state = issuance.state();
         String codeChallenge = issuance.codeChallenge();
         String codeChallengeMethod = issuance.codeChallengeMethod();
         String nonce = issuance.nonce();
-        JsonNode credentialJson = issuance.credentialJson();
         Instant issueTime = Instant.now();
 
         // SEC-S9: Authorization codes must not be logged in full.
@@ -464,15 +522,32 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
 
         AuthorizationCodeData.AuthorizationCodeDataBuilder authCodeDataBuilder = AuthorizationCodeData.builder()
                 .state(state)
-                .verifiableCredential(credentialJson)
+                .authentication(issuance.authentication())
                 .oAuth2Authorization(authorization)
                 .requestedScopes(scopes)
-                .clientNonce(nonce)
-                .authTime(issuance.authTime());
+                .clientNonce(nonce);
 
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 
         return new IssuedCode(code, redirectUrl);
+    }
+
+    private static Set<String> grantedScopes(CodeIssuance issuance) {
+        if (!(issuance.authentication() instanceof CertificateAuthentication)) {
+            return issuance.scopes();
+        }
+        Set<String> registered = issuance.registeredClient().getScopes();
+        Set<String> requested = new LinkedHashSet<>();
+        issuance.scopes().forEach(scope -> requested.addAll(List.of(scope.trim().split("\\s+"))));
+        requested.remove("");
+        Set<String> granted = new LinkedHashSet<>(requested);
+        granted.retainAll(registered);
+        if (granted.size() < requested.size()) {
+            List<String> dropped = requested.stream().filter(scope -> !registered.contains(scope)).sorted().toList();
+            log.warn("event=certificate_login_scope_not_registered clientId={} dropped={}",
+                    sanitize(issuance.registeredClient().getClientId()), sanitize(String.join(" ", dropped)));
+        }
+        return granted;
     }
 
     private boolean isSdJwt(String token) {

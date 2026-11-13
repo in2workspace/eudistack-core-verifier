@@ -13,7 +13,10 @@ import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +42,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.PublicKey;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,6 +52,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HAS
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
@@ -83,13 +89,20 @@ class CustomAuthorizationRequestConverterTest {
     @Mock
     private SsoBrowserBindingCookie ssoBrowserBindingCookie;
 
+    @Mock
+    private TenantLoginMethodsPort tenantLoginMethodsPort;
+
+    @Mock
+    private DcqlProfileResolver dcqlProfileResolver;
+
     private boolean isNonceRequiredOnFapiProfile = true;
-    private long loginTimeoutSeconds = 120L;
+    private long loginSelectionTimeoutSeconds = 600L;
 
     private CustomAuthorizationRequestConverter converter;
 
     @BeforeEach
     void setUp() {
+        lenient().when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
         converter = new CustomAuthorizationRequestConverter(
                 didService,
                 jwtService,
@@ -97,13 +110,18 @@ class CustomAuthorizationRequestConverterTest {
                 backendConfig,
                 registeredClientRepository,
                 isNonceRequiredOnFapiProfile,
-                loginTimeoutSeconds,
+                loginSelectionTimeoutSeconds,
                 httpClient,
                 authorizationRequestBuildWorkflow,
                 safeUrlValidator,
                 reuseSsoSessionWorkflow,
-                ssoBrowserBindingCookie
+                ssoBrowserBindingCookie,
+                tenantLoginMethodsPort,
+                dcqlProfileResolver,
+                new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig)
         );
+        lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(120L);
+        lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
     }
 
     @Test
@@ -722,7 +740,7 @@ class CustomAuthorizationRequestConverterTest {
         when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
         when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(registeredClient, scope, state, null))
                 .thenReturn(new AuthorizationRequestBuildWorkflow.Result("signed-jwt", "openid4vp://...", "nonce"));
-        when(ssoBrowserBindingCookie.bindIfSsoEnabled(request)).thenReturn("binding-hash");
+        when(ssoBrowserBindingCookie.bind(request)).thenReturn("binding-hash");
 
         // When
         OAuth2AuthorizationCodeRequestAuthenticationException ex = assertThrows(
@@ -766,7 +784,7 @@ class CustomAuthorizationRequestConverterTest {
         lenient().when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
         lenient().when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(any(), any(), any(), any()))
                 .thenReturn(new AuthorizationRequestBuildWorkflow.Result("jwt", "openid4vp://...", "qr", "vp-nonce-new"));
-        lenient().when(ssoBrowserBindingCookie.bindIfSsoEnabled(request)).thenReturn(bindingHash);
+        lenient().when(ssoBrowserBindingCookie.bind(request)).thenReturn(bindingHash);
         return request;
     }
 

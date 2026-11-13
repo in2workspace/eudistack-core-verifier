@@ -1,13 +1,13 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.application.workflow.EstablishSsoSessionWorkflow;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,8 +21,10 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -64,7 +66,7 @@ class SsoSessionAuthenticationSuccessHandlerTest {
     }
 
     @Test
-    void onAuthenticationSuccess_noCredentialJson_commandCarriesNullCredentialJson() throws Exception {
+    void onAuthenticationSuccess_noAuthentication_commandCarriesNoAuthentication() throws Exception {
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
         Authentication authentication = mock(Authentication.class);
@@ -78,12 +80,12 @@ class SsoSessionAuthenticationSuccessHandlerTest {
 
         ArgumentCaptor<SsoSessionCommand> captor = ArgumentCaptor.forClass(SsoSessionCommand.class);
         verify(establishSsoSessionWorkflow).execute(captor.capture());
-        assertNull(captor.getValue().credentialJson());
+        assertNull(captor.getValue().authentication());
     }
 
     @Test
-    void onAuthenticationSuccess_withCredentialJson_commandCarriesItsJsonStringRepresentation() throws Exception {
-        JsonNode credentialJson = new ObjectMapper().createObjectNode().put("sub", "holder-1");
+    void onAuthenticationSuccess_withAuthentication_commandCarriesIt() throws Exception {
+        CredentialAuthentication loginAuthentication = credential("{\"sub\":\"holder-1\"}");
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -92,14 +94,52 @@ class SsoSessionAuthenticationSuccessHandlerTest {
                 "tenant", "tenant-a",
                 "holderHash", "holder-hash",
                 "clientId", "client-a",
-                "credentialJson", credentialJson
+                "authentication", loginAuthentication
         ));
 
         handler.onAuthenticationSuccess(request, response, authentication);
 
         ArgumentCaptor<SsoSessionCommand> captor = ArgumentCaptor.forClass(SsoSessionCommand.class);
         verify(establishSsoSessionWorkflow).execute(captor.capture());
-        assertTrue(captor.getValue().credentialJson().contains("\"sub\":\"holder-1\""));
+        assertSame(loginAuthentication, captor.getValue().authentication());
+    }
+
+    @Test
+    void onAuthenticationSuccess_browserWithASessionCookie_commandCarriesItsSession() throws Exception {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getCookies()).thenReturn(new Cookie[]{
+                new Cookie("__Host-sso-tx", "binding"),
+                new Cookie("__Secure-sso-tenant-a", "session-of-holder-a")});
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(Map.of(
+                "tenant", "tenant-a",
+                "holderHash", "holder-b",
+                "clientId", "client-a"
+        ));
+
+        handler.onAuthenticationSuccess(request, mock(HttpServletResponse.class), authentication);
+
+        ArgumentCaptor<SsoSessionCommand> captor = ArgumentCaptor.forClass(SsoSessionCommand.class);
+        verify(establishSsoSessionWorkflow).execute(captor.capture());
+        assertEquals("session-of-holder-a", captor.getValue().browserSessionId());
+    }
+
+    @Test
+    void onAuthenticationSuccess_browserWithTheCookieOfAnotherTenant_commandCarriesNoSession() throws Exception {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("__Secure-sso-tenant-b", "session-of-tenant-b")});
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(Map.of(
+                "tenant", "tenant-a",
+                "holderHash", "holder-b",
+                "clientId", "client-a"
+        ));
+
+        handler.onAuthenticationSuccess(request, mock(HttpServletResponse.class), authentication);
+
+        ArgumentCaptor<SsoSessionCommand> captor = ArgumentCaptor.forClass(SsoSessionCommand.class);
+        verify(establishSsoSessionWorkflow).execute(captor.capture());
+        assertNull(captor.getValue().browserSessionId());
     }
 
     @Test

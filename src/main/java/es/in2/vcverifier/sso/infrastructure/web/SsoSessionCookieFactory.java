@@ -32,13 +32,17 @@ public class SsoSessionCookieFactory {
     /**
      * Builds the SSO session cookie.
      */
+    public static String cookieName(String tenantSlug) {
+        return "__Secure-sso-" + tenantSlug;
+    }
+
     public ResponseCookie createCookie(
             String tenantSlug,
             String tenantRootDomain,
             Duration ttl,
             String sessionId
     ) {
-        String cookieName = "__Secure-sso-" + tenantSlug;
+        String cookieName = cookieName(tenantSlug);
 
         ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(cookieName, sessionId)
                 .httpOnly(true)

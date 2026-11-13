@@ -264,14 +264,14 @@ class SdJwtVerificationServiceImplTest {
     }
 
     @Test
-    @DisplayName("SD-JWT without KB-JWT still works (warns about missing binding)")
-    void verifyPresentation_noKbJwt_succeeds() throws Exception {
+    @DisplayName("SD-JWT without KB-JWT throws: holder binding is required")
+    void verifyPresentation_noKbJwt_throws() throws Exception {
         String issuerDid = "did:key:zNoKb";
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .issuer(issuerDid)
                 .claim("vct", "LEARCredentialEmployee")
-                .claim("credentialSubject", Map.of("id", "did:key:zHolder1"))
+                .claim("cnf", Map.of("jwk", holderKey.toPublicJWK().toJSONObject()))
                 .expirationTime(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
                 .build();
 
@@ -279,13 +279,11 @@ class SdJwtVerificationServiceImplTest {
         String compact = issuerJwtString + "~";
 
         when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
-        when(trustFrameworkService.getTrustedIssuerListData(issuerDid)).thenReturn(List.of());
 
-        SdJwtVerificationResult result = service.verifyPresentation(compact, "https://v.example.com", "nonce");
-
-        assertNotNull(result);
-        assertEquals("LEARCredentialEmployee", result.vct());
-        assertNull(result.holderKey());
+        JWTVerificationException exception = assertThrows(JWTVerificationException.class,
+                () -> service.verifyPresentation(compact, "https://v.example.com", "nonce"));
+        assertTrue(exception.getMessage().contains("without KB-JWT"));
+        verifyNoInteractions(trustFrameworkService);
     }
 
     @Test
@@ -398,6 +396,7 @@ class SdJwtVerificationServiceImplTest {
         payload.put("vct", "learcredential.employee.sd.1");
         payload.put("iat", Instant.now().minus(1, ChronoUnit.HOURS).getEpochSecond());
         payload.put("exp", Instant.now().plus(1, ChronoUnit.DAYS).getEpochSecond());
+        payload.put("cnf", Map.of("jwk", holderKey.toPublicJWK().toJSONObject()));
         String payloadJson = new ObjectMapper().writeValueAsString(payload);
 
         // Sign using raw sign-hash approach (same as mock QTSP)
@@ -430,8 +429,7 @@ class SdJwtVerificationServiceImplTest {
 
         String issuerJwtString = signingInput + "." + signatureB64Url;
 
-        // Append trailing ~ (no disclosures, no KB-JWT for simplicity)
-        String compact = issuerJwtString + "~";
+        String compact = withKeyBindingJwt(issuerJwtString + "~", "https://v.example.com", "nonce");
 
         when(trustFrameworkService.getTrustedIssuerListData(issuerOrgId)).thenReturn(List.of());
 
@@ -462,6 +460,7 @@ class SdJwtVerificationServiceImplTest {
         JWTClaimsSet issuerClaims = new JWTClaimsSet.Builder()
                 .issuer(issuerDidElsi)
                 .claim("vct", "learcredential.employee.sd.1")
+                .claim("cnf", Map.of("jwk", holderKey.toPublicJWK().toJSONObject()))
                 .issueTime(Date.from(Instant.now().minus(1, ChronoUnit.HOURS)))
                 .expirationTime(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
                 .build();
@@ -473,7 +472,7 @@ class SdJwtVerificationServiceImplTest {
 
         SignedJWT issuerJwt = new SignedJWT(rsaHeader, issuerClaims);
         issuerJwt.sign(new RSASSASigner(rsaPrivKey));
-        String compact = issuerJwt.serialize() + "~";
+        String compact = withKeyBindingJwt(issuerJwt.serialize() + "~", "https://v.example.com", "nonce");
 
         when(trustFrameworkService.getTrustedIssuerListData(issuerDidElsi)).thenReturn(List.of());
 
@@ -494,6 +493,16 @@ class SdJwtVerificationServiceImplTest {
         SignedJWT jwt = new SignedJWT(header, claims);
         jwt.sign(new ECDSASigner(key));
         return jwt.serialize();
+    }
+
+    private String withKeyBindingJwt(String sdJwtWithoutKb, String aud, String nonce) throws Exception {
+        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
+                .audience(aud)
+                .claim("nonce", nonce)
+                .claim("sd_hash", computeSha256(sdJwtWithoutKb))
+                .issueTime(new Date())
+                .build();
+        return sdJwtWithoutKb + signJwt(kbClaims, holderKey);
     }
 
     private String createDisclosure(String salt, String claimName, Object claimValue) throws Exception {

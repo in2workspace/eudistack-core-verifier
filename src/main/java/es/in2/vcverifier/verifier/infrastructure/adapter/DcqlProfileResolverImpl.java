@@ -1,6 +1,8 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.verifier.domain.model.dcql.CredentialQuery;
 import es.in2.vcverifier.verifier.domain.model.dcql.DcqlQuery;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
@@ -10,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * Resolves OIDC scopes to DCQL queries using pre-configured profiles from application YAML.
@@ -20,7 +23,8 @@ import java.util.*;
 public class DcqlProfileResolverImpl implements DcqlProfileResolver {
 
     private static final Set<String> OIDC_STANDARD_SCOPES = Set.of(
-            "openid", "profile", "email", "offline_access", "role", "address", "phone"
+            "openid", "profile", "email", "offline_access", "role", "address", "phone",
+            "personal_administrative_number"
     );
 
     private final DcqlProfileProperties dcqlProfileProperties;
@@ -59,6 +63,70 @@ public class DcqlProfileResolverImpl implements DcqlProfileResolver {
                 oid4vpScopes.size(), oid4vpScopes, mergedCredentials.size());
 
         return new DcqlQuery(mergedCredentials);
+    }
+
+    @Override
+    public Optional<AssuranceLevel> highestAssuranceLevel(Collection<String> scopes) {
+        if (scopes == null) {
+            return Optional.empty();
+        }
+        return profilesOf(scopes)
+                .map(DcqlProfileProperties.DcqlProfile::assuranceLevel)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder());
+    }
+
+    @Override
+    public Optional<AssuranceLevel> assuranceLevelOf(Collection<String> scopes, JsonNode credential) {
+        if (scopes == null || credential == null) {
+            return Optional.empty();
+        }
+        Set<String> credentialTypes = credentialTypes(credential);
+        return profilesOf(scopes)
+                .filter(profile -> profile.assuranceLevel() != null)
+                .filter(profile -> profile.credentials().stream().anyMatch(entry -> matches(entry, credentialTypes)))
+                .map(DcqlProfileProperties.DcqlProfile::assuranceLevel)
+                .max(Comparator.naturalOrder());
+    }
+
+    @Override
+    public boolean requestsAttestation(Collection<String> scopes) {
+        return scopes != null && scopes.stream().anyMatch(dcqlProfileProperties.profiles()::containsKey);
+    }
+
+    private Stream<DcqlProfileProperties.DcqlProfile> profilesOf(Collection<String> scopes) {
+        return scopes.stream()
+                .filter(Objects::nonNull)
+                .flatMap(scope -> Arrays.stream(scope.trim().split("\\s+")))
+                .map(dcqlProfileProperties.profiles()::get)
+                .filter(Objects::nonNull);
+    }
+
+    private static Set<String> credentialTypes(JsonNode credential) {
+        Set<String> types = new HashSet<>();
+        JsonNode vct = credential.get("vct");
+        if (vct != null && vct.isTextual()) {
+            types.add(vct.asText());
+        }
+        JsonNode type = credential.get("type");
+        if (type != null && type.isArray()) {
+            type.forEach(value -> types.add(value.asText()));
+        }
+        return types;
+    }
+
+    private static boolean matches(DcqlProfileProperties.CredentialEntry entry, Set<String> credentialTypes) {
+        DcqlProfileProperties.CredentialMeta meta = entry.meta();
+        if (meta == null) {
+            return false;
+        }
+        if (meta.vctValues() != null && meta.vctValues().stream().anyMatch(credentialTypes::contains)) {
+            return true;
+        }
+        return meta.credentialDefinition() != null
+                && meta.credentialDefinition().type() != null
+                && !meta.credentialDefinition().type().isEmpty()
+                && credentialTypes.containsAll(meta.credentialDefinition().type());
     }
 
     private CredentialQuery toCredentialQuery(DcqlProfileProperties.CredentialEntry entry) {

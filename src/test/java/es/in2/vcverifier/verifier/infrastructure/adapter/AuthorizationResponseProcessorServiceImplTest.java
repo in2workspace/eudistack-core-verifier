@@ -1,4 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.service.VpService;
@@ -20,6 +22,7 @@ import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
+import es.in2.vcverifier.oauth2.domain.exception.LevelNotMetException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.verifier.domain.exception.LoginTenantMismatchException;
@@ -52,8 +55,11 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
+import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
@@ -129,6 +135,8 @@ class AuthorizationResponseProcessorServiceImplTest {
         lenient().when(backendConfig.getUrl()).thenReturn("http://localhost:8080");
         lenient().when(backendConfig.getAccessTokenExpirationSeconds()).thenReturn(900L);
         lenient().when(cryptoComponent.getClientId()).thenReturn("did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169");
+        lenient().when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString()))
+                .thenReturn(new ObjectMapper().createObjectNode());
     }
 
 
@@ -166,7 +174,6 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(oAuth2AuthorizationRequest);
 
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -193,6 +200,73 @@ class AuthorizationResponseProcessorServiceImplTest {
         verify(oAuth2AuthorizationService).save(any(OAuth2Authorization.class));
         verify(credentialVerificationLogger).logVerifiedOk("test-config-id");
         verify(credentialVerificationLogger, never()).logVerifiedError(any(), any());
+    }
+
+    @Test
+    void handleAuthResponse_meetingTheEssentialLevel_issuesTheCodeWithTheLevelOfTheProfile() throws JOSEException {
+        String state = "level-state";
+        String vpToken = createVpToken("level-nonce");
+        stubWalletLogin(state, "level-nonce", "http://eidas.europa.eu/LoA/substantial");
+        when(dcqlProfileResolver.assuranceLevelOf(eq(Set.of("openid learcredential")), any()))
+                .thenReturn(Optional.of(AssuranceLevel.HIGH));
+
+        authorizationResponseProcessorService.handleAuthResponse(state, vpToken, null);
+
+        ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
+        verify(cacheStoreForAuthorizationCodeData).add(anyString(), codeData.capture());
+        assertEquals(AssuranceLevel.HIGH, ((CredentialAuthentication) codeData.getValue().authentication()).acr());
+    }
+
+    @Test
+    void handleAuthResponse_belowTheEssentialLevel_isRejectedWithoutACode() throws JOSEException {
+        String state = "low-state";
+        String vpToken = createVpToken("low-nonce");
+        stubWalletLogin(state, "low-nonce", "http://eidas.europa.eu/LoA/high");
+        when(dcqlProfileResolver.assuranceLevelOf(any(), any())).thenReturn(Optional.of(AssuranceLevel.SUBSTANTIAL));
+
+        assertThrows(LevelNotMetException.class,
+                () -> authorizationResponseProcessorService.handleAuthResponse(state, vpToken, null));
+
+        verify(sseEmitterStore).sendValidationFailed(eq(state), eq("LEVEL_NOT_MET"), anyString());
+        verify(oAuth2AuthorizationService, never()).save(any());
+        verify(cacheStoreForAuthorizationCodeData, never()).add(anyString(), any());
+    }
+
+    @Test
+    void handleAuthResponse_withoutALevelAndAnEssentialOne_isRejected() throws JOSEException {
+        String state = "none-state";
+        String vpToken = createVpToken("none-nonce");
+        stubWalletLogin(state, "none-nonce", "http://eidas.europa.eu/LoA/substantial");
+        when(dcqlProfileResolver.assuranceLevelOf(any(), any())).thenReturn(Optional.empty());
+
+        assertThrows(LevelNotMetException.class,
+                () -> authorizationResponseProcessorService.handleAuthResponse(state, vpToken, null));
+
+        verify(cacheStoreForAuthorizationCodeData, never()).add(anyString(), any());
+    }
+
+    private void stubWalletLogin(String state, String nonce, String essentialAcr) {
+        OAuth2AuthorizationRequest login = OAuth2AuthorizationRequest.authorizationCode()
+                .authorizationUri("https://auth.example.com")
+                .clientId("client-id")
+                .redirectUri("https://client.example.com/callback")
+                .state(state)
+                .additionalParameters(Map.of(VP_NONCE, nonce, NONCE, nonce,
+                        EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond(),
+                        ACR_REQUESTED, essentialAcr, ACR_ESSENTIAL, true))
+                .scope("openid learcredential")
+                .build();
+        lenient().when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(login);
+        lenient().when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
+                DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
+        lenient().when(registeredClientRepository.findByClientId("client-id")).thenReturn(RegisteredClient.withId("client-id")
+                .clientId("client-id")
+                .clientSecret("secret")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://client.example.com/callback")
+                .scope("openid")
+                .scope("learcredential")
+                .build());
     }
 
     @Test
@@ -528,7 +602,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -581,7 +654,6 @@ class AuthorizationResponseProcessorServiceImplTest {
         when(cacheStoreForOAuth2AuthorizationRequest.remove(state)).thenReturn(req);
 
         doNothing().when(vpService).verifyVerifiablePresentation(anyString());
-        when(vpService.extractCredentialFromVerifiablePresentationAsJsonNode(anyString())).thenReturn(null);
         when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
                 DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
 
@@ -675,12 +747,12 @@ class AuthorizationResponseProcessorServiceImplTest {
 
         Set<String> scopes = Set.of("openid");
         ObjectNode verifiableCredential = new ObjectMapper().createObjectNode();
-        Instant authTime = Instant.now();
+        CredentialAuthentication authentication = new CredentialAuthentication(verifiableCredential, null, Instant.now());
 
         // When
         assertThrows(IllegalArgumentException.class, () -> authorizationResponseProcessorService.issueCodeForReusedSession(
                 "client-id", redirectUri, scopes, "state-1", null, null, null,
-                verifiableCredential, authTime, "https://tenant-a.example.com/verifier"));
+                authentication, "https://tenant-a.example.com/verifier"));
 
         // Then: no orphan code left behind
         verify(oAuth2AuthorizationService, never()).save(any());

@@ -1,11 +1,15 @@
 package es.in2.vcverifier.sso.domain.service;
 
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 
 import static es.in2.vcverifier.sso.domain.model.ReuseDecision.REJECT_CATALOG;
@@ -119,6 +123,26 @@ public final class TenantSsoPolicy {
             return REJECT_CATALOG;
         }
 
+        return ReuseDecision.ALLOWED;
+    }
+
+    public ReuseDecision evaluateAuthentication(SsoSessionAuthentication authentication, List<LoginMethod> clientMethods,
+                                                AssuranceLevel essentialLevel, boolean attestationScopes) {
+        Objects.requireNonNull(authentication, "authentication must not be null");
+        boolean certificate = authentication.method() == LoginMethod.X509;
+        if (certificate && (authentication.certificateNotAfter() == null
+                || !Instant.now(clock).isBefore(authentication.certificateNotAfter()))) {
+            return ReuseDecision.REJECT_CERTIFICATE_EXPIRED;
+        }
+        if (clientMethods == null || !clientMethods.contains(authentication.method())) {
+            return ReuseDecision.REJECT_LOGIN_METHOD;
+        }
+        if (essentialLevel != null && (authentication.acr() == null || !authentication.acr().satisfies(essentialLevel))) {
+            return ReuseDecision.REJECT_LEVEL;
+        }
+        if (certificate && attestationScopes) {
+            return ReuseDecision.REJECT_ATTESTATION_SCOPES;
+        }
         return ReuseDecision.ALLOWED;
     }
 }
