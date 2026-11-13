@@ -37,6 +37,9 @@ public class Constants {
     // JTI cache TTL: 2x access token lifetime (900s) to ensure replay window coverage
     public static final long JTI_CACHE_TTL_SECONDS = 1800L;
     public static final String X_TENANT_HEADER = "X-Tenant";
+    // EUD-363: maximum length of the client's state, enforced at /oidc/authorize (invalid_request)
+    // and at /oid4vp/auth-response. RFC 6749 sets none; brokers such as Keycloak send 130+ characters.
+    public static final int STATE_MAX_LENGTH = 2048;
     // Carries the original login's auth_time (epoch seconds) across a refresh_token grant so the
     // new id_token reuses it instead of stamping "now" — see RefreshTokenDataCache.
     public static final String AUTH_TIME_PARAM = "auth_time";

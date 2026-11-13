@@ -56,6 +56,7 @@ import static es.in2.vcverifier.shared.domain.util.Constants.INTERACTION_REQUIRE
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_REQUIRED;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.SCOPE;
+import static es.in2.vcverifier.shared.domain.util.Constants.STATE_MAX_LENGTH;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.rootCauseName;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
@@ -73,6 +74,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private static final String PROMPT_NONE_COMBINED_DESCRIPTION = "prompt=none cannot be combined with other values";
     private static final String PROMPT_NOT_A_STRING_DESCRIPTION = "prompt must be a string";
     private static final String MAX_AGE_INVALID_DESCRIPTION = "max_age must be a non-negative integer";
+    private static final String STATE_TOO_LONG_DESCRIPTION = "state must not exceed " + STATE_MAX_LENGTH + " characters";
     private static final Pattern DIGITS = Pattern.compile("\\d+");
     private static final BigDecimal MAX_AGE_LIMIT = BigDecimal.valueOf(SsoTtlRange.MAX_ABSOLUTE.toSeconds());
     private static final String LOGIN_REQUIRED_DESCRIPTION = "prompt=none: end-user authentication is required";
@@ -263,14 +265,30 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
 
     /**
      * OIDC Core 1.0 §3.1.2.1 / §3.1.2.6: parses {@code prompt} and {@code max_age} — query parameters
-     * (plain) or request-object claims (JAR). A malformed value is answered with {@code invalid_request}
+     * (plain) or request-object claims (JAR) — after checking the length of the query {@code state}
+     * (EUD-363, {@link #validateStateLength}). A malformed value is answered with {@code invalid_request}
      * to {@code ctx.redirectUri()}, so this must only run once the request is validated (client,
      * redirect_uri, and for JAR the request-object signature), and it runs whatever the prompt: a
      * malformed request is malformed even with {@code prompt=login}.
      */
     private AuthenticationParameters parseAuthenticationParameters(Object rawPrompt, Object rawMaxAge,
                                                                    AuthorizationContext ctx, String clientId) {
+        validateStateLength(ctx, clientId);
         return new AuthenticationParameters(parsePrompt(rawPrompt, ctx, clientId), parseMaxAge(rawMaxAge, ctx, clientId));
+    }
+
+    /**
+     * EUD-363: the client's state is copied into the OID4VP request and comes back from the wallet to
+     * /oid4vp/auth-response, which caps it at {@code STATE_MAX_LENGTH}. A longer one is
+     * rejected here with {@code invalid_request}, so the login never reaches the login page only to
+     * fail at the wallet's response. Same validated-request precondition as prompt and max_age.
+     */
+    private void validateStateLength(AuthorizationContext ctx, String clientId) {
+        if (ctx.state() != null && ctx.state().length() > STATE_MAX_LENGTH) {
+            log.warn("event=authorize_state_invalid clientId={} reason=too_long length={}", clientId,
+                    ctx.state().length());
+            throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, STATE_TOO_LONG_DESCRIPTION, ctx);
+        }
     }
 
     private OidcPrompt parsePrompt(Object rawPrompt, AuthorizationContext ctx, String clientId) {
