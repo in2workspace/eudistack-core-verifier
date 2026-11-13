@@ -111,6 +111,23 @@ class ClientCertificateReaderTest {
     }
 
     @Test
+    void readChain_longestChainCloudFrontForwards_isRead() throws Exception {
+        X509Certificate leaf = personCertificate("IDCES-12345678Z", null);
+        String member = byteSequence(personCertificate(null, null));
+
+        assertThat(reader.readChain(byteSequence(leaf), List.of(member + "," + member, member))).hasSize(4);
+    }
+
+    @Test
+    void readChain_longerChain_failsBeforeReadingIt() throws Exception {
+        String leaf = byteSequence(personCertificate("IDCES-12345678Z", null));
+
+        assertThatThrownBy(() -> reader.readChain(leaf, List.of(":a:, :b:", ":c:, :d:")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Client certificate chain has more than 4 certificates");
+    }
+
+    @Test
     void readChain_chainSplitInSeveralHeaders_keepsTheirOrder() throws Exception {
         X509Certificate leaf = personCertificate("IDCES-12345678Z", null);
         X509Certificate intermediate = personCertificate(null, null);

@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 @Component
 public class ClientCertificateReader {
 
+    public static final int MAX_CHAIN_LENGTH = 4;
     private static final int RFC822_NAME = 1;
     private static final String SPAIN = "ES";
     private static final Pattern SEMANTIC_IDENTIFIER = Pattern.compile("^IDC([A-Z]{2})-(.+)$");
@@ -43,14 +44,16 @@ public class ClientCertificateReader {
         if (clientCert == null || clientCert.isBlank()) {
             throw new IllegalArgumentException("No client certificate header");
         }
-        List<X509Certificate> chain = new ArrayList<>();
-        chain.add(certificate(clientCert.strip()));
+        List<String> members = new ArrayList<>();
+        members.add(clientCert);
         for (String header : clientCertChain) {
-            for (String member : header.split(",", -1)) {
-                chain.add(certificate(member.strip()));
-            }
+            members.addAll(List.of(header.split(",", -1)));
         }
-        return List.copyOf(chain);
+        if (members.size() > MAX_CHAIN_LENGTH) {
+            throw new IllegalArgumentException("Client certificate chain has more than " + MAX_CHAIN_LENGTH
+                    + " certificates");
+        }
+        return members.stream().map(member -> certificate(member.strip())).toList();
     }
 
     private static X509Certificate certificate(String byteSequence) {
