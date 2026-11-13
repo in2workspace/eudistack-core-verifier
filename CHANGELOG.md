@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-11-13
+
+EUD-363 — Login with Keycloak as broker.
+
+### Fixed
+
+- **`POST /oid4vp/auth-response` accepts the client `state` at any length**, as `/oidc/authorize` already did. The 128-character cap rejected the wallet's presentation with a `400`, so a login started by a client with a longer `state`, such as Keycloak acting as broker (130+ characters, more for a long `redirect_uri`), never completed. RFC 6749 §4.1.1 sets no maximum for `state`.
+- **The `auth-response` DEBUG log line sanitizes the `state`**, as the rest of the service does, so a `state` with line breaks can no longer forge log lines (CWE-117).
+
 ## [3.4.2] - 2026-11-05
 
 EUD-26 — Observability aligned with the Wallet EBW, the reference configuration.
