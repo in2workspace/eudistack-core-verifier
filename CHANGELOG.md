@@ -12,7 +12,7 @@ EUD-363 — Login with Keycloak as broker.
 
 ### Fixed
 
-- **`POST /oid4vp/auth-response` accepts the client `state` at any length**, as `/oidc/authorize` already did. The 128-character cap rejected the wallet's presentation with a `400`, so a login started by a client with a longer `state`, such as Keycloak acting as broker (130+ characters, more for a long `redirect_uri`), never completed. RFC 6749 §4.1.1 sets no maximum for `state`.
+- **The client `state` can be up to 2048 characters** (was 128 at `POST /oid4vp/auth-response`, none at `/oidc/authorize`). The 128-character cap rejected the wallet's presentation with a `400`, so a login started by a client with a longer `state`, such as Keycloak acting as broker (130+ characters, more for a long `redirect_uri`), never completed. Both endpoints now share the same maximum, and `/oidc/authorize` answers a longer `state` with `invalid_request` to the client, as it does with the other errors of the request, instead of opening a login that could never finish.
 - **The `auth-response` DEBUG log line sanitizes the `state`**, as the rest of the service does, so a `state` with line breaks can no longer forge log lines (CWE-117).
 
 ## [3.4.2] - 2026-11-05
