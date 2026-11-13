@@ -31,6 +31,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
+
 @Slf4j
 @RestController
 @RequestMapping("/oid4vp")
@@ -85,7 +87,7 @@ public class Oid4vpController {
 
         log.info("Processing auth response");
         log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken=[{} chars]",
-                state, vpToken != null ? vpToken.length() : 0);
+                sanitize(state), vpToken != null ? vpToken.length() : 0);
 
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         String correlationId = UUID.randomUUID().toString();
