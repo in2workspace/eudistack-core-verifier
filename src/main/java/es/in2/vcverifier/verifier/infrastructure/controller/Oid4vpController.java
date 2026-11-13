@@ -87,7 +87,7 @@ public class Oid4vpController {
 
         log.info("Processing auth response");
         log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken=[{} chars]",
-                sanitize(state), vpToken != null ? vpToken.length() : 0);
+                sanitize(state), vpToken.length());
 
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         String correlationId = UUID.randomUUID().toString();
