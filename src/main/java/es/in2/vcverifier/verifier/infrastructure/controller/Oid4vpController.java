@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.STATE_MAX_LENGTH;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
 @Slf4j
@@ -78,9 +79,7 @@ public class Oid4vpController {
     @ResponseStatus(HttpStatus.OK)
     public void handleAuthResponse(
             @Parameter(description = "OAuth2 state parameter", required = true)
-            // No length cap: the state is the RP's own (RFC 6749 §4.1.1 sets no maximum) and was
-            // already accepted by /authorize; a broker such as Keycloak sends 130+ characters.
-            @RequestParam("state") @NotBlank String state,
+            @RequestParam("state") @NotBlank @Size(max = STATE_MAX_LENGTH) String state,
             @Parameter(description = "Verifiable Presentation token", required = true)
             @RequestParam("vp_token") @NotBlank @Size(max = 65536) String vpToken,
             HttpServletRequest request) {

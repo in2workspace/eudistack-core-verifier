@@ -65,6 +65,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
+import static es.in2.vcverifier.shared.domain.util.Constants.STATE_MAX_LENGTH;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -479,8 +480,63 @@ class CrossDeviceSsoLoginIT {
     }
 
     // =========================================================
+    // State length limit (STATE_MAX_LENGTH), shared by /authorize and auth-response
+    // =========================================================
+
+    @Test
+    void stateOfMaxLength_isAccepted_andLoginCompletes() throws Exception {
+        // Given
+        String state = stateOfLength(STATE_MAX_LENGTH);
+        Cookie txCookie = authorizeInBrowser(state);
+
+        // When
+        walletPost(state);
+
+        // Then
+        browserClose(sseUrlFor(state), txCookie)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?code=")))
+                .andExpect(header().string("Location", containsString("state=" + state)));
+    }
+
+    @Test
+    void stateOverMaxLength_isRejectedAtAuthorize_withInvalidRequestToTheClient() throws Exception {
+        // Given
+        String state = stateOfLength(STATE_MAX_LENGTH + 1);
+
+        // When / Then: invalid_request back to the client with its state, no login page, nothing cached
+        MvcResult result = mockMvc.perform(authorizeRequest(state))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?error=invalid_request")))
+                .andExpect(header().string("Location", containsString("state=" + state)))
+                .andReturn();
+        assertThat(result.getResponse().getRedirectedUrl()).doesNotContain("/login?");
+        assertThat(cacheStoreForOAuth2AuthorizationRequest.getIfPresent(state)).isNull();
+    }
+
+    @Test
+    void stateOverMaxLength_isRejectedAtAuthResponse() throws Exception {
+        // Given
+        String state = stateOfLength(STATE_MAX_LENGTH + 1);
+
+        // When / Then
+        mockMvc.perform(post("/oid4vp/auth-response")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT)
+                        .param("state", state)
+                        .param("vp_token", VP_TOKEN_B64))
+                .andExpect(status().isBadRequest());
+    }
+
+    // =========================================================
     // HELPERS
     // =========================================================
+
+    /** A unique base64url-safe state of exactly {@code length} characters. */
+    private static String stateOfLength(int length) {
+        String prefix = UUID.randomUUID() + ".";
+        return prefix + "a".repeat(length - prefix.length());
+    }
 
     private Cookie authorizeInBrowser(String state) throws Exception {
         MvcResult result = mockMvc.perform(authorizeRequest(state))

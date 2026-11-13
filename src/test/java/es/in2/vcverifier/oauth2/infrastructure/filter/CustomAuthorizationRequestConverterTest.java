@@ -1275,6 +1275,44 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
+    void convert_standardRequestWithoutState_passesTheStateLengthCheck() {
+        // EUD-363: a missing state is not "too long" — the request goes on to the next check (here, a
+        // malformed max_age), so the invalid_request it gets is that one, without a state.
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String redirectUri = "https://client.example.com/callback";
+        stubPkceParamsNull(request);
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&max_age=-5");
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(null);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn("learcredential");
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(NONCE)).thenReturn(null);
+        when(request.getParameter(REQUEST_URI)).thenReturn(null);
+        when(request.getParameter("request")).thenReturn(null);
+        when(request.getParameter("max_age")).thenReturn("-5");
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName("Test Client")
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(redirectUri)
+                .build();
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+        AuthorizationRedirectException exception =
+                assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
+
+        assertEquals("invalid_request", exception.getError().getErrorCode());
+        assertEquals("https://client.example.com/callback?error=invalid_request"
+                + "&error_description=max_age+must+be+a+non-negative+integer"
+                + "&iss=https%3A%2F%2Fauth.server.com", exception.getError().getUri());
+    }
+
+    @Test
     void convert_standardRequestWithMaxAgeAboveMaxTtlCeiling_shouldIgnoreItAndLogWarning() {
         // W3 (review): max_age=Long.MAX_VALUE used to reach TenantSsoPolicy.evaluate and
         // overflow Instant.plusSeconds (ArithmeticException -> 500 instead of login_required).
