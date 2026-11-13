@@ -155,7 +155,7 @@ class CertificateSsoSessionIT {
         assertThat(reuse.query()).containsKey("code");
         JsonNode idToken = exchange(SECOND_CLIENT, reuse, reuse.query().get("code"));
         assertThat(idToken.path("acr").asText()).isEqualTo(HIGH);
-        assertThat(idToken.path("amr").toString()).isEqualTo("[\"hwk\"]");
+        assertThat(idToken.path("amr")).hasToString("[\"hwk\"]");
         assertThat(idToken.path("sub").asText()).isEqualTo(first.path("sub").asText());
         assertThat(idToken.path("given_name").asText()).isEqualTo(PERSON.givenName());
         assertThat(DSS.calls()).isEqualTo(callsBefore);
@@ -180,7 +180,7 @@ class CertificateSsoSessionIT {
         Login login = authorize(SECOND_CLIENT, "openid " + DCQL_SCOPE, Map.of());
 
         assertThat(login.query()).doesNotContainKeys("code", "authRequest");
-        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\",\"wallet\"]");
+        assertThat(methods(login).path("methods")).hasToString("[\"x509\",\"wallet\"]");
     }
 
     @Test
@@ -193,7 +193,7 @@ class CertificateSsoSessionIT {
         Login login = authorize(SECOND_CLIENT, "openid profile", Map.of());
 
         assertThat(login.query()).doesNotContainKeys("code", "authRequest");
-        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
+        assertThat(methods(login).path("methods")).hasToString("[\"x509\"]");
         assertThat(activeSessions()).isZero();
     }
 

@@ -142,7 +142,7 @@ class CertificateLoginIT {
         JsonNode idToken = loginAndExchange(certificate, "openid profile email");
 
         assertThat(idToken.path("acr").asText()).isEqualTo(HIGH);
-        assertThat(idToken.path("amr").toString()).isEqualTo("[\"hwk\"]");
+        assertThat(idToken.path("amr")).hasToString("[\"hwk\"]");
         assertThat(idToken.path("given_name").asText()).isEqualTo(PERSON.givenName());
         assertThat(idToken.path("family_name").asText()).isEqualTo(PERSON.surname());
         assertThat(idToken.path("email").asText()).isEqualTo(PERSON.email());
@@ -175,7 +175,7 @@ class CertificateLoginIT {
         JsonNode idToken = loginAndExchange(certificate, "openid profile");
 
         assertThat(idToken.path("acr").asText()).isEqualTo(SUBSTANTIAL);
-        assertThat(idToken.path("amr").toString()).isEqualTo("[\"swk\"]");
+        assertThat(idToken.path("amr")).hasToString("[\"swk\"]");
     }
 
     @Test
@@ -300,7 +300,7 @@ class CertificateLoginIT {
 
         assertRejected(certificateLogin(login, TestCertificates.header(software)), 403, "level_not_met");
 
-        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
+        assertThat(methods(login).path("methods")).hasToString("[\"x509\"]");
     }
 
     @Test
@@ -322,7 +322,7 @@ class CertificateLoginIT {
         Login login = openLogin("openid");
 
         assertThat(status(post("/api/login/abort").with(host(HOST)).param("state", login.state()))).isEqualTo(404);
-        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
+        assertThat(methods(login).path("methods")).hasToString("[\"x509\"]");
     }
 
     @Test
@@ -422,7 +422,7 @@ class CertificateLoginIT {
         Login walletOnly = openLogin(WALLET_CLIENT_ID, "openid " + DCQL_SCOPE, Map.of());
 
         assertThat(selection.query()).doesNotContainKey(AUTH_REQUEST);
-        assertThat(methods(selection).path("methods").toString()).isEqualTo("[\"x509\",\"wallet\"]");
+        assertThat(methods(selection).path("methods")).hasToString("[\"x509\",\"wallet\"]");
         assertThat(walletOnly.query()).containsKey(AUTH_REQUEST);
     }
 
@@ -433,7 +433,7 @@ class CertificateLoginIT {
         JsonNode methods = methods(login);
 
         assertThat(login.query()).doesNotContainKey(AUTH_REQUEST);
-        assertThat(methods.path("methods").toString()).isEqualTo("[\"x509\"]");
+        assertThat(methods.path("methods")).hasToString("[\"x509\"]");
         assertThat(methods.path("essential_level").asText()).isEqualTo(HIGH);
     }
 
@@ -459,7 +459,7 @@ class CertificateLoginIT {
     void loginThatAsksForNoAttestation_offersOnlyTheCertificate() throws Exception {
         Login login = openLogin(CLIENT_ID, "openid profile " + NUMBER_SCOPE, Map.of());
 
-        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\"]");
+        assertThat(methods(login).path("methods")).hasToString("[\"x509\"]");
         assertThat(status(post("/api/login/wallet").param("state", login.state()).with(host(HOST)))).isEqualTo(409);
     }
 
@@ -467,7 +467,7 @@ class CertificateLoginIT {
     void loginThatAsksForAnAttestationAndTheNumber_offersBothMethodsAndCreatesTheWalletRequest() throws Exception {
         Login login = openLogin(CLIENT_ID, "openid profile " + NUMBER_SCOPE + " " + DCQL_SCOPE, Map.of());
 
-        assertThat(methods(login).path("methods").toString()).isEqualTo("[\"x509\",\"wallet\"]");
+        assertThat(methods(login).path("methods")).hasToString("[\"x509\",\"wallet\"]");
         MvcResult wallet = mockMvc.perform(post("/api/login/wallet").param("state", login.state()).with(host(HOST)))
                 .andReturn();
         assertThat(wallet.getResponse().getStatus()).isEqualTo(200);
@@ -541,8 +541,8 @@ class CertificateLoginIT {
         MvcResult withoutState = mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
                 .header(X_TENANT_HEADER, TENANT).contentType(MediaType.APPLICATION_JSON).content("{}")).andReturn();
         assertRejected(withoutState, 400, "invalid_request");
-        assertThat(objectMapper.readTree(withoutState.getResponse().getContentAsString()).path("violations").toString())
-                .isEqualTo("[{\"field\":\"state\",\"message\":\"required\"}]");
+        assertThat(objectMapper.readTree(withoutState.getResponse().getContentAsString()).path("violations"))
+                .hasToString("[{\"field\":\"state\",\"message\":\"required\"}]");
         assertThat(DSS.calls()).as("no trust validation for an invalid request").isEqualTo(dssCalls);
     }
 
@@ -553,8 +553,8 @@ class CertificateLoginIT {
 
         assertRejected(methods, 400, "invalid_request");
         assertRejected(wallet, 400, "invalid_request");
-        assertThat(objectMapper.readTree(methods.getResponse().getContentAsString()).path("violations").toString())
-                .isEqualTo("[{\"field\":\"state\",\"message\":\"required\"}]");
+        assertThat(objectMapper.readTree(methods.getResponse().getContentAsString()).path("violations"))
+                .hasToString("[{\"field\":\"state\",\"message\":\"required\"}]");
     }
 
     private JsonNode loginAndExchange(X509Certificate certificate, String scope) throws Exception {
