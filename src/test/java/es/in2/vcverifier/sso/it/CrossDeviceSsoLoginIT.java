@@ -461,7 +461,7 @@ class CrossDeviceSsoLoginIT {
     // =========================================================
 
     @Test
-    void longBrokerState_overThe128CharactersOnceRejected_completesTheLogin() throws Exception {
+    void stateOver128Characters_isAccepted_andLoginCompletes() throws Exception {
         // Given: a Keycloak-shaped state, four dot-separated parts, the last one the RP redirect in base64url
         String state = "BPtERLCLW_bD4-shl5EZuSwglSb36I-3KZKGCpipT5s.q1Co1-WR_jk." + UUID.randomUUID()
                 + ".eyJydSI6Imh0dHBzOi8vcmVjZXRhLmV4YW1wbGUuY29tL29pZGMvY2FsbGJhY2siLCJydCI6ImNvZGUifQ";
