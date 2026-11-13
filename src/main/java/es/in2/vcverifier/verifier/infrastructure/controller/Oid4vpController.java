@@ -76,7 +76,9 @@ public class Oid4vpController {
     @ResponseStatus(HttpStatus.OK)
     public void handleAuthResponse(
             @Parameter(description = "OAuth2 state parameter", required = true)
-            @RequestParam("state") @NotBlank @Size(max = 128) String state,
+            // No length cap: the state is the RP's own (RFC 6749 §4.1.1 sets no maximum) and was
+            // already accepted by /authorize; a broker such as Keycloak sends 130+ characters.
+            @RequestParam("state") @NotBlank String state,
             @Parameter(description = "Verifiable Presentation token", required = true)
             @RequestParam("vp_token") @NotBlank @Size(max = 65536) String vpToken,
             HttpServletRequest request) {

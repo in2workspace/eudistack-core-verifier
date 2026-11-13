@@ -457,6 +457,28 @@ class CrossDeviceSsoLoginIT {
     }
 
     // =========================================================
+    // A broker's long state (Keycloak 26.4: 130+ characters) completes the login
+    // =========================================================
+
+    @Test
+    void longBrokerState_overThe128CharactersOnceRejected_completesTheLogin() throws Exception {
+        // Given: a Keycloak-shaped state, four dot-separated parts, the last one the RP redirect in base64url
+        String state = "BPtERLCLW_bD4-shl5EZuSwglSb36I-3KZKGCpipT5s.q1Co1-WR_jk." + UUID.randomUUID()
+                + ".eyJydSI6Imh0dHBzOi8vcmVjZXRhLmV4YW1wbGUuY29tL29pZGMvY2FsbGJhY2siLCJydCI6ImNvZGUifQ";
+        assertThat(state).hasSizeGreaterThan(128);
+        Cookie txCookie = authorizeInBrowser(state);
+
+        // When: the wallet presents with that state (400 before the fix)
+        walletPost(state);
+
+        // Then: the browser closes the login and the RP gets its code with the same state
+        browserClose(sseUrlFor(state), txCookie)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?code=")))
+                .andExpect(header().string("Location", containsString("state=" + state)));
+    }
+
+    // =========================================================
     // HELPERS
     // =========================================================
 
