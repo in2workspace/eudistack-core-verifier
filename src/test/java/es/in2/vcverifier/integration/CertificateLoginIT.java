@@ -139,13 +139,24 @@ class CertificateLoginIT {
     void cardCertificate_logsInWithHighLevelAndHardwareKey() throws Exception {
         X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, true), DssStub.QC_WITH_QSCD);
 
-        JsonNode idToken = loginAndExchange(certificate, "openid profile email");
+        JsonNode tokens = loginAndExchangeTokens(CLIENT_ID, certificate, "openid profile email");
+        JsonNode idToken = claims(tokens.path("id_token").asText());
+        JsonNode accessToken = claims(tokens.path("access_token").asText());
 
         assertThat(idToken.path("acr").asText()).isEqualTo(HIGH);
         assertThat(idToken.path("amr")).hasToString("[\"hwk\"]");
+        assertThat(idToken.path("auth_time").isNumber()).isTrue();
         assertThat(idToken.path("given_name").asText()).isEqualTo(PERSON.givenName());
         assertThat(idToken.path("family_name").asText()).isEqualTo(PERSON.surname());
+        assertThat(idToken.path("name").asText()).isEqualTo(PERSON.givenName() + " " + PERSON.surname());
         assertThat(idToken.path("email").asText()).isEqualTo(PERSON.email());
+        assertThat(accessToken.path("acr").asText()).isEqualTo(HIGH);
+        assertThat(accessToken.path("amr")).hasToString("[\"hwk\"]");
+        for (JsonNode token : List.of(idToken, accessToken)) {
+            assertThat(token.has("credential_type")).isFalse();
+            assertThat(token.has("vc_json")).isFalse();
+            assertThat(token.has("vc")).isFalse();
+        }
     }
 
     @Test
