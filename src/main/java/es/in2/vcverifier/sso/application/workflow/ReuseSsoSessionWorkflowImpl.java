@@ -7,6 +7,7 @@ import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.AuthenticationSnapshot;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
@@ -187,8 +188,32 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
             return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
+        // 7. COMPLETE THE AUTHORIZATION — no VP is re-presented on reuse, so the credential
+        // claims come from the encrypted snapshot persisted alongside the session row at
+        // establishment time (EUD-149: EstablishSsoSessionWorkflow / sso_session.credential_snapshot
+        // — replaces the previous non-distributed in-memory cache, which failed closed whenever
+        // establishment and reuse landed on different replicas). A missing/undecryptable
+        // snapshot (session predates this migration, wrong/rotated key, tampered ciphertext)
+        // fails closed to LOGIN_REQUIRED rather than issuing a code without claims.
+        AuthenticationResult authentication = decryptAuthenticationSnapshot(
+                tenantSlug, sessionId, session.getCredentialSnapshotCiphertext(), session.getEstablishedAt());
+        if (authentication == null) {
+            auditPort.publish(
+                    SsoAuditEvent.builder()
+                            .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
+                            .tenant(tenantSlug)
+                            .clientId(clientId)
+                            .holderHash(session.getHolderHash())
+                            .outcome("CREDENTIAL_SNAPSHOT_MISSING")
+                            .correlationId(correlationId)
+                            .occurredAt(now)
+                            .build()
+            );
+            return new Result(Result.Status.LOGIN_REQUIRED, null);
+        }
+
         ReuseDecision authenticationDecision = policy.evaluateAuthentication(
-                session.getAuthentication(),
+                SsoSessionAuthentication.of(authentication),
                 ctx != null && ctx.loginMethods() != null ? ctx.loginMethods() : List.of(LoginMethod.WALLET),
                 ctx != null ? ctx.essentialLevel() : null,
                 ctx != null && ctx.attestationScopes());
@@ -228,30 +253,6 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                     log.debug("sso_touch_failed session={} tenant={}", prefix8(sessionId.getValue()), tenantSlug, ex);
                 }
             });
-        }
-
-        // 7. COMPLETE THE AUTHORIZATION — no VP is re-presented on reuse, so the credential
-        // claims come from the encrypted snapshot persisted alongside the session row at
-        // establishment time (EUD-149: EstablishSsoSessionWorkflow / sso_session.credential_snapshot
-        // — replaces the previous non-distributed in-memory cache, which failed closed whenever
-        // establishment and reuse landed on different replicas). A missing/undecryptable
-        // snapshot (session predates this migration, wrong/rotated key, tampered ciphertext)
-        // fails closed to LOGIN_REQUIRED rather than issuing a code without claims.
-        AuthenticationResult authentication = decryptAuthenticationSnapshot(
-                tenantSlug, sessionId, session.getCredentialSnapshotCiphertext(), session.getEstablishedAt());
-        if (authentication == null) {
-            auditPort.publish(
-                    SsoAuditEvent.builder()
-                            .eventType(SsoAuditEvent.EventType.SSO_REUSE_DENIED)
-                            .tenant(tenantSlug)
-                            .clientId(clientId)
-                            .holderHash(session.getHolderHash())
-                            .outcome("CREDENTIAL_SNAPSHOT_MISSING")
-                            .correlationId(correlationId)
-                            .occurredAt(now)
-                            .build()
-            );
-            return new Result(Result.Status.LOGIN_REQUIRED, null);
         }
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);

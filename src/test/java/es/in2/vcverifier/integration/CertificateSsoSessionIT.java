@@ -37,6 +37,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.temporal.ChronoUnit;
+import java.time.Instant;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -162,6 +164,18 @@ class CertificateSsoSessionIT {
     }
 
     @Test
+    void sessionColumnsChangedInTheDatabase_doNotChangeTheReuseDecision() throws Exception {
+        X509Certificate software = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        loginWithCertificate(FIRST_CLIENT, software);
+        jdbcTemplate.update("UPDATE sso_session SET acr = ? WHERE tenant = ?", HIGH, TENANT);
+
+        Login login = authorize(SECOND_CLIENT, "openid profile", Map.of("claims", ESSENTIAL_HIGH));
+
+        assertThat(login.query()).doesNotContainKeys("code", "authRequest");
+        assertThat(activeSessions()).isEqualTo(1);
+    }
+
+    @Test
     void certificateSession_isNotReusedForAnApplicationThatOnlyOffersTheWallet() throws Exception {
         X509Certificate card = DSS.answer(TestCertificates.naturalPerson(PERSON, true), DssStub.QC_WITH_QSCD);
         loginWithCertificate(FIRST_CLIENT, card);
@@ -185,10 +199,10 @@ class CertificateSsoSessionIT {
 
     @Test
     void sessionOfAnExpiredCertificate_isTerminatedAndTheLoginShowsTheMethods() throws Exception {
-        X509Certificate card = DSS.answer(TestCertificates.naturalPerson(PERSON, true), DssStub.QC_WITH_QSCD);
-        loginWithCertificate(FIRST_CLIENT, card);
-        jdbcTemplate.update("UPDATE sso_session SET certificate_not_after = now() - interval '1 day' WHERE tenant = ?",
-                TENANT);
+        X509Certificate expired = DSS.answer(
+                TestCertificates.naturalPerson(PERSON, true, Instant.now().minus(1, ChronoUnit.DAYS)),
+                DssStub.QC_WITH_QSCD);
+        loginWithCertificate(FIRST_CLIENT, expired);
 
         Login login = authorize(SECOND_CLIENT, "openid profile", Map.of());
 

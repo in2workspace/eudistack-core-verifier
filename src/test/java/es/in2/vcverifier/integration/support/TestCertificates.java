@@ -53,7 +53,11 @@ public final class TestCertificates {
     }
 
     public static X509Certificate naturalPerson(Person person, boolean qscd) {
-        return issue(subject(person).build(), person.email(), qscd, Instant.now().plus(365, ChronoUnit.DAYS));
+        return naturalPerson(person, qscd, Instant.now().plus(365, ChronoUnit.DAYS));
+    }
+
+    public static X509Certificate naturalPerson(Person person, boolean qscd, Instant notAfter) {
+        return issue(subject(person).build(), person.email(), qscd, notAfter);
     }
 
     public static X509Certificate representative(Person person, String organizationIdentifier) {
