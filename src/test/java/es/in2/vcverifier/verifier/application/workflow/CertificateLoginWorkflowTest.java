@@ -219,7 +219,7 @@ class CertificateLoginWorkflowTest {
     }
 
     @Test
-    void login_loginCompletionUnavailable_isValidationUnavailable() {
+    void login_loginCompletionUnavailable_isAnInternalError() {
         givenOpenLogin(Map.of());
         givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.HIGH, List.of("hwk")), IDENTITY);
         AuthResponseResult issued = mock(AuthResponseResult.class);
@@ -228,7 +228,7 @@ class CertificateLoginWorkflowTest {
         when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq(TENANT), eq(issued), any(), anyString()))
                 .thenThrow(new LoginCompletionUnavailableException("unavailable"));
 
-        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.INTERNAL_ERROR));
     }
 
     private void givenOpenLogin(Map<String, Object> overrides) {

@@ -54,6 +54,7 @@ public class CertificateLoginController {
     @ApiResponse(responseCode = "401", description = "No client certificate in the connection")
     @ApiResponse(responseCode = "403", description = "Certificate rejected, or level not met")
     @ApiResponse(responseCode = "404", description = "No open login for this state in the tenant, or it does not offer the certificate")
+    @ApiResponse(responseCode = "500", description = "The login could not be completed after the certificate was accepted")
     @ApiResponse(responseCode = "503", description = "The trust validation service is not available")
     @PostMapping(path = "/certificate",
             produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE})
@@ -100,6 +101,8 @@ public class CertificateLoginController {
                     CERTIFICATE_NOT_ACCEPTED, "The certificate is revoked or suspended.");
             case CERTIFICATE_EXPIRED -> new Problem(HttpStatus.FORBIDDEN, "certificate_expired",
                     CERTIFICATE_NOT_ACCEPTED, "The certificate is expired or not yet valid.");
+            case INTERNAL_ERROR -> new Problem(HttpStatus.INTERNAL_SERVER_ERROR, "internal_error",
+                    "Internal error", "The login could not be completed.");
         };
     }
 }

@@ -9,7 +9,8 @@ public enum CertificateLoginReason {
     CERTIFICATE_NOT_QUALIFIED("CertificateNotQualified"),
     CERTIFICATE_REVOKED("CertificateRevoked"),
     CERTIFICATE_EXPIRED("CertificateExpired"),
-    VALIDATION_UNAVAILABLE("ValidationUnavailable");
+    VALIDATION_UNAVAILABLE("ValidationUnavailable"),
+    INTERNAL_ERROR("InternalError");
 
     private final String value;
 

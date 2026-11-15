@@ -106,7 +106,8 @@ public class CertificateLoginWorkflow {
                     sanitize(issued.get().clientId()), level.name());
             return new Outcome.Completed(redirectUri);
         } catch (LoginCompletionUnavailableException _) {
-            return rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
+            log.warn("event=certificate_login_completion_failed clientId={}", sanitize(issued.get().clientId()));
+            return rejected(CertificateLoginReason.INTERNAL_ERROR);
         }
     }
 

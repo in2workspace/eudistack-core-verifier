@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
@@ -62,7 +63,8 @@ class CertificateLoginControllerTest {
             "CERTIFICATE_NOT_NATURAL_PERSON, 403, certificate_not_natural_person, Certificate not accepted",
             "CERTIFICATE_NOT_QUALIFIED, 403, certificate_not_qualified, Certificate not accepted",
             "CERTIFICATE_REVOKED, 403, certificate_revoked, Certificate not accepted",
-            "CERTIFICATE_EXPIRED, 403, certificate_expired, Certificate not accepted"
+            "CERTIFICATE_EXPIRED, 403, certificate_expired, Certificate not accepted",
+            "INTERNAL_ERROR, 500, internal_error, Internal error"
     })
     void certificate_rejectedLogin_returnsAProblemWithItsCode(CertificateLoginReason reason, int status,
                                                               String type, String title) {
@@ -94,10 +96,10 @@ class CertificateLoginControllerTest {
                 .isEqualTo(CertificateLoginController.RETRY_AFTER_SECONDS);
     }
 
-    @Test
-    void certificate_rejectedCertificate_doesNotTellWhenToRetry() {
-        when(workflow.login("s-1", "cgcom", HEADER, CHAIN))
-                .thenReturn(new Outcome.Rejected(CertificateLoginReason.CERTIFICATE_REVOKED));
+    @ParameterizedTest
+    @EnumSource(value = CertificateLoginReason.class, names = {"CERTIFICATE_REVOKED", "INTERNAL_ERROR"})
+    void certificate_rejectionThatARetryCannotFix_doesNotTellWhenToRetry(CertificateLoginReason reason) {
+        when(workflow.login("s-1", "cgcom", HEADER, CHAIN)).thenReturn(new Outcome.Rejected(reason));
 
         ResponseEntity<Object> response = controller.certificate(
                 new CertificateLoginController.CertificateLoginRequest("s-1"), request());
