@@ -1,6 +1,8 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
+import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.service.VpService;
@@ -57,6 +59,11 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CountDownLatch;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
@@ -243,6 +250,69 @@ class AuthorizationResponseProcessorServiceImplTest {
                 () -> authorizationResponseProcessorService.handleAuthResponse(state, vpToken, null));
 
         verify(cacheStoreForAuthorizationCodeData, never()).add(anyString(), any());
+    }
+
+    @Test
+    void walletAndCertificateCompletingTheSameLogin_issueASingleCode() throws Exception {
+        for (int round = 0; round < 20; round++) {
+            CacheStore<OAuth2AuthorizationRequest> logins = new CacheStore<>(5, TimeUnit.MINUTES);
+            CacheStore<AuthorizationCodeData> codes = new CacheStore<>(5, TimeUnit.MINUTES);
+            AuthorizationResponseProcessorServiceImpl service = new AuthorizationResponseProcessorServiceImpl(
+                    logins, codes, vpService, sdJwtVerificationService, new ObjectMapper(), registeredClientRepository,
+                    oAuth2AuthorizationService, sseEmitterStore, backendConfig, cryptoComponent, java.util.List.of(),
+                    credentialSchemaDispatcher, credentialVerificationLogger, dcqlProfileResolver, credentialValidator);
+            String state = "race-" + round;
+            String nonce = "race-nonce-" + round;
+            String vpToken = createVpToken(nonce);
+            logins.add(state, OAuth2AuthorizationRequest.authorizationCode()
+                    .authorizationUri("https://auth.example.com")
+                    .clientId("client-id")
+                    .redirectUri("https://client.example.com/callback")
+                    .state(state)
+                    .additionalParameters(Map.of(VP_NONCE, nonce, NONCE, nonce, AUTHORIZE_TENANT, "cgcom",
+                            EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond()))
+                    .scope("openid learcredential")
+                    .build());
+            lenient().when(credentialSchemaDispatcher.dispatch(any())).thenReturn(
+                    DispatchDecision.permitted("test-config-id", CredentialFormat.LEGACY_V1_1, DispatchReason.BY_TYPE));
+            lenient().when(registeredClientRepository.findByClientId("client-id")).thenReturn(RegisteredClient.withId("client-id")
+                    .clientId("client-id")
+                    .clientSecret("secret")
+                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                    .redirectUri("https://client.example.com/callback")
+                    .scope("openid")
+                    .build());
+            CertificateAuthentication certificate = new CertificateAuthentication("sub",
+                    new CertificateIdentity("ANA", "LOPEZ", "LOPEZ ANA", null, "ES", "12345678Z"),
+                    "CN=AC", "fingerprint", Instant.now().plusSeconds(3600), AssuranceLevel.SUBSTANTIAL,
+                    java.util.List.of("swk"), Instant.now());
+
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            try {
+                Future<Boolean> wallet = executor.submit(() -> {
+                    start.await();
+                    try {
+                        service.handleAuthResponse(state, vpToken, "cgcom");
+                        return true;
+                    } catch (NoSuchElementException _) {
+                        return false;
+                    }
+                });
+                Future<Boolean> byCertificate = executor.submit(() -> {
+                    start.await();
+                    return service.issueCodeForCertificateLogin(state, "cgcom", certificate).isPresent();
+                });
+                start.countDown();
+
+                assertEquals(1, java.util.stream.Stream.of(wallet.get(10, TimeUnit.SECONDS),
+                        byCertificate.get(10, TimeUnit.SECONDS)).filter(Boolean::booleanValue).count(),
+                        "exactly one of the wallet and the certificate completes the login");
+                assertNull(logins.getIfPresent(state), "the login is consumed");
+            } finally {
+                executor.shutdownNow();
+            }
+        }
     }
 
     private void stubWalletLogin(String state, String nonce, String essentialAcr) {
