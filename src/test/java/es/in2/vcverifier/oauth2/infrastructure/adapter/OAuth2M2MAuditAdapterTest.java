@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -123,7 +124,7 @@ class OAuth2M2MAuditAdapterTest {
 
         // Assert: the client is told the server failed, and nothing of the event travels in the error
         assertEquals(OAuth2ErrorCodes.SERVER_ERROR, error.getError().getErrorCode());
-        assertTrue(error.getError().getDescription() == null);
+        assertNull(error.getError().getDescription());
     }
 
     @Test

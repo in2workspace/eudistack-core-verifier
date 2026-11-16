@@ -1,5 +1,6 @@
 package es.in2.vcverifier.shared.infrastructure.audit;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -30,6 +31,7 @@ public class RejectionThrottle {
     private Instant windowStartedAt;
     private int total;
 
+    @Autowired
     public RejectionThrottle() {
         this(Clock.systemUTC());
     }
