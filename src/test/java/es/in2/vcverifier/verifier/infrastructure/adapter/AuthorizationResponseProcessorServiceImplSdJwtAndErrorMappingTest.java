@@ -18,6 +18,10 @@ import es.in2.vcverifier.shared.domain.exception.FailedCommunicationException;
 import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
+import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
@@ -66,13 +70,16 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -189,12 +196,14 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
 
         AuthResponseResult result = service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
 
-        assertNotNull(result.credentialJson());
+        CredentialAuthentication authentication = assertInstanceOf(CredentialAuthentication.class, result.authentication());
+        assertNotNull(authentication.credential());
+        assertEquals(List.of("pop"), authentication.amr());
         assertTrue(result.redirectUrl().startsWith(REDIRECT_URI + "?code="));
-        // Fresh VP presentation: no carried auth_time, the ID Token stamps the issue time.
         ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
         verify(codeCache).add(anyString(), codeData.capture());
-        assertNull(codeData.getValue().authTime());
+        assertSame(authentication, codeData.getValue().authentication());
+        assertNotNull(authentication.authTime());
         assertEquals("client-id", result.clientId());
         verify(sse, never()).send(anyString(), anyString());
         verify(verificationLogger).logVerifiedOk("cfg");
@@ -483,7 +492,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
 
         AuthResponseResult result = service.handleAuthResponse(STATE, b64(vp(VP_NONCE_VALUE, List.of(CLIENT_ID))), TENANT);
 
-        assertEquals(1, result.credentialJson().get("a").asInt());
+        assertEquals(1, ((CredentialAuthentication) result.authentication()).credential().get("a").asInt());
         verify(authorizationService).save(any(OAuth2Authorization.class));
     }
 
@@ -598,6 +607,61 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         assertFalse(printed.contains("code="));
     }
 
+    // --- Certificate login ---
+
+    @Test
+    void issueCodeForCertificateLogin_openLogin_consumesItAndIssuesTheCodeWithTheCertificate() {
+        givenLogin(certificateLogin(TENANT, Instant.now().plusSeconds(120).getEpochSecond()));
+        givenRegisteredClient();
+        givenCodeIssuance();
+        CertificateAuthentication authentication = certificateAuthentication();
+
+        Optional<AuthResponseResult> result = service.issueCodeForCertificateLogin(STATE, TENANT, authentication);
+
+        assertTrue(result.isPresent());
+        assertSame(authentication, result.get().authentication());
+        assertTrue(result.get().redirectUrl().startsWith(REDIRECT_URI + "?code="));
+        ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
+        verify(codeCache).add(eq(result.get().authorizationCode()), codeData.capture());
+        assertSame(authentication, codeData.getValue().authentication());
+        verify(requestCache).remove(STATE);
+        verify(sse, never()).sendValidationFailed(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void issueCodeForCertificateLogin_loginGone_isEmpty() {
+        assertTrue(service.issueCodeForCertificateLogin(STATE, TENANT, certificateAuthentication()).isEmpty());
+        verify(codeCache, never()).add(any(), any());
+    }
+
+    @Test
+    void issueCodeForCertificateLogin_loginOfAnotherTenant_isEmptyAndIssuesNoCode() {
+        givenLogin(certificateLogin("kpmg", Instant.now().plusSeconds(120).getEpochSecond()));
+
+        assertTrue(service.issueCodeForCertificateLogin(STATE, TENANT, certificateAuthentication()).isEmpty());
+        verify(codeCache, never()).add(any(), any());
+    }
+
+    @Test
+    void issueCodeForCertificateLogin_expiredLogin_isEmptyAndIssuesNoCode() {
+        givenLogin(certificateLogin(TENANT, Instant.now().minusSeconds(1).getEpochSecond()));
+
+        assertTrue(service.issueCodeForCertificateLogin(STATE, TENANT, certificateAuthentication()).isEmpty());
+        verify(codeCache, never()).add(any(), any());
+    }
+
+    private OAuth2AuthorizationRequest certificateLogin(String tenant, long expirationEpoch) {
+        return baseRequest().additionalParameters(Map.of(
+                NONCE, "client-nonce", EXPIRATION, expirationEpoch, AUTHORIZE_TENANT, tenant)).build();
+    }
+
+    private static CertificateAuthentication certificateAuthentication() {
+        return new CertificateAuthentication("b2f1c3",
+                new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "NAME", null, "ES", "12345678Z"),
+                "CN=AC FNMT Usuarios", "ab12", Instant.now().plusSeconds(3600),
+                AssuranceLevel.HIGH, List.of("hwk"), Instant.now());
+    }
+
     // --- SSO reuse ---
 
     @Test
@@ -607,7 +671,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         JsonNode credential = new ObjectMapper().readTree("{\"a\":1}");
 
         String url = service.issueCodeForReusedSession("client-id", REDIRECT_URI,
-                Set.of("read"), "st", "challenge", "S256", "n-1", credential, AUTH_TIME, ISSUER);
+                Set.of("read"), "st", "challenge", "S256", "n-1", new CredentialAuthentication(credential, null, AUTH_TIME), ISSUER);
 
         ArgumentCaptor<OAuth2Authorization> authorization = ArgumentCaptor.forClass(OAuth2Authorization.class);
         verify(authorizationService).save(authorization.capture());
@@ -626,8 +690,10 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
         verify(codeCache).add(eq(issuedCode), codeData.capture());
         assertEquals("n-1", codeData.getValue().clientNonce());
-        assertSame(credential, codeData.getValue().verifiableCredential());
-        assertEquals(AUTH_TIME, codeData.getValue().authTime());
+        CredentialAuthentication authentication =
+                assertInstanceOf(CredentialAuthentication.class, codeData.getValue().authentication());
+        assertSame(credential, authentication.credential());
+        assertEquals(AUTH_TIME, authentication.authTime());
     }
 
     @Test
@@ -636,7 +702,8 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         givenCodeIssuance();
 
         String url = service.issueCodeForReusedSession("client-id", REDIRECT_URI,
-                Set.of("read"), "st", null, null, null, new ObjectMapper().readTree("{}"), null, ISSUER);
+                Set.of("read"), "st", null, null, null,
+                new CredentialAuthentication(new ObjectMapper().readTree("{}"), null, AUTH_TIME), ISSUER);
 
         ArgumentCaptor<OAuth2Authorization> authorization = ArgumentCaptor.forClass(OAuth2Authorization.class);
         verify(authorizationService).save(authorization.capture());
@@ -659,7 +726,7 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         Set<String> scopes = Set.of();
 
         assertThrows(OAuth2AuthenticationException.class, () -> service.issueCodeForReusedSession("missing",
-                REDIRECT_URI, scopes, "st", null, null, null, null, null, ISSUER));
+                REDIRECT_URI, scopes, "st", null, null, null, null, ISSUER));
 
         assertNoCodeIssued();
     }

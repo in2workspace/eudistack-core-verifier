@@ -1,31 +1,20 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
-import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
-import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.time.Duration;
-import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class SsoBrowserBindingCookieTest {
 
     private static final String TENANT = "tenant-a";
     private static final String EXISTING_VALUE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO_-";
-
-    @Mock private TenantSsoConfigPort tenantSsoConfigPort;
 
     private final HashingService hashingService = new HashingService();
     private SsoBrowserBindingCookie bindingCookie;
@@ -33,18 +22,15 @@ class SsoBrowserBindingCookieTest {
 
     @BeforeEach
     void setUp() {
-        bindingCookie = new SsoBrowserBindingCookie(tenantSsoConfigPort, hashingService, new SsoSessionCookieFactory());
+        bindingCookie = new SsoBrowserBindingCookie(hashingService, new SsoSessionCookieFactory());
         request = new MockHttpServletRequest();
         request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, TENANT);
     }
 
     @Test
-    void bindIfSsoEnabled_ssoTenantWithoutCookie_generatesFreshValueAndReturnsItsHash() {
-        // Given
-        when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
-
+    void bind_withoutCookie_generatesFreshValueAndReturnsItsHash() {
         // When
-        String hash = bindingCookie.bindIfSsoEnabled(request);
+        String hash = bindingCookie.bind(request);
 
         // Then: 256-bit base64url value pending for the response, hash = SHA-256(value)
         Object pending = request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE);
@@ -54,13 +40,12 @@ class SsoBrowserBindingCookieTest {
     }
 
     @Test
-    void bindIfSsoEnabled_ssoTenantWithExistingCookie_reusesItsValue() {
+    void bind_withExistingCookie_reusesItsValue() {
         // Given: another tab of the same browser already holds a binding
-        when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
         request.setCookies(new Cookie(SsoBrowserBindingCookie.COOKIE_NAME, EXISTING_VALUE));
 
         // When
-        String hash = bindingCookie.bindIfSsoEnabled(request);
+        String hash = bindingCookie.bind(request);
 
         // Then
         assertThat(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).isEqualTo(EXISTING_VALUE);
@@ -68,13 +53,12 @@ class SsoBrowserBindingCookieTest {
     }
 
     @Test
-    void bindIfSsoEnabled_malformedExistingCookie_isReplaced() {
+    void bind_malformedExistingCookie_isReplaced() {
         // Given
-        when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
         request.setCookies(new Cookie(SsoBrowserBindingCookie.COOKIE_NAME, "short"));
 
         // When
-        bindingCookie.bindIfSsoEnabled(request);
+        bindingCookie.bind(request);
 
         // Then
         assertThat((String) request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE))
@@ -83,33 +67,19 @@ class SsoBrowserBindingCookieTest {
     }
 
     @Test
-    void bindIfSsoEnabled_ssoDisabledTenant_doesNotBind() {
-        // Given
-        when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(false)));
-
-        // When
-        String hash = bindingCookie.bindIfSsoEnabled(request);
-
-        // Then
-        assertThat(hash).isNull();
-        assertThat(request.getAttribute(SsoBrowserBindingCookie.PENDING_VALUE_ATTRIBUTE)).isNull();
-        assertThat(SsoBrowserBindingCookie.pendingCookie(request)).isEmpty();
-    }
-
-    @Test
-    void bindIfSsoEnabled_noTenant_doesNotBind() {
+    void bind_noTenant_stillBinds() {
         // Given
         request.removeAttribute(TenantDomainFilter.TENANT_ATTRIBUTE);
 
         // When / Then
-        assertThat(bindingCookie.bindIfSsoEnabled(request)).isNull();
+        assertThat(bindingCookie.bind(request)).isNotNull();
+        assertThat(SsoBrowserBindingCookie.pendingCookie(request)).isPresent();
     }
 
     @Test
     void pendingCookie_afterBinding_hasHostPrefixAttributes() {
         // Given
-        when(tenantSsoConfigPort.getByTenant(TENANT)).thenReturn(Optional.of(config(true)));
-        bindingCookie.bindIfSsoEnabled(request);
+        bindingCookie.bind(request);
 
         // When
         var cookie = SsoBrowserBindingCookie.pendingCookie(request).orElseThrow();
@@ -124,8 +94,8 @@ class SsoBrowserBindingCookieTest {
         assertThat(cookie.getMaxAge()).isEqualTo(Duration.ofSeconds(600));
     }
 
-    private static TenantSsoConfig config(boolean ssoEnabled) {
-        return new TenantSsoConfig(TENANT, "example.com", ssoEnabled,
-                new TenantSsoConfig.SsoTtlConfig(Duration.ofHours(1), Duration.ofMinutes(10)), List.of());
+    @Test
+    void pendingCookie_withoutBinding_isEmpty() {
+        assertThat(SsoBrowserBindingCookie.pendingCookie(request)).isEmpty();
     }
 }

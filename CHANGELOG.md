@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **EUD-313 — login with a qualified certificate**: each client declares its `loginMethods` (`wallet`, `x509`) and the tenant enables `x509` in `verifier.certificate-login.tenants`. `POST /api/login/certificate` reads the certificate from `Client-Cert` and `Client-Cert-Chain` (RFC 9440, as the CloudFront mTLS distribution forwards them), takes the tenant from `X-Tenant`, validates the certificate with the trust validation service (DSS) and completes the login. The `sub` is an HMAC of tenant, country and identification number.
+- **Secure origin of the certificate login**: `/api/login/certificate` is only accepted with the `X-Secure-Origin` secret (`VERIFIER_CERTIFICATELOGIN_SECUREORIGIN`, at least 32 characters), compared in constant time and never logged. A missing or wrong secret, or a certificate header on any other path, gets an empty `403`. With `x509` tenants and no valid secret, the Verifier does not start. Its CORS allows the tenants' `loginOrigin` with credentials: all of them on the preflight, only the `X-Tenant` one on the `POST`.
+- **Request headers up to 32 KB** (`server.max-http-request-header-size`), so a client certificate chain of 3 or 4 certificates fits.
+- **eIDAS level in the login**: `acr_values` and `claims.id_token.acr` are read (essential or not), the tokens carry `acr` and `amr`, DCQL profiles declare an `assuranceLevel`, and discovery advertises both levels and `claims_parameter_supported`.
+- **`GET /api/login/methods` and `POST /api/login/wallet`** for the login screen; the wallet request is created only when the person chooses it.
+- **SSO session with method and level** (Flyway `V9`): a session is reused only for a method and level the new login accepts, and a session of an expired certificate is ended.
+
+### Changed
+
+- **Login API errors** are `application/problem+json` with snake_case codes (`login_not_found`, `certificate_revoked`, …); `trust_validation_unavailable` carries `Retry-After`.
+- **SD-JWT presentations require a KB-JWT.**
+- **`/authorize` binds the browser (`__Host-sso-tx`) in every tenant**, with or without SSO, so a login in progress can be cancelled from the browser that started it. The return to the application now goes through `/api/login/complete` in every tenant; SSO reuse still requires SSO.
+
+### Fixed
+
+- `userinfo` answers with the claims of the ID token, the token request splits its scope on any whitespace, and the wallet login timer starts when the person chooses the wallet.
+
 ## [3.4.2] - 2026-11-05
 
 EUD-26 — Observability aligned with the Wallet EBW, the reference configuration.

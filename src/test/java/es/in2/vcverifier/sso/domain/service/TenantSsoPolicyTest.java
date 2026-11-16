@@ -1,9 +1,13 @@
 package es.in2.vcverifier.sso.domain.service;
 
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.sso.domain.model.ReuseDecision;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
 import es.in2.vcverifier.sso.domain.model.SsoEligibleClient;
 import es.in2.vcverifier.sso.domain.model.TenantSsoCatalog;
 import es.in2.vcverifier.sso.domain.service.TenantSsoPolicy;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -259,5 +263,56 @@ class TenantSsoPolicyTest {
                         "client-a"
                 )
         );
+    }
+
+    @Nested
+    class EvaluateAuthentication {
+
+        private final SsoSessionAuthentication wallet =
+                new SsoSessionAuthentication(LoginMethod.WALLET, AssuranceLevel.SUBSTANTIAL, List.of("pop"), null);
+        private final SsoSessionAuthentication certificate =
+                new SsoSessionAuthentication(LoginMethod.X509, AssuranceLevel.HIGH, List.of("hwk"), NOW.plusSeconds(3600));
+
+        @Test
+        void walletSessionForAWalletClient_isAllowed() {
+            assertEquals(ReuseDecision.ALLOWED,
+                    policy.evaluateAuthentication(wallet, List.of(LoginMethod.WALLET), null, true));
+        }
+
+        @Test
+        void certificateSessionMeetingTheEssentialLevelWithoutAttestationScopes_isAllowed() {
+            assertEquals(ReuseDecision.ALLOWED, policy.evaluateAuthentication(
+                    certificate, List.of(LoginMethod.X509, LoginMethod.WALLET), AssuranceLevel.HIGH, false));
+        }
+
+        @Test
+        void sessionMethodNotOfferedByTheClient_isRejected() {
+            assertEquals(ReuseDecision.REJECT_LOGIN_METHOD,
+                    policy.evaluateAuthentication(certificate, List.of(LoginMethod.WALLET), null, false));
+            assertEquals(ReuseDecision.REJECT_LOGIN_METHOD,
+                    policy.evaluateAuthentication(wallet, List.of(LoginMethod.X509), null, false));
+        }
+
+        @Test
+        void sessionBelowOrWithoutTheEssentialLevel_isRejected() {
+            assertEquals(ReuseDecision.REJECT_LEVEL,
+                    policy.evaluateAuthentication(wallet, List.of(LoginMethod.WALLET), AssuranceLevel.HIGH, true));
+            assertEquals(ReuseDecision.REJECT_LEVEL, policy.evaluateAuthentication(
+                    SsoSessionAuthentication.WALLET_WITHOUT_LEVEL, List.of(LoginMethod.WALLET), AssuranceLevel.SUBSTANTIAL, true));
+        }
+
+        @Test
+        void certificateSessionAskedForAttestationScopes_isRejected() {
+            assertEquals(ReuseDecision.REJECT_ATTESTATION_SCOPES,
+                    policy.evaluateAuthentication(certificate, List.of(LoginMethod.X509, LoginMethod.WALLET), null, true));
+        }
+
+        @Test
+        void certificateSessionWithAnExpiredCertificate_isRejectedBeforeAnyOtherCheck() {
+            SsoSessionAuthentication expired =
+                    new SsoSessionAuthentication(LoginMethod.X509, AssuranceLevel.HIGH, List.of("hwk"), NOW);
+            assertEquals(ReuseDecision.REJECT_CERTIFICATE_EXPIRED,
+                    policy.evaluateAuthentication(expired, List.of(LoginMethod.WALLET), AssuranceLevel.HIGH, true));
+        }
     }
 }

@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.util.NoSuchElementException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 
 @RequiredArgsConstructor
 public class CacheStore<T> {
@@ -79,6 +80,16 @@ public class CacheStore<T> {
      */
     public boolean replace(String key, T expected, T value) {
         return cache.asMap().replace(key, expected, value);
+    }
+
+    /**
+     * Atomically recomputes the entry for {@code key}: {@code remapping} receives the current value
+     * ({@code null} on a miss or expiry) and returns the new one, or {@code null} to leave no entry.
+     *
+     * @return the value now stored, or {@code null}
+     */
+    public T compute(String key, BiFunction<String, T, T> remapping) {
+        return cache.asMap().compute(key, remapping);
     }
 
     public String add(String key, T value) {

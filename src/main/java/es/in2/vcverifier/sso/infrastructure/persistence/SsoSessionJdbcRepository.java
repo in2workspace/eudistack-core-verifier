@@ -1,7 +1,10 @@
 package es.in2.vcverifier.sso.infrastructure.persistence;
 
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.sso.domain.exception.SsoSessionRepositoryException;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
 import es.in2.vcverifier.sso.domain.model.SsoSessionId;
 import es.in2.vcverifier.sso.domain.model.SsoSessionState;
 import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
@@ -9,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
+import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -151,14 +155,15 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
         String insertSql = """
             INSERT INTO sso_session
-             (id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             (id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot,
+              auth_method, acr, amr, certificate_not_after)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """;
 
         try {
             return inTransaction(c -> {
                 try (PreparedStatement ps = c.prepareStatement(insertSql)) {
-                    bindSession(ps, session);
+                    bindSession(c, ps, session);
                     ps.executeUpdate();
                     recordSuccess();
                     return session;
@@ -173,10 +178,10 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
 
                     log.info("Unique active session exists for tenant={} holderHash={}... - attempting supersede and retry",
                             session.getTenant(), prefix8(session.getHolderHash()));
-                    supersedeActiveInConnection(c, session.getTenant(), session.getHolderHash());
+                    supersedeActiveInConnection(c, session.getTenant(), session.getHolderHash(), null);
 
                     try (PreparedStatement ps2 = c.prepareStatement(insertSql)) {
-                        bindSession(ps2, session);
+                        bindSession(c, ps2, session);
                         ps2.executeUpdate();
                         recordSuccess();
                         return session;
@@ -189,7 +194,7 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         }
     }
 
-    private void bindSession(PreparedStatement ps, SsoSession session) throws SQLException {
+    private void bindSession(Connection c, PreparedStatement ps, SsoSession session) throws SQLException {
         ps.setObject(1, session.getId().getValue());
         ps.setString(2, session.getTenant());
         ps.setString(3, session.getHolderHash());
@@ -198,6 +203,12 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         ps.setObject(6, session.getLastUsedAt().atOffset(ZoneOffset.UTC));
         ps.setString(7, session.getState().name());
         ps.setBytes(8, session.getCredentialSnapshotCiphertext());
+        SsoSessionAuthentication authentication = session.getAuthentication();
+        ps.setString(9, authentication.method().value());
+        ps.setString(10, authentication.acr() == null ? null : authentication.acr().acrValue());
+        ps.setArray(11, c.createArrayOf("text", authentication.amr().toArray()));
+        ps.setObject(12, authentication.certificateNotAfter() == null
+                ? null : authentication.certificateNotAfter().atOffset(ZoneOffset.UTC));
     }
 
     @Override
@@ -206,7 +217,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-        SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot
+        SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot,
+               auth_method, acr, amr, certificate_not_after
         FROM sso_session
         WHERE tenant = ?
           AND holder_hash = ?
@@ -243,7 +255,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot
+            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot,
+               auth_method, acr, amr, certificate_not_after
             FROM sso_session
             WHERE id = ?
               AND tenant = ?
@@ -279,7 +292,8 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
         checkCircuit();
 
         String sql = """
-            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot
+            SELECT id, tenant, holder_hash, established_at, expires_at, last_used_at, state, credential_snapshot,
+               auth_method, acr, amr, certificate_not_after
             FROM sso_session
             WHERE id = ?
             LIMIT 1
@@ -361,13 +375,13 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     // =========================================================
 
     @Override
-    public void supersedeActive(String tenant, String holderHash) {
+    public void supersedeActive(String tenant, String holderHash, String browserSessionId) {
         ensureTenantSafe(tenant);
         checkCircuit();
 
         try {
             inTransaction(c -> {
-                supersedeActiveInConnection(c, tenant, holderHash);
+                supersedeActiveInConnection(c, tenant, holderHash, browserSessionId);
                 recordSuccess();
                 return null;
             });
@@ -378,17 +392,19 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
     }
 
     /** Supersede within an already-open connection/transaction — reused by {@link #save} retry path. */
-    private void supersedeActiveInConnection(Connection c, String tenant, String holderHash) throws SQLException {
+    private void supersedeActiveInConnection(Connection c, String tenant, String holderHash, String browserSessionId)
+            throws SQLException {
         String sql = """
             UPDATE sso_session
             SET state = 'SUPERSEDED'
             WHERE tenant = ?
-              AND holder_hash = ?
               AND state = 'ACTIVE'
+              AND (holder_hash = ? OR id = ?)
         """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, tenant);
             ps.setString(2, holderHash);
+            ps.setString(3, browserSessionId);
             int updated = ps.executeUpdate();
             // B6: NFR-S-547-02 — 8-char prefix of holder hash only
             log.info("Superseded {} rows for tenant={} holderHash={}...", updated, tenant, prefix8(holderHash));
@@ -581,6 +597,18 @@ public class SsoSessionJdbcRepository implements SsoSessionRepositoryPort {
                 SsoSessionState.valueOf(state)
         );
         session.attachCredentialSnapshot(rs.getBytes("credential_snapshot"));
+        session.recordAuthentication(authenticationFromResultSet(rs));
         return session;
+    }
+
+    private static SsoSessionAuthentication authenticationFromResultSet(ResultSet rs) throws SQLException {
+        String acr = rs.getString("acr");
+        Array amr = rs.getArray("amr");
+        OffsetDateTime certificateNotAfter = rs.getObject("certificate_not_after", OffsetDateTime.class);
+        return new SsoSessionAuthentication(
+                LoginMethod.fromValue(rs.getString("auth_method")),
+                acr == null ? null : AssuranceLevel.fromAcrValue(acr).orElse(null),
+                amr == null ? List.of() : List.of((String[]) amr.getArray()),
+                certificateNotAfter == null ? null : certificateNotAfter.toInstant());
     }
 }

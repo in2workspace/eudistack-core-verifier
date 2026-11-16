@@ -18,6 +18,7 @@ public class Constants {
     public static final String INVALID_CLIENT_AUTHENTICATION = "invalid_client_authentication";
     public static final String LOGIN_REQUIRED = "login_required";
     public static final String INTERACTION_REQUIRED = "interaction_required";
+    public static final String UNMET_AUTHENTICATION_REQUIREMENTS = "unmet_authentication_requirements";
     public static final String SESSION_EXPIRED = "session_expired";
     public static final String LOG_ERROR_FORMAT = "{} - {}";
     public static final String OID4VP_TYPE = "oauth-authz-req+jwt";
@@ -34,12 +35,14 @@ public class Constants {
     // US-06 Single Logout (AD-4/DELTA-01): backchannel_logout_uri declarado por el RP,
     // fuente primaria del BackchannelLogoutUriPort.
     public static final String CLIENT_SETTING_BACKCHANNEL_LOGOUT_URI = "settings.backchannelLogoutUri";
+    public static final String CLIENT_SETTING_LOGIN_METHODS = "settings.loginMethods";
     // JTI cache TTL: 2x access token lifetime (900s) to ensure replay window coverage
     public static final long JTI_CACHE_TTL_SECONDS = 1800L;
     public static final String X_TENANT_HEADER = "X-Tenant";
     // Carries the original login's auth_time (epoch seconds) across a refresh_token grant so the
     // new id_token reuses it instead of stamping "now" — see RefreshTokenDataCache.
     public static final String AUTH_TIME_PARAM = "auth_time";
+    public static final String AUTHENTICATION_RESULT = "authentication_result";
     // EUD-252: SHA-256 (hex) of the __Host-sso-tx browser-binding cookie set at /authorize, kept in
     // the cached OAuth2AuthorizationRequest so the cross-device close step can prove the browser
     // that finishes the login is the one that started it.
@@ -50,6 +53,11 @@ public class Constants {
     public static final String VP_NONCE = "vp_nonce";
     // EUD-252 (F1): tenant resolved at /authorize; the wallet POST must come through the same tenant.
     public static final String AUTHORIZE_TENANT = "authorize_tenant";
+    public static final String LOGIN_METHODS = "login_methods";
+    public static final String ACR_REQUESTED = "acr_requested";
+    public static final String ACR_ESSENTIAL = "acr_essential";
+    public static final String ACCESS_PROFILE = "access_profile";
+    public static final String WALLET_AUTH_REQUEST = "wallet_auth_request";
     // EUD-252: browser-side close of a cross-device login (establishes the SSO session in the
     // browser that started the login, then redirects to the RP). Relative to the context path.
     public static final String LOGIN_COMPLETION_PATH = "/api/login/complete";

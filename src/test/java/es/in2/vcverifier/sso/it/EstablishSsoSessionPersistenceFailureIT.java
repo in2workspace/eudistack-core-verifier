@@ -27,6 +27,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.time.Clock;
 import java.util.Optional;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,7 +61,7 @@ class EstablishSsoSessionPersistenceFailureIT {
                 "holder-xyz",
                 "client-test",
                 "corr-123",
-                "{\"sub\":\"holder-xyz\"}"
+                credential("{\"sub\":\"holder-xyz\"}")
         );
 
         when(credentialCipherPort.encrypt(any(), any(), any())).thenReturn(new byte[]{1, 2, 3});
@@ -77,7 +78,7 @@ class EstablishSsoSessionPersistenceFailureIT {
         when(hashingService.sha256(any())).thenReturn("hash-123");
 
         // fallo SOLO en save (no en supersedeActive)
-        doNothing().when(repository).supersedeActive(any(), any());
+        doNothing().when(repository).supersedeActive(any(), any(), any());
         doThrow(new RuntimeException("DB down"))
                 .when(repository).save(any());
 
@@ -93,7 +94,7 @@ class EstablishSsoSessionPersistenceFailureIT {
                         event.getTenant().equals("tenant-a")
         ));
 
-        verify(repository).supersedeActive(eq("tenant-a"), any());
+        verify(repository).supersedeActive(eq("tenant-a"), any(), any());
         verify(repository).save(any());
 
         verifyNoMoreInteractions(repository);

@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.exception.TenantMismatchException;
 import es.in2.vcverifier.oauth2.domain.model.OAuth2M2MAuditEvent;
@@ -95,11 +98,12 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         }
 
         // For refresh_token, CustomTokenRequestConverter.handleRefreshTokenGrant already looked up
-        // the credential cached against this refresh token (and deleted that cache entry as part of
+        // the authentication cached against this refresh token (and deleted that cache entry as part of
         // SEC-F10's one-time-use rotation) and placed it in additionalParameters — so the plain
-        // getJsonCredential lookup below already works for every grant type without needing a
-        // second, now-stale cache read here.
-        JsonNode credentialJson = getJsonCredential(authentication);
+        // lookup below already works for every grant type without needing a second, now-stale
+        // cache read here.
+        AuthenticationResult authenticationResult = isM2M ? null : getAuthenticationResult(authentication);
+        JsonNode credentialJson = isM2M ? getJsonCredential(authentication) : credentialOf(authenticationResult);
 
         // Resolve audience
         String audience;
@@ -109,6 +113,8 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             Map<String, Object> additionalParameters = authentication.getAdditionalParameters();
             if (additionalParameters.containsKey(OAuth2ParameterNames.AUDIENCE)) {
                 audience = additionalParameters.get(OAuth2ParameterNames.AUDIENCE).toString();
+            } else if (credentialJson == null) {
+                throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
             } else {
                 // Fallback: check credential type via profile — M2M-eligible credentials use verifier as audience
                 String credType = tokenGenerationWorkflow.extractCredentialType(credentialJson);
@@ -148,7 +154,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
             additionalParameters = Map.of();
         } else {
             additionalParameters = Map.of("id_token", tokenResult.idTokenJwt());
-            oAuth2RefreshToken = getOAuth2RefreshToken(authentication, tokenResult, clientId, credentialJson, registeredClient);
+            oAuth2RefreshToken = getOAuth2RefreshToken(authentication, tokenResult, clientId, authenticationResult, registeredClient);
         }
 
         log.info("Authorization grant successfully processed");
@@ -220,16 +226,20 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
     private OAuth2RefreshToken getOAuth2RefreshToken(OAuth2AuthorizationGrantAuthenticationToken authentication,
                                                       TokenGenerationWorkflow.Result tokenResult, String clientId,
-                                                      JsonNode credentialJson, RegisteredClient registeredClient) {
+                                                      AuthenticationResult authenticationResult,
+                                                      RegisteredClient registeredClient) {
         OAuth2RefreshToken oAuth2RefreshToken = issueRefreshToken(tokenResult.issueTime());
+        OAuth2AccessToken userInfoAccessToken = new OAuth2AccessToken(
+                OAuth2AccessToken.TokenType.BEARER,
+                tokenResult.accessTokenJwt(),
+                tokenResult.issueTime(),
+                tokenResult.expirationTime(),
+                grantedScopes(authentication, tokenResult));
 
         RefreshTokenDataCache refreshTokenDataCache = RefreshTokenDataCache.builder()
                 .refreshToken(oAuth2RefreshToken)
                 .clientId(clientId)
-                .verifiableCredential(credentialJson)
-                // Carries the id_token's auth_time forward so the NEXT refresh (if any) also
-                // reuses the original login's auth_time instead of this grant's own issue time.
-                .authTimeEpochSeconds(tokenResult.authTime() != null ? tokenResult.authTime().getEpochSecond() : null)
+                .authentication(authenticationResult)
                 .build();
 
         cacheStoreForRefreshTokenData.add(oAuth2RefreshToken.getTokenValue(), refreshTokenDataCache);
@@ -244,6 +254,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                 .principalName(registeredClient.getClientId())
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .token(oAuth2RefreshToken)
+                .token(userInfoAccessToken)
                 .attribute(Principal.class.getName(), authentication.getPrincipal());
 
         // EUDISTACK-551: Spring AS's RP-Initiated Logout (/oidc/logout) resolves the id_token_hint
@@ -259,6 +270,16 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
         oAuth2AuthorizationService.save(authorizationBuilder.build());
         return oAuth2RefreshToken;
+    }
+
+    private static Set<String> grantedScopes(OAuth2AuthorizationGrantAuthenticationToken authentication,
+                                             TokenGenerationWorkflow.Result tokenResult) {
+        Object requested = authentication.getAdditionalParameters().get(OAuth2ParameterNames.SCOPE);
+        String scope = requested instanceof String requestedScope ? requestedScope : tokenResult.scope();
+        if (scope == null || scope.isBlank()) {
+            return Set.of();
+        }
+        return Set.copyOf(Arrays.asList(scope.trim().split("\\s+")));
     }
 
     private String getClientId(OAuth2AuthorizationGrantAuthenticationToken authentication) {
@@ -384,6 +405,20 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
         }
         log.info("Extracted power domain(s) from M2M credential: {}", domains);
         return domains;
+    }
+
+    private AuthenticationResult getAuthenticationResult(OAuth2AuthorizationGrantAuthenticationToken authentication) {
+        if (authentication.getAdditionalParameters().get(AUTHENTICATION_RESULT) instanceof AuthenticationResult authenticationResult) {
+            return authenticationResult;
+        }
+        throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_REQUEST);
+    }
+
+    private static JsonNode credentialOf(AuthenticationResult authenticationResult) {
+        return switch (authenticationResult) {
+            case CredentialAuthentication credentialAuthentication -> credentialAuthentication.credential();
+            case CertificateAuthentication _ -> null;
+        };
     }
 
     private JsonNode getJsonCredential(OAuth2AuthorizationGrantAuthenticationToken authentication) {

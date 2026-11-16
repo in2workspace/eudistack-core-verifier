@@ -10,6 +10,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.json.ProblemDetailJacksonMixin;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
@@ -23,6 +25,7 @@ public class VerifierApplication {
                     .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
                     .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
                     .serializationInclusion(JsonInclude.Include.NON_NULL)
+                    .addMixIn(ProblemDetail.class, ProblemDetailJacksonMixin.class)
                     .build();
     public static void main(String[] args) {
         SpringApplication.run(VerifierApplication.class, args);

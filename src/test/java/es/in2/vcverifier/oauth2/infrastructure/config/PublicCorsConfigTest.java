@@ -1,5 +1,7 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
 
+import es.in2.vcverifier.shared.config.TenantDomainFilter;
+import es.in2.vcverifier.shared.config.properties.CertificateLoginProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,6 +10,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,7 +29,9 @@ class PublicCorsConfigTest {
 
     @BeforeEach
     void setUp() {
-        PublicCorsConfig config = new PublicCorsConfig();
+        PublicCorsConfig config = new PublicCorsConfig(new CertificateLoginProperties("test-secure-origin-0123456789abcdef0123", Map.of(
+                "cgcom", new CertificateLoginProperties.Tenant("https://cgcom.example.com"),
+                "kpmg", new CertificateLoginProperties.Tenant("https://kpmg.example.com"))));
         corsSource = config.publicCorsConfigurationSource();
     }
 
@@ -72,6 +77,65 @@ class PublicCorsConfigTest {
 
         assertNotNull(corsConfig);
         assertEquals(List.of("*"), corsConfig.getAllowedOriginPatterns());
+    }
+
+    @Test
+    @DisplayName("Certificate login allows only the login origin of its tenant, with credentials, POST, JSON and X-Tenant")
+    void getCorsConfiguration_certificateLogin_allowsOnlyTheLoginOriginOfItsTenant() {
+        MockHttpServletRequest request = certificateLoginRequest();
+        request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "cgcom");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertEquals(List.of("https://cgcom.example.com"), corsConfig.getAllowedOrigins());
+        assertNull(corsConfig.getAllowedOriginPatterns());
+        assertEquals(List.of("POST"), corsConfig.getAllowedMethods());
+        assertEquals(List.of("Content-Type", "X-Tenant"), corsConfig.getAllowedHeaders());
+        assertEquals(Boolean.TRUE, corsConfig.getAllowCredentials());
+        assertEquals("https://cgcom.example.com", corsConfig.checkOrigin("https://cgcom.example.com"));
+        assertNull(corsConfig.checkOrigin("https://kpmg.example.com"));
+        assertNull(corsConfig.checkOrigin("https://any-spa.example.com"));
+    }
+
+    @Test
+    @DisplayName("Certificate login allows no origin for a tenant without certificate login")
+    void getCorsConfiguration_certificateLoginOfATenantWithoutIt_allowsNoOrigin() {
+        MockHttpServletRequest request = certificateLoginRequest();
+        request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, "dome");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertNull(corsConfig.checkOrigin("https://cgcom.example.com"));
+        assertNull(corsConfig.checkOrigin("https://kpmg.example.com"));
+    }
+
+    @Test
+    @DisplayName("Certificate login allows no origin when the request has no tenant")
+    void getCorsConfiguration_certificateLoginWithoutTenant_allowsNoOrigin() {
+        MockHttpServletRequest request = certificateLoginRequest();
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertNull(corsConfig.checkOrigin("https://cgcom.example.com"));
+    }
+
+    @Test
+    @DisplayName("Certificate login preflight, which carries no tenant, allows the login origin of every tenant")
+    void getCorsConfiguration_certificateLoginPreflight_allowsEveryLoginOrigin() {
+        MockHttpServletRequest request = certificateLoginRequest();
+        request.setMethod("OPTIONS");
+        request.addHeader("Origin", "https://cgcom.example.com");
+        request.addHeader("Access-Control-Request-Method", "POST");
+
+        CorsConfiguration corsConfig = corsSource.getCorsConfiguration(request);
+
+        assertNotNull(corsConfig);
+        assertEquals("https://cgcom.example.com", corsConfig.checkOrigin("https://cgcom.example.com"));
+        assertEquals("https://kpmg.example.com", corsConfig.checkOrigin("https://kpmg.example.com"));
+        assertNull(corsConfig.checkOrigin("https://any-spa.example.com"));
     }
 
     @Test
@@ -175,5 +239,11 @@ class PublicCorsConfigTest {
 
         assertNotNull(corsConfig);
         assertFalse(Boolean.TRUE.equals(corsConfig.getAllowCredentials()));
+    }
+
+    private static MockHttpServletRequest certificateLoginRequest() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/login/certificate");
+        request.setServletPath("/api/login/certificate");
+        return request;
     }
 }

@@ -97,7 +97,7 @@ public class SsoLoginCompletionController {
         principal.put("clientId", login.tenant());          // fallback: tenant as clientId for audit (unchanged)
         principal.put("tenantSlug", login.tenant());
         // Snapshot for SSO reuse (prompt absent or none, no VP re-presentation) — see ReuseSsoSessionWorkflowImpl.
-        principal.put("credentialJson", login.credentialJson());
+        principal.put("authentication", login.authentication());
         return new UsernamePasswordAuthenticationToken(principal, null);
     }
 }

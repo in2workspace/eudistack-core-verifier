@@ -62,6 +62,22 @@ class RateLimitFilterTest {
     }
 
     @Test
+    void doFilter_certificateLoginWithContextPath_appliesAuthLimit() throws IOException, ServletException {
+        when(request.getRemoteAddr()).thenReturn("10.0.0.9");
+        when(request.getContextPath()).thenReturn("/verifier");
+        when(request.getRequestURI()).thenReturn("/verifier/api/login/certificate");
+
+        for (int i = 0; i < 30; i++) {
+            rateLimitFilter.doFilter(request, response, chain);
+        }
+        reset(response);
+
+        rateLimitFilter.doFilter(request, response, chain);
+
+        verify(response).setStatus(429);
+    }
+
+    @Test
     void doFilter_generalEndpointExceedsLimit_shouldReturn429() throws IOException, ServletException {
         when(request.getRemoteAddr()).thenReturn("10.0.0.3");
         when(request.getRequestURI()).thenReturn("/oidc/did/some-id");

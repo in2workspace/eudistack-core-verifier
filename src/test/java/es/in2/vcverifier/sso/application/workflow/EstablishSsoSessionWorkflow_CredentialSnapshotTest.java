@@ -1,11 +1,17 @@
 package es.in2.vcverifier.sso.application.workflow;
 
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
+import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
+import es.in2.vcverifier.sso.application.service.AuthenticationSnapshot;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
@@ -14,19 +20,23 @@ import es.in2.vcverifier.sso.domain.port.SsoSessionRepositoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -75,11 +85,11 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
     }
 
     @Test
-    void execute_blankCredentialJson_failsClosed_noSessionNoCookie() {
+    void execute_withoutAuthentication_failsClosed_noSessionNoCookie() {
         // W2 (review): no production caller ever reaches here without a verified credential —
         // treat its absence as an anomaly (same as a persistence failure), not a legitimate
         // "session without SSO reuse support" flow.
-        SsoSessionCommand command = new SsoSessionCommand(TENANT, SUB, "client-a", "corr-1", "   ");
+        SsoSessionCommand command = new SsoSessionCommand(TENANT, SUB, "client-a", "corr-1", null);
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor result = workflow.execute(command);
 
@@ -99,7 +109,7 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
         byte[] ciphertext = "ciphertext-bytes".getBytes(StandardCharsets.UTF_8);
         when(credentialCipherPort.encrypt(anyString(), anyString(), anyString())).thenReturn(ciphertext);
 
-        SsoSessionCommand command = new SsoSessionCommand(TENANT, SUB, "client-a", "corr-2", credentialJson);
+        SsoSessionCommand command = new SsoSessionCommand(TENANT, SUB, "client-a", "corr-2", credential(credentialJson));
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor result = workflow.execute(command);
 
@@ -111,6 +121,50 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
     }
 
     @Test
+    void execute_certificateLogin_snapshotsItsTypedAuthenticationAndRecordsItsMethodLevelAndEnd() {
+        Instant notAfter = Instant.parse("2028-05-01T00:00:00Z");
+        CertificateAuthentication certificate = new CertificateAuthentication("b2f1c3",
+                new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "NAME", null, "ES", "12345678Z"),
+                "CN=AC FNMT Usuarios", "ab12", notAfter, AssuranceLevel.HIGH, List.of("hwk"),
+                Instant.parse("2026-11-04T10:00:00Z"));
+        when(credentialCipherPort.encrypt(anyString(), anyString(), anyString())).thenReturn(new byte[]{1});
+
+        workflow.execute(new SsoSessionCommand(TENANT, SUB, "client-a", "corr-4", certificate));
+
+        ArgumentCaptor<String> snapshot = ArgumentCaptor.forClass(String.class);
+        verify(credentialCipherPort).encrypt(anyString(), anyString(), snapshot.capture());
+        assertEquals(Optional.of(certificate), AuthenticationSnapshot.read(snapshot.getValue(), Instant.now()));
+        ArgumentCaptor<SsoSession> sessionCaptor = ArgumentCaptor.forClass(SsoSession.class);
+        verify(sessionRepositoryPort).save(sessionCaptor.capture());
+        assertEquals(new SsoSessionAuthentication(LoginMethod.X509, AssuranceLevel.HIGH, List.of("hwk"), notAfter),
+                sessionCaptor.getValue().getAuthentication());
+    }
+
+    @Test
+    void execute_walletLogin_recordsAWalletSession() {
+        when(credentialCipherPort.encrypt(anyString(), anyString(), anyString())).thenReturn(new byte[]{1});
+
+        workflow.execute(new SsoSessionCommand(TENANT, SUB, "client-a", "corr-5", credential("{\"vc\":\"claims\"}")));
+
+        ArgumentCaptor<SsoSession> sessionCaptor = ArgumentCaptor.forClass(SsoSession.class);
+        verify(sessionRepositoryPort).save(sessionCaptor.capture());
+        assertEquals(new SsoSessionAuthentication(LoginMethod.WALLET, null, List.of("pop"), null),
+                sessionCaptor.getValue().getAuthentication());
+    }
+
+    @Test
+    void execute_supersedesTheHolderAndTheBrowserSessionBeforeSaving() {
+        when(credentialCipherPort.encrypt(anyString(), anyString(), anyString())).thenReturn(new byte[]{1});
+
+        workflow.execute(new SsoSessionCommand(TENANT, SUB, "client-a", "corr-6",
+                credential("{\"vc\":\"claims\"}"), "session-of-holder-a"));
+
+        InOrder inOrder = inOrder(sessionRepositoryPort);
+        inOrder.verify(sessionRepositoryPort).supersedeActive(TENANT, HASHED_SUB, "session-of-holder-a");
+        inOrder.verify(sessionRepositoryPort).save(any());
+    }
+
+    @Test
     void execute_encryptionThrows_failsClosed_noSessionNoCookie() {
         // W2 (review): a cipher failure must be as fail-closed as a DB persistence failure —
         // never persist a session + issue a cookie the Holder believes enables SSO when the
@@ -118,7 +172,7 @@ class EstablishSsoSessionWorkflow_CredentialSnapshotTest {
         when(credentialCipherPort.encrypt(anyString(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("boom"));
 
-        SsoSessionCommand command = new SsoSessionCommand(TENANT, SUB, "client-a", "corr-3", "{\"vc\":\"claims\"}");
+        SsoSessionCommand command = new SsoSessionCommand(TENANT, SUB, "client-a", "corr-3", credential("{\"vc\":\"claims\"}"));
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor result = workflow.execute(command);
 

@@ -3,6 +3,8 @@ package es.in2.vcverifier.oauth2.infrastructure.controller;
 import es.in2.vcverifier.oauth2.application.workflow.AbortLoginWorkflow;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.sso.application.service.HashingService;
+import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -10,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.Optional;
 
@@ -29,6 +32,12 @@ class LoginSseControllerTest {
     @Mock
     private AbortLoginWorkflow abortLoginWorkflow;
 
+    @Mock
+    private SsoBrowserBindingCookie ssoBrowserBindingCookie;
+
+    @Mock
+    private HashingService hashingService;
+
     @InjectMocks
     private LoginSseController controller;
 
@@ -44,19 +53,29 @@ class LoginSseControllerTest {
     @Test
     void abort_pendingLogin_returnsRedirectUrl() {
         String redirectUrl = "https://rp.example.com/cb?error=access_denied&error_description=login_timeout&state=s1";
-        when(abortLoginWorkflow.abort("s1")).thenReturn(Optional.of(redirectUrl));
+        when(abortLoginWorkflow.abort("s1", null)).thenReturn(Optional.of(redirectUrl));
 
-        ResponseEntity<LoginSseController.AbortLoginResponse> response = controller.abort("s1");
+        ResponseEntity<LoginSseController.AbortLoginResponse> response = controller.abort("s1", new MockHttpServletRequest());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo(new LoginSseController.AbortLoginResponse(redirectUrl));
     }
 
     @Test
-    void abort_unknownState_returnsNotFound() {
-        when(abortLoginWorkflow.abort("unknown")).thenReturn(Optional.empty());
+    void abort_passesTheHashOfTheBrowserBindingCookie() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        when(ssoBrowserBindingCookie.readValue(request)).thenReturn(Optional.of("binding-value"));
+        when(hashingService.sha256("binding-value")).thenReturn("binding-hash");
+        when(abortLoginWorkflow.abort("s1", "binding-hash")).thenReturn(Optional.of("https://rp.example.com/cb"));
 
-        ResponseEntity<LoginSseController.AbortLoginResponse> response = controller.abort("unknown");
+        assertThat(controller.abort("s1", request).getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void abort_unknownState_returnsNotFound() {
+        when(abortLoginWorkflow.abort("unknown", null)).thenReturn(Optional.empty());
+
+        ResponseEntity<LoginSseController.AbortLoginResponse> response = controller.abort("unknown", new MockHttpServletRequest());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody()).isNull();

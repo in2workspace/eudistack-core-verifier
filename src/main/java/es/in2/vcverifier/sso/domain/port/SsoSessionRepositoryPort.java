@@ -30,13 +30,15 @@ public interface SsoSessionRepositoryPort {
 
 
     /**
-     * Closes an active session in the DB.
-     * @param tenant
-     * @param holderHash
+     * Supersedes, in one statement, the active session of the holder in the tenant and the active
+     * session of the browser cookie, if any, even when it belongs to another holder.
+     *
+     * @param browserSessionId value of the SSO cookie of the browser, or {@code null}
      */
     void supersedeActive(
             String tenant,
-            String holderHash
+            String holderHash,
+            String browserSessionId
     );
 
     /**

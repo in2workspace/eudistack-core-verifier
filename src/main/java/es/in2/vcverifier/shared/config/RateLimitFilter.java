@@ -74,7 +74,8 @@ public class RateLimitFilter implements Filter {
     private boolean isAuthEndpoint(String path) {
         return path.startsWith("/oidc/token")
                 || path.startsWith("/oid4vp/auth-response")
-                || path.startsWith("/oidc/authorize");
+                || path.startsWith("/oidc/authorize")
+                || path.equals("/api/login/certificate");
     }
 
     private boolean isRateLimited(String clientIp, Cache<String, AtomicInteger> buckets, int limit) {

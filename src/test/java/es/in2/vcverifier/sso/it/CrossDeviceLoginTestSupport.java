@@ -2,6 +2,7 @@ package es.in2.vcverifier.sso.it;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import es.in2.vcverifier.oauth2.infrastructure.adapter.SseEmitterStore;
+import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import jakarta.servlet.http.Cookie;
 import org.mockito.ArgumentCaptor;
@@ -11,6 +12,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.time.Instant;
 import java.util.function.UnaryOperator;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -34,8 +36,12 @@ public final class CrossDeviceLoginTestSupport {
 
     /** What a successful VP verification returns for a login bound to a browser at /authorize. */
     public static AuthResponseResult boundResult(JsonNode credentialJson, String state, String bindingHash) {
-        return new AuthResponseResult(credentialJson, RP_REDIRECT_URI + "?code=it-code&state=" + state,
+        return new AuthResponseResult(credentialAuthentication(credentialJson), RP_REDIRECT_URI + "?code=it-code&state=" + state,
                 RP_REDIRECT_URI, state, "clientA", "it-code", bindingHash, "https://localhost");
+    }
+
+    public static CredentialAuthentication credentialAuthentication(JsonNode credentialJson) {
+        return credentialJson == null ? null : new CredentialAuthentication(credentialJson, null, Instant.now());
     }
 
     public static Cookie bindingCookie() {

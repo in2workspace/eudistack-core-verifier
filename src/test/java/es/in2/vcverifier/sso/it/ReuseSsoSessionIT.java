@@ -171,6 +171,7 @@ class ReuseSsoSessionIT {
 
     @BeforeEach
     void setUp() {
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS sso_session (
                     id            TEXT        PRIMARY KEY,
