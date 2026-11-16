@@ -33,8 +33,9 @@ public class ClientCertificateReader {
     private static final int RFC822_NAME = 1;
     private static final String SPAIN = "ES";
     private static final Pattern SEMANTIC_IDENTIFIER = Pattern.compile("^IDC([A-Z]{2})-(.+)$");
-    private static final Pattern DNI = Pattern.compile("^\\d{8}[A-Z]$");
-    private static final Pattern NIE = Pattern.compile("^[XYZ]\\d{7}[A-Z]$");
+    private static final Pattern DNI_OR_NIE = Pattern.compile("^([XYZ]\\d{7}|\\d{8})([A-Z])$");
+    private static final String NIE_PREFIXES = "XYZ";
+    private static final String CONTROL_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE";
     private static final PersonalNumber NO_NUMBER = new PersonalNumber(null, null);
 
     private record PersonalNumber(String country, String number) {
@@ -77,7 +78,8 @@ public class ClientCertificateReader {
 
     public ClientCertificate read(X509Certificate certificate) {
         X500Name subject = X500Name.getInstance(certificate.getSubjectX500Principal().getEncoded());
-        PersonalNumber number = personalNumber(attribute(subject, BCStyle.SERIALNUMBER));
+        X500Name issuer = X500Name.getInstance(certificate.getIssuerX500Principal().getEncoded());
+        PersonalNumber number = personalNumber(attribute(subject, BCStyle.SERIALNUMBER), attribute(issuer, BCStyle.C));
         CertificateIdentity identity = new CertificateIdentity(
                 attribute(subject, BCStyle.GIVENNAME),
                 attribute(subject, BCStyle.SURNAME),
@@ -91,7 +93,7 @@ public class ClientCertificateReader {
                 certificate.getNotAfter().toInstant());
     }
 
-    private static PersonalNumber personalNumber(String serialNumber) {
+    private static PersonalNumber personalNumber(String serialNumber, String issuerCountry) {
         if (serialNumber == null) {
             return NO_NUMBER;
         }
@@ -99,10 +101,23 @@ public class ClientCertificateReader {
         if (semantic.matches()) {
             return new PersonalNumber(semantic.group(1), semantic.group(2));
         }
-        if (DNI.matcher(serialNumber).matches() || NIE.matcher(serialNumber).matches()) {
+        if (SPAIN.equals(issuerCountry) && isSpanishNumber(serialNumber)) {
             return new PersonalNumber(SPAIN, serialNumber);
         }
         return NO_NUMBER;
+    }
+
+    private static boolean isSpanishNumber(String serialNumber) {
+        Matcher number = DNI_OR_NIE.matcher(serialNumber);
+        if (!number.matches()) {
+            return false;
+        }
+        String digits = number.group(1);
+        int niePrefix = NIE_PREFIXES.indexOf(digits.charAt(0));
+        if (niePrefix >= 0) {
+            digits = niePrefix + digits.substring(1);
+        }
+        return CONTROL_LETTERS.charAt(Integer.parseInt(digits) % CONTROL_LETTERS.length()) == number.group(2).charAt(0);
     }
 
     private static String attribute(X500Name name, ASN1ObjectIdentifier type) {

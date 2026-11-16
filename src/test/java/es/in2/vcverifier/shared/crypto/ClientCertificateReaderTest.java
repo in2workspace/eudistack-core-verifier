@@ -39,6 +39,11 @@ class ClientCertificateReaderTest {
             .addRDN(BCStyle.O, "FNMT-RCM")
             .addRDN(BCStyle.C, "ES")
             .build();
+    private static final X500Name FOREIGN_ISSUER = new X500NameBuilder(BCStyle.INSTANCE)
+            .addRDN(BCStyle.CN, "Qualified CA")
+            .addRDN(BCStyle.O, "Foreign Trust Service Provider")
+            .addRDN(BCStyle.C, "PT")
+            .build();
 
     private final ClientCertificateReader reader = new ClientCertificateReader();
 
@@ -58,7 +63,8 @@ class ClientCertificateReaderTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"IDCPT-123456789, PT, 123456789", "12345678Z, ES, 12345678Z", "X1234567L, ES, X1234567L"})
+    @CsvSource({"IDCPT-123456789, PT, 123456789", "12345678Z, ES, 12345678Z", "X1234567L, ES, X1234567L",
+            "Y1234567X, ES, Y1234567X", "00000000T, ES, 00000000T"})
     void read_numberWithOrWithoutTheSemanticPrefix_givesItsCountryAndNumber(
             String serialNumber, String country, String number) throws Exception {
         CertificateIdentity identity = reader.read(personCertificate(serialNumber, null)).identity();
@@ -68,12 +74,29 @@ class ClientCertificateReaderTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"VATES-A15456585", "1234", "idces-12345678Z"})
+    @CsvSource({"VATES-A15456585", "1234", "idces-12345678Z", "12345678A", "X1234567A"})
     void read_unrecognisedNumber_givesNoNumber(String serialNumber) throws Exception {
         CertificateIdentity identity = reader.read(personCertificate(serialNumber, null)).identity();
 
         assertThat(identity.country()).isNull();
         assertThat(identity.personalAdministrativeNumber()).isNull();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"12345678Z", "X1234567L"})
+    void read_numberWithoutPrefixFromAForeignIssuer_givesNoNumber(String serialNumber) throws Exception {
+        CertificateIdentity identity = reader.read(personCertificate(serialNumber, null, FOREIGN_ISSUER)).identity();
+
+        assertThat(identity.country()).isNull();
+        assertThat(identity.personalAdministrativeNumber()).isNull();
+    }
+
+    @Test
+    void read_numberWithTheSemanticPrefixFromAForeignIssuer_givesItsCountryAndNumber() throws Exception {
+        CertificateIdentity identity = reader.read(personCertificate("IDCPT-123456789", null, FOREIGN_ISSUER)).identity();
+
+        assertThat(identity.country()).isEqualTo("PT");
+        assertThat(identity.personalAdministrativeNumber()).isEqualTo("123456789");
     }
 
     @Test
@@ -179,6 +202,10 @@ class ClientCertificateReaderTest {
     }
 
     private static X509Certificate personCertificate(String serialNumber, String email) throws Exception {
+        return personCertificate(serialNumber, email, ISSUER);
+    }
+
+    private static X509Certificate personCertificate(String serialNumber, String email, X500Name issuer) throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
         generator.initialize(256);
         KeyPair keyPair = generator.generateKeyPair();
@@ -190,7 +217,7 @@ class ClientCertificateReaderTest {
         if (serialNumber != null) {
             subject.addRDN(BCStyle.SERIALNUMBER, serialNumber);
         }
-        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(ISSUER, BigInteger.valueOf(System.nanoTime()),
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(issuer, BigInteger.valueOf(System.nanoTime()),
                 Date.from(NOT_AFTER.minus(700, ChronoUnit.DAYS)), Date.from(NOT_AFTER), subject.build(), keyPair.getPublic());
         if (email != null) {
             builder.addExtension(Extension.subjectAlternativeName, false,
