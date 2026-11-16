@@ -1,10 +1,12 @@
 package es.in2.vcverifier.oauth2.domain.model;
 
+import es.in2.vcverifier.oauth2.domain.exception.UnsupportedEssentialLevelException;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -17,6 +19,7 @@ public record RequestedAssuranceLevel(AssuranceLevel level, boolean essential) {
     private static final String ESSENTIAL_MEMBER = "essential";
     private static final String VALUE_MEMBER = "value";
     private static final String VALUES_MEMBER = "values";
+    private static final String LOW_ACR_VALUE = "http://eidas.europa.eu/LoA/low";
 
     public RequestedAssuranceLevel {
         Objects.requireNonNull(level, "level");
@@ -46,8 +49,17 @@ public record RequestedAssuranceLevel(AssuranceLevel level, boolean essential) {
             throw new IllegalArgumentException("claims.id_token.acr must be an object or null");
         }
         boolean essential = essential(acrRequest.get(ESSENTIAL_MEMBER));
-        return lowestLevel(Stream.concat(singleValue(acrRequest.get(VALUE_MEMBER)), multipleValues(acrRequest.get(VALUES_MEMBER))))
+        List<String> values = Stream.concat(singleValue(acrRequest.get(VALUE_MEMBER)),
+                multipleValues(acrRequest.get(VALUES_MEMBER))).toList();
+        if (values.contains(LOW_ACR_VALUE)) {
+            return Optional.empty();
+        }
+        Optional<RequestedAssuranceLevel> requested = lowestLevel(values.stream())
                 .map(level -> new RequestedAssuranceLevel(level, essential));
+        if (requested.isEmpty() && essential && !values.isEmpty()) {
+            throw new UnsupportedEssentialLevelException("None of the essential acr values is a supported level");
+        }
+        return requested;
     }
 
     private static boolean essential(Object essential) {

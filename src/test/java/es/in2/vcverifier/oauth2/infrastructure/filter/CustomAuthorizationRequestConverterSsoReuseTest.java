@@ -716,6 +716,22 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
 
     @ParameterizedTest
     @EnumSource(Mode.class)
+    void convert_essentialAcrWithoutASupportedLevel_returnsUnmetAuthenticationRequirementsToClient(Mode mode) {
+        registerClientWithLoginMethods(List.of(LoginMethod.X509, LoginMethod.WALLET));
+        Object claims = mode == Mode.PLAIN
+                ? "{\"id_token\":{\"acr\":{\"essential\":true,\"value\":\"urn:example:loa:4\"}}}"
+                : Map.of("id_token", Map.of("acr", Map.of("essential", true, "value", "urn:example:loa:4")));
+
+        OAuth2Error error = convertExpectingError(request(mode, Map.of("claims", claims)));
+
+        assertEquals("unmet_authentication_requirements", error.getErrorCode());
+        assertEquals(UNMET_REDIRECT, error.getUri());
+        assertFalse(thrown.isLoginPage());
+        verify(cacheStore, never()).putIfAbsent(any(), any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
     void convert_noLoginMethodLeft_returnsUnmetAuthenticationRequirementsToClient(Mode mode) {
         // Given: a wallet-only client whose attestations fall short of the essential level
         registerClientWithLoginMethods(List.of(LoginMethod.WALLET));

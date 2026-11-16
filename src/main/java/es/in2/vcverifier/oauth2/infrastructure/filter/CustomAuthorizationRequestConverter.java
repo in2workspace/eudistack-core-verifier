@@ -8,6 +8,7 @@ import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.util.AuthorizationResponseUri;
 import es.in2.vcverifier.shared.domain.util.OriginNormalizer;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
+import es.in2.vcverifier.oauth2.domain.exception.UnsupportedEssentialLevelException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.oauth2.domain.model.OidcPrompt;
 import es.in2.vcverifier.oauth2.domain.model.RequestedAssuranceLevel;
@@ -333,6 +334,10 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         }
         try {
             return RequestedAssuranceLevel.from((String) rawAcrValues, toClaimsObject(rawClaims)).orElse(null);
+        } catch (UnsupportedEssentialLevelException _) {
+            log.info("event=authorize_unmet_authentication_requirements clientId={} reason=essential_acr_not_supported",
+                    clientId);
+            throw oidcErrorRedirect(UNMET_AUTHENTICATION_REQUIREMENTS, UNMET_AUTHENTICATION_REQUIREMENTS_DESCRIPTION, ctx);
         } catch (IllegalArgumentException | ParseException e) {
             log.warn("event=authorize_acr_invalid clientId={} reason={}", clientId, sanitize(e.getMessage()));
             throw oidcErrorRedirect(OAuth2ErrorCodes.INVALID_REQUEST, CLAIMS_INVALID_DESCRIPTION, ctx);

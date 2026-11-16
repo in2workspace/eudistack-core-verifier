@@ -1,5 +1,6 @@
 package es.in2.vcverifier.oauth2.domain.model;
 
+import es.in2.vcverifier.oauth2.domain.exception.UnsupportedEssentialLevelException;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +15,7 @@ class RequestedAssuranceLevelTest {
 
     private static final String SUBSTANTIAL = "http://eidas.europa.eu/LoA/substantial";
     private static final String HIGH = "http://eidas.europa.eu/LoA/high";
+    private static final String LOW = "http://eidas.europa.eu/LoA/low";
 
     @Test
     void from_withoutAcrValuesNorClaims_requestsNoLevel() {
@@ -70,8 +72,34 @@ class RequestedAssuranceLevelTest {
 
     @Test
     void from_claimWithoutKnownLevel_fallsBackToAcrValues() {
-        assertThat(RequestedAssuranceLevel.from(SUBSTANTIAL, acrClaim(Map.of("essential", true, "value", "urn:x"))))
+        assertThat(RequestedAssuranceLevel.from(SUBSTANTIAL, acrClaim(Map.of("value", "urn:x"))))
                 .contains(new RequestedAssuranceLevel(AssuranceLevel.SUBSTANTIAL, false));
+    }
+
+    @Test
+    void from_essentialClaimWithoutKnownLevel_cannotBeMet() {
+        Map<String, Object> claims = acrClaim(Map.of("essential", true, "values", List.of("urn:x", "urn:y")));
+
+        assertThatThrownBy(() -> RequestedAssuranceLevel.from(SUBSTANTIAL, claims))
+                .isInstanceOf(UnsupportedEssentialLevelException.class);
+    }
+
+    @Test
+    void from_essentialClaimWithKnownAndUnknownLevels_requestsTheKnownOne() {
+        assertThat(RequestedAssuranceLevel.from(null,
+                acrClaim(Map.of("essential", true, "values", List.of("urn:x", HIGH)))))
+                .contains(new RequestedAssuranceLevel(AssuranceLevel.HIGH, true));
+    }
+
+    @Test
+    void from_essentialClaimThatAcceptsLow_requestsNoLevel() {
+        assertThat(RequestedAssuranceLevel.from(null,
+                acrClaim(Map.of("essential", true, "values", List.of(LOW, HIGH))))).isEmpty();
+    }
+
+    @Test
+    void from_essentialClaimWithoutValues_requestsNoLevel() {
+        assertThat(RequestedAssuranceLevel.from(null, acrClaim(Map.of("essential", true)))).isEmpty();
     }
 
     @Test
