@@ -6,6 +6,7 @@ import es.in2.vcverifier.shared.domain.model.audit.AuditEventType;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Builds the {@code SystemAuthenticated} entry of a system asking for a token with its attestation (M2M).
@@ -21,11 +22,18 @@ public final class SystemAuthenticationAuditEvents {
     private static final String REASON_ATTESTATION_REVOKED = "AttestationRevoked";
     private static final String REASON_INTERNAL_ERROR = "InternalError";
 
+    /**
+     * A client id longer than this, or with characters outside those of a DID, a URL or a plain identifier, is
+     * not reported: it is written by whoever calls the unauthenticated token endpoint and goes into the event.
+     */
+    static final int MAX_CLIENT_ID_LENGTH = 256;
+    private static final Pattern CLIENT_ID_SHAPE = Pattern.compile("^[\\w.:/#@+%=~-]+$");
+
     private SystemAuthenticationAuditEvents() {
     }
 
     public static Optional<AuditEntry> of(OAuth2M2MAuditEvent event) {
-        if (event.getClientId() == null || event.getClientId().isBlank()) {
+        if (!isAcceptable(event.getClientId())) {
             return Optional.empty();
         }
         String resource = "system-client:" + event.getClientId();
@@ -38,6 +46,11 @@ public final class SystemAuthenticationAuditEvents {
         }
         return catalogueReasonOf(event.getReason())
                 .map(reason -> AuditEntry.forReason(AuditEventType.SYSTEM_AUTHENTICATED, resource, reason, details));
+    }
+
+    private static boolean isAcceptable(String clientId) {
+        return clientId != null && !clientId.isBlank() && clientId.length() <= MAX_CLIENT_ID_LENGTH
+                && CLIENT_ID_SHAPE.matcher(clientId).matches();
     }
 
     private static Optional<String> catalogueReasonOf(String internalReason) {

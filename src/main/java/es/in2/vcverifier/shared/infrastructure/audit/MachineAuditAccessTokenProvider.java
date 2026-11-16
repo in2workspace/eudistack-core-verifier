@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -13,6 +14,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,7 +26,13 @@ import java.time.Instant;
  * never configuration.
  *
  * <p>The audience cannot be requested: the Verifier puts its own URL in the {@code aud} of a machine token, so
- * that is the audience the Audit API has to expect.
+ * that is the audience the Audit API has to expect (PA-03). Until the Verifier honours a requested audience
+ * (RFC 8707), a machine token is valid wherever the Verifier's URL is accepted.
+ *
+ * <p>The token endpoint must be {@code https}, as the starter demands of the Audit API: the assertion and the
+ * bearer travel through it. Plain {@code http} is accepted on the loopback address and, for a local stack,
+ * with {@code auditoria.client.allow-insecure-http=true}. The call has its own timeouts, so an endpoint that
+ * does not answer cannot hold the dispatcher thread, which waits here.
  */
 @Component
 @ConditionalOnBooleanProperty("auditoria.dispatcher.enabled")
@@ -36,6 +44,8 @@ public class MachineAuditAccessTokenProvider implements AuditAccessTokenProvider
     private static final Duration EXPIRY_MARGIN = Duration.ofSeconds(60);
     /** Lifetime assumed when the response does not say; short on purpose. */
     private static final Duration DEFAULT_LIFETIME = Duration.ofMinutes(2);
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(10);
 
     private final RestClient restClient;
     private final Clock clock;
@@ -53,26 +63,51 @@ public class MachineAuditAccessTokenProvider implements AuditAccessTokenProvider
             @Value("${AUDIT_M2M_CLIENT_ID:}") String clientId,
             @Value("${AUDIT_M2M_CREDENTIAL:}") String credential,
             @Value("${AUDIT_M2M_PRIVATE_KEY:}") String privateKey,
-            @Value("${AUDIT_M2M_ASSERTION_AUDIENCE:}") String assertionAudience) {
-        this(RestClient.create(), Clock.systemUTC(), tokenUrl, tenant, clientId,
+            @Value("${AUDIT_M2M_ASSERTION_AUDIENCE:}") String assertionAudience,
+            @Value("${auditoria.client.allow-insecure-http:false}") boolean allowInsecureHttp) {
+        this(timeBoundedRestClient(), Clock.systemUTC(), tokenUrl, tenant, clientId,
                 new MachineClientAssertionFactory(clientId, credential, privateKey, assertionAudience,
-                        Clock.systemUTC()));
+                        Clock.systemUTC()), allowInsecureHttp);
     }
 
     MachineAuditAccessTokenProvider(RestClient restClient, Clock clock, String tokenUrl, String tenant,
-                                    String clientId, MachineClientAssertionFactory assertionFactory) {
+                                    String clientId, MachineClientAssertionFactory assertionFactory,
+                                    boolean allowInsecureHttp) {
         if (tokenUrl == null || tokenUrl.isBlank()) {
             throw new IllegalArgumentException("AUDIT_M2M_TOKEN_URL is not set");
         }
         if (tenant == null || tenant.isBlank()) {
             throw new IllegalArgumentException("AUDIT_M2M_TENANT is not set");
         }
+        requireSecureTransport(tokenUrl, allowInsecureHttp);
         this.restClient = restClient;
         this.clock = clock;
         this.tokenUrl = tokenUrl;
         this.tenant = tenant;
         this.clientId = clientId;
         this.assertionFactory = assertionFactory;
+    }
+
+    private static RestClient timeBoundedRestClient() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
+        requestFactory.setReadTimeout(READ_TIMEOUT);
+        return RestClient.builder().requestFactory(requestFactory).build();
+    }
+
+    private static void requireSecureTransport(String tokenUrl, boolean allowInsecureHttp) {
+        URI uri = URI.create(tokenUrl);
+        boolean secure = "https".equalsIgnoreCase(uri.getScheme())
+                || isLoopback(uri.getHost())
+                || allowInsecureHttp;
+        if (!secure) {
+            throw new IllegalArgumentException("AUDIT_M2M_TOKEN_URL must be https: it is accepted over http only on "
+                    + "localhost, or with auditoria.client.allow-insecure-http=true for a local stack");
+        }
+    }
+
+    private static boolean isLoopback(String host) {
+        return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
     }
 
     @Override
@@ -98,9 +133,19 @@ public class MachineAuditAccessTokenProvider implements AuditAccessTokenProvider
         Duration lifetime = response.hasNonNull("expires_in")
                 ? Duration.ofSeconds(response.get("expires_in").asLong())
                 : DEFAULT_LIFETIME;
-        Instant renewAt = clock.instant().plus(lifetime).minus(EXPIRY_MARGIN);
-        cached = new CachedToken(token, renewAt);
+        cached = new CachedToken(token, renewAtOf(lifetime));
         return token;
+    }
+
+    /**
+     * The margin before expiry, but never earlier than half the lifetime: a token that lives less than the
+     * margin would otherwise be renewed on every batch.
+     */
+    private Instant renewAtOf(Duration lifetime) {
+        Duration untilRenewal = lifetime.minus(EXPIRY_MARGIN).compareTo(lifetime.dividedBy(2)) > 0
+                ? lifetime.minus(EXPIRY_MARGIN)
+                : lifetime.dividedBy(2);
+        return clock.instant().plus(untilRenewal);
     }
 
     private JsonNode requestToken() {

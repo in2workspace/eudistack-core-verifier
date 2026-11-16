@@ -14,7 +14,6 @@ public class RecordingAuditTrail implements AuditTrailPort {
 
     private final List<AuditEntry> staged = new ArrayList<>();
     private final List<AuditEntry> stagedInNewTransaction = new ArrayList<>();
-    private final List<String> correlationIds = new ArrayList<>();
     private final List<String> systemScopes = new ArrayList<>();
     private boolean failOnNewTransaction;
 
@@ -37,12 +36,6 @@ public class RecordingAuditTrail implements AuditTrailPort {
     }
 
     @Override
-    public void runWithCorrelationId(String correlationId, Runnable action) {
-        correlationIds.add(correlationId);
-        action.run();
-    }
-
-    @Override
     public <T> T asSystem(String tenant, String actorId, Supplier<T> action) {
         systemScopes.add(tenant + "/" + actorId);
         return action.get();
@@ -60,10 +53,6 @@ public class RecordingAuditTrail implements AuditTrailPort {
         List<AuditEntry> all = new ArrayList<>(staged);
         all.addAll(stagedInNewTransaction);
         return all;
-    }
-
-    public List<String> correlationIds() {
-        return List.copyOf(correlationIds);
     }
 
     /** The {@code tenant/actor} of every background scope opened, in order. */

@@ -60,13 +60,6 @@ public class StarterAuditTrailAdapter implements AuditTrailPort {
     }
 
     @Override
-    public void runWithCorrelationId(String correlationId, Runnable action) {
-        try (var _ = AuditContexts.withCorrelationId(correlationId)) {
-            action.run();
-        }
-    }
-
-    @Override
     public <T> T asSystem(String tenant, String actorId, Supplier<T> action) {
         try (var _ = AuditContexts.system(tenant, actorId)) {
             return action.get();

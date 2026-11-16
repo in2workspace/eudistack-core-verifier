@@ -8,6 +8,10 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationConverter;
 
 import java.util.List;
 import java.util.Optional;
@@ -58,6 +62,22 @@ class VerifierAuditContextResolverTest {
 
         // Act
         Optional<AuditContext> context = resolver.resolve(requestOf("sandbox"), anonymous);
+
+        // Assert
+        assertEquals("verifier", context.orElseThrow().actor().id());
+    }
+
+    @Test
+    void resolve_machineNotRegisteredYetToBeValidated_isTheVerifierNotTheClientIdItWrote() {
+        // Arrange: marked as authenticated before its attestation is checked, with the id the caller typed
+        RegisteredClient placeholder = RegisteredClient.withId("placeholder").clientId("machine-of-someone-else")
+                .clientAuthenticationMethod(UnregisteredM2MClientAuthenticationConverter.UNREGISTERED_VC_METHOD)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS).build();
+        var unvalidated = new OAuth2ClientAuthenticationToken(placeholder,
+                UnregisteredM2MClientAuthenticationConverter.UNREGISTERED_VC_METHOD, "assertion");
+
+        // Act
+        Optional<AuditContext> context = resolver.resolve(requestOf("sandbox"), unvalidated);
 
         // Assert
         assertEquals("verifier", context.orElseThrow().actor().id());

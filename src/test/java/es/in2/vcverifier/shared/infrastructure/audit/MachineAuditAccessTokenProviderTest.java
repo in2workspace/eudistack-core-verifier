@@ -19,6 +19,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
@@ -45,7 +46,7 @@ class MachineAuditAccessTokenProviderTest {
         MachineClientAssertionFactory factory = new MachineClientAssertionFactory(CLIENT_ID, "a.b.c",
                 new ECKeyGenerator(Curve.P_256).generate().toJSONString(),
                 "https://dome.dev.eudistack.net/verifier", clock);
-        provider = new MachineAuditAccessTokenProvider(builder.build(), clock, TOKEN_URL, "dome", CLIENT_ID, factory);
+        provider = new MachineAuditAccessTokenProvider(builder.build(), clock, TOKEN_URL, "dome", CLIENT_ID, factory, true);
     }
 
     private static String tokenResponse(String token, long expiresIn) {
@@ -153,7 +154,7 @@ class MachineAuditAccessTokenProviderTest {
         MachineClientAssertionFactory factory = null;
 
         assertThrows(IllegalArgumentException.class, () -> new MachineAuditAccessTokenProvider(
-                restClient, clock, TOKEN_URL, " ", CLIENT_ID, factory));
+                restClient, clock, TOKEN_URL, " ", CLIENT_ID, factory, true));
     }
 
     @Test
@@ -162,9 +163,31 @@ class MachineAuditAccessTokenProviderTest {
         MachineClientAssertionFactory factory = null;
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> new MachineAuditAccessTokenProvider(restClient, clock, "", "dome", CLIENT_ID, factory));
+                () -> new MachineAuditAccessTokenProvider(restClient, clock, "", "dome", CLIENT_ID, factory, true));
 
         assertEquals("AUDIT_M2M_TOKEN_URL is not set", error.getMessage());
+    }
+
+    @Test
+    void constructor_tokenUrlOverPlainHttp_isRefusedUnlessTheLocalSwitchIsOn() {
+        RestClient restClient = RestClient.create();
+        MachineClientAssertionFactory noFactory = null;
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new MachineAuditAccessTokenProvider(restClient, clock, TOKEN_URL, "dome", CLIENT_ID, noFactory, false));
+
+        assertTrue(error.getMessage().startsWith("AUDIT_M2M_TOKEN_URL must be https"));
+    }
+
+    @Test
+    void constructor_httpsOrLoopbackTokenUrl_isAcceptedWithoutTheSwitch() {
+        RestClient restClient = RestClient.create();
+        MachineClientAssertionFactory noFactory = null;
+
+        assertDoesNotThrow(() -> new MachineAuditAccessTokenProvider(restClient, clock,
+                "https://dome.dev.eudistack.net/verifier/oidc/token", "dome", CLIENT_ID, noFactory, false));
+        assertDoesNotThrow(() -> new MachineAuditAccessTokenProvider(restClient, clock,
+                "http://localhost:8082/verifier/oidc/token", "dome", CLIENT_ID, noFactory, false));
     }
 
     private static final class MutableClock extends Clock {

@@ -85,6 +85,11 @@ management:
       show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when-authorized}
       probes:
         enabled: true
+      group:
+        # Explicit, so that no health indicator is ever added to readiness by a change of default: a
+        # broken audit outbox must not take the Verifier out of rotation (PA-08).
+        readiness:
+          include: readinessState
     prometheus:
       access: unrestricted
   health:
