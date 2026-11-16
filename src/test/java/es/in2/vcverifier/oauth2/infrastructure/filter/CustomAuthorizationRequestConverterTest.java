@@ -372,6 +372,67 @@ class CustomAuthorizationRequestConverterTest {
     }
 
     @Test
+    void convert_fapiRequestWithTooLongState_answersInvalidRequestToTheRequestObjectRedirectUri() throws Exception {
+        // EUD-363: the JAR path (processAuthorizationFlow) enforces the state limit too, once the request
+        // object is verified, and answers to the request object's redirect_uri.
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        String clientId = "test-client-id";
+        String tooLongState = "s".repeat(STATE_MAX_LENGTH + 1);
+        String scope = "learcredential";
+        String redirectUri = "https://client.example.com/callback";
+        String requestUri = "https://client.example.com/request.jwt";
+        String jwt = "mock-jwt-token";
+
+        when(request.getRequestURL()).thenReturn(new StringBuffer("https://client.example.com/authorize"));
+        when(request.getQueryString()).thenReturn("client_id=test-client-id&scope=learcredential&state=" + tooLongState);
+        when(request.getParameter(OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(request.getParameter(OAuth2ParameterNames.STATE)).thenReturn(tooLongState);
+        when(request.getParameter(OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(request.getParameter(OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+        when(request.getParameter(NONCE)).thenReturn("test-nonce");
+        when(request.getParameter(REQUEST_URI)).thenReturn(requestUri);
+
+        RegisteredClient registeredClient = RegisteredClient.withId("1234")
+                .clientId(clientId)
+                .clientName("Test Client")
+                .authorizationGrantType(new AuthorizationGrantType("authorization_code"))
+                .redirectUri(redirectUri)
+                .build();
+        when(registeredClientRepository.findByClientId(clientId)).thenReturn(registeredClient);
+
+        HttpResponse<String> mockHttpResponse = mock(HttpResponse.class);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(mockHttpResponse);
+        when(mockHttpResponse.statusCode()).thenReturn(200);
+        when(mockHttpResponse.body()).thenReturn(jwt);
+
+        SignedJWT signedJWT = mock(SignedJWT.class);
+        Payload payload = mock(Payload.class);
+        when(signedJWT.getPayload()).thenReturn(payload);
+        when(jwtService.parseJWT(jwt)).thenReturn(signedJWT);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.CLIENT_ID)).thenReturn(clientId);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.SCOPE)).thenReturn(scope);
+        when(jwtService.extractClaimFromPayload(payload, OAuth2ParameterNames.REDIRECT_URI)).thenReturn(redirectUri);
+
+        PublicKey publicKey = mock(PublicKey.class);
+        when(didService.resolvePublicKeyFromDid(clientId)).thenReturn(publicKey);
+        when(signedJWT.serialize()).thenReturn("serialized-jwt");
+        doNothing().when(jwtService).verifyJWTWithECKey(anyString(), eq(publicKey));
+
+        when(backendConfig.getUrl()).thenReturn("https://auth.server.com");
+
+        AuthorizationRedirectException exception =
+                assertThrows(AuthorizationRedirectException.class, () -> converter.convert(request));
+
+        assertEquals(OAuth2ErrorCodes.INVALID_REQUEST, exception.getError().getErrorCode());
+        assertEquals(redirectUri + "?error=invalid_request"
+                + "&error_description=state+must+not+exceed+" + STATE_MAX_LENGTH + "+characters"
+                + "&state=" + tooLongState
+                + "&iss=https%3A%2F%2Fauth.server.com", exception.getError().getUri());
+        verify(jwtService).verifyJWTWithECKey("serialized-jwt", publicKey);
+        verifyNoInteractions(authorizationRequestBuildWorkflow, cacheStoreForOAuth2AuthorizationRequest);
+    }
+
+    @Test
     void convert_fapiRequestWithRedirectUriDifferentCaseAndDefaultPort_shouldStillMatch() throws Exception {
         HttpServletRequest request = mock(HttpServletRequest.class);
         String clientId = "test-client-id";
