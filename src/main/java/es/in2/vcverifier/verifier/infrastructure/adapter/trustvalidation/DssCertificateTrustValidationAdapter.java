@@ -21,11 +21,17 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Component
@@ -33,6 +39,7 @@ import java.util.List;
 public class DssCertificateTrustValidationAdapter implements CertificateTrustValidationPort {
 
     static final String VALIDATE_CERTIFICATE_PATH = "/services/rest/certificate-validation/validateCertificate";
+    static final int MAX_RESPONSE_BYTES = 1024 * 1024;
     private static final ASN1ObjectIdentifier ORGANIZATION_IDENTIFIER = new ASN1ObjectIdentifier("2.5.4.97");
 
     private final HttpClient httpClient;
@@ -54,7 +61,7 @@ public class DssCertificateTrustValidationAdapter implements CertificateTrustVal
                     .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody(certificate, chain)))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = send(request);
             if (response.statusCode() != 200) {
                 log.warn("event=trust_validation_failed status={}", response.statusCode());
                 return new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
@@ -70,6 +77,20 @@ public class DssCertificateTrustValidationAdapter implements CertificateTrustVal
         } catch (IOException | IllegalArgumentException | CertificateEncodingException e) {
             log.warn("event=trust_validation_failed error={}", e.getClass().getSimpleName());
             return new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
+        }
+    }
+
+    private HttpResponse<String> send(HttpRequest request) throws IOException, InterruptedException {
+        CompletableFuture<HttpResponse<String>> exchange = httpClient.sendAsync(request, _ ->
+                HttpResponse.BodySubscribers.mapping(new BoundedBodySubscriber(MAX_RESPONSE_BYTES),
+                        bytes -> new String(bytes, StandardCharsets.UTF_8)));
+        try {
+            return exchange.get(trustValidationProperties.timeout().toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException _) {
+            exchange.cancel(true);
+            throw new HttpTimeoutException("Trust validation did not finish within the timeout");
+        } catch (ExecutionException e) {
+            throw e.getCause() instanceof IOException cause ? cause : new IOException(e.getCause());
         }
     }
 

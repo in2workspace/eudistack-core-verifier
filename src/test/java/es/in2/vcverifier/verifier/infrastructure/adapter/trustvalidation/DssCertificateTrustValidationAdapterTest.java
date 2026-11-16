@@ -52,6 +52,7 @@ class DssCertificateTrustValidationAdapterTest {
     private volatile int status = 200;
     private volatile String responseBody = PASSED_WITH_QSCD;
     private volatile boolean answerLate;
+    private volatile boolean trickleBody;
     private final CountDownLatch releaseLateAnswer = new CountDownLatch(1);
 
     @BeforeEach
@@ -68,8 +69,20 @@ class DssCertificateTrustValidationAdapterTest {
             }
             byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, body.length);
-            exchange.getResponseBody().write(body);
+            if (trickleBody) {
+                exchange.sendResponseHeaders(status, 0);
+                exchange.getResponseBody().write(body, 0, body.length / 2);
+                exchange.getResponseBody().flush();
+                try {
+                    releaseLateAnswer.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException _) {
+                    Thread.currentThread().interrupt();
+                }
+                exchange.getResponseBody().write(body, body.length / 2, body.length - body.length / 2);
+            } else {
+                exchange.sendResponseHeaders(status, body.length);
+                exchange.getResponseBody().write(body);
+            }
             exchange.close();
         });
         server.start();
@@ -125,6 +138,26 @@ class DssCertificateTrustValidationAdapterTest {
         answerLate = true;
 
         assertThat(adapter(Duration.ofMillis(200)).validate(certificate(false), List.of()))
+                .isEqualTo(new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
+    }
+
+    @Test
+    void validate_bodyStillArrivingWhenTheTimeoutEnds_isUnavailableWithinTheTimeout() throws Exception {
+        trickleBody = true;
+        X509Certificate certificate = certificate(false);
+        long start = System.nanoTime();
+
+        CertificateTrust trust = adapter(Duration.ofMillis(300)).validate(certificate, List.of());
+
+        assertThat(trust).isEqualTo(new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
+        assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(3));
+    }
+
+    @Test
+    void validate_responseLargerThanTheLimit_isUnavailable() throws Exception {
+        responseBody = PASSED_WITH_QSCD + " ".repeat(DssCertificateTrustValidationAdapter.MAX_RESPONSE_BYTES);
+
+        assertThat(adapter(Duration.ofSeconds(5)).validate(certificate(false), List.of()))
                 .isEqualTo(new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
     }
 
