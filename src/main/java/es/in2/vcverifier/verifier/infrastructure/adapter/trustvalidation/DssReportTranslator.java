@@ -35,7 +35,8 @@ final class DssReportTranslator {
         if (certificate.isMissingNode() || certificate.isNull()) {
             return rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
         }
-        if (listsAreStale(reports.path("diagnosticData").path("TrustedList"), now, maxListAge)) {
+        JsonNode trustedLists = reports.path("diagnosticData").path("TrustedList");
+        if (listsAreStale(trustedLists, now, maxListAge)) {
             return rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
         }
 
@@ -48,8 +49,9 @@ final class DssReportTranslator {
             return rejected(CertificateLoginReason.CERTIFICATE_EXPIRED);
         }
         return switch (indication) {
-            case PASSED -> fromQualification(text(certificate.path("qualificationAtValidation")),
-                    subjectHasOrganizationIdentifier);
+            case PASSED -> trustedLists.isArray() && !trustedLists.isEmpty()
+                    ? fromQualification(text(certificate.path("qualificationAtValidation")), subjectHasOrganizationIdentifier)
+                    : rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE);
             case FAILED -> rejected(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED);
             case INDETERMINATE -> rejected(NO_CERTIFICATE_CHAIN_FOUND.equals(subIndication)
                     ? CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED

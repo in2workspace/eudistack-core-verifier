@@ -120,6 +120,30 @@ class DssReportTranslatorTest {
     }
 
     @Test
+    void passedWithoutTrustedLists_isUnavailable() {
+        ObjectNode reports = report("PASSED", null, "QC for eSig with QSCD");
+        reports.remove("diagnosticData");
+
+        assertThat(translate(reports, false)).isEqualTo(rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
+    }
+
+    @Test
+    void passedWithAnEmptyTrustedListArray_isUnavailable() {
+        ObjectNode reports = report("PASSED", null, "QC for eSig with QSCD");
+        reports.putObject("diagnosticData").putArray("TrustedList");
+
+        assertThat(translate(reports, false)).isEqualTo(rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
+    }
+
+    @Test
+    void notQualifiedWithoutTrustedLists_isStillNotQualified() {
+        ObjectNode reports = report("INDETERMINATE", "NO_CERTIFICATE_CHAIN_FOUND", null);
+        reports.remove("diagnosticData");
+
+        assertThat(translate(reports, false)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED));
+    }
+
+    @Test
     void reportWithoutCertificate_isUnavailable() {
         assertThat(translate(MAPPER.createObjectNode(), false))
                 .isEqualTo(rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
@@ -135,6 +159,8 @@ class DssReportTranslatorTest {
         certificate.put("Indication", indication);
         certificate.put("SubIndication", subIndication);
         certificate.put("qualificationAtValidation", qualification);
+        reports.putObject("diagnosticData").putArray("TrustedList")
+                .add(MAPPER.createObjectNode().put("LastLoading", "2026-10-22T11:00:00Z"));
         return reports;
     }
 
