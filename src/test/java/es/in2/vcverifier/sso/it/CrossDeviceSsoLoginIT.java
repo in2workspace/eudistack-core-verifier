@@ -65,6 +65,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
+import static es.in2.vcverifier.shared.domain.util.Constants.STATE_MAX_LENGTH;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -457,8 +458,85 @@ class CrossDeviceSsoLoginIT {
     }
 
     // =========================================================
+    // A broker's long state (Keycloak 26.4: 130+ characters) completes the login
+    // =========================================================
+
+    @Test
+    void stateOver128Characters_isAccepted_andLoginCompletes() throws Exception {
+        // Given: a Keycloak-shaped state, four dot-separated parts, the last one the RP redirect in base64url
+        String state = "BPtERLCLW_bD4-shl5EZuSwglSb36I-3KZKGCpipT5s.q1Co1-WR_jk." + UUID.randomUUID()
+                + ".eyJydSI6Imh0dHBzOi8vcmVjZXRhLmV4YW1wbGUuY29tL29pZGMvY2FsbGJhY2siLCJydCI6ImNvZGUifQ";
+        assertThat(state).hasSizeGreaterThan(128);
+        Cookie txCookie = authorizeInBrowser(state);
+
+        // When: the wallet presents with that state (400 before the fix)
+        walletPost(state);
+
+        // Then: the browser closes the login and the RP gets its code with the same state
+        browserClose(sseUrlFor(state), txCookie)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?code=")))
+                .andExpect(header().string("Location", containsString("state=" + state)));
+    }
+
+    // =========================================================
+    // State length limit (STATE_MAX_LENGTH), shared by /authorize and auth-response
+    // =========================================================
+
+    @Test
+    void stateOfMaxLength_isAccepted_andLoginCompletes() throws Exception {
+        // Given
+        String state = stateOfLength(STATE_MAX_LENGTH);
+        Cookie txCookie = authorizeInBrowser(state);
+
+        // When
+        walletPost(state);
+
+        // Then
+        browserClose(sseUrlFor(state), txCookie)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?code=")))
+                .andExpect(header().string("Location", containsString("state=" + state)));
+    }
+
+    @Test
+    void stateOverMaxLength_isRejectedAtAuthorize_withInvalidRequestToTheClient() throws Exception {
+        // Given
+        String state = stateOfLength(STATE_MAX_LENGTH + 1);
+
+        // When / Then: invalid_request back to the client with its state, no login page, nothing cached
+        MvcResult result = mockMvc.perform(authorizeRequest(state))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?error=invalid_request")))
+                .andExpect(header().string("Location", containsString("state=" + state)))
+                .andReturn();
+        assertThat(result.getResponse().getRedirectedUrl()).doesNotContain("/login?");
+        assertThat(cacheStoreForOAuth2AuthorizationRequest.getIfPresent(state)).isNull();
+    }
+
+    @Test
+    void stateOverMaxLength_isRejectedAtAuthResponse() throws Exception {
+        // Given
+        String state = stateOfLength(STATE_MAX_LENGTH + 1);
+
+        // When / Then
+        mockMvc.perform(post("/oid4vp/auth-response")
+                        .header("X-Forwarded-Proto", "https")
+                        .header(X_TENANT, TENANT)
+                        .param("state", state)
+                        .param("vp_token", VP_TOKEN_B64))
+                .andExpect(status().isBadRequest());
+    }
+
+    // =========================================================
     // HELPERS
     // =========================================================
+
+    /** A unique base64url-safe state of exactly {@code length} characters. */
+    private static String stateOfLength(int length) {
+        String prefix = UUID.randomUUID() + ".";
+        return prefix + "a".repeat(length - prefix.length());
+    }
 
     private Cookie authorizeInBrowser(String state) throws Exception {
         MvcResult result = mockMvc.perform(authorizeRequest(state))

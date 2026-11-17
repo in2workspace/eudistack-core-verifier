@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `userinfo` answers with the claims of the ID token, the token request splits its scope on any whitespace, and the wallet login timer starts when the person chooses the wallet.
 
+## [3.4.3] - 2026-11-13
+
+EUD-363 — Login with Keycloak as broker.
+
+### Fixed
+
+- **The client `state` can be up to 2048 characters** (was 128 at `POST /oid4vp/auth-response`, none at `/oidc/authorize`). The 128-character cap rejected the wallet's presentation with a `400`, so a login started by a client with a longer `state`, such as Keycloak acting as broker (130+ characters, more for a long `redirect_uri`), never completed. Both endpoints now share the same maximum, and `/oidc/authorize` answers a longer `state` with `invalid_request` to the client, as it does with the other errors of the request, instead of opening a login that could never finish.
+- **The `auth-response` DEBUG log line sanitizes the `state`**, as the rest of the service does, so a `state` with line breaks can no longer forge log lines (CWE-117).
+
 ## [3.4.2] - 2026-11-05
 
 EUD-26 — Observability aligned with the Wallet EBW, the reference configuration.

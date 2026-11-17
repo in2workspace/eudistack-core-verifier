@@ -31,6 +31,9 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.STATE_MAX_LENGTH;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
+
 @Slf4j
 @RestController
 @RequestMapping("/oid4vp")
@@ -76,14 +79,14 @@ public class Oid4vpController {
     @ResponseStatus(HttpStatus.OK)
     public void handleAuthResponse(
             @Parameter(description = "OAuth2 state parameter", required = true)
-            @RequestParam("state") @NotBlank @Size(max = 128) String state,
+            @RequestParam("state") @NotBlank @Size(max = STATE_MAX_LENGTH) String state,
             @Parameter(description = "Verifiable Presentation token", required = true)
             @RequestParam("vp_token") @NotBlank @Size(max = 65536) String vpToken,
             HttpServletRequest request) {
 
         log.info("Processing auth response");
         log.debug("Oid4vpController -- handleAuthResponse -- Request params: state = {}, vpToken=[{} chars]",
-                state, vpToken != null ? vpToken.length() : 0);
+                sanitize(state), vpToken.length());
 
         String tenant = TenantDomainFilter.getCurrentTenant(request);
         String correlationId = UUID.randomUUID().toString();
