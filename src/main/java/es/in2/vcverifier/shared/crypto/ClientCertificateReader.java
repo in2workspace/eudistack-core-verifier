@@ -23,6 +23,7 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,6 +34,7 @@ public class ClientCertificateReader {
     private static final int RFC822_NAME = 1;
     private static final String SPAIN = "ES";
     private static final Pattern SEMANTIC_IDENTIFIER = Pattern.compile("^IDC([A-Z]{2})-(.+)$");
+    private static final Pattern PERCENT_ENCODED_BASE64 = Pattern.compile("%(2B|2F|3D)", Pattern.CASE_INSENSITIVE);
     private static final Pattern DNI_OR_NIE = Pattern.compile("^([XYZ]\\d{7}|\\d{8})([A-Z])$");
     private static final String NIE_PREFIXES = "XYZ";
     private static final String CONTROL_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE";
@@ -64,7 +66,7 @@ public class ClientCertificateReader {
         }
         byte[] der;
         try {
-            der = Base64.getDecoder().decode(byteSequence.substring(1, byteSequence.length() - 1));
+            der = Base64.getDecoder().decode(percentDecoded(byteSequence.substring(1, byteSequence.length() - 1)));
         } catch (IllegalArgumentException _) {
             throw new IllegalArgumentException("Client certificate header member is not base64");
         }
@@ -74,6 +76,15 @@ public class ClientCertificateReader {
         } catch (CertificateException | ClassCastException _) {
             throw new IllegalArgumentException("Client certificate header member is not an X.509 certificate");
         }
+    }
+
+    private static String percentDecoded(String base64) {
+        return PERCENT_ENCODED_BASE64.matcher(base64).replaceAll(escape ->
+                switch (escape.group(1).toUpperCase(Locale.ROOT)) {
+                    case "2B" -> "+";
+                    case "2F" -> "/";
+                    default -> "=";
+                });
     }
 
     public ClientCertificate read(X509Certificate certificate) {
