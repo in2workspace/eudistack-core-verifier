@@ -29,7 +29,7 @@ class PublicCorsConfigTest {
 
     @BeforeEach
     void setUp() {
-        PublicCorsConfig config = new PublicCorsConfig(new CertificateLoginProperties("test-secure-origin-0123456789abcdef0123", Map.of(
+        PublicCorsConfig config = new PublicCorsConfig(new CertificateLoginProperties(Map.of(
                 "cgcom", new CertificateLoginProperties.Tenant("https://cgcom.example.com"),
                 "kpmg", new CertificateLoginProperties.Tenant("https://kpmg.example.com"))));
         corsSource = config.publicCorsConfigurationSource();

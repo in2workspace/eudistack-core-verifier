@@ -22,14 +22,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=false",
-        "verifier.certificate-login.secure-origin=" + CertificateLoginHeaderSizeIT.SECURE_ORIGIN,
         "verifier.certificate-login.tenants.cgcom.login-origin=" + CertificateLoginHeaderSizeIT.LOGIN_ORIGIN,
         "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef"
 })
 @ActiveProfiles("test")
 class CertificateLoginHeaderSizeIT {
 
-    static final String SECURE_ORIGIN = "test-secure-origin-0123456789abcdef0123";
     static final String LOGIN_ORIGIN = "https://cgcom.example.com";
     private static final int LARGEST_FNMT_PERSON_CERTIFICATE = 2_798;
     private static final int LARGEST_FNMT_INTERMEDIATE = 2_039;
@@ -66,7 +64,6 @@ class CertificateLoginHeaderSizeIT {
 
     private HttpRequest.Builder certificateLogin() {
         return HttpRequest.newBuilder(URI.create("http://localhost:" + port + contextPath + "/api/login/certificate"))
-                .header(CertificateLoginFilter.SECURE_ORIGIN_HEADER, SECURE_ORIGIN)
                 .header(X_TENANT_HEADER, "cgcom")
                 .header("Origin", LOGIN_ORIGIN)
                 .header("Content-Type", "application/json")

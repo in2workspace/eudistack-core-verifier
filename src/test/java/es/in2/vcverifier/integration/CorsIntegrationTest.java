@@ -11,9 +11,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import es.in2.vcverifier.verifier.domain.service.TenantConfigPort;
-import es.in2.vcverifier.shared.config.CertificateLoginFilter;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -34,7 +32,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(
         properties = {
                 "spring.flyway.enabled=false",
-                "verifier.certificate-login.secure-origin=" + CorsIntegrationTest.SECURE_ORIGIN,
                 "verifier.certificate-login.tenants.cgcom.login-origin=https://cgcom.example.com",
                 "verifier.certificate-login.tenants.kpmg.login-origin=https://kpmg.example.com",
                 "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef"
@@ -44,7 +41,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class CorsIntegrationTest {
 
-    static final String SECURE_ORIGIN = "test-secure-origin-0123456789abcdef0123";
 
     @Autowired
     private MockMvc mockMvc;
@@ -163,14 +159,13 @@ class CorsIntegrationTest {
     }
 
     @Nested
-    @DisplayName("Certificate login from the secure origin (login origins of the tenants)")
+    @DisplayName("Certificate login (login origins of the tenants)")
     class CertificateLoginCors {
 
         @Test
         @DisplayName("preflight allows the login origin of a tenant with certificate login, with credentials and X-Tenant")
         void certificateLogin_loginOriginOfItsTenant_corsAllowedWithCredentials() throws Exception {
             mockMvc.perform(options("/api/login/certificate")
-                            .with(fromSecureOrigin())
                             .header("Origin", "https://cgcom.example.com")
                             .header("Access-Control-Request-Method", "POST")
                             .header("Access-Control-Request-Headers", "Content-Type, X-Tenant"))
@@ -183,7 +178,6 @@ class CorsIntegrationTest {
         @DisplayName("rejects any other origin")
         void certificateLogin_otherOrigin_corsRejected() throws Exception {
             mockMvc.perform(options("/api/login/certificate")
-                            .with(fromSecureOrigin())
                             .header("Origin", "https://any-spa.example.com")
                             .header("Access-Control-Request-Method", "POST"))
                     .andExpect(status().isForbidden())
@@ -194,7 +188,6 @@ class CorsIntegrationTest {
         @DisplayName("login allows the login origin of the tenant of X-Tenant")
         void certificateLogin_loginFromTheOriginOfItsTenant_corsAllowed() throws Exception {
             mockMvc.perform(post("/api/login/certificate")
-                            .with(fromSecureOrigin())
                             .header("X-Tenant", "cgcom")
                             .header("Origin", "https://cgcom.example.com")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -207,7 +200,6 @@ class CorsIntegrationTest {
         @DisplayName("login rejects the login origin of another tenant")
         void certificateLogin_loginFromTheOriginOfAnotherTenant_corsRejected() throws Exception {
             mockMvc.perform(post("/api/login/certificate")
-                            .with(fromSecureOrigin())
                             .header("X-Tenant", "kpmg")
                             .header("Origin", "https://cgcom.example.com")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -220,27 +212,11 @@ class CorsIntegrationTest {
         @DisplayName("rejects a method other than POST")
         void certificateLogin_otherMethod_corsRejected() throws Exception {
             mockMvc.perform(options("/api/login/certificate")
-                            .with(fromSecureOrigin())
                             .header("Origin", "https://cgcom.example.com")
                             .header("Access-Control-Request-Method", "PUT"))
                     .andExpect(status().isForbidden());
         }
 
-        @Test
-        @DisplayName("preflight without the secure origin is forbidden")
-        void certificateLogin_preflightWithoutSecureOrigin_forbidden() throws Exception {
-            mockMvc.perform(options("/api/login/certificate")
-                            .header("Origin", "https://cgcom.example.com")
-                            .header("Access-Control-Request-Method", "POST"))
-                    .andExpect(status().isForbidden())
-                    .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
-        }
 
-        private RequestPostProcessor fromSecureOrigin() {
-            return request -> {
-                request.addHeader(CertificateLoginFilter.SECURE_ORIGIN_HEADER, SECURE_ORIGIN);
-                return request;
-            };
-        }
     }
 }
