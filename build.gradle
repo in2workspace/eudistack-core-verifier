@@ -69,7 +69,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-aop'
     implementation 'com.eudistack:auditoria-spring-boot-starter:0.1.0'
     implementation 'io.micrometer:micrometer-registry-otlp'
-    implementation 'io.opentelemetry.proto:opentelemetry-proto:1.5.0-alpha'
+    implementation 'io.opentelemetry.proto:opentelemetry-proto:1.11.0-alpha'
     implementation platform('io.grpc:grpc-bom:1.69.0')
     implementation 'io.grpc:grpc-netty-shaded'
     implementation 'io.grpc:grpc-stub'
