@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Certificate login through CloudFront**: CloudFront sends `Client-Cert` and `Client-Cert-Chain` with `+`, `/` and `=` percent-encoded (`%2B`, `%2F`, `%3D`), so every certificate was refused as unreadable (`certificate_missing`). The Verifier now decodes those three escapes before reading the base64; the plain RFC 9440 form still works.
 - `userinfo` answers with the claims of the ID token, the token request splits its scope on any whitespace, and the wallet login timer starts when the person chooses the wallet.
 
 ## [3.4.3] - 2026-11-13
