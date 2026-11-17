@@ -33,6 +33,7 @@ springdoc:
 server:
   port: 8082
   forward-headers-strategy: framework
+  max-http-request-header-size: 32KB
   servlet:
     context-path: ${APP_CONTEXT_PATH:/verifier}
 
@@ -136,6 +137,7 @@ verifier:
       privateKey:
       certificate:  # Path to X.509 PEM certificate. When set, enables x509_hash client_id_scheme.
     login-timeout-seconds: ${VERIFIER_OAUTH2_LOGIN_TIMEOUT_SECONDS:120}
+    login-selection-timeout-seconds: ${VERIFIER_OAUTH2_LOGIN_SELECTION_TIMEOUT_SECONDS:600}
     fapi-nonce-required: ${VERIFIER_OAUTH2_FAPI_NONCE_REQUIRED:true}
     token-expiration:
       access-token-seconds: ${VERIFIER_ACCESS_TOKEN_EXPIRATION:900}
@@ -170,6 +172,16 @@ verifier:
       # Leave empty to auto-generate an ephemeral per-process key (dev only, single instance —
       # SSO reuse fails closed to login_required across restarts/replicas without a shared key).
       credential-encryption-key: ${VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY:}
+
+  certificate-login:
+    secure-origin: ${VERIFIER_CERTIFICATELOGIN_SECUREORIGIN:}
+    subject-key: ${VERIFIER_CERTIFICATELOGIN_SUBJECTKEY:}
+    tenants: {}
+
+  trust-validation:
+    url: ${VERIFIER_TRUSTVALIDATION_URL:}
+    timeout: ${VERIFIER_TRUSTVALIDATION_TIMEOUT:5s}
+    max-list-age: ${VERIFIER_TRUSTVALIDATION_MAXLISTAGE:24h}
 
   dome:
     legacy-read-enabled: ${VERIFIER_DOME_LEGACY_READ_ENABLED:true}

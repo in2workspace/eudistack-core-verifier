@@ -1,5 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.config;
 
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -13,7 +14,8 @@ public record DcqlProfileProperties(
 ) {
 
     public record DcqlProfile(
-            List<CredentialEntry> credentials
+            List<CredentialEntry> credentials,
+            AssuranceLevel assuranceLevel
     ) {}
 
     public record CredentialEntry(

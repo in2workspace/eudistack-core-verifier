@@ -116,7 +116,7 @@ public class SsoLoginCompletionWorkflow {
         String handle;
         try {
             handle = registerPendingLogin(new PendingSsoLogin(
-                    tenant, subject, result.clientId(), result.credentialJson(), result.redirectUrl(),
+                    tenant, subject, result.clientId(), result.authentication(), result.redirectUrl(),
                     result.redirectUri(), result.state(), bindingHash, result.authorizationCode(), ssoEligible,
                     baseUrl)); // the base URL is the /authorize issuer (RFC 9207 iss)
         } catch (RuntimeException e) {

@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doAnswer;
@@ -50,6 +51,38 @@ class AbortLoginWorkflowTest {
                 Map.of(EXPIRATION, Instant.now().plusSeconds(60).getEpochSecond()));
 
         assertThat(workflow.abort("state-1")).isEmpty();
+        assertThat(cache.getIfPresent("state-1")).isNotNull();
+    }
+
+    @Test
+    void abort_loginInProgressFromTheBrowserThatStartedIt_isCancelled() {
+        cacheLogin("state-1", "https://rp.example.com/cb", Map.of(
+                EXPIRATION, Instant.now().plusSeconds(300).getEpochSecond(),
+                BROWSER_BINDING_HASH, "binding-hash"));
+
+        assertThat(workflow.abort("state-1", "binding-hash"))
+                .contains("https://rp.example.com/cb?error=access_denied&error_description=login_cancelled&state=state-1"
+                        + ISS_PARAM);
+        assertThat(cache.getIfPresent("state-1")).isNull();
+    }
+
+    @Test
+    void abort_loginInProgressFromAnotherBrowser_isRejectedAndLeftPending() {
+        cacheLogin("state-1", "https://rp.example.com/cb", Map.of(
+                EXPIRATION, Instant.now().plusSeconds(300).getEpochSecond(),
+                BROWSER_BINDING_HASH, "binding-hash"));
+
+        assertThat(workflow.abort("state-1", "another-hash")).isEmpty();
+        assertThat(workflow.abort("state-1", null)).isEmpty();
+        assertThat(cache.getIfPresent("state-1")).isNotNull();
+    }
+
+    @Test
+    void abort_loginInProgressWithoutBrowserBinding_isRejected() {
+        cacheLogin("state-1", "https://rp.example.com/cb",
+                Map.of(EXPIRATION, Instant.now().plusSeconds(300).getEpochSecond()));
+
+        assertThat(workflow.abort("state-1", "binding-hash")).isEmpty();
         assertThat(cache.getIfPresent("state-1")).isNotNull();
     }
 

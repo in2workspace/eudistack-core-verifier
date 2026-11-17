@@ -1,6 +1,10 @@
 package es.in2.vcverifier.oauth2.domain.model;
 
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
+import es.in2.vcverifier.shared.domain.model.LoginMethod;
 import lombok.Builder;
+
+import java.util.List;
 
 @Builder(toBuilder = true)
 public record AuthorizationContext(
@@ -29,6 +33,9 @@ public record AuthorizationContext(
          * Issuer the discovery document advertises for the host of this {@code /oidc/authorize}
          * request; sent as {@code iss} in every authorization response (RFC 9207).
          */
-        String issuer
+        String issuer,
+        List<LoginMethod> loginMethods,
+        AssuranceLevel essentialLevel,
+        boolean attestationScopes
 ) {
 }

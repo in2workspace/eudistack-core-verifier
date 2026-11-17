@@ -1,13 +1,9 @@
 package es.in2.vcverifier.sso.infrastructure.web;
 
-import es.in2.vcverifier.shared.config.TenantDomainFilter;
-import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
-import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
@@ -25,7 +21,6 @@ import java.util.regex.Pattern;
  * <p>{@code __Host-} prefix: Secure, Path=/ and no Domain, so it is bound to the exact Verifier
  * host the browser used at /authorize and can't be planted from a sibling subdomain.
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SsoBrowserBindingCookie {
@@ -43,24 +38,18 @@ public class SsoBrowserBindingCookie {
     // 256-bit value, base64url without padding → exactly 43 characters of the URL-safe alphabet.
     private static final Pattern VALUE_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{43}$");
 
-    private final TenantSsoConfigPort tenantSsoConfigPort;
     private final HashingService hashingService;
     private final SsoSessionCookieFactory sessionCookieFactory;
 
     /**
-     * Binds the login being started to this browser when the request's tenant has SSO enabled.
+     * Binds the login being started to this browser, whether or not the tenant has SSO enabled.
      * Reuses an existing well-formed cookie value (several tabs of the same browser logging in
      * concurrently must not invalidate each other), otherwise generates a fresh one. The value is
      * left in {@link #PENDING_VALUE_ATTRIBUTE} for the response handler to (re-)emit.
      *
-     * @return SHA-256 (hex) of the binding value, or {@code null} if the tenant has no SSO (EC-07:
-     * SSO-disabled tenants keep the legacy flow untouched)
+     * @return SHA-256 (hex) of the binding value
      */
-    public String bindIfSsoEnabled(HttpServletRequest request) {
-        String tenant = TenantDomainFilter.getCurrentTenant(request);
-        if (tenant == null || tenant.isBlank() || !isSsoEnabled(tenant)) {
-            return null;
-        }
+    public String bind(HttpServletRequest request) {
         String value = readValue(request).orElseGet(sessionCookieFactory::generateOpaqueSessionId);
         request.setAttribute(PENDING_VALUE_ATTRIBUTE, value);
         return hashingService.sha256(value);
@@ -82,7 +71,7 @@ public class SsoBrowserBindingCookie {
         return Optional.empty();
     }
 
-    /** The cookie to emit for this request, if {@link #bindIfSsoEnabled} bound it. */
+    /** The cookie to emit for this request, if {@link #bind} bound it. */
     public static Optional<ResponseCookie> pendingCookie(HttpServletRequest request) {
         Object value = request.getAttribute(PENDING_VALUE_ATTRIBUTE);
         return value instanceof String s && !s.isBlank() ? Optional.of(build(s)) : Optional.empty();
@@ -96,15 +85,5 @@ public class SsoBrowserBindingCookie {
                 .path("/")
                 .maxAge(MAX_AGE)
                 .build();
-    }
-
-    private boolean isSsoEnabled(String tenant) {
-        try {
-            return tenantSsoConfigPort.getByTenant(tenant).filter(TenantSsoConfig::ssoEnabled).isPresent();
-        } catch (RuntimeException _) {
-            // Unreadable config → no binding → no SSO for this login; the OID4VP login itself proceeds.
-            log.warn("event=sso_browser_binding_skipped tenant={} reason=config_unavailable", tenant);
-            return false;
-        }
     }
 }
