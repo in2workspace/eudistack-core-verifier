@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import es.in2.vcverifier.shared.crypto.CryptoComponent;
+import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.domain.util.SafeUrlValidator;
@@ -21,8 +22,11 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.PublicClientRefreshTokenAu
 import es.in2.vcverifier.oauth2.infrastructure.filter.PublicClientRefreshTokenAuthenticationProvider;
 import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationConverter;
 import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthenticationProvider;
+import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
+import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
@@ -32,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 
 import java.net.http.HttpClient;
+import java.util.Arrays;
 import java.util.Set;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
@@ -58,6 +63,8 @@ import org.springframework.security.web.SecurityFilterChain;
 public class AuthorizationServerConfig {
 
     private static final String AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED = "authorization_response_iss_parameter_supported";
+    private static final String ACR_VALUES_SUPPORTED = "acr_values_supported";
+    private static final String CLAIMS_PARAMETER_SUPPORTED = "claims_parameter_supported";
 
     private final CryptoComponent cryptoComponent;
     private final DIDService didService;
@@ -81,6 +88,9 @@ public class AuthorizationServerConfig {
     private final SsoSessionLogoutFailureHandler ssoSessionLogoutFailureHandler;
     private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
     private final SsoBrowserBindingCookie ssoBrowserBindingCookie;
+    private final TenantLoginMethodsPort tenantLoginMethodsPort;
+    private final DcqlProfileResolver dcqlProfileResolver;
+    private final WalletLoginWorkflow walletLoginWorkflow;
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -113,7 +123,7 @@ public class AuthorizationServerConfig {
                                 // Adds an AuthenticationConverter (pre-processor) used when attempting to extract
                                 // an OAuth2 authorization request (or consent) from HttpServletRequest to an instance
                                 // of OAuth2AuthorizationCodeRequestAuthenticationToken or OAuth2AuthorizationConsentAuthenticationToken.
-                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,safeUrlValidator,reuseSsoSessionWorkflow,ssoBrowserBindingCookie))
+                                .authorizationRequestConverter(new CustomAuthorizationRequestConverter(didService,jwtService,cacheStoreForOAuth2AuthorizationRequest,backendConfig,registeredClientRepository, backendConfig.isFapiNonceRequired(),backendConfig.getLoginSelectionTimeoutSeconds(),httpClient,authorizationRequestBuildWorkflow,safeUrlValidator,reuseSsoSessionWorkflow,ssoBrowserBindingCookie,tenantLoginMethodsPort,dcqlProfileResolver,walletLoginWorkflow))
                                 .errorResponseHandler(new CustomErrorResponseHandler(allowedClientsOrigins, backendConfig))
                 )
                 .tokenEndpoint(tokenEndpoint ->
@@ -150,6 +160,8 @@ public class AuthorizationServerConfig {
                         metadataEndpoint.authorizationServerMetadataCustomizer(builder -> builder
                                 .claim(AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED, true)))
                 .oidc(oidc -> oidc
+                        .userInfoEndpoint(userInfoEndpoint -> userInfoEndpoint
+                                .userInfoMapper(new IdTokenUserInfoMapper()))
                         // US-06 (AD-1): enganche del Single Logout tras la validación estándar
                         // RP-Initiated Logout (id_token_hint / post_logout_redirect_uri) — no
                         // reimplementa esa validación, solo decora el resultado (éxito/fallo).
@@ -168,6 +180,10 @@ public class AuthorizationServerConfig {
                                         .claim("backchannel_logout_session_supported", true)
                                         .claim("frontchannel_logout_supported", false)
                                         .claim(AUTHORIZATION_RESPONSE_ISS_PARAMETER_SUPPORTED, true)
+                                        .claim(ACR_VALUES_SUPPORTED, Arrays.stream(AssuranceLevel.values())
+                                                .map(AssuranceLevel::acrValue)
+                                                .toList())
+                                        .claim(CLAIMS_PARAMETER_SUPPORTED, true)
                                 )
                         )
                 );

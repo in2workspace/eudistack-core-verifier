@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.Mockito.mock;
@@ -64,7 +65,7 @@ class EstablishSsoSessionWorkflow_AuditHolderHashTest {
                 hashingService, Clock.systemUTC(), credentialCipherPort);
 
         SsoSessionCommand command = new SsoSessionCommand(TENANT, RAW_SUB, "client-a", "corr-1",
-                "{\"sub\":\"" + RAW_SUB + "\"}");
+                credential("{\"sub\":\"" + RAW_SUB + "\"}"));
 
         workflow.execute(command);
 

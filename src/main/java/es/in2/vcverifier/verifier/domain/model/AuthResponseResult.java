@@ -1,6 +1,6 @@
 package es.in2.vcverifier.verifier.domain.model;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 
 /**
  * Outcome of a successfully verified OID4VP authorization response (wallet POST).
@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  * decides whether the browser goes straight to {@code redirectUrl} (no SSO) or first through the
  * browser-bound close step that establishes the SSO session in the browser that started the login.
  *
- * @param credentialJson            resolved claims of the verified credential (SSO snapshot source)
+ * @param authentication            verified authentication of the login (SSO snapshot source)
  * @param redirectUrl               {@code redirectUri?code=...&state=...&iss=...} for the relying party
  * @param redirectUri               the client's registered redirect_uri, as validated at /authorize
  * @param state                     OAuth2 state of the login (SSE channel key)
@@ -22,7 +22,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  *                                   issuer of that request ({@code iss} of the authorization responses)
  */
 public record AuthResponseResult(
-        JsonNode credentialJson,
+        AuthenticationResult authentication,
         String redirectUrl,
         String redirectUri,
         String state,

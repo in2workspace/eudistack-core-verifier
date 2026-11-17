@@ -1,6 +1,6 @@
 package es.in2.vcverifier.sso.domain.model;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 
 /**
  * EUD-252: a cross-device login whose VP was already verified (wallet POST) but whose SSO session
@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  * @param holderSubject      RAW subject of the presented credential (hashed by the establishment
  *                           workflow); {@code null} when the login is not SSO-eligible
  * @param clientId           OAuth2 client that started the login
- * @param credentialJson     verified credential claims (SSO snapshot)
+ * @param authentication     verified authentication of the login (SSO snapshot)
  * @param redirectUrl        {@code redirectUri?code=...&state=...&iss=...} to deliver on success
  * @param redirectUri        client's registered redirect_uri (target of the error redirect)
  * @param state              OAuth2 state of the login
@@ -25,7 +25,7 @@ public record PendingSsoLogin(
         String tenant,
         String holderSubject,
         String clientId,
-        JsonNode credentialJson,
+        AuthenticationResult authentication,
         String redirectUrl,
         String redirectUri,
         String state,

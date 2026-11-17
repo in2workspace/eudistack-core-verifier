@@ -1,5 +1,6 @@
 package es.in2.vcverifier.shared.domain.exception.handler;
 
+import es.in2.vcverifier.oauth2.domain.exception.LevelNotMetException;
 import es.in2.vcverifier.oauth2.domain.exception.LoginTimeoutException;
 import es.in2.vcverifier.shared.domain.exception.*;
 import es.in2.vcverifier.shared.domain.model.GlobalErrorMessage;
@@ -185,6 +186,16 @@ public class GlobalExceptionHandler {
                 "Login time has expired",
                 HttpStatus.UNAUTHORIZED,
                 "The login session has timed out");
+    }
+
+    @ExceptionHandler(LevelNotMetException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public GlobalErrorMessage handleLevelNotMetException(LevelNotMetException ex, HttpServletRequest request) {
+        return errors.handleSafe(ex, request,
+                VerifierErrorTypes.LEVEL_NOT_MET.getCode(),
+                "Level not met",
+                HttpStatus.FORBIDDEN,
+                "The credential does not meet the level the application requires");
     }
 
     @ExceptionHandler(StatusListCredentialException.class)

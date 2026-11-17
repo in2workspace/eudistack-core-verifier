@@ -1,6 +1,5 @@
 package es.in2.vcverifier.sso.it;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationContext;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.model.TenantSsoConfig;
@@ -39,6 +38,7 @@ import java.util.Base64;
 import java.util.Set;
 import java.util.logging.Logger;
 
+import static es.in2.vcverifier.sso.SsoTestAuthentications.credential;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -90,7 +90,11 @@ class SsoCredentialSnapshotMultiInstanceIT {
                     expires_at     TIMESTAMPTZ NOT NULL,
                     last_used_at   TIMESTAMPTZ NOT NULL,
                     state          VARCHAR(32) NOT NULL,
-                    credential_snapshot BYTEA
+                    credential_snapshot BYTEA,
+                    auth_method    VARCHAR(16) NOT NULL DEFAULT 'wallet',
+                    acr            TEXT,
+                    amr            TEXT[],
+                    certificate_not_after TIMESTAMPTZ
                 )
                 """);
         }
@@ -124,7 +128,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor = establishWorkflow.execute(
                 new SsoSessionCommand(TENANT, HOLDER_SUB, "initiator-client", "corr-1",
-                        "{\"sub\":\"" + HOLDER_SUB + "\"}"));
+                        credential("{\"sub\":\"" + HOLDER_SUB + "\"}")));
 
         assertThat(descriptor).isNotNull();
 
@@ -151,7 +155,7 @@ class SsoCredentialSnapshotMultiInstanceIT {
 
         EstablishSsoSessionWorkflow.SsoSessionCookieDescriptor descriptor = establishWorkflow.execute(
                 new SsoSessionCommand(TENANT, HOLDER_SUB, "initiator-client", "corr-2",
-                        "{\"sub\":\"" + HOLDER_SUB + "\"}"));
+                        credential("{\"sub\":\"" + HOLDER_SUB + "\"}")));
 
         assertThat(descriptor).isNotNull();
 
@@ -203,12 +207,12 @@ class SsoCredentialSnapshotMultiInstanceIT {
         when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(registeredClient);
 
         when(authorizationResponseProcessorService.issueCodeForReusedSession(
-                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(REDIRECT_URI + "?code=fake-code&state=xyz");
 
         ReuseSsoSessionWorkflowImpl workflow = new ReuseSsoSessionWorkflowImpl(
                 configPort, repository, Clock.systemUTC(), mock(SsoAuditPort.class), mock(SsoMetricsPort.class),
-                registeredClientRepository, authorizationResponseProcessorService, cipherPort, new ObjectMapper());
+                registeredClientRepository, authorizationResponseProcessorService, cipherPort);
 
         AuthorizationContext ctx = AuthorizationContext.builder()
                 .redirectUri(REDIRECT_URI)

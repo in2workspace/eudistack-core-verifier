@@ -161,6 +161,7 @@ class CrossDeviceSsoLoginIT {
 
     @BeforeEach
     void setUp() {
+        when(dcqlProfileResolver.requestsAttestation(any())).thenReturn(true);
         jdbcTemplate.execute("DELETE FROM sso_session");
         reset(auditPort);
         clearInvocations(sseEmitterStore);
@@ -186,10 +187,10 @@ class CrossDeviceSsoLoginIT {
                     cached.getClientId(), cached.getRedirectUri(), cached.getScopes(), state,
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
-                    null, credentialJson, null, cached.getAuthorizationUri());
+                    null, CrossDeviceLoginTestSupport.credentialAuthentication(credentialJson), cached.getAuthorizationUri());
             String code = codeFrom(redirectUrl);
             issuedCodes.put(state, code);
-            return new AuthResponseResult(credentialJson, redirectUrl, cached.getRedirectUri(), state,
+            return new AuthResponseResult(CrossDeviceLoginTestSupport.credentialAuthentication(credentialJson), redirectUrl, cached.getRedirectUri(), state,
                     cached.getClientId(), code, (String) addl.get(BROWSER_BINDING_HASH), cached.getAuthorizationUri());
         }).when(authorizationResponseProcessorService).handleAuthResponse(anyString(), anyString(), any());
     }
@@ -430,30 +431,29 @@ class CrossDeviceSsoLoginIT {
     }
 
     // =========================================================
-    // EC-07: SSO-disabled tenant keeps the legacy flow
+    // EC-07: SSO-disabled tenant binds the browser but never gets an SSO session
     // =========================================================
 
     @Test
-    void ssoDisabledTenant_noBindingCookie_andSseCarriesRpRedirectDirectly() throws Exception {
+    void ssoDisabledTenant_bindsTheBrowser_andClosesWithTheCodeWithoutSsoSession() throws Exception {
         // Given
         when(tenantSsoConfigPort.getByTenant(anyString())).thenReturn(Optional.of(config(false)));
         String state = "legacy-" + UUID.randomUUID();
 
-        // When: the browser starts the login
-        MvcResult authorize = mockMvc.perform(authorizeRequest(state))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", containsString("/login?")))
-                .andReturn();
-
-        // Then: no browser-binding cookie
-        assertThat(authorize.getResponse().getCookie(TX_COOKIE)).isNull();
-
-        // When: the wallet presents
+        // When: the browser starts the login and the wallet presents
+        Cookie tx = authorizeInBrowser(state);
         MvcResult walletResult = walletPost(state);
 
-        // Then: no cookie for the wallet; the SSE carries the RP redirect with the code, as before
+        // Then: no cookie for the wallet; the SSE carries the close URL, and the bound browser gets the code
         assertThat(walletResult.getResponse().getHeaders("Set-Cookie")).isEmpty();
-        assertThat(sseUrlFor(state)).startsWith(REDIRECT_URI + "?code=").contains("state=" + state);
+        String closeUrl = sseUrlFor(state);
+        assertThat(closeUrl).contains("/api/login/complete?h=").doesNotContain("code=");
+        browserClose(closeUrl, tx)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", startsWith(REDIRECT_URI + "?code=")))
+                .andExpect(cookie().doesNotExist(SSO_COOKIE));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sso_session WHERE tenant = ?",
+                Integer.class, TENANT)).isZero();
     }
 
     // =========================================================

@@ -2,11 +2,13 @@ package es.in2.vcverifier.sso.application.workflow;
 
 import es.in2.vcverifier.shared.domain.port.TenantSsoConfigPort;
 import es.in2.vcverifier.sso.application.command.SsoSessionCommand;
+import es.in2.vcverifier.sso.application.service.AuthenticationSnapshot;
 import es.in2.vcverifier.sso.application.service.HashingService;
 import es.in2.vcverifier.sso.domain.exception.SsoConfigInconsistentException;
 import es.in2.vcverifier.sso.domain.exception.SsoDisabledForTenantException;
 import es.in2.vcverifier.sso.domain.model.SsoAuditEvent;
 import es.in2.vcverifier.sso.domain.model.SsoSession;
+import es.in2.vcverifier.sso.domain.model.SsoSessionAuthentication;
 import es.in2.vcverifier.sso.domain.model.SsoSessionTtl;
 import es.in2.vcverifier.sso.domain.port.SsoAuditPort;
 import es.in2.vcverifier.sso.domain.port.SsoCredentialCipherPort;
@@ -68,7 +70,7 @@ public class EstablishSsoSessionWorkflow {
         SsoSession session;
 
         try {
-            sessionRepositoryPort.supersedeActive(command.tenant(), holderHash);
+            sessionRepositoryPort.supersedeActive(command.tenant(), holderHash, command.browserSessionId());
 
             session = SsoSession.establish(
                     command.tenant(),
@@ -77,6 +79,7 @@ public class EstablishSsoSessionWorkflow {
             );
 
             attachCredentialSnapshot(session, command);
+            session.recordAuthentication(SsoSessionAuthentication.of(command.authentication()));
 
             sessionRepositoryPort.save(session);
 
@@ -139,13 +142,12 @@ public class EstablishSsoSessionWorkflow {
      * establece sesión ni cookie.
      */
     private void attachCredentialSnapshot(SsoSession session, SsoSessionCommand command) {
-        String credentialJson = command.credentialJson();
-        if (credentialJson == null || credentialJson.isBlank()) {
+        if (command.authentication() == null) {
             throw new IllegalStateException(
-                    "Cannot establish an SSO session without verified credential claims to snapshot");
+                    "Cannot establish an SSO session without a verified authentication to snapshot");
         }
         byte[] ciphertext = credentialCipherPort.encrypt(
-                command.tenant(), session.getId().getValue(), credentialJson);
+                command.tenant(), session.getId().getValue(), AuthenticationSnapshot.write(command.authentication()));
         session.attachCredentialSnapshot(ciphertext);
     }
 
