@@ -165,10 +165,33 @@ class ClientCertificateReaderTest {
         assertThat(chain).containsExactly(leaf, intermediate, root);
     }
 
+    @Test
+    void readChain_certificateAndChainPercentEncodedAsCloudFrontSendsThem_areRead() throws Exception {
+        X509Certificate leaf = personCertificate("IDCES-12345678Z", null);
+        X509Certificate intermediate = personCertificate(null, null);
+        X509Certificate root = personCertificate(null, null);
+        String encodedLeaf = cloudFrontEncoded(byteSequence(leaf));
+
+        List<X509Certificate> chain = reader.readChain(encodedLeaf,
+                List.of(cloudFrontEncoded(byteSequence(intermediate)), cloudFrontEncoded(byteSequence(root))));
+
+        assertThat(encodedLeaf).contains("%");
+        assertThat(chain).containsExactly(leaf, intermediate, root);
+    }
+
+    @Test
+    void readChain_lowercasePercentEncoding_isRead() throws Exception {
+        X509Certificate leaf = personCertificate("IDCES-12345678Z", null);
+
+        assertThat(reader.readChain(lowercaseEscapes(cloudFrontEncoded(byteSequence(leaf))), NO_CHAIN))
+                .containsExactly(leaf);
+    }
+
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
             "MIIBsecretvalue | not a byte sequence",
             ":MIIB secret-value: | not base64",
+            ":MIIB%2Csecretvalue: | not base64",
             ":c2VjcmV0LXZhbHVl: | not an X.509 certificate",
             ": | not a byte sequence"
     })
@@ -229,5 +252,13 @@ class ClientCertificateReaderTest {
 
     private static String byteSequence(X509Certificate certificate) throws Exception {
         return ":" + Base64.getEncoder().encodeToString(certificate.getEncoded()) + ":";
+    }
+
+    private static String cloudFrontEncoded(String byteSequence) {
+        return byteSequence.replace("+", "%2B").replace("/", "%2F").replace("=", "%3D");
+    }
+
+    private static String lowercaseEscapes(String encoded) {
+        return encoded.replace("%2B", "%2b").replace("%2F", "%2f").replace("%3D", "%3d");
     }
 }
