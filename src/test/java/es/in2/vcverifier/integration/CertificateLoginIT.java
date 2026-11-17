@@ -59,7 +59,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 @SpringBootTest(properties = {
         "spring.flyway.enabled=false",
-        "verifier.certificate-login.secure-origin=" + CertificateLoginIT.SECURE_ORIGIN,
         "verifier.certificate-login.tenants.cgcom.login-origin=" + CertificateLoginIT.LOGIN_ORIGIN,
         "verifier.certificate-login.tenants.kpmg.login-origin=" + CertificateLoginIT.OTHER_LOGIN_ORIGIN,
         "verifier.certificate-login.subject-key=0123456789abcdef0123456789abcdef",
@@ -76,7 +75,6 @@ class CertificateLoginIT {
     static final String TENANT = "cgcom";
     static final String HOST = "cgcom.example.com";
     static final String SECURE_HOST = "secure.example.com";
-    static final String SECURE_ORIGIN = "test-secure-origin-0123456789abcdef0123";
     static final String LOGIN_ORIGIN = "https://cgcom.example.com";
     static final String OTHER_LOGIN_ORIGIN = "https://kpmg.example.com";
     private static final String CLIENT_ID = "issuance-portal-cgcom";
@@ -337,53 +335,19 @@ class CertificateLoginIT {
     }
 
     @Test
-    void certificateHeaderOutsideTheCertificateLogin_isForbiddenEvenFromTheSecureOrigin() throws Exception {
+    void certificateHeaderOutsideTheCertificateLogin_isForbidden() throws Exception {
         X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, true), DssStub.QC_WITH_QSCD);
         String header = TestCertificates.header(certificate);
         int callsBefore = DSS.calls();
 
         assertForbidden(get("/api/login/methods").param("state", "s").with(host(HOST))
                 .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header));
-        assertForbidden(post("/oidc/token").with(fromSecureOrigin(SECURE_HOST))
+        assertForbidden(post("/oidc/token").with(host(SECURE_HOST))
                 .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header));
         assertThat(DSS.calls()).isEqualTo(callsBefore);
     }
 
-    @Test
-    void certificateLoginWithoutTheSecureOrigin_isForbiddenAndLeavesTheLoginOpen() throws Exception {
-        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, true), DssStub.QC_WITH_QSCD);
-        String header = TestCertificates.header(certificate);
-        Login login = openLogin("openid");
-        String body = objectMapper.writeValueAsString(Map.of("state", login.state()));
-        int callsBefore = DSS.calls();
 
-        assertForbidden(post("/api/login/certificate").with(host(HOST))
-                .header(X_TENANT_HEADER, TENANT)
-                .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header)
-                .contentType(MediaType.APPLICATION_JSON).content(body));
-        assertForbidden(post("/api/login/certificate").with(host(SECURE_HOST))
-                .header(CertificateLoginFilter.SECURE_ORIGIN_HEADER, "not-the-secure-origin-of-the-distribution")
-                .header(X_TENANT_HEADER, TENANT)
-                .header(CertificateLoginFilter.CLIENT_CERT_HEADER, header)
-                .contentType(MediaType.APPLICATION_JSON).content(body));
-        assertThat(DSS.calls()).isEqualTo(callsBefore);
-
-        assertThat(certificateLogin(login, header).getResponse().getStatus()).isEqualTo(200);
-    }
-
-    @Test
-    @ExtendWith(OutputCaptureExtension.class)
-    void logs_neverContainTheSecureOrigin(CapturedOutput output) throws Exception {
-        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
-        Login login = openLogin("openid");
-
-        mockMvc.perform(post("/api/login/certificate").with(host(SECURE_HOST))
-                .header(CertificateLoginFilter.SECURE_ORIGIN_HEADER, "not-the-secure-origin-of-the-distribution")
-                .contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"s\"}"));
-        certificateLogin(login, TestCertificates.header(certificate));
-
-        assertThat(output.getAll()).doesNotContain(SECURE_ORIGIN, "not-the-secure-origin-of-the-distribution");
-    }
 
     @Test
     void certificateLoginWithoutTenantHeader_isNotFoundWithoutCallingTheTrustValidation() throws Exception {
@@ -539,17 +503,17 @@ class CertificateLoginIT {
     @Test
     void malformedCertificateLogin_isAnInvalidRequestProblem() throws Exception {
         int dssCalls = DSS.calls();
-        assertRejected(mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+        assertRejected(mockMvc.perform(post("/api/login/certificate").with(host(SECURE_HOST))
                 .header(X_TENANT_HEADER, TENANT).contentType(MediaType.APPLICATION_JSON)).andReturn(),
                 400, "invalid_request");
-        assertRejected(mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+        assertRejected(mockMvc.perform(post("/api/login/certificate").with(host(SECURE_HOST))
                 .header(X_TENANT_HEADER, TENANT).contentType(MediaType.APPLICATION_JSON).content("{\"state\":")).andReturn(),
                 400, "invalid_request");
-        assertRejected(mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+        assertRejected(mockMvc.perform(post("/api/login/certificate").with(host(SECURE_HOST))
                 .header(X_TENANT_HEADER, TENANT).contentType(MediaType.TEXT_PLAIN).content("state")).andReturn(),
                 415, "invalid_request");
 
-        MvcResult withoutState = mockMvc.perform(post("/api/login/certificate").with(fromSecureOrigin(SECURE_HOST))
+        MvcResult withoutState = mockMvc.perform(post("/api/login/certificate").with(host(SECURE_HOST))
                 .header(X_TENANT_HEADER, TENANT).contentType(MediaType.APPLICATION_JSON).content("{}")).andReturn();
         assertRejected(withoutState, 400, "invalid_request");
         assertThat(objectMapper.readTree(withoutState.getResponse().getContentAsString()).path("violations"))
@@ -634,7 +598,7 @@ class CertificateLoginIT {
     private MvcResult certificateLogin(String state, String certificateHeader, String tenant, String origin,
                                        Map<String, String> headers) throws Exception {
         var request = post("/api/login/certificate")
-                .with(fromSecureOrigin(SECURE_HOST))
+                .with(host(SECURE_HOST))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("state", state)));
         if (tenant != null) {
@@ -685,13 +649,6 @@ class CertificateLoginIT {
         };
     }
 
-    private static RequestPostProcessor fromSecureOrigin(String host) {
-        return request -> {
-            host(host).postProcessRequest(request);
-            request.addHeader(CertificateLoginFilter.SECURE_ORIGIN_HEADER, SECURE_ORIGIN);
-            return request;
-        };
-    }
 
     private static String randomAddress() {
         ThreadLocalRandom random = ThreadLocalRandom.current();
