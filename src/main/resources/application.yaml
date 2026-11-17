@@ -86,6 +86,11 @@ management:
       show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when-authorized}
       probes:
         enabled: true
+      group:
+        # Explicit, so that no health indicator is ever added to readiness by a change of default: a
+        # broken audit outbox must not take the Verifier out of rotation (PA-08).
+        readiness:
+          include: readinessState
     prometheus:
       access: unrestricted
   health:
@@ -115,6 +120,13 @@ management:
         http.server.requests: 10ms
       maximum-expected-value:
         http.server.requests: 5s
+
+auditoria:
+  source: verifier
+  publisher:
+    enabled: ${AUDIT_PUBLISHER_ENABLED:false}
+  dispatcher:
+    enabled: ${AUDIT_DISPATCHER_ENABLED:false}
 
 # ──────────────────────────────────────────────────────────
 # Verifier configuration

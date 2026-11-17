@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (EUD-244, version 3.5.0)
+
+- **EUD-244 — Audit events (catalogue 2.2.0)**: `SystemAuthenticated` for the client-credentials grant of machine clients and `ExternalSystemAccess` for the calls to the client registry and the trusted list, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the Verifier behaves as before.
+- **EUD-244 — Audit context before Spring Security**: the audit context is opened ahead of the security filter chain, where the token endpoint authenticates clients.
+- **EUD-244 — Audit API token as a machine**: with `auditoria.dispatcher.enabled=true` the Verifier asks its own token endpoint for the token of the Audit API (`client_credentials` with its machine attestation), instead of holding a bearer. It needs `AUDIT_M2M_TOKEN_URL` (https; plain http only on localhost or with `auditoria.client.allow-insecure-http=true`), `AUDIT_M2M_TENANT`, `AUDIT_M2M_CLIENT_ID`, `AUDIT_M2M_CREDENTIAL`, `AUDIT_M2M_PRIVATE_KEY` and `AUDIT_M2M_ASSERTION_AUDIENCE`, and does not start without them. The token has the audience of the Verifier (PA-03).
+- **EUD-244 — Refused machines do not flood the trail**: a refused authentication with a `client_id` that is too long or has unexpected characters is not reported, and the refusals of one client, tenant and reason, and all of them together, are limited per minute. An accepted one is always reported, with the validated system as the actor, and a failure to report it answers `server_error`.
 ### Added
 
 - **EUD-313 — login with a qualified certificate**: each client declares its `loginMethods` (`wallet`, `x509`) and the tenant enables `x509` in `verifier.certificate-login.tenants`. `POST /api/login/certificate` reads the certificate from `Client-Cert` and `Client-Cert-Chain` (RFC 9440, as the CloudFront mTLS distribution forwards them), takes the tenant from `X-Tenant`, validates the certificate with the trust validation service (DSS) and completes the login. The `sub` is an HMAC of tenant, country and identification number.

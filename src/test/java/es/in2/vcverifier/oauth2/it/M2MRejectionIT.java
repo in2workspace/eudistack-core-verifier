@@ -211,7 +211,7 @@ class M2MRejectionIT {
     private static final String PRE_REGISTERED_CLIENT_ID = "m2m-preregistered-client";
 
     @Test
-    void preRegisteredMachineClientIsNotAffected_getsTokenAndPublishesNoRejectAudit() throws Exception {
+    void preRegisteredMachineClientIsNotAffected_getsTokenAndPublishesOnlyAnAcceptAudit() throws Exception {
         // Real pre-registered M2M clients authenticate with private_key_jwt, which would require
         // a signed JWT verifiable against the client's registered JWKS — out of scope for this
         // Story's regression concern. What EC-02 actually needs to prove is that
@@ -250,7 +250,9 @@ class M2MRejectionIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").value("fake-access-token"));
 
-        verify(oAuth2M2MAuditPort, never()).publish(any());
+        ArgumentCaptor<OAuth2M2MAuditEvent> published = ArgumentCaptor.forClass(OAuth2M2MAuditEvent.class);
+        verify(oAuth2M2MAuditPort).publish(published.capture());
+        assertThat(published.getValue().getOutcome()).isEqualTo("ACCEPT");
     }
 
     // =========================================================
