@@ -822,7 +822,7 @@ class AuthorizationResponseProcessorServiceImplTest {
         // When
         assertThrows(IllegalArgumentException.class, () -> authorizationResponseProcessorService.issueCodeForReusedSession(
                 "client-id", redirectUri, scopes, "state-1", null, null, null,
-                authentication, "https://tenant-a.example.com/verifier"));
+                authentication, "https://tenant-a.example.com/verifier", "correlation-1"));
 
         // Then: no orphan code left behind
         verify(oAuth2AuthorizationService, never()).save(any());

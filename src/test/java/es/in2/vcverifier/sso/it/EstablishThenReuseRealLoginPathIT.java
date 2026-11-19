@@ -136,7 +136,7 @@ class EstablishThenReuseRealLoginPathIT {
     @MockitoBean private CustomErrorResponseHandler customErrorResponseHandler;
     @MockitoBean private ClientRegistryProvider clientRegistryProvider;
     // Spy, not a full mock: ReuseSsoSessionWorkflowImpl's ALLOWED path calls the REAL
-    // issueCodeForReusedSession(...) on this same service to build the redirect Location — a
+    // issueCodeForReusedSession(..., "correlation-1") on this same service to build the redirect Location — a
     // full mock would silently return null there and break the reuse half of this test. Only
     // handleAuthResponse (real VP/SD-JWT verification) is stubbed below.
     @MockitoSpyBean private AuthorizationResponseProcessorService authorizationResponseProcessorService;

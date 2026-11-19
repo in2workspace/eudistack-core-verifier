@@ -57,6 +57,8 @@ public class Constants {
     // EUD-252 (F1): tenant resolved at /authorize; the wallet POST must come through the same tenant.
     public static final String AUTHORIZE_TENANT = "authorize_tenant";
     public static final String LOGIN_METHODS = "login_methods";
+    public static final String AUDIT_CORRELATION_ID = "audit_correlation_id";
+    public static final String SESSION_ORIGIN = "session_origin";
     public static final String ACR_REQUESTED = "acr_requested";
     public static final String ACR_ESSENTIAL = "acr_essential";
     public static final String ACCESS_PROFILE = "access_profile";

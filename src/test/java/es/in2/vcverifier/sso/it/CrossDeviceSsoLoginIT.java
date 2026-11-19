@@ -188,7 +188,7 @@ class CrossDeviceSsoLoginIT {
                     cached.getClientId(), cached.getRedirectUri(), cached.getScopes(), state,
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE),
                     (String) addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD),
-                    null, CrossDeviceLoginTestSupport.credentialAuthentication(credentialJson), cached.getAuthorizationUri());
+                    null, CrossDeviceLoginTestSupport.credentialAuthentication(credentialJson), cached.getAuthorizationUri(), "correlation-1");
             String code = codeFrom(redirectUrl);
             issuedCodes.put(state, code);
             return new AuthResponseResult(CrossDeviceLoginTestSupport.credentialAuthentication(credentialJson), redirectUrl, cached.getRedirectUri(), state,

@@ -61,6 +61,7 @@ import java.util.regex.Pattern;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACCESS_PROFILE;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_METHODS;
@@ -750,6 +751,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());
         }
         additionalParameters.put(LOGIN_METHODS, loginMethods.stream().map(LoginMethod::value).toList());
+        additionalParameters.put(AUDIT_CORRELATION_ID, UUID.randomUUID().toString());
         if (requestedLevel != null) {
             additionalParameters.put(ACR_REQUESTED, requestedLevel.level().acrValue());
             additionalParameters.put(ACR_ESSENTIAL, requestedLevel.essential());
