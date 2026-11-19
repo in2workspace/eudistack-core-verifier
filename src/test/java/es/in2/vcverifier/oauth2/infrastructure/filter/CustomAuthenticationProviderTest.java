@@ -19,6 +19,7 @@ import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.OAuth2M2MAuditEvent;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
 import es.in2.vcverifier.oauth2.domain.port.OAuth2M2MAuditPort;
+import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -88,6 +89,8 @@ class CustomAuthenticationProviderTest {
 
     @Mock
     private OAuth2M2MAuditPort oAuth2M2MAuditPort;
+    @Mock
+    private AuthenticationAuditPort authenticationAuditPort;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private RegisteredClientRepository registeredClientRepository;
@@ -117,7 +120,8 @@ class CustomAuthenticationProviderTest {
                 oAuth2AuthorizationService,
                 tokenGenerationWorkflow,
                 schemaProfileRegistry,
-                oAuth2M2MAuditPort
+                oAuth2M2MAuditPort,
+                authenticationAuditPort
         );
     }
 
@@ -440,7 +444,7 @@ class CustomAuthenticationProviderTest {
         provider = new CustomAuthenticationProvider(
                 registeredClientRepository, backendConfig, objectMapper,
                 cacheStoreForRefreshTokenData, oAuth2AuthorizationService, tokenGenerationWorkflow, schemaProfileRegistry,
-                oAuth2M2MAuditPort);
+                oAuth2M2MAuditPort, authenticationAuditPort);
 
         JsonNode vcJson = buildMachineCredentialV1();
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");

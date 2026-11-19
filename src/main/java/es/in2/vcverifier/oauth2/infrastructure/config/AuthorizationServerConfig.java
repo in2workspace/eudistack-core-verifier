@@ -25,6 +25,7 @@ import es.in2.vcverifier.oauth2.infrastructure.filter.UnregisteredM2MClientAuthe
 import es.in2.vcverifier.oauth2.application.workflow.WalletLoginWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
+import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
 import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.shared.crypto.DIDService;
@@ -87,6 +88,7 @@ public class AuthorizationServerConfig {
     private final SsoSessionLogoutHandler ssoSessionLogoutHandler;
     private final SsoSessionLogoutFailureHandler ssoSessionLogoutFailureHandler;
     private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
+    private final AuthenticationAuditPort authenticationAuditPort;
     private final SsoBrowserBindingCookie ssoBrowserBindingCookie;
     private final TenantLoginMethodsPort tenantLoginMethodsPort;
     private final DcqlProfileResolver dcqlProfileResolver;
@@ -129,7 +131,7 @@ public class AuthorizationServerConfig {
                 .tokenEndpoint(tokenEndpoint ->
                         tokenEndpoint
                                 .accessTokenRequestConverter(new CustomTokenRequestConverter(clientCredentialsValidationWorkflow, cacheStoreForAuthorizationCodeData, refreshTokenDataCacheCacheStore, oAuth2M2MAuditPort))
-                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService, tokenGenerationWorkflow, schemaProfileRegistry, oAuth2M2MAuditPort))
+                                .authenticationProvider(new CustomAuthenticationProvider(registeredClientRepository,backendConfig,objectMapper, refreshTokenDataCacheCacheStore, oAuth2AuthorizationService, tokenGenerationWorkflow, schemaProfileRegistry, oAuth2M2MAuditPort, authenticationAuditPort))
                                 // Refresh tokens are also registered in OAuth2AuthorizationService (needed
                                 // for RP-Initiated Logout's id_token_hint lookup — see getOAuth2RefreshToken),
                                 // which means Spring's own built-in OAuth2RefreshTokenAuthenticationProvider

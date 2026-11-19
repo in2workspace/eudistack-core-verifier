@@ -13,6 +13,7 @@ import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow.
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.model.CertificateLoginReason;
 import es.in2.vcverifier.verifier.domain.model.CertificateTrust;
+import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
 import es.in2.vcverifier.verifier.domain.port.CertificateTrustValidationPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,6 +73,8 @@ class CertificateLoginWorkflowTest {
     private AuthorizationResponseProcessorService authorizationResponseProcessorService;
     @Mock
     private SsoLoginCompletionWorkflow ssoLoginCompletionWorkflow;
+    @Mock
+    private AuthenticationAuditPort authenticationAuditPort;
 
     @Mock
     private X509Certificate leaf;
@@ -83,7 +86,7 @@ class CertificateLoginWorkflowTest {
     void setUp() {
         workflow = new CertificateLoginWorkflow(cache, clientCertificateReader, certificateTrustValidationPort,
                 certificateSubjectService, authorizationResponseProcessorService, ssoLoginCompletionWorkflow,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                authenticationAuditPort, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
