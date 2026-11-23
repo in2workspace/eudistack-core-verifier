@@ -7,14 +7,15 @@ import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.model.sdjwt.Disclosure;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwt;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.SdJwtVerificationService;
-import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
+import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
+import es.in2.vcverifier.verifier.domain.exception.TrustListUnavailableException;
+import es.in2.vcverifier.verifier.domain.port.IssuerTrustValidationPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,9 +41,7 @@ import java.util.*;
 public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
 
     private final DIDService didService;
-    private final TrustFrameworkService trustFrameworkService;
-    private final BackendConfig backendConfig;
-    private final CertificateChainValidator certificateChainValidator;
+    private final IssuerTrustValidationPort issuerTrustValidationPort;
 
     @Override
     public SdJwtVerificationResult verifyPresentation(String sdJwtCompact, String expectedAud, String expectedNonce) {
@@ -78,21 +77,31 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
 
             // 7. Validate issuer trust
             String issuer = claims.getIssuer();
-            if (issuer != null) {
-                log.debug("Validating issuer trust for: {}", issuer);
-                trustFrameworkService.getTrustedIssuerListData(issuer);
-            }
-
             String vct = (String) claims.getClaim("vct");
+            issuerTrustValidationPort.validate(x5cChain(issuerJwt), vct, issuer).orThrow();
+
             log.info("SD-JWT VC verified successfully. vct={}, issuer={}", vct, issuer);
 
             return new SdJwtVerificationResult(resolved, vct, holderKey);
 
-        } catch (JWTVerificationException e) {
+        } catch (JWTVerificationException | IssuerNotAuthorizedException | TrustListUnavailableException e) {
             throw e;
         } catch (Exception e) {
             throw new JWTVerificationException("SD-JWT verification failed: " + e.getMessage(), e);
         }
+    }
+
+    private static List<X509Certificate> x5cChain(SignedJWT issuerJwt) throws Exception {
+        List<com.nimbusds.jose.util.Base64> x5c = issuerJwt.getHeader().getX509CertChain();
+        if (x5c == null || x5c.isEmpty()) {
+            return List.of();
+        }
+        java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
+        List<X509Certificate> chain = new ArrayList<>();
+        for (com.nimbusds.jose.util.Base64 certificate : x5c) {
+            chain.add((X509Certificate) cf.generateCertificate(new java.io.ByteArrayInputStream(certificate.decode())));
+        }
+        return chain;
     }
 
     private void verifyIssuerSignature(SignedJWT issuerJwt, JWTClaimsSet claims) throws Exception {
@@ -114,18 +123,6 @@ public class SdJwtVerificationServiceImpl implements SdJwtVerificationService {
                 throw new JWTVerificationException("SD-JWT issuer signature verification failed via x5c");
             }
             log.debug("Issuer signature verified via x5c certificate (algorithm: {})", publicKey.getAlgorithm());
-
-            if (!backendConfig.isX5cChainValidationBypassed()) {
-                List<X509Certificate> fullChain = new ArrayList<>();
-                for (com.nimbusds.jose.util.Base64 b : x5c) {
-                    fullChain.add((X509Certificate) cf.generateCertificate(
-                            new java.io.ByteArrayInputStream(b.decode())));
-                }
-                certificateChainValidator.validateSelfContainedChain(fullChain);
-                log.debug("x5c chain validated to self-contained root ({} certs)", fullChain.size());
-            } else {
-                log.warn("x5c chain validation BYPASSED by config — legacy leaf-only verification active");
-            }
             return;
         }
 

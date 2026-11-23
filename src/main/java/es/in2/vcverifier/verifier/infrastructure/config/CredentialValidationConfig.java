@@ -1,6 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.config;
 
 import es.in2.vcverifier.shared.config.BackendConfig;
+import es.in2.vcverifier.verifier.domain.port.IssuerTrustValidationPort;
 import es.in2.vcverifier.verifier.domain.service.*;
 import es.in2.vcverifier.shared.crypto.*;
 import es.in2.vcverifier.verifier.infrastructure.adapter.schema.JsonSchemaCredentialValidator;
@@ -45,10 +46,8 @@ public class CredentialValidationConfig {
     @Bean
     public SdJwtVerificationService sdJwtVerificationService(
             DIDService didService,
-            TrustFrameworkService trustFrameworkService,
-            BackendConfig backendConfig,
-            CertificateChainValidator certificateChainValidator) {
+            IssuerTrustValidationPort issuerTrustValidationPort) {
         log.info("Registering SD-JWT Verification Service");
-        return new SdJwtVerificationServiceImpl(didService, trustFrameworkService, backendConfig, certificateChainValidator);
+        return new SdJwtVerificationServiceImpl(didService, issuerTrustValidationPort);
     }
 }

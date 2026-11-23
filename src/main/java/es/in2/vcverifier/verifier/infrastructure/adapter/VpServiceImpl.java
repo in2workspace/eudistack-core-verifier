@@ -7,10 +7,10 @@ import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.*;
 import es.in2.vcverifier.shared.domain.exception.*;
 import es.in2.vcverifier.verifier.domain.model.GenericCredential;
-import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import es.in2.vcverifier.verifier.domain.model.validation.RevocationPaths;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationPaths;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
+import es.in2.vcverifier.verifier.domain.port.IssuerTrustValidationPort;
 import es.in2.vcverifier.verifier.domain.service.*;
 import es.in2.vcverifier.shared.crypto.*;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +22,10 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayInputStream;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.text.ParseException;
 import java.time.Instant;
@@ -38,7 +42,7 @@ public class VpServiceImpl implements VpService {
 
     private final JWTService jwtService;
     private final ObjectMapper objectMapper;
-    private final TrustFrameworkService trustFrameworkService;
+    private final IssuerTrustValidationPort issuerTrustValidationPort;
     private final CertificateValidationService certificateValidationService;
     private final GenericCredentialFactory genericCredentialFactory;
     private final CredentialValidator credentialValidator;
@@ -92,12 +96,6 @@ public class VpServiceImpl implements VpService {
                 .orElseThrow(() -> new CredentialMappingException(
                         "Missing issuer ID at profile path: " + issuerIdPath));
 
-        // Step 6: Validate credential types against issuer capabilities
-        List<String> credentialTypes = credential.types();
-        List<IssuerCredentialsCapabilities> issuerCapabilitiesList = trustFrameworkService.getTrustedIssuerListData(credentialIssuer);
-        validateCredentialTypeWithIssuerCapabilities(issuerCapabilitiesList, credentialTypes);
-        log.info("Issuer {} is a trusted participant", credentialIssuer);
-
         // Step 7: Verify VC signature and certificate
         Map<String, Object> vcHeader = jwtCredential.getHeader().toJSONObject();
         certificateValidationService.extractAndVerifyCertificate(jwtCredential.serialize(), vcHeader, credentialIssuer);
@@ -119,6 +117,11 @@ public class VpServiceImpl implements VpService {
         } else {
             log.info("[BIND] cnf.jwk binding check skipped (M2M flow without holder binding)");
         }
+
+        // Step 10: Validate issuer trust with the trust validation service
+        issuerTrustValidationPort.validate(issuerChain(jwtCredential), credential.credentialConfigurationId(),
+                credentialIssuer).orThrow();
+        log.info("Issuer {} is trusted for {}", credentialIssuer, credential.credentialConfigurationId());
 
         log.info("Verifiable Presentation validation completed successfully");
     }
@@ -237,14 +240,22 @@ public class VpServiceImpl implements VpService {
         return !verifier.isRevoked(statusListCredential, statusListIndex, purpose);
     }
 
-    private void validateCredentialTypeWithIssuerCapabilities(List<IssuerCredentialsCapabilities> issuerCapabilitiesList, List<String> credentialTypes) {
-        for (String credentialType : credentialTypes) {
-            boolean isSupported = issuerCapabilitiesList.stream().anyMatch(capability -> capability.credentialsType().equals(credentialType));
-            if (isSupported) {
-                return;
-            }
+    private static List<X509Certificate> issuerChain(SignedJWT jwtCredential) {
+        List<com.nimbusds.jose.util.Base64> x5c = jwtCredential.getHeader().getX509CertChain();
+        if (x5c == null || x5c.isEmpty()) {
+            return List.of();
         }
-        throw new InvalidCredentialTypeException("Credential types " + credentialTypes + " are not supported by the issuer.");
+        try {
+            List<X509Certificate> chain = new ArrayList<>();
+            CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+            for (com.nimbusds.jose.util.Base64 certificate : x5c) {
+                chain.add((X509Certificate) certificateFactory.generateCertificate(
+                        new ByteArrayInputStream(certificate.decode())));
+            }
+            return chain;
+        } catch (CertificateException e) {
+            throw new IssuerNotAuthorizedException("The issuer certificate chain (x5c) cannot be read");
+        }
     }
 
     private SignedJWT extractFirstVerifiableCredential(String verifiablePresentation) {
