@@ -27,6 +27,7 @@ import es.in2.vcverifier.verifier.domain.exception.CredentialNotActiveException;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.exception.LoginTenantMismatchException;
 import es.in2.vcverifier.verifier.domain.exception.LegacyFormatSunsetClosedException;
+import es.in2.vcverifier.verifier.domain.exception.TrustListUnavailableException;
 import es.in2.vcverifier.verifier.domain.exception.UnknownCredentialFormatException;
 import es.in2.vcverifier.verifier.domain.model.dispatch.DispatchDecision;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
@@ -148,6 +149,11 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             sseEmitterStore.sendValidationFailed(state, "ISSUER_NOT_TRUSTED", "The credential issuer is not trusted");
             verificationFailure = e;
             throw e;
+        } catch (TrustListUnavailableException e) {
+            log.error("Issuer trust could not be checked: {}", e.getMessage());
+            sseEmitterStore.sendValidationFailed(state, "TRUST_LIST_UNAVAILABLE", "The issuer trust could not be checked");
+            verificationFailure = e;
+            throw e;
         } catch (LoginTimeoutException | LevelNotMetException | CredentialRevokedException | JWTVerificationException | OAuth2AuthenticationException
                  | LegacyFormatSunsetClosedException | BumpedFormatTemporarilyDisabledException | UnknownCredentialFormatException e) {
             // Already sent SSE event in the step that failed, just re-throw
@@ -221,7 +227,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             return isSdJwt(resolvedVpToken)
                     ? verifySdJwtPresentation(state, resolvedVpToken, cachedVpNonce, scopes)
                     : verifyJwtPresentation(state, resolvedVpToken, cachedVpNonce);
-        } catch (CredentialRevokedException e) {
+        } catch (CredentialRevokedException | IssuerNotAuthorizedException | TrustListUnavailableException e) {
             throw e;
         } catch (JWTVerificationException e) {
             sseEmitterStore.sendValidationFailed(state, "SIGNATURE_INVALID", "VP signature verification failed: " + e.getMessage());

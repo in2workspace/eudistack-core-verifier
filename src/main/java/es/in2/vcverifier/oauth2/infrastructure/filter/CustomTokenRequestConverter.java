@@ -18,6 +18,7 @@ import es.in2.vcverifier.verifier.domain.exception.CredentialRevokedException;
 import es.in2.vcverifier.verifier.domain.exception.InvalidCredentialTypeException;
 import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
 import es.in2.vcverifier.verifier.domain.exception.StatusListCredentialException;
+import es.in2.vcverifier.verifier.domain.exception.TrustListUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -174,7 +175,7 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
             log.warn("M2M client '{}' rejected: credential revoked: {}", LogSanitizer.sanitize(clientId), e.getMessage());
             publishAudit(clientId, AUDIT_REASON_CREDENTIAL_REVOKED);
             throw OAuth2ErrorTranslator.invalidGrant();
-        } catch (FailedCommunicationException | StatusListCredentialException e) {
+        } catch (FailedCommunicationException | StatusListCredentialException | TrustListUnavailableException e) {
             // Failure talking to an external dependency (trusted-issuers registry, status list) —
             // not the client's fault, so invalid_client/invalid_grant would be misleading.
             log.error("M2M client '{}' validation failed due to an infrastructure error: {}", LogSanitizer.sanitize(clientId), e.getMessage());

@@ -218,6 +218,16 @@ public class GlobalExceptionHandler {
                 "An error occurred while communicating with an external service");
     }
 
+    @ExceptionHandler(TrustListUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public GlobalErrorMessage handleTrustListUnavailableException(TrustListUnavailableException ex, HttpServletRequest request) {
+        return errors.handleSafe(ex, request,
+                VerifierErrorTypes.TRUST_LIST_UNAVAILABLE.getCode(),
+                "Trust list unavailable",
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "The issuer trust could not be checked");
+    }
+
     // SEC-W6: Bean Validation constraint violations return 400, not 500.
     @ExceptionHandler(ConstraintViolationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

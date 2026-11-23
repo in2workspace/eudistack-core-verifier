@@ -24,7 +24,8 @@ public enum VerifierErrorTypes {
     LEVEL_NOT_MET("level_not_met"),
     STATUS_LIST_ERROR("status_list_error"),
     SSRF_PROTECTION("ssrf_protection"),
-    FAILED_COMMUNICATION("failed_communication");
+    FAILED_COMMUNICATION("failed_communication"),
+    TRUST_LIST_UNAVAILABLE("trust_list_unavailable");
 
     private final String code;
 }
