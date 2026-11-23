@@ -58,7 +58,7 @@ class DssCertificateTrustValidationAdapterTest {
     @BeforeEach
     void startDss() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/dss" + DssCertificateTrustValidationAdapter.VALIDATE_CERTIFICATE_PATH, exchange -> {
+        server.createContext("/dss" + DssCertificateValidationClient.VALIDATE_CERTIFICATE_PATH, exchange -> {
             receivedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             if (answerLate) {
                 try {
@@ -155,7 +155,7 @@ class DssCertificateTrustValidationAdapterTest {
 
     @Test
     void validate_responseLargerThanTheLimit_isUnavailable() throws Exception {
-        responseBody = PASSED_WITH_QSCD + " ".repeat(DssCertificateTrustValidationAdapter.MAX_RESPONSE_BYTES);
+        responseBody = PASSED_WITH_QSCD + " ".repeat(DssCertificateValidationClient.MAX_RESPONSE_BYTES);
 
         assertThat(adapter(Duration.ofSeconds(5)).validate(certificate(false), List.of()))
                 .isEqualTo(new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE));
@@ -171,8 +171,9 @@ class DssCertificateTrustValidationAdapterTest {
 
     @Test
     void validate_withoutConfiguredUrl_isUnavailableWithoutCallingTheService() throws Exception {
+        TrustValidationProperties properties = new TrustValidationProperties(" ", null, null);
         DssCertificateTrustValidationAdapter adapter = new DssCertificateTrustValidationAdapter(
-                HttpClient.newHttpClient(), MAPPER, new TrustValidationProperties(" ", null, null),
+                new DssCertificateValidationClient(HttpClient.newHttpClient(), MAPPER, properties), properties,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertThat(adapter.validate(certificate(false), List.of()))
@@ -182,8 +183,10 @@ class DssCertificateTrustValidationAdapterTest {
 
     private DssCertificateTrustValidationAdapter adapter(Duration timeout) {
         String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/dss/";
-        return new DssCertificateTrustValidationAdapter(HttpClient.newHttpClient(), MAPPER,
-                new TrustValidationProperties(url, timeout, null), Clock.fixed(NOW, ZoneOffset.UTC));
+        TrustValidationProperties properties = new TrustValidationProperties(url, timeout, null);
+        return new DssCertificateTrustValidationAdapter(
+                new DssCertificateValidationClient(HttpClient.newHttpClient(), MAPPER, properties), properties,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static X509Certificate certificate(boolean withOrganizationIdentifier) throws Exception {
