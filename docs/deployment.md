@@ -60,11 +60,10 @@ No se usan perfiles de Spring (`application-prod.yaml`, etc.).
 | `VERIFIER_BACKEND_IDENTITY_PRIVATEKEY` | *(vacio)* | Clave privada EC P-256 en hexadecimal (con o sin prefijo `0x`). Si esta vacia, se genera un par efimero al arrancar (ver seccion 4). |
 | `VERIFIER_BACKEND_IDENTITY_DIDKEY` | *(vacio)* | `did:key` correspondiente a la clave privada. Si esta vacio pero `privateKey` tiene valor, se deriva automaticamente.               |
 | `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_NAME` | `DOME` | Nombre del trust framework. Actualmente solo se soporta `DOME`.                                                                     |
-| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDISSUERSLISTURL` | *(vacio)* | URL de la API EBSI v4 de issuers de confianza. Si esta vacia, se usa la lista local embebida (ver seccion 5).                       |
+| `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDISSUERSLISTURL` | *(vacio)* | URL de la API EBSI v4 de issuers de confianza. No interviene en la verificacion de atestaciones (ver seccion 5).                   |
 | `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDSERVICESLISTURL` | *(vacio)* | URL del YAML remoto con la lista de OIDC clients. Si esta vacia, se usa la lista local embebida (ver seccion 6).                    |
 | `VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH` | *(vacio)* | Path filesystem al `clients.yaml` externo. Si esta vacio, se usa el embebido en la imagen (ver seccion 6).                          |
 | `VERIFIER_BACKEND_SSO_CONFIG_PATH` | *(vacio)* | Path filesystem al `sso-config.yaml` externo.                 |
-| `VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH` | *(vacio)* | Path filesystem al `trusted-issuers.yaml` externo. Si esta vacio, se usa el embebido en la imagen (ver seccion 5).                  |
 | `VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR` | *(vacio)* | Directorio filesystem con JSON Schemas externos. Si esta vacio, se usan los embebidos en la imagen (ver seccion 7).                 |
 
 #### Frontend (`verifier.frontend.*`)
@@ -130,70 +129,15 @@ openssl ec -in key.pem -text -noout 2>/dev/null | grep -A 3 "priv:" | tail -3 | 
 
 ## 5. Trusted Issuers (quien puede emitir credenciales)
 
-El Verifier valida que el issuer de cada VC este en una lista de confianza.
+El Verifier no guarda ninguna lista de emisores. Al verificar una atestacion envia la cadena `x5c` del emisor al servicio de validacion de confianza (DSS), configurado con `VERIFIER_TRUSTVALIDATION_URL`, y confia en el emisor solo si:
 
-### Modo local (por defecto)
+- el resultado es valido,
+- la cadena llega a una entidad de la LoTE de emisores (`http://uri.eudistack.net/19602/LoTEType/EAAProvidersList`) cuyo `TradeName` es el emisor que declara la atestacion, y
+- esa entidad tiene el servicio `http://uri.eudistack.net/19602/SvcType/EAA/<credential_configuration_id>/Issuance` para el tipo de la atestacion.
 
-Cuando `VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDISSUERSLISTURL` esta **vacia**, se usa un fichero YAML embebido en la imagen. El fichero de desarrollo por defecto tiene wildcard `*` (confiar en todos):
+Si no, la verificacion da `IssuerNotTrusted`. Si DSS no responde, el resultado es indeterminado o la lista se cargo hace mas de `VERIFIER_TRUSTVALIDATION_MAXLISTAGE` (24 h por defecto), da `TrustListUnavailable`. Una atestacion sin `x5c` no es de confianza.
 
-```yaml
-# Confiar en TODOS los issuers (desarrollo):
-trustedIssuers:
-  "*": []
-```
-
-Para confiar solo en issuers especificos:
-
-```yaml
-trustedIssuers:
-  "did:elsi:VATES-A12345678":
-    - credentialsType: "LEARCredentialEmployee"
-  "did:elsi:VATES-B87654321":
-    - credentialsType: "LEARCredentialEmployee"
-    - credentialsType: "LEARCredentialMachine"
-```
-
-El fichero embebido esta en `src/main/resources/local/trusted-issuers.yaml`.
-
-### Modo fichero externo (volumen)
-
-Para inyectar un `trusted-issuers.yaml` personalizado **sin rebuild**, montarlo como volumen y configurar la env var:
-
-```yaml
-# docker-compose.yml
-services:
-  verifier:
-    volumes:
-      - ./config/trusted-issuers.yaml:/config/trusted-issuers.yaml:ro
-    environment:
-      VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH: /config/trusted-issuers.yaml
-```
-
-El formato es identico al embebido. Si el fichero externo no existe, se usa el embebido como fallback.
-
-En **Kubernetes**, montar un ConfigMap:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: verifier-trusted-issuers
-data:
-  trusted-issuers.yaml: |
-    trustedIssuers:
-      "did:elsi:VATES-A12345678":
-        - credentialsType: "LEARCredentialEmployee"
-```
-
-### Modo remoto (EBSI v4)
-
-Cuando la env var tiene un valor, se consulta la API EBSI v4 por HTTP:
-
-```env
-VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDISSUERSLISTURL=https://api-pilot.ebsi.eu/trusted-issuers-registry/v4/issuers/
-```
-
-El Verifier hace `GET {url}{issuerId}` para cada issuer encontrado en un VC.
+Dar de alta un emisor es anadirlo a la LoTE de emisores del entorno, no configurar el Verifier.
 
 ---
 
@@ -421,7 +365,6 @@ services:
       - .env
     volumes:
       - ./config/clients.yaml:/config/clients.yaml:ro
-      - ./config/trusted-issuers.yaml:/config/trusted-issuers.yaml:ro
       - ./config/schemas:/config/schemas:ro
     restart: unless-stopped
     healthcheck:
@@ -452,9 +395,8 @@ VERIFIER_BACKEND_URL=https://verifier.midominio.com
 VERIFIER_BACKEND_IDENTITY_PRIVATEKEY=0x73e509a5d2d37e8e...
 
 # --- Trust Framework ---
-# Trusted Issuers: dejar vacio para usar la lista local embebida,
-# o poner URL para consultar EBSI v4:
-VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDISSUERSLISTURL=https://api-pilot.ebsi.eu/trusted-issuers-registry/v4/issuers/
+# Servicio de validacion de confianza (DSS): decide la confianza en el emisor de cada atestacion
+VERIFIER_TRUSTVALIDATION_URL=http://dss-core:8080/dss
 
 # Client Registry: dejar vacio para usar clients.yaml embebido,
 # o poner URL para descargar YAML remoto (refresh cada 30 min):
@@ -464,7 +406,6 @@ VERIFIER_BACKEND_TRUSTFRAMEWORKS_0_TRUSTEDSERVICESLISTURL=https://raw.githubuser
 # Si se montan volumenes con config personalizada, indicar los paths:
 VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH=/config/clients.yaml
 VERIFIER_BACKEND_SSO_CONFIG_PATH=/config/sso-config.yaml
-VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH=/config/trusted-issuers.yaml
 VERIFIER_BACKEND_LOCALFILES_SCHEMASDIR=/config/schemas
 
 # --- Frontend ---

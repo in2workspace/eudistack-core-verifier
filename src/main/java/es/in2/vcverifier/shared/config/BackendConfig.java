@@ -117,10 +117,6 @@ public class BackendConfig {
         return properties.localFiles() != null ? properties.localFiles().clientsPath() : null;
     }
 
-    public String getLocalTrustedIssuersPath() {
-        return properties.localFiles() != null ? properties.localFiles().trustedIssuersPath() : null;
-    }
-
     public String getLocalSchemasDir() {
         return properties.localFiles() != null ? properties.localFiles().schemasDir() : null;
     }
@@ -146,18 +142,6 @@ public class BackendConfig {
 
     public boolean isFapiNonceRequired() {
         return properties.fapiNonceRequired() != null ? properties.fapiNonceRequired() : true;
-    }
-
-    public boolean isX5cChainValidationBypassed() {
-        return properties.x5cChainValidation() != null
-                && Boolean.TRUE.equals(properties.x5cChainValidation().bypass());
-    }
-
-    public boolean isAiaChasingEnabled() {
-        return properties.x5cChainValidation() == null
-                || properties.x5cChainValidation().aiaChasing() == null
-                || properties.x5cChainValidation().aiaChasing().enabled() == null
-                || Boolean.TRUE.equals(properties.x5cChainValidation().aiaChasing().enabled());
     }
 
     public long getAccessTokenExpirationSeconds() {

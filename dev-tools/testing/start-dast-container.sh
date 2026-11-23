@@ -10,7 +10,7 @@ for variable in CONTAINER_IMAGE CONTAINER_NAME DAST_DB_HOST DAST_DB_PORT \
 done
 
 config_directory="${PWD}/dev-tools/local-config"
-for config_file in clients.yaml trusted-issuers.yaml sso-config.yaml dcql-profiles.yaml; do
+for config_file in clients.yaml sso-config.yaml dcql-profiles.yaml; do
   if [[ ! -f "${config_directory}/${config_file}" ]]; then
     echo "::error::Missing required Verifier DAST configuration: ${config_directory}/${config_file}"
     exit 1
@@ -29,7 +29,6 @@ docker run -d --name "${CONTAINER_NAME}" \
   -e SPRING_FLYWAY_USER="${DAST_DB_USERNAME}" \
   -e SPRING_FLYWAY_PASSWORD="${DAST_DB_PASSWORD}" \
   -e VERIFIER_BACKEND_LOCALFILES_CLIENTSPATH=/etc/eudistack/verifier/clients.yaml \
-  -e VERIFIER_BACKEND_LOCALFILES_TRUSTEDISSUERSPATH=/etc/eudistack/verifier/trusted-issuers.yaml \
   -e VERIFIER_BACKEND_LOCALFILES_SSOCONFIGPATH=/etc/eudistack/verifier/sso-config.yaml \
   -e VERIFIER_BACKEND_LOCALFILES_DCQLPATH=/etc/eudistack/verifier/dcql-profiles.yaml \
   -e VERIFIER_SSO_CREDENTIAL_ENCRYPTION_KEY=3Cm+63BqBWB7Y/HTa47aD0ZZvsPRIIyxUiGJubKQJR4= \
