@@ -52,7 +52,7 @@ final class DssIssuerReportTranslator {
                                                    String declaredIssuer, Instant now, Duration maxListAge) {
         String expectedServiceType = serviceTypeFor(credentialConfigurationId);
         String expectedIssuer = stripDidElsiPrefix(declaredIssuer);
-        boolean staleListFound = false;
+        String unusableListReason = null;
         for (JsonNode certificate : diagnosticData.path("Certificate")) {
             for (JsonNode entity : certificate.path("TrustedEntity")) {
                 JsonNode list = listById(diagnosticData, text(entity.path("LoTE")));
@@ -63,8 +63,9 @@ final class DssIssuerReportTranslator {
                 if (entityIdentifier == null || !hasService(entity, expectedServiceType)) {
                     continue;
                 }
-                if (isStale(list, now, maxListAge)) {
-                    staleListFound = true;
+                String reason = unusableReason(diagnosticData, list, now, maxListAge);
+                if (reason != null) {
+                    unusableListReason = reason;
                     continue;
                 }
                 return new IssuerTrust.Trusted(entityIdentifier, expectedServiceType, text(list.path("Url")),
@@ -72,10 +73,40 @@ final class DssIssuerReportTranslator {
                                 ? list.path("SequenceNumber").asInt() : null);
             }
         }
-        return staleListFound
-                ? new IssuerTrust.Unavailable("The issuers list is older than " + maxListAge)
+        return unusableListReason != null
+                ? new IssuerTrust.Unavailable(unusableListReason)
                 : new IssuerTrust.NotTrusted("Issuer is not an entity of the issuers list with a service for "
                         + credentialConfigurationId);
+    }
+
+    private static String unusableReason(JsonNode diagnosticData, JsonNode list, Instant now, Duration maxListAge) {
+        String reason = unusableListReason(list, now, maxListAge);
+        if (reason != null) {
+            return reason;
+        }
+        String parentId = text(list.path("parent"));
+        if (parentId.isEmpty()) {
+            return null;
+        }
+        JsonNode parent = listById(diagnosticData, parentId);
+        return parent == null
+                ? "The list of lists of " + text(list.path("Url")) + " is not in the report"
+                : unusableListReason(parent, now, maxListAge);
+    }
+
+    private static String unusableListReason(JsonNode list, Instant now, Duration maxListAge) {
+        String url = text(list.path("Url"));
+        if (!list.path("WellSigned").asBoolean(false)) {
+            return "The list " + url + " is not well signed";
+        }
+        Instant nextUpdate = parseInstant(text(list.path("NextUpdate")));
+        if (nextUpdate == null || nextUpdate.isBefore(now)) {
+            return "The list " + url + " is past its next update";
+        }
+        if (isStale(list, now, maxListAge)) {
+            return "The list " + url + " was loaded more than " + maxListAge + " ago";
+        }
+        return null;
     }
 
     private static JsonNode listById(JsonNode diagnosticData, String id) {

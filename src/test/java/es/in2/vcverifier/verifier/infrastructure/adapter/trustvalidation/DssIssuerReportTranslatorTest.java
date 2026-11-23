@@ -82,6 +82,38 @@ class DssIssuerReportTranslatorTest {
     }
 
     @Test
+    void translate_issuersListNotWellSigned_isUnavailable() {
+        ((ObjectNode) report.at("/diagnosticData/ListOfTrustedEntities/0")).put("WellSigned", false);
+
+        assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE))
+                .isInstanceOf(IssuerTrust.Unavailable.class);
+    }
+
+    @Test
+    void translate_listOfListsNotWellSigned_isUnavailable() {
+        ((ObjectNode) report.at("/diagnosticData/ListOfTrustedEntities/1")).put("WellSigned", false);
+
+        assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE))
+                .isInstanceOf(IssuerTrust.Unavailable.class);
+    }
+
+    @Test
+    void translate_issuersListPastItsNextUpdate_isUnavailable() {
+        ((ObjectNode) report.at("/diagnosticData/ListOfTrustedEntities/0")).put("NextUpdate", "2026-11-01T00:00:00Z");
+
+        assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE))
+                .isInstanceOf(IssuerTrust.Unavailable.class);
+    }
+
+    @Test
+    void translate_listOfListsMissingFromTheReport_isUnavailable() {
+        ((ArrayNode) report.at("/diagnosticData/ListOfTrustedEntities")).remove(1);
+
+        assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE))
+                .isInstanceOf(IssuerTrust.Unavailable.class);
+    }
+
+    @Test
     void translate_failedChain_isNotTrusted() {
         assertThat(translateWith("FAILED", "NOT_YET_VALID")).isInstanceOf(IssuerTrust.NotTrusted.class);
     }
