@@ -14,14 +14,14 @@ import es.in2.vcverifier.shared.domain.exception.JWTClaimMissingException;
 import es.in2.vcverifier.shared.domain.exception.JWTParsingException;
 import es.in2.vcverifier.verifier.domain.exception.*;
 import es.in2.vcverifier.verifier.domain.model.GenericCredential;
-import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
+import es.in2.vcverifier.verifier.domain.model.IssuerTrust;
 import es.in2.vcverifier.verifier.domain.model.validation.RevocationPaths;
 import es.in2.vcverifier.verifier.domain.model.validation.SchemaProfile;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationPaths;
 import es.in2.vcverifier.verifier.domain.model.validation.ValidationResult;
 import es.in2.vcverifier.verifier.domain.service.CredentialStatusVerifier;
 import es.in2.vcverifier.verifier.domain.service.CredentialValidator;
-import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
+import es.in2.vcverifier.verifier.domain.port.IssuerTrustValidationPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,7 +52,7 @@ class VpServiceImplTest {
     @Mock
     private JWTService jwtService;
     @Mock
-    private TrustFrameworkService trustFrameworkService;
+    private IssuerTrustValidationPort issuerTrustValidationPort;
     @Mock
     private CertificateValidationService certificateValidationService;
     @Mock
@@ -66,12 +66,16 @@ class VpServiceImplTest {
     @Mock
     private CredentialStatusVerifier bitstringStatusListVerifier;
 
+    private static final IssuerTrust.Trusted TRUSTED = new IssuerTrust.Trusted("VATES-FOO",
+            "http://uri.eudistack.net/19602/SvcType/EAA/LEARCredentialEmployee/Issuance", "https://lists.example/eaa.jws",
+            "http://uri.eudistack.net/19602/LoTEType/EAAProvidersList", 1);
+
     private VpServiceImpl vpServiceImpl;
 
     @BeforeEach
     void setUp() {
         vpServiceImpl = new VpServiceImpl(
-                jwtService, objectMapper, trustFrameworkService,
+                jwtService, objectMapper, issuerTrustValidationPort,
                 certificateValidationService, genericCredentialFactory,
                 credentialValidator, cryptographicBindingValidator,
                 List.of(bitstringStatusListVerifier)
@@ -208,14 +212,7 @@ class VpServiceImplTest {
             );
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null)
-                            .claims(null)
-                            .build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-FOO"))).thenReturn(TRUSTED);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
@@ -265,12 +262,7 @@ class VpServiceImplTest {
                     null);
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("issuer")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("issuer"))).thenReturn(TRUSTED);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
@@ -313,12 +305,7 @@ class VpServiceImplTest {
                     "VATES-FOO", null, null);
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-FOO"))).thenReturn(TRUSTED);
 
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
@@ -642,12 +629,7 @@ class VpServiceImplTest {
                     null);
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-ISSUER"))).thenReturn(TRUSTED);
 
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
@@ -660,8 +642,8 @@ class VpServiceImplTest {
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
 
             // Assert
-            verify(trustFrameworkService, times(1)).getTrustedIssuerListData("VATES-ISSUER");
-            verify(trustFrameworkService, never()).getTrustedIssuerListData("VATIT-1234");
+            verify(issuerTrustValidationPort, times(1)).validate(any(), any(), eq("VATES-ISSUER"));
+            verify(issuerTrustValidationPort, never()).validate(any(), any(), eq("VATIT-1234"));
         }
     }
 
@@ -693,12 +675,7 @@ class VpServiceImplTest {
                     null);
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-ISSUER"))).thenReturn(TRUSTED);
 
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
@@ -711,8 +688,8 @@ class VpServiceImplTest {
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
 
             // Assert
-            verify(trustFrameworkService, times(1)).getTrustedIssuerListData("VATES-ISSUER");
-            verifyNoMoreInteractions(trustFrameworkService);
+            verify(issuerTrustValidationPort, times(1)).validate(any(), any(), eq("VATES-ISSUER"));
+            verifyNoMoreInteractions(issuerTrustValidationPort);
         }
     }
 
@@ -744,12 +721,7 @@ class VpServiceImplTest {
                     null);
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-ISSUER"))).thenReturn(TRUSTED);
 
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
@@ -762,8 +734,8 @@ class VpServiceImplTest {
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
 
             // Assert
-            verify(trustFrameworkService, times(1)).getTrustedIssuerListData("VATES-ISSUER");
-            verify(trustFrameworkService, times(1)).getTrustedIssuerListData(anyString());
+            verify(issuerTrustValidationPort, times(1)).validate(any(), any(), eq("VATES-ISSUER"));
+            verify(issuerTrustValidationPort, times(1)).validate(any(), any(), anyString());
         }
     }
 
@@ -795,12 +767,7 @@ class VpServiceImplTest {
                     null);
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-ISSUER"))).thenReturn(TRUSTED);
 
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
@@ -813,8 +780,8 @@ class VpServiceImplTest {
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
 
             // Assert
-            verify(trustFrameworkService, times(1)).getTrustedIssuerListData("VATES-ISSUER");
-            verify(trustFrameworkService, times(1)).getTrustedIssuerListData(anyString());
+            verify(issuerTrustValidationPort, times(1)).validate(any(), any(), eq("VATES-ISSUER"));
+            verify(issuerTrustValidationPort, times(1)).validate(any(), any(), anyString());
         }
     }
 
@@ -866,12 +833,7 @@ class VpServiceImplTest {
             );
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-ISSUER")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-ISSUER"))).thenReturn(TRUSTED);
 
             JWSHeader vcHeader = mock(JWSHeader.class);
             when(vcSignedJWT.getHeader()).thenReturn(vcHeader);
@@ -916,12 +878,7 @@ class VpServiceImplTest {
                     null);
             when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-            List<IssuerCredentialsCapabilities> caps = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .validFor(null).claims(null).build()
-            );
-            when(trustFrameworkService.getTrustedIssuerListData("VATES-REAL-ISSUER")).thenReturn(caps);
+            lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-REAL-ISSUER"))).thenReturn(TRUSTED);
 
             Map<String, Object> vcHeaderMap = new HashMap<>();
             vcHeaderMap.put("x5c", List.of("base64Cert"));
@@ -938,9 +895,9 @@ class VpServiceImplTest {
             assertDoesNotThrow(() -> vpServiceImpl.verifyVerifiablePresentation(vpToken));
 
             // Assert
-            verify(trustFrameworkService).getTrustedIssuerListData("VATES-REAL-ISSUER");
+            verify(issuerTrustValidationPort).validate(any(), any(), eq("VATES-REAL-ISSUER"));
             verify(certificateValidationService).extractAndVerifyCertificate(vcJwt, vcHeaderMap, "VATES-REAL-ISSUER");
-            verify(trustFrameworkService, never()).getTrustedIssuerListData("VATIT-1234");
+            verify(issuerTrustValidationPort, never()).validate(any(), any(), eq("VATIT-1234"));
             verify(cryptographicBindingValidator).validateVpSignature(vpToken, vpSignedJWT);
             verify(cryptographicBindingValidator).validateCryptographicBinding(vpSignerKey, vcSignedJWT);
         }
@@ -968,12 +925,7 @@ class VpServiceImplTest {
                 null);
         when(genericCredentialFactory.create(payload)).thenReturn(credential);
 
-        List<IssuerCredentialsCapabilities> caps = List.of(
-                IssuerCredentialsCapabilities.builder()
-                        .credentialsType("LEARCredentialEmployee")
-                        .validFor(null).claims(null).build()
-        );
-        when(trustFrameworkService.getTrustedIssuerListData("VATES-FOO")).thenReturn(caps);
+        lenient().when(issuerTrustValidationPort.validate(any(), any(), eq("VATES-FOO"))).thenReturn(TRUSTED);
 
         JWSHeader header = mock(JWSHeader.class);
         when(vcSignedJWT.getHeader()).thenReturn(header);

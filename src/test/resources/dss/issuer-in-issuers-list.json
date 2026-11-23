@@ -1,0 +1,98 @@
+{
+  "simpleCertificateReport": {
+    "Certificate": {
+      "Indication": "PASSED",
+      "SubIndication": null,
+      "qualificationAtValidation": "N/A"
+    }
+  },
+  "diagnosticData": {
+    "Certificate": [
+      {
+        "Id": "C-FFFB41B804CB4BB883C1CFE197684F8C04EFBC7A51BCC96BFFCAB1F5EF63F893",
+        "OrganizationIdentifier": "VATES-B00000000",
+        "Trusted": {
+          "value": true,
+          "startDate": null,
+          "sunsetDate": null
+        },
+        "TrustedEntity": [
+          {
+            "Name": [
+              {
+                "value": "Emisor de prueba",
+                "lang": "es"
+              }
+            ],
+            "TradeName": [
+              {
+                "value": "VATES-B00000000",
+                "lang": "es"
+              }
+            ],
+            "RegistrationIdentifier": [],
+            "TrustedEntityService": [
+              {
+                "ServiceName": [
+                  {
+                    "value": "Emision de learcredential.employee.sd.1",
+                    "lang": "es"
+                  }
+                ],
+                "ServiceType": "http://uri.eudistack.net/19602/SvcType/EAA/learcredential.employee.sd.1/Issuance",
+                "Status": null,
+                "StartDate": null,
+                "EndDate": null,
+                "Qualifier": [],
+                "AdditionalServiceInfoUri": [],
+                "ServiceSupplyPoint": null,
+                "ServiceDigitalIdentifier": "C-FFFB41B804CB4BB883C1CFE197684F8C04EFBC7A51BCC96BFFCAB1F5EF63F893"
+              }
+            ],
+            "LoTE": "LoTE-6AAADCCC1CF334254865C060FD5EB837FDD0B62DA14AF9798929407F3E2C5F07",
+            "LoLoTE": "LoLoTE-3E18EB3727CA8E903ED970EFECA27C266AE3154F34894154405F9B6670A2EF21"
+          }
+        ]
+      }
+    ],
+    "TrustedList": [],
+    "ListOfTrustedEntities": [
+      {
+        "Id": "LoTE-6AAADCCC1CF334254865C060FD5EB837FDD0B62DA14AF9798929407F3E2C5F07",
+        "CountryCode": "ES",
+        "Url": "file:/lists/eaa-providers.jws",
+        "Type": "http://uri.eudistack.net/19602/LoTEType/EAAProvidersList",
+        "SequenceNumber": 1,
+        "Version": 1,
+        "LastLoading": "2026-11-23T11:20:09Z",
+        "IssueDate": "2026-11-23T10:50:57Z",
+        "NextUpdate": "2027-01-22T10:50:57Z",
+        "WellSigned": true,
+        "StructuralValidation": {
+          "Message": null,
+          "valid": true
+        },
+        "LoLoTE": null,
+        "parent": "LoLoTE-3E18EB3727CA8E903ED970EFECA27C266AE3154F34894154405F9B6670A2EF21"
+      },
+      {
+        "Id": "LoLoTE-3E18EB3727CA8E903ED970EFECA27C266AE3154F34894154405F9B6670A2EF21",
+        "CountryCode": "ES",
+        "Url": "file:/lists/lolote.jws",
+        "Type": "http://uri.eudistack.net/19602/LoTEType/LoLoTE",
+        "SequenceNumber": 1,
+        "Version": 1,
+        "LastLoading": "2026-11-23T11:20:09Z",
+        "IssueDate": "2026-11-23T11:19:44Z",
+        "NextUpdate": "2027-01-22T11:19:44Z",
+        "WellSigned": true,
+        "StructuralValidation": {
+          "Message": null,
+          "valid": true
+        },
+        "LoLoTE": null,
+        "parent": null
+      }
+    ]
+  }
+}

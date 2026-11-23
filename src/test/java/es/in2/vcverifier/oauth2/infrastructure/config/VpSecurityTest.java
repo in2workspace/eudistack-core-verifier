@@ -1,5 +1,5 @@
 package es.in2.vcverifier.oauth2.infrastructure.config;
-import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
+import es.in2.vcverifier.verifier.domain.port.IssuerTrustValidationPort;
 import es.in2.vcverifier.shared.crypto.CertificateValidationService;
 import es.in2.vcverifier.shared.crypto.JWTService;
 import es.in2.vcverifier.shared.config.JtiTokenCache;
@@ -11,7 +11,6 @@ import com.nimbusds.jwt.SignedJWT;
 import es.in2.vcverifier.verifier.domain.exception.*;
 import es.in2.vcverifier.oauth2.domain.exception.*;
 import es.in2.vcverifier.shared.domain.exception.*;
-import es.in2.vcverifier.verifier.domain.model.issuer.IssuerCredentialsCapabilities;
 import es.in2.vcverifier.verifier.domain.service.*;
 import es.in2.vcverifier.shared.crypto.*;
 import es.in2.vcverifier.verifier.infrastructure.adapter.VpServiceImpl;
@@ -40,7 +39,7 @@ class VpSecurityTest {
     @Mock
     private JWTService jwtService;
     @Mock
-    private TrustFrameworkService trustFrameworkService;
+    private IssuerTrustValidationPort issuerTrustValidationPort;
     @Mock
     private CertificateValidationService certificateValidationService;
     @Mock
@@ -54,7 +53,7 @@ class VpSecurityTest {
 
     @BeforeEach
     void setUp() {
-        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), trustFrameworkService, certificateValidationService, genericCredentialFactory, credentialValidator, cryptographicBindingValidator, java.util.List.of());
+        vpService = new VpServiceImpl(jwtService, new ObjectMapper(), issuerTrustValidationPort, certificateValidationService, genericCredentialFactory, credentialValidator, cryptographicBindingValidator, java.util.List.of());
         org.mockito.Mockito.lenient().when(credentialValidator.validate(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(es.in2.vcverifier.verifier.domain.model.validation.ValidationResult.builder().valid(true).errors(java.util.List.of()).build());
     }
@@ -322,48 +321,6 @@ class VpSecurityTest {
             cache.addJti("unique-jti-1");
             assertTrue(cache.isJtiPresent("unique-jti-1"));
             assertFalse(cache.isJtiPresent("unique-jti-2"));
-        }
-    }
-
-    // --- Issuer Trust Manipulation ---
-
-    @Nested
-    @DisplayName("Issuer Trust Validation")
-    class IssuerTrustValidation {
-
-        @Test
-        @DisplayName("Credential type not in issuer capabilities should be rejected")
-        void credentialTypeNotInCapabilities_throwsInvalidCredentialType() throws Exception {
-            // Use reflection to call private method
-            java.lang.reflect.Method method = VpServiceImpl.class.getDeclaredMethod(
-                    "validateCredentialTypeWithIssuerCapabilities", List.class, List.class);
-            method.setAccessible(true);
-
-            List<IssuerCredentialsCapabilities> capabilities = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .build()
-            );
-
-            assertThrows(java.lang.reflect.InvocationTargetException.class,
-                    () -> method.invoke(vpService, capabilities, List.of("VerifiableCredential", "MaliciousType")));
-        }
-
-        @Test
-        @DisplayName("Credential type matching one capability should pass")
-        void credentialTypeMatchingCapability_passes() throws Exception {
-            java.lang.reflect.Method method = VpServiceImpl.class.getDeclaredMethod(
-                    "validateCredentialTypeWithIssuerCapabilities", List.class, List.class);
-            method.setAccessible(true);
-
-            List<IssuerCredentialsCapabilities> capabilities = List.of(
-                    IssuerCredentialsCapabilities.builder()
-                            .credentialsType("LEARCredentialEmployee")
-                            .build()
-            );
-
-            assertDoesNotThrow(() -> method.invoke(vpService, capabilities,
-                    List.of("VerifiableCredential", "LEARCredentialEmployee")));
         }
     }
 

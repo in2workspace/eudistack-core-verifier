@@ -12,14 +12,15 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import es.in2.vcverifier.shared.config.BackendConfig;
-import es.in2.vcverifier.shared.domain.exception.CertificateChainValidationException;
 import es.in2.vcverifier.shared.domain.exception.JWTVerificationException;
 import es.in2.vcverifier.shared.domain.model.sdjwt.Disclosure;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwt;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.shared.crypto.DIDService;
-import es.in2.vcverifier.verifier.domain.service.TrustFrameworkService;
+import es.in2.vcverifier.verifier.domain.exception.IssuerNotAuthorizedException;
+import es.in2.vcverifier.verifier.domain.exception.TrustListUnavailableException;
+import es.in2.vcverifier.verifier.domain.model.IssuerTrust;
+import es.in2.vcverifier.verifier.domain.port.IssuerTrustValidationPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,11 +56,12 @@ class SdJwtVerificationServiceImplTest {
     @Mock
     private DIDService didService;
     @Mock
-    private TrustFrameworkService trustFrameworkService;
-    @Mock
-    private BackendConfig backendConfig;
-    @Mock
-    private CertificateChainValidator chainValidator;
+    private IssuerTrustValidationPort issuerTrustValidationPort;
+
+    private static final String ISSUER_ORG_ID = "VATES-A78446333";
+    private static final IssuerTrust.Trusted TRUSTED = new IssuerTrust.Trusted(
+            ISSUER_ORG_ID, "http://uri.eudistack.net/19602/SvcType/EAA/learcredential.employee.sd.1/Issuance",
+            "https://lists.example/eaa-providers.jws", "http://uri.eudistack.net/19602/LoTEType/EAAProvidersList", 1);
 
     private SdJwtVerificationServiceImpl service;
 
@@ -68,7 +70,7 @@ class SdJwtVerificationServiceImplTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new SdJwtVerificationServiceImpl(didService, trustFrameworkService, backendConfig, chainValidator);
+        service = new SdJwtVerificationServiceImpl(didService, issuerTrustValidationPort);
         issuerKey = new ECKeyGenerator(Curve.P_256).generate();
         holderKey = new ECKeyGenerator(Curve.P_256).generate();
     }
@@ -114,7 +116,7 @@ class SdJwtVerificationServiceImplTest {
         String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
 
         when(didService.resolvePublicKeyFromDid(issuerDid)).thenReturn(issuerKey.toECPublicKey());
-        when(trustFrameworkService.getTrustedIssuerListData(issuerDid)).thenReturn(List.of());
+        when(issuerTrustValidationPort.validate(any(), any(), eq(issuerDid))).thenReturn(TRUSTED);
 
         SdJwtVerificationResult result = service.verifyPresentation(compact, expectedAud, expectedNonce);
 
@@ -283,7 +285,7 @@ class SdJwtVerificationServiceImplTest {
         JWTVerificationException exception = assertThrows(JWTVerificationException.class,
                 () -> service.verifyPresentation(compact, "https://v.example.com", "nonce"));
         assertTrue(exception.getMessage().contains("without KB-JWT"));
-        verifyNoInteractions(trustFrameworkService);
+        verifyNoInteractions(issuerTrustValidationPort);
     }
 
     @Test
@@ -358,7 +360,7 @@ class SdJwtVerificationServiceImplTest {
         String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
 
         // No DID resolution should be called — x5c path should be used
-        when(trustFrameworkService.getTrustedIssuerListData(issuerOrgId)).thenReturn(List.of());
+        when(issuerTrustValidationPort.validate(any(), any(), eq(issuerOrgId))).thenReturn(TRUSTED);
 
         SdJwtVerificationResult result = service.verifyPresentation(compact, expectedAud, expectedNonce);
 
@@ -431,7 +433,7 @@ class SdJwtVerificationServiceImplTest {
 
         String compact = withKeyBindingJwt(issuerJwtString + "~", "https://v.example.com", "nonce");
 
-        when(trustFrameworkService.getTrustedIssuerListData(issuerOrgId)).thenReturn(List.of());
+        when(issuerTrustValidationPort.validate(any(), any(), eq(issuerOrgId))).thenReturn(TRUSTED);
 
         SdJwtVerificationResult result = service.verifyPresentation(compact, "https://v.example.com", "nonce");
 
@@ -474,7 +476,7 @@ class SdJwtVerificationServiceImplTest {
         issuerJwt.sign(new RSASSASigner(rsaPrivKey));
         String compact = withKeyBindingJwt(issuerJwt.serialize() + "~", "https://v.example.com", "nonce");
 
-        when(trustFrameworkService.getTrustedIssuerListData(issuerDidElsi)).thenReturn(List.of());
+        when(issuerTrustValidationPort.validate(any(), any(), eq(issuerDidElsi))).thenReturn(TRUSTED);
 
         SdJwtVerificationResult result = service.verifyPresentation(compact, "https://v.example.com", "nonce");
 
@@ -524,23 +526,57 @@ class SdJwtVerificationServiceImplTest {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
 
-    // ── x5c chain validation bypass tests ──────────────────────────────────
+    // ── issuer trust through the trust validation service ──────────────
 
     @Test
-    @DisplayName("x5c bypass=false (default): chain validator is called")
-    void verifyPresentation_x5cBypassDisabled_chainValidatorCalled() throws Exception {
+    @DisplayName("The x5c chain, the vct and the issuer are sent to the trust validation service")
+    void verifyPresentation_x5c_sendsChainTypeAndIssuerToTheTrustValidation() throws Exception {
+        X5cPresentation presentation = x5cPresentation();
+        when(issuerTrustValidationPort.validate(any(), any(), any())).thenReturn(TRUSTED);
+
+        service.verifyPresentation(presentation.compact(), presentation.audience(), presentation.nonce());
+
+        verify(issuerTrustValidationPort).validate(
+                eq(List.of(presentation.certificate())), eq("learcredential.employee.sd.1"), eq(ISSUER_ORG_ID));
+    }
+
+    @Test
+    @DisplayName("An issuer the trust validation does not trust is IssuerNotTrusted, not a signature error")
+    void verifyPresentation_issuerNotTrusted_throwsIssuerNotAuthorized() throws Exception {
+        X5cPresentation presentation = x5cPresentation();
+        when(issuerTrustValidationPort.validate(any(), any(), any()))
+                .thenReturn(new IssuerTrust.NotTrusted("not in the issuers list"));
+
+        assertThrows(IssuerNotAuthorizedException.class,
+                () -> service.verifyPresentation(presentation.compact(), presentation.audience(), presentation.nonce()));
+    }
+
+    @Test
+    @DisplayName("A trust validation that cannot answer is TrustListUnavailable")
+    void verifyPresentation_trustValidationUnavailable_throwsTrustListUnavailable() throws Exception {
+        X5cPresentation presentation = x5cPresentation();
+        when(issuerTrustValidationPort.validate(any(), any(), any()))
+                .thenReturn(new IssuerTrust.Unavailable("no answer"));
+
+        assertThrows(TrustListUnavailableException.class,
+                () -> service.verifyPresentation(presentation.compact(), presentation.audience(), presentation.nonce()));
+    }
+
+    private record X5cPresentation(String compact, String audience, String nonce, X509Certificate certificate) {
+    }
+
+    private X5cPresentation x5cPresentation() throws Exception {
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         KeyPair rsaKeyPair = keyGen.generateKeyPair();
         X509Certificate x509Cert = generateSelfSignedCert(rsaKeyPair, "CN=QTSP,O=Vintegris,C=ES");
 
-        String issuerOrgId = "VATES-A78446333";
-        String disclosureEncoded = createDisclosure("salt-bypass", "given_name", "Alice");
+        String disclosureEncoded = createDisclosure("salt-trust", "given_name", "Alice");
         String digest = computeDigest(disclosureEncoded);
 
         Map<String, Object> cnf = Map.of("jwk", holderKey.toPublicJWK().toJSONObject());
         JWTClaimsSet issuerClaims = new JWTClaimsSet.Builder()
-                .issuer(issuerOrgId)
+                .issuer(ISSUER_ORG_ID)
                 .claim("vct", "learcredential.employee.sd.1")
                 .claim("_sd", List.of(digest))
                 .claim("_sd_alg", "SHA-256")
@@ -558,10 +594,9 @@ class SdJwtVerificationServiceImplTest {
         issuerJwt.sign(new RSASSASigner((java.security.interfaces.RSAPrivateKey) rsaKeyPair.getPrivate()));
         String issuerJwtString = issuerJwt.serialize();
 
-        String sdHashInput = issuerJwtString + "~" + disclosureEncoded + "~";
-        String sdHash = computeSha256(sdHashInput);
+        String sdHash = computeSha256(issuerJwtString + "~" + disclosureEncoded + "~");
         String expectedAud = "did:key:zVerifier";
-        String expectedNonce = "nonce-bypass-off";
+        String expectedNonce = "nonce-trust";
 
         JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
                 .audience(expectedAud)
@@ -569,123 +604,8 @@ class SdJwtVerificationServiceImplTest {
                 .claim("sd_hash", sdHash)
                 .issueTime(new Date())
                 .build();
-        String kbJwtString = signJwt(kbClaims, holderKey);
-        String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
-
-        when(backendConfig.isX5cChainValidationBypassed()).thenReturn(false);
-        when(trustFrameworkService.getTrustedIssuerListData(issuerOrgId)).thenReturn(List.of());
-
-        service.verifyPresentation(compact, expectedAud, expectedNonce);
-
-        verify(chainValidator, times(1)).validateSelfContainedChain(any());
-    }
-
-    @Test
-    @DisplayName("x5c bypass=true: chain validator is NOT called")
-    void verifyPresentation_x5cBypassEnabled_chainValidatorNotCalled() throws Exception {
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        KeyPair rsaKeyPair = keyGen.generateKeyPair();
-        X509Certificate x509Cert = generateSelfSignedCert(rsaKeyPair, "CN=QTSP,O=Vintegris,C=ES");
-
-        String issuerOrgId = "VATES-A78446333";
-        String disclosureEncoded = createDisclosure("salt-bypass-on", "given_name", "Bob");
-        String digest = computeDigest(disclosureEncoded);
-
-        Map<String, Object> cnf = Map.of("jwk", holderKey.toPublicJWK().toJSONObject());
-        JWTClaimsSet issuerClaims = new JWTClaimsSet.Builder()
-                .issuer(issuerOrgId)
-                .claim("vct", "learcredential.employee.sd.1")
-                .claim("_sd", List.of(digest))
-                .claim("_sd_alg", "SHA-256")
-                .claim("cnf", cnf)
-                .issueTime(Date.from(Instant.now().minus(1, ChronoUnit.HOURS)))
-                .expirationTime(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
-                .build();
-
-        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
-                .type(new JOSEObjectType("dc+sd-jwt"))
-                .x509CertChain(List.of(com.nimbusds.jose.util.Base64.encode(x509Cert.getEncoded())))
-                .build();
-
-        SignedJWT issuerJwt = new SignedJWT(header, issuerClaims);
-        issuerJwt.sign(new RSASSASigner((java.security.interfaces.RSAPrivateKey) rsaKeyPair.getPrivate()));
-        String issuerJwtString = issuerJwt.serialize();
-
-        String sdHashInput = issuerJwtString + "~" + disclosureEncoded + "~";
-        String sdHash = computeSha256(sdHashInput);
-        String expectedAud = "did:key:zVerifier";
-        String expectedNonce = "nonce-bypass-on";
-
-        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
-                .audience(expectedAud)
-                .claim("nonce", expectedNonce)
-                .claim("sd_hash", sdHash)
-                .issueTime(new Date())
-                .build();
-        String kbJwtString = signJwt(kbClaims, holderKey);
-        String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
-
-        when(backendConfig.isX5cChainValidationBypassed()).thenReturn(true);
-        when(trustFrameworkService.getTrustedIssuerListData(issuerOrgId)).thenReturn(List.of());
-
-        service.verifyPresentation(compact, expectedAud, expectedNonce);
-
-        verify(chainValidator, never()).validateSelfContainedChain(any());
-    }
-
-    @Test
-    @DisplayName("x5c bypass=false + chain validator throws → JWTVerificationException propagated")
-    void verifyPresentation_chainValidationFails_throwsJwtVerificationException() throws Exception {
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        KeyPair rsaKeyPair = keyGen.generateKeyPair();
-        X509Certificate x509Cert = generateSelfSignedCert(rsaKeyPair, "CN=QTSP,O=Rogue,C=ES");
-
-        String issuerOrgId = "VATES-ROGUE";
-        String disclosureEncoded = createDisclosure("salt-fail", "given_name", "Eve");
-        String digest = computeDigest(disclosureEncoded);
-
-        Map<String, Object> cnf = Map.of("jwk", holderKey.toPublicJWK().toJSONObject());
-        JWTClaimsSet issuerClaims = new JWTClaimsSet.Builder()
-                .issuer(issuerOrgId)
-                .claim("vct", "learcredential.employee.sd.1")
-                .claim("_sd", List.of(digest))
-                .claim("_sd_alg", "SHA-256")
-                .claim("cnf", cnf)
-                .issueTime(Date.from(Instant.now().minus(1, ChronoUnit.HOURS)))
-                .expirationTime(Date.from(Instant.now().plus(1, ChronoUnit.DAYS)))
-                .build();
-
-        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
-                .type(new JOSEObjectType("dc+sd-jwt"))
-                .x509CertChain(List.of(com.nimbusds.jose.util.Base64.encode(x509Cert.getEncoded())))
-                .build();
-
-        SignedJWT issuerJwt = new SignedJWT(header, issuerClaims);
-        issuerJwt.sign(new RSASSASigner((java.security.interfaces.RSAPrivateKey) rsaKeyPair.getPrivate()));
-        String issuerJwtString = issuerJwt.serialize();
-
-        String sdHashInput = issuerJwtString + "~" + disclosureEncoded + "~";
-        String sdHash = computeSha256(sdHashInput);
-        String expectedAud = "did:key:zVerifier";
-        String expectedNonce = "nonce-chain-fail";
-
-        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
-                .audience(expectedAud)
-                .claim("nonce", expectedNonce)
-                .claim("sd_hash", sdHash)
-                .issueTime(new Date())
-                .build();
-        String kbJwtString = signJwt(kbClaims, holderKey);
-        String compact = issuerJwtString + "~" + disclosureEncoded + "~" + kbJwtString;
-
-        when(backendConfig.isX5cChainValidationBypassed()).thenReturn(false);
-        doThrow(new CertificateChainValidationException("chain broken")).when(chainValidator)
-                .validateSelfContainedChain(any());
-
-        assertThrows(JWTVerificationException.class,
-                () -> service.verifyPresentation(compact, expectedAud, expectedNonce));
+        String compact = issuerJwtString + "~" + disclosureEncoded + "~" + signJwt(kbClaims, holderKey);
+        return new X5cPresentation(compact, expectedAud, expectedNonce, x509Cert);
     }
 
     private static X509Certificate generateSelfSignedCert(KeyPair keyPair, String dn) throws Exception {
