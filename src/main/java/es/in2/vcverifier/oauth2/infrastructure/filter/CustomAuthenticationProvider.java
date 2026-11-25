@@ -48,6 +48,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -208,7 +209,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                     issued ? AuditResult.SUCCESS : AuditResult.FAILURE, holder,
                     issued ? AuditedPerson.identityClaims(idTokenClaims) : null));
         } catch (RuntimeException e) {
-            log.warn("event=iam_session_audit_failed clientId={} error={}", clientId, e.getClass().getSimpleName());
+            log.warn("event=iam_session_audit_failed clientId={} error={}", sanitize(clientId), e.getClass().getSimpleName());
         }
     }
 
