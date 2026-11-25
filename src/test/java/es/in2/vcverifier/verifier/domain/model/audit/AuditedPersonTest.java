@@ -4,6 +4,7 @@ import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,6 +68,31 @@ class AuditedPersonTest {
 
         assertThat(AuditedPerson.identityClaims(claims))
                 .containsOnly(Map.entry("given_name", "Jose"), Map.entry("email", "jose@example.com"));
+    }
+
+    @Test
+    void identityClaims_dropTheCredentialItCameFrom() {
+        Map<String, Object> claims = Map.of("given_name", "Jose", "vc_json", "{\"type\":[\"LEARCredentialEmployee\"]}",
+                "vc", Map.of("type", "LEARCredentialEmployee"), "credential_type", "LEARCredentialEmployee");
+
+        assertThat(AuditedPerson.identityClaims(claims)).containsOnly(Map.entry("given_name", "Jose"));
+    }
+
+    @Test
+    void identityClaims_dropStructuredValuesSuchAsTheMandate() {
+        Map<String, Object> claims = Map.of("email", "jose@example.com",
+                "mandatee", Map.of("email", "jose@example.com"), "mandator", Map.of("organization", "ACME"),
+                "power", List.of(Map.of("function", "Onboarding")));
+
+        assertThat(AuditedPerson.identityClaims(claims)).containsOnly(Map.entry("email", "jose@example.com"));
+    }
+
+    @Test
+    void identityClaims_keepScalarValues() {
+        Map<String, Object> claims = Map.of("given_name", "Jose", "age_over_18", true, "birth_year", 1980);
+
+        assertThat(AuditedPerson.identityClaims(claims)).containsOnly(Map.entry("given_name", "Jose"),
+                Map.entry("age_over_18", true), Map.entry("birth_year", 1980));
     }
 
     @Test

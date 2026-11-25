@@ -17,6 +17,7 @@ public record AuditedPerson(String identifier, String name, String email) {
     private static final String EMAIL = "email";
     private static final Set<String> PROTOCOL_CLAIMS = Set.of("iss", "sub", "aud", "exp", "iat", "nbf", "jti",
             "nonce", "auth_time", "acr", "amr", "sid", "azp", "at_hash", "c_hash", "scope", "client_id");
+    private static final Set<String> CREDENTIAL_CLAIMS = Set.of("vc_json", "vc", "credential_type");
 
     public static AuditedPerson of(CertificateIdentity identity) {
         if (identity == null) {
@@ -42,8 +43,14 @@ public record AuditedPerson(String identifier, String name, String email) {
             return Map.of();
         }
         return idTokenClaims.entrySet().stream()
-                .filter(claim -> claim.getValue() != null && !PROTOCOL_CLAIMS.contains(claim.getKey()))
+                .filter(claim -> isIdentityValue(claim.getValue())
+                        && !PROTOCOL_CLAIMS.contains(claim.getKey())
+                        && !CREDENTIAL_CLAIMS.contains(claim.getKey()))
                 .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    private static boolean isIdentityValue(Object value) {
+        return value instanceof String || value instanceof Number || value instanceof Boolean;
     }
 
     private static String joined(String first, String second) {
