@@ -8,6 +8,7 @@ import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.ClientCertificate;
 import es.in2.vcverifier.shared.domain.model.LoginMethod;
+import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import es.in2.vcverifier.sso.application.workflow.SsoLoginCompletionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
@@ -52,6 +53,7 @@ public class CertificateLoginWorkflow {
     private final AuthorizationResponseProcessorService authorizationResponseProcessorService;
     private final SsoLoginCompletionWorkflow ssoLoginCompletionWorkflow;
     private final AuthenticationAuditPort authenticationAuditPort;
+    private final AuditTrailPort auditTrail;
     private final Clock clock;
 
     public sealed interface Outcome {
@@ -68,15 +70,21 @@ public class CertificateLoginWorkflow {
         if (login.isEmpty()) {
             return rejected(CertificateLoginReason.LOGIN_NOT_FOUND);
         }
-        String clientId = login.get().getClientId();
         String correlationId = correlationId(login.get());
+        return auditTrail.withCorrelationId(correlationId,
+                () -> login(state, tenant, clientCert, clientCertChain, login.get(), correlationId));
+    }
+
+    private Outcome login(String state, String tenant, String clientCert, List<String> clientCertChain,
+                          OAuth2AuthorizationRequest login, String correlationId) {
+        String clientId = login.getClientId();
         List<X509Certificate> chain;
         try {
             chain = clientCertificateReader.readChain(clientCert, clientCertChain);
         } catch (IllegalArgumentException e) {
             log.warn("event=certificate_login_unreadable_certificate clientId={} reason=\"{}\" certificateLength={} "
                             + "chainHeaders={} chainLength={}",
-                    sanitize(login.get().getClientId()), e.getMessage(),
+                    sanitize(clientId), e.getMessage(),
                     clientCert == null ? 0 : clientCert.length(),
                     clientCertChain.size(), clientCertChain.stream().mapToInt(String::length).sum());
             return audited(tenant, correlationId, clientId, CertificateLoginReason.CERTIFICATE_MISSING, null);
@@ -93,7 +101,7 @@ public class CertificateLoginWorkflow {
             log.warn("event=certificate_login_without_number clientId={}", sanitize(clientId));
             return audited(tenant, correlationId, clientId, CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED, certificate);
         }
-        if (!meetsEssentialLevel(login.get(), level)) {
+        if (!meetsEssentialLevel(login, level)) {
             return audited(tenant, correlationId, clientId, CertificateLoginReason.LEVEL_NOT_MET, certificate);
         }
 

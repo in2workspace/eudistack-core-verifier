@@ -21,6 +21,7 @@ import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
 import es.in2.vcverifier.oauth2.domain.port.OAuth2M2MAuditPort;
 import es.in2.vcverifier.shared.domain.model.SessionOrigin;
 import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.shared.domain.port.RecordingAuditTrail;
 import es.in2.vcverifier.verifier.domain.model.audit.AuditedPerson;
 import es.in2.vcverifier.verifier.domain.model.audit.IamSessionAudit;
 import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
@@ -79,6 +80,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class CustomAuthenticationProviderTest {
 
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
+
     private CustomAuthenticationProvider provider;
 
     @Mock
@@ -127,7 +130,8 @@ class CustomAuthenticationProviderTest {
                 tokenGenerationWorkflow,
                 schemaProfileRegistry,
                 oAuth2M2MAuditPort,
-                authenticationAuditPort
+                authenticationAuditPort,
+                auditTrail
         );
     }
 
@@ -393,6 +397,18 @@ class CustomAuthenticationProviderTest {
                 "opaque-refresh-token", mock(Authentication.class), null, additionalParams));
 
         verifyNoInteractions(authenticationAuditPort);
+        assertTrue(auditTrail.correlationIds().isEmpty());
+    }
+
+    @Test
+    void authenticate_certificateCodeExchange_runsUnderTheLoginCorrelationId() {
+        when(tokenGenerationWorkflow.issueAccessToken(isNull(), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResultWithClaims(Map.of("sub", "b2f1c3")));
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+
+        provider.authenticate(certificateCodeExchange("test-code-scope", SessionOrigin.CERTIFICATE));
+
+        assertEquals(List.of("corr-1"), auditTrail.correlationIds());
     }
 
     @Test
@@ -582,7 +598,7 @@ class CustomAuthenticationProviderTest {
         provider = new CustomAuthenticationProvider(
                 registeredClientRepository, backendConfig, objectMapper,
                 cacheStoreForRefreshTokenData, oAuth2AuthorizationService, tokenGenerationWorkflow, schemaProfileRegistry,
-                oAuth2M2MAuditPort, authenticationAuditPort);
+                oAuth2M2MAuditPort, authenticationAuditPort, auditTrail);
 
         JsonNode vcJson = buildMachineCredentialV1();
         when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");

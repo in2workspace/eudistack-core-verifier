@@ -18,6 +18,7 @@ import es.in2.vcverifier.verifier.application.workflow.ReuseSsoSessionWorkflow;
 import es.in2.vcverifier.verifier.domain.port.TenantLoginMethodsPort;
 import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import jakarta.servlet.http.HttpServletRequest;
+import es.in2.vcverifier.shared.domain.port.RecordingAuditTrail;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -60,6 +61,8 @@ import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NO
 
 @ExtendWith(MockitoExtension.class)
 class CustomAuthorizationRequestConverterTest {
+
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
 
     @Mock
     private DIDService didService;
@@ -120,7 +123,8 @@ class CustomAuthorizationRequestConverterTest {
                 ssoBrowserBindingCookie,
                 tenantLoginMethodsPort,
                 dcqlProfileResolver,
-                new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig)
+                new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig),
+                auditTrail
         );
         lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(120L);
         lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
@@ -773,6 +777,7 @@ class CustomAuthorizationRequestConverterTest {
         assertEquals(codeChallenge, addl.get(PkceParameterNames.CODE_CHALLENGE));
         assertEquals(codeChallengeMethod, addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD));
         assertInstanceOf(String.class, addl.get(AUDIT_CORRELATION_ID));
+        assertEquals(List.of(addl.get(AUDIT_CORRELATION_ID)), auditTrail.correlationIds());
     }
 
     @Test

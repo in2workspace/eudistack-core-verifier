@@ -29,21 +29,18 @@ public class AuthenticationAuditTrailAdapter implements AuthenticationAuditPort 
                 && !rejectionThrottle.allow(event.tenant() + "|" + event.oidcClientId() + "|" + event.reason().value())) {
             return;
         }
-        stage(event.correlationId(), AuthenticationAuditEntries.of(event));
+        stage(AuthenticationAuditEntries.of(event));
     }
 
     @Override
     public void iamSessionEstablished(IamSessionAudit event) {
         logger.iamSessionEstablished(event);
-        stage(event.correlationId(), AuthenticationAuditEntries.of(event));
+        stage(AuthenticationAuditEntries.of(event));
     }
 
-    private void stage(String correlationId, AuditEntry entry) {
+    private void stage(AuditEntry entry) {
         try {
-            auditTrail.withCorrelationId(correlationId, () -> {
-                auditTrail.stageBestEffort(entry);
-                return null;
-            });
+            auditTrail.stageBestEffort(entry);
         } catch (RuntimeException e) {
             log.warn("event=authentication_audit_stage_failed event_type={} error={}",
                     entry.type().catalogName(), e.getClass().getSimpleName());

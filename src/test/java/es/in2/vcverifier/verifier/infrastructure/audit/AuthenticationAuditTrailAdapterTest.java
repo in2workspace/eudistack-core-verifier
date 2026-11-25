@@ -24,9 +24,9 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 class AuthenticationAuditTrailAdapterTest {
 
@@ -40,13 +40,12 @@ class AuthenticationAuditTrailAdapterTest {
     private final AuthenticationAuditTrailAdapter adapter = new AuthenticationAuditTrailAdapter(logger, auditTrail);
 
     @Test
-    void certificateAuthentication_success_logsAndStagesItUnderTheLoginCorrelationId() {
+    void certificateAuthentication_success_logsAndStagesItInATransactionOfItsOwn() {
         CertificateAuthenticationAudit event = success("corr-1");
 
         adapter.certificateAuthentication(event);
 
         verify(logger).certificateAuthentication(event);
-        assertThat(auditTrail.correlationIds()).containsExactly("corr-1");
         assertThat(auditTrail.staged()).isEmpty();
         AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
         assertThat(entry.type()).isEqualTo(AuditEventType.CERTIFICATE_AUTHENTICATION);
@@ -81,14 +80,13 @@ class AuthenticationAuditTrailAdapterTest {
     }
 
     @Test
-    void iamSessionEstablished_logsAndStagesItUnderTheLoginCorrelationId() {
+    void iamSessionEstablished_logsAndStagesIt() {
         IamSessionAudit event = new IamSessionAudit("cgcom", "corr-1", "portal", SessionOrigin.CERTIFICATE,
                 AuditResult.SUCCESS, AuditedPerson.of(IDENTITY), Map.of("given_name", "JOSE ANTONIO"));
 
         adapter.iamSessionEstablished(event);
 
         verify(logger).iamSessionEstablished(event);
-        assertThat(auditTrail.correlationIds()).containsExactly("corr-1");
         AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
         assertThat(entry.type()).isEqualTo(AuditEventType.IAM_SESSION_ESTABLISHED);
         assertThat(entry.details()).containsEntry("session_origin", "Certificate");
@@ -114,9 +112,9 @@ class AuthenticationAuditTrailAdapterTest {
     }
 
     @Test
-    void noAuditContext_stillLogsAndNeverFailsTheCaller() {
+    void stagingFails_stillLogsAndNeverFailsTheCaller() {
         AuditTrailPort withoutContext = mock(AuditTrailPort.class);
-        when(withoutContext.withCorrelationId(any(), any())).thenThrow(new IllegalStateException("no audit context"));
+        doThrow(new IllegalStateException("no audit context")).when(withoutContext).stageBestEffort(any());
         AuthenticationAuditTrailAdapter outOfContext = new AuthenticationAuditTrailAdapter(logger, withoutContext);
         CertificateAuthenticationAudit event = success("corr-1");
 

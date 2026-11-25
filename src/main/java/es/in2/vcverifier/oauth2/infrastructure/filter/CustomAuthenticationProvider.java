@@ -10,6 +10,7 @@ import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
 import es.in2.vcverifier.shared.domain.model.SessionOrigin;
 import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import es.in2.vcverifier.verifier.domain.model.audit.AuditedPerson;
 import es.in2.vcverifier.verifier.domain.model.audit.IamSessionAudit;
 import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
@@ -68,9 +69,15 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private final SchemaProfileRegistry schemaProfileRegistry;
     private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
     private final AuthenticationAuditPort authenticationAuditPort;
+    private final AuditTrailPort auditTrail;
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+        if (authentication instanceof OAuth2AuthorizationCodeAuthenticationToken codeExchange
+                && codeExchange.getAdditionalParameters().get(AUDIT_CORRELATION_ID) instanceof String correlationId) {
+            log.debug("Authorization token received: {}", codeExchange);
+            return auditTrail.withCorrelationId(correlationId, () -> handleGrant(codeExchange));
+        }
         if (authentication instanceof OAuth2AuthorizationGrantAuthenticationToken oAuth2AuthorizationGrantAuthenticationToken) {
             log.debug("Authorization token received: {}", oAuth2AuthorizationGrantAuthenticationToken);
             return handleGrant(oAuth2AuthorizationGrantAuthenticationToken);

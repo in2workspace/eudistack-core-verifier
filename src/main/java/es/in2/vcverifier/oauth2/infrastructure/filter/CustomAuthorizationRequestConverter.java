@@ -29,6 +29,7 @@ import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import io.micrometer.common.util.StringUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
@@ -119,11 +120,17 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final TenantLoginMethodsPort tenantLoginMethodsPort;
     private final DcqlProfileResolver dcqlProfileResolver;
     private final WalletLoginWorkflow walletLoginWorkflow;
+    private final AuditTrailPort auditTrail;
     private final LoginMethodsResolver loginMethodsResolver = new LoginMethodsResolver();
 
     @Override
     public Authentication convert(HttpServletRequest request) {
         log.info("CustomAuthorizationRequestConverter.convert");
+        String auditCorrelationId = UUID.randomUUID().toString();
+        return auditTrail.withCorrelationId(auditCorrelationId, () -> convert(request, auditCorrelationId));
+    }
+
+    private Authentication convert(HttpServletRequest request, String auditCorrelationId) {
 
         String portalUrl = resolvePortalUrlFromRequest(request);
         String originalRequestURL = getFullRequestUrl(request);
@@ -150,6 +157,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .contextPath(contextPath)
                 .accessProfile(request.getParameter(ACCESS_PROFILE_PARAMETER))
                 .issuer(resolveIssuer())
+                .auditCorrelationId(auditCorrelationId)
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
@@ -270,8 +278,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // value itself is never logged, only whether one was found.
         log.debug("event=sso_cookie_lookup tenant={} expectedCookieName={} found={}",
                 tenant, SSO_COOKIE_PREFIX + tenant, cookieValue != null);
-        String correlationId = UUID.randomUUID().toString();
-        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, correlationId);
+        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, ctx.auditCorrelationId());
     }
 
     /**
@@ -751,7 +758,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());
         }
         additionalParameters.put(LOGIN_METHODS, loginMethods.stream().map(LoginMethod::value).toList());
-        additionalParameters.put(AUDIT_CORRELATION_ID, UUID.randomUUID().toString());
+        additionalParameters.put(AUDIT_CORRELATION_ID, authorizationContext.auditCorrelationId());
         if (requestedLevel != null) {
             additionalParameters.put(ACR_REQUESTED, requestedLevel.level().acrValue());
             additionalParameters.put(ACR_ESSENTIAL, requestedLevel.essential());

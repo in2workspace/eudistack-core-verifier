@@ -8,6 +8,7 @@ import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.ClientCertificate;
 import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.shared.domain.port.RecordingAuditTrail;
 import es.in2.vcverifier.sso.application.workflow.SsoLoginCompletionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow.Outcome;
@@ -57,6 +58,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class CertificateLoginWorkflowTest {
 
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
+
     private static final Instant NOW = Instant.parse("2026-11-04T10:00:00Z");
     private static final String STATE = "s-1";
     private static final String TENANT = "cgcom";
@@ -92,7 +95,7 @@ class CertificateLoginWorkflowTest {
     void setUp() {
         workflow = new CertificateLoginWorkflow(cache, clientCertificateReader, certificateTrustValidationPort,
                 certificateSubjectService, authorizationResponseProcessorService, ssoLoginCompletionWorkflow,
-                authenticationAuditPort, Clock.fixed(NOW, ZoneOffset.UTC));
+                authenticationAuditPort, auditTrail, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -270,6 +273,17 @@ class CertificateLoginWorkflowTest {
         workflow.login(STATE, TENANT, HEADER, CHAIN);
 
         verifyNoInteractions(authenticationAuditPort);
+        assertThat(auditTrail.correlationIds()).isEmpty();
+    }
+
+    @Test
+    void login_openLogin_runsUnderTheLoginCorrelationId() {
+        givenOpenLogin(Map.of());
+        when(clientCertificateReader.readChain(null, List.of())).thenThrow(new IllegalArgumentException("empty"));
+
+        workflow.login(STATE, TENANT, null, List.of());
+
+        assertThat(auditTrail.correlationIds()).containsExactly(CORRELATION_ID);
     }
 
     @Test
