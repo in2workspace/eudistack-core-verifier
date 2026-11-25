@@ -3,6 +3,7 @@ package es.in2.vcverifier.verifier.infrastructure.audit;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.ClientCertificate;
@@ -18,8 +19,12 @@ import es.in2.vcverifier.verifier.domain.model.audit.AuditedPerson;
 import es.in2.vcverifier.verifier.domain.model.audit.CertificateAuthenticationAudit;
 import es.in2.vcverifier.verifier.domain.model.audit.IamSessionAudit;
 import es.in2.vcverifier.verifier.infrastructure.logging.AuthenticationAuditLogger;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.Instant;
 import java.util.Map;
@@ -114,6 +119,71 @@ class AuthenticationAuditTrailAdapterTest {
         AuditEntry entry = auditTrail.stagedInNewTransaction().getFirst();
         assertThat(entry.type()).isEqualTo(AuditEventType.IAM_SESSION_ESTABLISHED);
         assertThat(entry.details()).containsEntry("session_origin", "Certificate");
+    }
+
+    @Test
+    void iamSessionEstablished_requestOnTheClientTenant_isStaged() {
+        onRequestOfTenant("cgcom");
+
+        adapter.iamSessionEstablished(session("cgcom"));
+
+        assertThat(auditTrail.stagedInNewTransaction()).hasSize(1);
+    }
+
+    @Test
+    void iamSessionEstablished_requestOnAnotherTenant_isNotStagedAndLeavesAWarning() {
+        onRequestOfTenant("kpmg");
+        IamSessionAudit event = session("cgcom");
+        Logger adapterLogger = (Logger) LoggerFactory.getLogger(AuthenticationAuditTrailAdapter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        adapterLogger.addAppender(appender);
+        try {
+            adapter.iamSessionEstablished(event);
+        } finally {
+            adapterLogger.detachAppender(appender);
+        }
+
+        verify(logger).iamSessionEstablished(event);
+        assertThat(auditTrail.all()).isEmpty();
+        assertThat(appender.list).extracting(ILoggingEvent::getFormattedMessage).containsExactly(
+                "event=authentication_audit_tenant_mismatch event_type=IamSessionEstablished client_tenant=cgcom "
+                        + "request_tenant=kpmg clientId=portal correlation_id=corr-1");
+        assertThat(appender.list.getFirst().getFormattedMessage()).doesNotContain("12345678Z", "JOSE", "jose@example.com");
+    }
+
+    @Test
+    void iamSessionEstablished_clientWithoutTenant_isStaged() {
+        onRequestOfTenant("cgcom");
+
+        adapter.iamSessionEstablished(session(null));
+
+        assertThat(auditTrail.stagedInNewTransaction()).hasSize(1);
+    }
+
+    @Test
+    void iamSessionEstablished_requestWithoutTenant_isStaged() {
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+
+        adapter.iamSessionEstablished(session("cgcom"));
+
+        assertThat(auditTrail.stagedInNewTransaction()).hasSize(1);
+    }
+
+    @AfterEach
+    void clearRequest() {
+        RequestContextHolder.resetRequestAttributes();
+    }
+
+    private static void onRequestOfTenant(String tenant) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute(TenantDomainFilter.TENANT_ATTRIBUTE, tenant);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+    }
+
+    private static IamSessionAudit session(String tenant) {
+        return new IamSessionAudit(tenant, "corr-1", "portal", SessionOrigin.CERTIFICATE, AuditResult.SUCCESS,
+                AuditedPerson.of(IDENTITY), Map.of("given_name", "JOSE ANTONIO"));
     }
 
     @Test

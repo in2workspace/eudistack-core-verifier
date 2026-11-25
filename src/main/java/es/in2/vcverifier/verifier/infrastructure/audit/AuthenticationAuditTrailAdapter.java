@@ -1,5 +1,6 @@
 package es.in2.vcverifier.verifier.infrastructure.audit;
 
+import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.model.audit.AuditEntry;
 import es.in2.vcverifier.shared.domain.model.audit.AuditEventType;
 import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
@@ -13,6 +14,8 @@ import es.in2.vcverifier.verifier.infrastructure.logging.AuthenticationAuditLogg
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.function.Supplier;
 
@@ -45,7 +48,22 @@ public class AuthenticationAuditTrailAdapter implements AuthenticationAuditPort 
     @Override
     public void iamSessionEstablished(IamSessionAudit event) {
         logger.iamSessionEstablished(event);
+        String requestTenant = requestTenant();
+        if (event.tenant() != null && requestTenant != null && !event.tenant().equals(requestTenant)) {
+            log.warn("event=authentication_audit_tenant_mismatch event_type={} client_tenant={} request_tenant={} "
+                            + "clientId={} correlation_id={}",
+                    IAM_SESSION_ESTABLISHED.catalogName(), sanitize(event.tenant()), sanitize(requestTenant),
+                    sanitize(event.oidcClientId()), event.correlationId());
+            return;
+        }
         stage(IAM_SESSION_ESTABLISHED, () -> AuthenticationAuditEntries.of(event));
+    }
+
+    private static String requestTenant() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            return TenantDomainFilter.getCurrentTenant(attributes.getRequest());
+        }
+        return null;
     }
 
     private void stage(AuditEventType type, Supplier<AuditEntry> entry) {
