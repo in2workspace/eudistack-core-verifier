@@ -19,6 +19,10 @@ import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.model.OAuth2M2MAuditEvent;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
 import es.in2.vcverifier.oauth2.domain.port.OAuth2M2MAuditPort;
+import es.in2.vcverifier.shared.domain.model.SessionOrigin;
+import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.verifier.domain.model.audit.AuditedPerson;
+import es.in2.vcverifier.verifier.domain.model.audit.IamSessionAudit;
 import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
@@ -59,7 +63,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
+import static es.in2.vcverifier.shared.domain.util.Constants.SESSION_ORIGIN;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_TENANT;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -299,6 +305,138 @@ class CustomAuthenticationProviderTest {
         ArgumentCaptor<RefreshTokenDataCache> refreshTokenData = ArgumentCaptor.forClass(RefreshTokenDataCache.class);
         verify(cacheStoreForRefreshTokenData).add(anyString(), refreshTokenData.capture());
         assertSame(authentication, refreshTokenData.getValue().authentication());
+    }
+
+    @Test
+    void authenticate_certificateCodeExchange_auditsTheSessionWithTheReleasedIdentity() {
+        when(tokenGenerationWorkflow.issueAccessToken(isNull(), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResultWithClaims(Map.of("sub", "b2f1c3", "aud", "test-client", "acr", "high",
+                        "personal_administrative_number", "12345678Z", "given_name", "JOSE ANTONIO",
+                        "family_name", "GARCIA FERNANDEZ")));
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+
+        provider.authenticate(certificateCodeExchange("test-code-audit", SessionOrigin.CERTIFICATE));
+
+        IamSessionAudit audit = auditedSession();
+        assertEquals(AuditResult.SUCCESS, audit.result());
+        assertNull(audit.reason());
+        assertEquals("corr-1", audit.correlationId());
+        assertEquals("test-client", audit.oidcClientId());
+        assertEquals(SessionOrigin.CERTIFICATE, audit.sessionOrigin());
+        assertEquals(new AuditedPerson("12345678Z", "JOSE ANTONIO GARCIA FERNANDEZ", null), audit.holder());
+        assertEquals(Map.of("personal_administrative_number", "12345678Z", "given_name", "JOSE ANTONIO",
+                "family_name", "GARCIA FERNANDEZ"), audit.identityClaims());
+    }
+
+    @Test
+    void authenticate_reusedSessionCodeExchange_auditsTheSsoReuseOrigin() {
+        when(tokenGenerationWorkflow.issueAccessToken(isNull(), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResultWithClaims(Map.of("sub", "b2f1c3")));
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+
+        provider.authenticate(certificateCodeExchange("test-code-reuse", SessionOrigin.SSO_REUSE));
+
+        assertEquals(SessionOrigin.SSO_REUSE, auditedSession().sessionOrigin());
+    }
+
+    @Test
+    void authenticate_codeExchangeWithoutSessionOrigin_takesItFromTheAuthentication() {
+        when(tokenGenerationWorkflow.issueAccessToken(isNull(), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResultWithClaims(Map.of("sub", "b2f1c3")));
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+
+        provider.authenticate(certificateCodeExchange("test-code-no-origin", null));
+
+        assertEquals(SessionOrigin.CERTIFICATE, auditedSession().sessionOrigin());
+    }
+
+    @Test
+    void authenticate_tokenIssuanceFails_auditsTokenIssuanceFailedWithTheCertificateHolder() {
+        when(tokenGenerationWorkflow.issueAccessToken(isNull(), anyString(), anyMap(), eq(true), any()))
+                .thenThrow(new IllegalStateException("signing unavailable"));
+        OAuth2AuthorizationCodeAuthenticationToken exchange =
+                certificateCodeExchange("test-code-failure", SessionOrigin.CERTIFICATE);
+
+        assertThrows(IllegalStateException.class, () -> provider.authenticate(exchange));
+
+        IamSessionAudit audit = auditedSession();
+        assertEquals(AuditResult.FAILURE, audit.result());
+        assertEquals(IamSessionAudit.TOKEN_ISSUANCE_FAILED, audit.reason());
+        assertEquals("12345678Z", audit.holder().identifier());
+        assertNull(audit.identityClaims());
+    }
+
+    @Test
+    void authenticate_sessionAuditFails_stillIssuesTheTokens() {
+        when(tokenGenerationWorkflow.issueAccessToken(isNull(), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResultWithClaims(Map.of("sub", "b2f1c3")));
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+        doThrow(new IllegalStateException("audit down")).when(authenticationAuditPort).iamSessionEstablished(any());
+
+        Authentication result = provider.authenticate(certificateCodeExchange("test-code-audit-down", SessionOrigin.CERTIFICATE));
+
+        assertInstanceOf(OAuth2AccessTokenAuthenticationToken.class, result);
+    }
+
+    @Test
+    void authenticate_refreshTokenGrant_isNotAuditedAsASession() {
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(true), any()))
+                .thenReturn(tokenResultWithClaims(Map.of("sub", "did:key:zDnaeTest123")));
+        when(backendConfig.getRefreshTokenExpirationSeconds()).thenReturn(43200L);
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put(AUTHENTICATION_RESULT,
+                new CredentialAuthentication(buildEmployeeCredentialV1(), null, Instant.now()));
+        additionalParams.put(OAuth2ParameterNames.AUDIENCE, "https://rp.example.com");
+
+        provider.authenticate(new OAuth2RefreshTokenAuthenticationToken(
+                "opaque-refresh-token", mock(Authentication.class), null, additionalParams));
+
+        verifyNoInteractions(authenticationAuditPort);
+    }
+
+    @Test
+    void authenticate_clientCredentialsGrant_isNotAuditedAsASession() {
+        when(backendConfig.getUrl()).thenReturn("https://verifier.example.com");
+        when(tokenGenerationWorkflow.issueAccessToken(any(JsonNode.class), anyString(), anyMap(), eq(false), any()))
+                .thenReturn(new TokenGenerationWorkflow.Result("signed-access-jwt", Instant.now(),
+                        Instant.now().plusSeconds(3600), null, null, "machine learcredential", "did:key:zDnaeMachine123", null));
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put("vc", objectMapper.convertValue(buildMachineCredentialV1(), Map.class));
+
+        provider.authenticate(new OAuth2ClientCredentialsAuthenticationToken(mock(Authentication.class), null, additionalParams));
+
+        verifyNoInteractions(authenticationAuditPort);
+    }
+
+    private OAuth2AuthorizationCodeAuthenticationToken certificateCodeExchange(String code, SessionOrigin origin) {
+        Map<String, Object> additionalParams = new HashMap<>();
+        additionalParams.put(OAuth2ParameterNames.CLIENT_ID, "test-client");
+        additionalParams.put(AUTHENTICATION_RESULT, new CertificateAuthentication("b2f1c3",
+                new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "GARCIA FERNANDEZ JOSE ANTONIO",
+                        null, "ES", "12345678Z"),
+                "CN=AC FNMT Usuarios", "ab12", Instant.now().plusSeconds(3600), AssuranceLevel.HIGH, List.of("hwk"),
+                Instant.now()));
+        additionalParams.put(OAuth2ParameterNames.AUDIENCE, "https://rp.example.com");
+        additionalParams.put(AUDIT_CORRELATION_ID, "corr-1");
+        if (origin != null) {
+            additionalParams.put(SESSION_ORIGIN, origin);
+        }
+        storeAuthorizationCode(code);
+        return new OAuth2AuthorizationCodeAuthenticationToken(
+                code, mock(Authentication.class), "https://example.com/callback", additionalParams);
+    }
+
+    private static TokenGenerationWorkflow.Result tokenResultWithClaims(Map<String, Object> idTokenClaims) {
+        return new TokenGenerationWorkflow.Result("signed-access-jwt", Instant.now(), Instant.now().plusSeconds(3600),
+                "signed-id-jwt", idTokenClaims, "openid profile", "b2f1c3", Instant.now());
+    }
+
+    private IamSessionAudit auditedSession() {
+        ArgumentCaptor<IamSessionAudit> audit = ArgumentCaptor.forClass(IamSessionAudit.class);
+        verify(authenticationAuditPort).iamSessionEstablished(audit.capture());
+        return audit.getValue();
     }
 
     @Test
