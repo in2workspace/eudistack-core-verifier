@@ -24,6 +24,7 @@ import es.in2.vcverifier.oauth2.domain.exception.UnsupportedGrantTypeException;
 import es.in2.vcverifier.oauth2.domain.model.AuthorizationCodeData;
 import es.in2.vcverifier.oauth2.domain.model.RefreshTokenDataCache;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
+import es.in2.vcverifier.shared.domain.model.SessionOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -50,7 +51,9 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
+import static es.in2.vcverifier.shared.domain.util.Constants.SESSION_ORIGIN;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -166,6 +169,41 @@ class CustomTokenRequestConverterTest {
                 (OAuth2AuthorizationCodeAuthenticationToken) customTokenRequestConverter.convert(mockRequest);
 
         assertEquals(1_700_000_000L, token.getAdditionalParameters().get("auth_time"));
+    }
+
+    @Test
+    void convert_authorizationCodeGrant_carriesTheAuditCorrelationIdAndSessionOrigin() {
+        OAuth2AuthorizationCodeAuthenticationToken token = codeExchange("corr-1", SessionOrigin.SSO_REUSE);
+
+        assertEquals("corr-1", token.getAdditionalParameters().get(AUDIT_CORRELATION_ID));
+        assertEquals(SessionOrigin.SSO_REUSE, token.getAdditionalParameters().get(SESSION_ORIGIN));
+    }
+
+    @Test
+    void convert_authorizationCodeGrant_withoutAuditData_omitsIt() {
+        OAuth2AuthorizationCodeAuthenticationToken token = codeExchange(null, null);
+
+        assertFalse(token.getAdditionalParameters().containsKey(AUDIT_CORRELATION_ID));
+        assertFalse(token.getAdditionalParameters().containsKey(SESSION_ORIGIN));
+    }
+
+    private OAuth2AuthorizationCodeAuthenticationToken codeExchange(String correlationId, SessionOrigin origin) {
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        SecurityContextHolder.getContext().setAuthentication(mock(Authentication.class));
+        MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
+        parameters.add(OAuth2ParameterNames.GRANT_TYPE, "authorization_code");
+        parameters.add(OAuth2ParameterNames.CODE, "code");
+        parameters.add(OAuth2ParameterNames.CLIENT_ID, "client-id");
+        parameters.add(OAuth2ParameterNames.STATE, "state");
+        when(mockRequest.getParameterMap()).thenReturn(convertToMap(parameters));
+        AuthorizationCodeData authorizationCodeData = mock(AuthorizationCodeData.class);
+        when(cacheStoreForAuthorizationCodeData.get("code")).thenReturn(authorizationCodeData);
+        when(authorizationCodeData.state()).thenReturn("state");
+        when(authorizationCodeData.authentication()).thenReturn(
+                new CredentialAuthentication(mock(JsonNode.class), null, Instant.ofEpochSecond(1_700_000_000L)));
+        when(authorizationCodeData.correlationId()).thenReturn(correlationId);
+        when(authorizationCodeData.sessionOrigin()).thenReturn(origin);
+        return (OAuth2AuthorizationCodeAuthenticationToken) customTokenRequestConverter.convert(mockRequest);
     }
 
     @Test

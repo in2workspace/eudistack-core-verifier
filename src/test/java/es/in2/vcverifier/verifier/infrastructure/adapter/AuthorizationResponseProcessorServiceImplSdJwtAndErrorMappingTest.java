@@ -22,6 +22,7 @@ import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
+import es.in2.vcverifier.shared.domain.model.SessionOrigin;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
 import es.in2.vcverifier.verifier.domain.exception.CredentialExpiredException;
@@ -74,6 +75,7 @@ import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.VP_NONCE;
@@ -607,6 +609,18 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
         assertFalse(printed.contains("code="));
     }
 
+    @Test
+    void handleAuthResponse_walletLogin_issuesTheCodeWithThePresentationOrigin() {
+        givenSuccessfulSdJwtLogin(Map.of("name", "x"));
+
+        AuthResponseResult result = service.handleAuthResponse(STATE, SD_JWT_B64, TENANT);
+
+        ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
+        verify(codeCache).add(eq(result.authorizationCode()), codeData.capture());
+        assertEquals(SessionOrigin.PRESENTATION, codeData.getValue().sessionOrigin());
+        assertNotNull(codeData.getValue().correlationId());
+    }
+
     // --- Certificate login ---
 
     @Test
@@ -648,6 +662,36 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
 
         assertTrue(service.issueCodeForCertificateLogin(STATE, TENANT, certificateAuthentication()).isEmpty());
         verify(codeCache, never()).add(any(), any());
+    }
+
+    @Test
+    void issueCodeForCertificateLogin_keepsTheLoginCorrelationIdAndTheCertificateOrigin() {
+        givenLogin(baseRequest().additionalParameters(Map.of(NONCE, "client-nonce",
+                EXPIRATION, Instant.now().plusSeconds(120).getEpochSecond(), AUTHORIZE_TENANT, TENANT,
+                AUDIT_CORRELATION_ID, "corr-1")).build());
+        givenRegisteredClient();
+        givenCodeIssuance();
+
+        AuthResponseResult result = service.issueCodeForCertificateLogin(STATE, TENANT, certificateAuthentication()).orElseThrow();
+
+        ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
+        verify(codeCache).add(eq(result.authorizationCode()), codeData.capture());
+        assertEquals("corr-1", codeData.getValue().correlationId());
+        assertEquals(SessionOrigin.CERTIFICATE, codeData.getValue().sessionOrigin());
+    }
+
+    @Test
+    void issueCodeForCertificateLogin_loginWithoutCorrelationId_issuesTheCodeWithAGeneratedOne() {
+        givenLogin(certificateLogin(TENANT, Instant.now().plusSeconds(120).getEpochSecond()));
+        givenRegisteredClient();
+        givenCodeIssuance();
+
+        AuthResponseResult result = service.issueCodeForCertificateLogin(STATE, TENANT, certificateAuthentication()).orElseThrow();
+
+        ArgumentCaptor<AuthorizationCodeData> codeData = ArgumentCaptor.forClass(AuthorizationCodeData.class);
+        verify(codeCache).add(eq(result.authorizationCode()), codeData.capture());
+        assertNotNull(codeData.getValue().correlationId());
+        assertFalse(codeData.getValue().correlationId().isBlank());
     }
 
     private OAuth2AuthorizationRequest certificateLogin(String tenant, long expirationEpoch) {
@@ -694,6 +738,8 @@ class AuthorizationResponseProcessorServiceImplSdJwtAndErrorMappingTest {
                 assertInstanceOf(CredentialAuthentication.class, codeData.getValue().authentication());
         assertSame(credential, authentication.credential());
         assertEquals(AUTH_TIME, authentication.authTime());
+        assertEquals("correlation-1", codeData.getValue().correlationId());
+        assertEquals(SessionOrigin.SSO_REUSE, codeData.getValue().sessionOrigin());
     }
 
     @Test

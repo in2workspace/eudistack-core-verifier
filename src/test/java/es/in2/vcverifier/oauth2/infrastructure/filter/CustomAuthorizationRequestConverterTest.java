@@ -48,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_PAGE_URI;
 import static es.in2.vcverifier.shared.domain.util.Constants.REQUEST_URI;
@@ -771,6 +772,7 @@ class CustomAuthorizationRequestConverterTest {
 
         assertEquals(codeChallenge, addl.get(PkceParameterNames.CODE_CHALLENGE));
         assertEquals(codeChallengeMethod, addl.get(PkceParameterNames.CODE_CHALLENGE_METHOD));
+        assertInstanceOf(String.class, addl.get(AUDIT_CORRELATION_ID));
     }
 
     @Test
