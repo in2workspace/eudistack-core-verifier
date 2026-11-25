@@ -1,5 +1,8 @@
 package es.in2.vcverifier.verifier.infrastructure.audit;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.ClientCertificate;
@@ -16,6 +19,7 @@ import es.in2.vcverifier.verifier.domain.model.audit.CertificateAuthenticationAu
 import es.in2.vcverifier.verifier.domain.model.audit.IamSessionAudit;
 import es.in2.vcverifier.verifier.infrastructure.logging.AuthenticationAuditLogger;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.Map;
@@ -69,6 +73,26 @@ class AuthenticationAuditTrailAdapterTest {
 
         assertThat(auditTrail.stagedInNewTransaction()).extracting(AuditEntry::reason)
                 .containsExactly("CertificateMissing", "CertificateMissing", "CertificateMissing", "LevelNotMet");
+    }
+
+    @Test
+    void certificateAuthentication_throttledRejection_leavesALogLineWithoutPersonalData() {
+        Logger adapterLogger = (Logger) LoggerFactory.getLogger(AuthenticationAuditTrailAdapter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        adapterLogger.addAppender(appender);
+        try {
+            IntStream.range(0, RejectionThrottle.MAX_PER_KEY + 1)
+                    .forEach(_ -> adapter.certificateAuthentication(rejected(CertificateLoginReason.CERTIFICATE_REVOKED)));
+        } finally {
+            adapterLogger.detachAppender(appender);
+        }
+
+        assertThat(appender.list).extracting(ILoggingEvent::getFormattedMessage).containsExactly(
+                "event=authentication_audit_throttled event_type=CertificateAuthentication tenant=cgcom "
+                        + "clientId=portal reason=CertificateRevoked correlation_id=corr-1");
+        assertThat(appender.list.getFirst().getFormattedMessage())
+                .doesNotContain("12345678Z", "JOSE", "jose@example.com", "ab12cd", "AC FNMT");
     }
 
     @Test

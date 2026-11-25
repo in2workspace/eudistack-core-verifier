@@ -13,6 +13,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import static es.in2.vcverifier.shared.domain.model.audit.AuditEventType.CERTIFICATE_AUTHENTICATION;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -27,6 +30,9 @@ public class AuthenticationAuditTrailAdapter implements AuthenticationAuditPort 
         logger.certificateAuthentication(event);
         if (event.result() != AuditResult.SUCCESS
                 && !rejectionThrottle.allow(event.tenant() + "|" + event.oidcClientId() + "|" + event.reason().value())) {
+            log.warn("event=authentication_audit_throttled event_type={} tenant={} clientId={} reason={} correlation_id={}",
+                    CERTIFICATE_AUTHENTICATION.catalogName(), sanitize(event.tenant()), sanitize(event.oidcClientId()),
+                    event.reason().value(), event.correlationId());
             return;
         }
         stage(AuthenticationAuditEntries.of(event));
