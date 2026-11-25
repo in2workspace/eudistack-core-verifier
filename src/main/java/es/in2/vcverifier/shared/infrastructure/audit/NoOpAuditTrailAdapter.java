@@ -29,4 +29,9 @@ public class NoOpAuditTrailAdapter implements AuditTrailPort {
     public <T> T asSystem(String tenant, String actorId, Supplier<T> action) {
         return action.get();
     }
+
+    @Override
+    public <T> T withCorrelationId(String correlationId, Supplier<T> action) {
+        return action.get();
+    }
 }

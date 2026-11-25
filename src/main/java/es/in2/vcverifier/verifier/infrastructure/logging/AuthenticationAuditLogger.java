@@ -3,25 +3,22 @@ package es.in2.vcverifier.verifier.infrastructure.logging;
 import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
 import es.in2.vcverifier.verifier.domain.model.audit.CertificateAuthenticationAudit;
 import es.in2.vcverifier.verifier.domain.model.audit.IamSessionAudit;
-import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-public class AuthenticationAuditLogger implements AuthenticationAuditPort {
+public class AuthenticationAuditLogger {
 
     static final String CERTIFICATE_AUTHENTICATION = "CertificateAuthentication";
     static final String IAM_SESSION_ESTABLISHED = "IamSessionEstablished";
     private static final String NONE = "-";
 
-    @Override
     public void certificateAuthentication(CertificateAuthenticationAudit event) {
         write(CERTIFICATE_AUTHENTICATION, event.correlationId(), event.result(),
                 event.reason() == null ? null : event.reason().value());
     }
 
-    @Override
     public void iamSessionEstablished(IamSessionAudit event) {
         write(IAM_SESSION_ESTABLISHED, event.correlationId(), event.result(), event.reason());
     }

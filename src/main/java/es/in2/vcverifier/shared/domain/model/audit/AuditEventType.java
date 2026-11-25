@@ -5,7 +5,7 @@ import java.util.Set;
 
 /**
  * The audit event types the Verifier produces, with the {@code action} and the {@code reason} vocabulary
- * that catalogue 2.2.0 fixes for each. The audit API rejects an event whose action differs, or whose reason
+ * that catalogue 2.4.0 fixes for each. The audit API rejects an event whose action differs, or whose reason
  * is outside the type's vocabulary or contradicts the result the reason determines, so those rules are
  * enforced here before an event can be built.
  */
@@ -16,7 +16,14 @@ public enum AuditEventType {
             Set.of("InternalError")),
     EXTERNAL_SYSTEM_ACCESS("ExternalSystemAccess", "AccessExternalSystem",
             Set.of("AuthenticationRejected", "SourceNotTrusted"),
-            Set.of("ErrorResponse", "InvalidResponse", "Timeout", "Unreachable"));
+            Set.of("ErrorResponse", "InvalidResponse", "Timeout", "Unreachable")),
+    CERTIFICATE_AUTHENTICATION("CertificateAuthentication", "AuthenticateWithCertificate",
+            Set.of("CertificateMissing", "CertificateNotQualified", "CertificateNotNaturalPerson",
+                    "CertificateExpired", "CertificateRevoked", "LevelNotMet"),
+            Set.of("ValidationUnavailable")),
+    IAM_SESSION_ESTABLISHED("IamSessionEstablished", "EstablishSession",
+            Set.of(),
+            Set.of("TokenIssuanceFailed"));
 
     /** The {@code source} of every event the Verifier produces. */
     public static final String SOURCE = "verifier";

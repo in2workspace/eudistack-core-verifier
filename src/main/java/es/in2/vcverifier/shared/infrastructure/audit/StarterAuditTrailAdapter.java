@@ -66,6 +66,13 @@ public class StarterAuditTrailAdapter implements AuditTrailPort {
         }
     }
 
+    @Override
+    public <T> T withCorrelationId(String correlationId, Supplier<T> action) {
+        try (var _ = AuditContexts.withCorrelationId(correlationId)) {
+            return action.get();
+        }
+    }
+
     private static AuditDraft draftOf(AuditEntry entry) {
         AuditFact fact = AuditFact.builder(entry.type().catalogName())
                 .action(entry.type().action())
