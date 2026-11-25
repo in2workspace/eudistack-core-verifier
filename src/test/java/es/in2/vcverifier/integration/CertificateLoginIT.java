@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import es.in2.vcverifier.integration.support.DssStub;
 import es.in2.vcverifier.integration.support.TestCertificates;
 import es.in2.vcverifier.integration.support.TestCertificates.Person;
+import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.shared.config.CertificateLoginFilter;
 import es.in2.vcverifier.sso.infrastructure.web.SsoBrowserBindingCookie;
 import es.in2.vcverifier.verifier.domain.model.ClientData;
@@ -26,6 +27,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -40,6 +42,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +55,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.X_TENANT_HEADER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -109,6 +113,9 @@ class CertificateLoginIT {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private CacheStore<OAuth2AuthorizationRequest> pendingLogins;
 
     @MockitoBean
     private TenantConfigPort tenantConfigPort;
@@ -327,6 +334,46 @@ class CertificateLoginIT {
     }
 
     @Test
+    void loginExpiredOnTheMethodSelection_isNotCompletedAndTheApplicationStillReceivesAccessDenied() throws Exception {
+        // Arrange
+        X509Certificate certificate = DSS.answer(TestCertificates.naturalPerson(PERSON, false), DssStub.QC);
+        Login login = openLogin("openid");
+        expireOnTheMethodSelection(login);
+        int callsBefore = DSS.calls();
+
+        // Act
+        MvcResult certificateAttempt = certificateLogin(login, TestCertificates.header(certificate));
+        int walletAttempt = status(post("/api/login/wallet").param("state", login.state()).with(host(HOST)));
+        MvcResult abort = mockMvc.perform(post("/api/login/abort").with(host(HOST))
+                        .param("state", login.state()))
+                .andReturn();
+
+        // Assert
+        assertRejected(certificateAttempt, 404, "login_not_found");
+        assertThat(DSS.calls()).isEqualTo(callsBefore);
+        assertThat(walletAttempt).isEqualTo(404);
+        assertThat(abort.getResponse().getStatus()).isEqualTo(200);
+        String redirectUrl = objectMapper.readTree(abort.getResponse().getContentAsString()).path("redirectUrl").asText();
+        assertThat(redirectUrl).startsWith(REDIRECT_URI)
+                .contains("error=access_denied", "error_description=login_timeout", "state=" + login.state());
+    }
+
+    @Test
+    void loginGoneFromThePendingCache_isNotFoundAndCannotBeAborted() throws Exception {
+        // Arrange
+        Login login = openLogin("openid");
+        pendingLogins.delete(login.state());
+
+        // Act
+        int walletAttempt = status(post("/api/login/wallet").param("state", login.state()).with(host(HOST)));
+        int abortAttempt = status(post("/api/login/abort").with(host(HOST)).param("state", login.state()));
+
+        // Assert
+        assertThat(walletAttempt).isEqualTo(404);
+        assertThat(abortAttempt).isEqualTo(404);
+    }
+
+    @Test
     void loginInProgress_cannotBeAbortedFromAnotherBrowser() throws Exception {
         Login login = openLogin("openid");
 
@@ -494,6 +541,16 @@ class CertificateLoginIT {
                 .andReturn();
         assertThat(result.getResponse().getStatus()).isEqualTo(200);
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    /** The login stays in the pending cache after expiring, as it does for the retention margin. */
+    private void expireOnTheMethodSelection(Login login) {
+        OAuth2AuthorizationRequest open = pendingLogins.getIfPresent(login.state());
+        assertThat(open).as("pending login of %s", login.state()).isNotNull();
+        pendingLogins.add(login.state(), OAuth2AuthorizationRequest.from(open)
+                .additionalParameters(parameters -> parameters.put(EXPIRATION,
+                        Instant.now().minusSeconds(600).getEpochSecond()))
+                .build());
     }
 
     private int status(MockHttpServletRequestBuilder request) throws Exception {

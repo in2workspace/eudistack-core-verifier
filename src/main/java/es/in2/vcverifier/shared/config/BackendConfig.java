@@ -134,6 +134,17 @@ public class BackendConfig {
     }
 
     /**
+     * How long a pending login stays in its cache: the longest a login can be open (method selection
+     * or QR) plus a margin. The margin keeps an expired login around so {@code /api/login/abort} can
+     * still send the user back to the application; every login path checks the login's own
+     * expiration, so staying in the cache never lets an expired login complete.
+     */
+    public long getPendingLoginRetentionSeconds() {
+        long margin = properties.loginExpiryMarginSeconds() != null ? properties.loginExpiryMarginSeconds() : 600L;
+        return Math.max(getLoginSelectionTimeoutSeconds(), getLoginTimeoutSeconds()) + margin;
+    }
+
+    /**
      * Lifetime of the login SSE stream: the login timeout plus a grace period. A presentation
      * accepted just before the timeout may still be under validation (revocation checks, etc.)
      * when the browser's countdown ends; the browser keeps listening while it aborts the login,

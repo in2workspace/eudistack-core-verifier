@@ -1,7 +1,11 @@
 package es.in2.vcverifier.oauth2.application.workflow;
 
+import com.google.common.base.Ticker;
+import com.google.common.cache.CacheBuilder;
 import es.in2.vcverifier.shared.config.CacheStore;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 
@@ -9,6 +13,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.BROWSER_BINDING_HASH;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
@@ -170,5 +175,83 @@ class AbortLoginWorkflowTest {
 
         assertThat(new AbortLoginWorkflow(racingCache).abort("state-1")).isEmpty();
         assertThat(cache.getIfPresent("state-1")).isNotNull().isNotSameAs(checked);
+    }
+
+    @Nested
+    @DisplayName("login expired on the method selection")
+    class ExpiredOnTheMethodSelection {
+
+        private static final long SELECTION_TIMEOUT_SECONDS = 600;
+        private static final long RETENTION_SECONDS = SELECTION_TIMEOUT_SECONDS + 600;
+
+        private final AtomicLong nanos = new AtomicLong();
+        private CacheStore<OAuth2AuthorizationRequest> retainedCache;
+        private AbortLoginWorkflow retainedWorkflow;
+
+        @BeforeEach
+        void setUpRetainedCache() {
+            Ticker ticker = new Ticker() {
+                @Override
+                public long read() {
+                    return nanos.get();
+                }
+            };
+            retainedCache = new CacheStore<>(CacheBuilder.newBuilder()
+                    .expireAfterWrite(RETENTION_SECONDS, TimeUnit.SECONDS)
+                    .ticker(ticker)
+                    .build());
+            retainedWorkflow = new AbortLoginWorkflow(retainedCache);
+        }
+
+        private void cacheLoginExpiredOnTheSelection() {
+            retainedCache.add("state-1", OAuth2AuthorizationRequest.authorizationCode()
+                    .authorizationUri(ISSUER)
+                    .clientId("issuance-portal")
+                    .redirectUri("https://portal.example.com/callback")
+                    .state("state-1")
+                    .additionalParameters(Map.of(EXPIRATION,
+                            Instant.now().minusSeconds(1).getEpochSecond()))
+                    .build());
+        }
+
+        @Test
+        void abort_expiredLoginStillWithinTheRetentionMargin_returnsAccessDeniedToTheApplication() {
+            // Arrange
+            cacheLoginExpiredOnTheSelection();
+            nanos.addAndGet(TimeUnit.SECONDS.toNanos(RETENTION_SECONDS - 1));
+
+            // Act
+            Optional<String> result = retainedWorkflow.abort("state-1");
+
+            // Assert
+            assertThat(result).contains(
+                    "https://portal.example.com/callback?error=access_denied&error_description=login_timeout&state=state-1"
+                            + ISS_PARAM);
+        }
+
+        @Test
+        void abort_expiredLoginPastTheRetentionMargin_returnsEmpty() {
+            // Arrange
+            cacheLoginExpiredOnTheSelection();
+            nanos.addAndGet(TimeUnit.SECONDS.toNanos(RETENTION_SECONDS + 1));
+
+            // Act
+            Optional<String> result = retainedWorkflow.abort("state-1");
+
+            // Assert
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        void abort_expiredLoginWithoutTheBrowserBindingCookie_returnsAccessDeniedToTheApplication() {
+            // Arrange
+            cacheLoginExpiredOnTheSelection();
+
+            // Act
+            Optional<String> result = retainedWorkflow.abort("state-1", null);
+
+            // Assert
+            assertThat(result).hasValueSatisfying(url -> assertThat(url).contains("error=access_denied"));
+        }
     }
 }

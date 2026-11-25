@@ -46,7 +46,7 @@ public class CacheStoreConfig {
 
     @Bean
     public CacheStore<OAuth2AuthorizationRequest> cacheStoreForOAuth2AuthorizationRequest() {
-        return new CacheStore<>(10, TimeUnit.MINUTES);
+        return new CacheStore<>(backendConfig.getPendingLoginRetentionSeconds(), TimeUnit.SECONDS);
     }
 
     @Bean

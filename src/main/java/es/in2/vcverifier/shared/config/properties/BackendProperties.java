@@ -2,6 +2,7 @@ package es.in2.vcverifier.shared.config.properties;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
 
 import org.hibernate.validator.constraints.URL;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -22,7 +23,8 @@ public record BackendProperties(
         Boolean fapiNonceRequired,
         X5cChainValidation x5cChainValidation,
         Sso sso,
-        Long loginSelectionTimeoutSeconds
+        Long loginSelectionTimeoutSeconds,
+        @PositiveOrZero Long loginExpiryMarginSeconds
 ) {
 
     public record Identity(
