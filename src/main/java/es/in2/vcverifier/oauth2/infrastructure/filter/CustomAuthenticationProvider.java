@@ -197,6 +197,13 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
     // --- Helper methods ---
 
+    private static AuditedPerson holderOf(AuthenticationResult authenticationResult) {
+        if (authenticationResult instanceof CertificateAuthentication certificate) {
+            return AuditedPerson.of(certificate.identity());
+        }
+        return AuditedPerson.UNKNOWN;
+    }
+
     private void auditSession(OAuth2AuthorizationGrantAuthenticationToken authentication, String clientId,
                               String tenant, AuthenticationResult authenticationResult,
                               Map<String, Object> idTokenClaims) {
@@ -206,11 +213,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                 ? value
                 : SessionOrigin.of(authenticationResult);
         boolean issued = idTokenClaims != null;
-        AuditedPerson holder = issued
-                ? AuditedPerson.of(idTokenClaims)
-                : authenticationResult instanceof CertificateAuthentication certificate
-                        ? AuditedPerson.of(certificate.identity())
-                        : AuditedPerson.UNKNOWN;
+        AuditedPerson holder = issued ? AuditedPerson.of(idTokenClaims) : holderOf(authenticationResult);
         try {
             authenticationAuditPort.iamSessionEstablished(new IamSessionAudit(tenant, correlationId, clientId, origin,
                     issued ? AuditResult.SUCCESS : AuditResult.FAILURE, holder,

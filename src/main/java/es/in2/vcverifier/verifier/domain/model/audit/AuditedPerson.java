@@ -10,11 +10,11 @@ public record AuditedPerson(String identifier, String name, String email) {
 
     public static final AuditedPerson UNKNOWN = new AuditedPerson(null, null, null);
 
-    private static final String PERSONAL_ADMINISTRATIVE_NUMBER = "personal_administrative_number";
-    private static final String NAME = "name";
-    private static final String GIVEN_NAME = "given_name";
-    private static final String FAMILY_NAME = "family_name";
-    private static final String EMAIL = "email";
+    private static final String PERSONAL_ADMINISTRATIVE_NUMBER_CLAIM = "personal_administrative_number";
+    private static final String NAME_CLAIM = "name";
+    private static final String GIVEN_NAME_CLAIM = "given_name";
+    private static final String FAMILY_NAME_CLAIM = "family_name";
+    private static final String EMAIL_CLAIM = "email";
     private static final Set<String> PROTOCOL_CLAIMS = Set.of("iss", "sub", "aud", "exp", "iat", "nbf", "jti",
             "nonce", "auth_time", "acr", "amr", "sid", "azp", "at_hash", "c_hash", "scope", "client_id");
     private static final Set<String> CREDENTIAL_CLAIMS = Set.of("vc_json", "vc", "credential_type");
@@ -32,10 +32,10 @@ public record AuditedPerson(String identifier, String name, String email) {
         if (idTokenClaims == null) {
             return UNKNOWN;
         }
-        String name = text(idTokenClaims.get(NAME));
-        return new AuditedPerson(text(idTokenClaims.get(PERSONAL_ADMINISTRATIVE_NUMBER)),
-                name == null ? joined(text(idTokenClaims.get(GIVEN_NAME)), text(idTokenClaims.get(FAMILY_NAME))) : name,
-                text(idTokenClaims.get(EMAIL)));
+        String name = text(idTokenClaims.get(NAME_CLAIM));
+        return new AuditedPerson(text(idTokenClaims.get(PERSONAL_ADMINISTRATIVE_NUMBER_CLAIM)),
+                name == null ? joined(text(idTokenClaims.get(GIVEN_NAME_CLAIM)), text(idTokenClaims.get(FAMILY_NAME_CLAIM))) : name,
+                text(idTokenClaims.get(EMAIL_CLAIM)));
     }
 
     public static Map<String, Object> identityClaims(Map<String, Object> idTokenClaims) {

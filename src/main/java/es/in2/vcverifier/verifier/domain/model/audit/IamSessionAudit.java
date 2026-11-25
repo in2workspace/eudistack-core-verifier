@@ -26,8 +26,11 @@ public record IamSessionAudit(
         if (result != AuditResult.SUCCESS && result != AuditResult.FAILURE) {
             throw new IllegalArgumentException("IamSessionEstablished is Success or Failure");
         }
-        identityClaims = result != AuditResult.SUCCESS ? null
-                : identityClaims == null ? Map.of() : Map.copyOf(identityClaims);
+        if (result == AuditResult.SUCCESS) {
+            identityClaims = identityClaims == null ? Map.of() : Map.copyOf(identityClaims);
+        } else {
+            identityClaims = null;
+        }
     }
 
     public String reason() {
