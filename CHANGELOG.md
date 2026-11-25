@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (EUD-324)
+
+- **EUD-324 — Issuer trust only through the trust validation service (DSS)**: when an attestation is verified, the issuer `x5c` chain is sent to `validateCertificate` for the current time, after the signature, the holder, the validity and the type are correct. The issuer is trusted only if the result is valid, the chain reaches an entity of the issuers list (`http://uri.eudistack.net/19602/LoTEType/EAAProvidersList`) whose `TradeName` is the declared issuer (with or without `did:elsi:`), and the entity has the service `http://uri.eudistack.net/19602/SvcType/EAA/<credential_configuration_id>/Issuance`. Applies to SD-JWT VC (type from `vct`) and to `jwt_vc_json` (type from `type`), for wallet logins and for machine clients.
+- **`IssuerNotTrusted` and `TrustListUnavailable`**: a valid chain that does not meet those conditions, a chain that is not valid, reaches no list or is revoked gives `IssuerNotTrusted` (`ISSUER_NOT_TRUSTED`, `issuer_not_authorized`). Any other indeterminate result, an issuers list or its list of lists that is not well signed, past its next update or loaded more than `verifier.trust-validation.max-list-age` ago, or no answer gives `TrustListUnavailable` (`TRUST_LIST_UNAVAILABLE`, `trust_list_unavailable`, HTTP 503; `server_error` for machine clients). An attestation without `x5c` (for example a `did:key` issuer) is not trusted.
+- **Issuer trust event**: every decision is logged as `business.credential.issuer_trust` with the outcome and, when trusted, the entity, the service type, the list and its sequence number.
+
+### Removed (EUD-324)
+
+- The local trusted issuers list (`trusted-issuers.yaml`, `verifier.backend.local-files.trusted-issuers-path`, its refresh every 5 minutes) and the DOME types it held. The EBSI trusted issuers provider stays, outside the attestation verification.
+- The validation of the `x5c` chain up to a self-contained root, its AIA chasing and `verifier.backend.x5c-chain-validation.*` (`VERIFIER_BACKEND_X5CCHAINVALIDATION_BYPASS`, `VERIFIER_BACKEND_X5C_AIA_CHASING_ENABLED`). DSS builds and validates the chain.
+
+### Fixed (EUD-324)
+
+- An untrusted issuer of an SD-JWT VC was reported as an invalid signature (`SIGNATURE_INVALID`): the trust error is no longer wrapped.
+
 ### Added (EUD-244, version 3.5.0)
 
 - **EUD-244 — Audit events (catalogue 2.2.0)**: `SystemAuthenticated` for the client-credentials grant of machine clients and `ExternalSystemAccess` for the calls to the client registry and the trusted list, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the Verifier behaves as before.
