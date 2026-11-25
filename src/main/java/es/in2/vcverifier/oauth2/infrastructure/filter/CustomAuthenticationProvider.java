@@ -69,21 +69,20 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private final SchemaProfileRegistry schemaProfileRegistry;
     private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
     private final AuthenticationAuditPort authenticationAuditPort;
-    private final AuditTrailPort auditTrail;
+    private final AuditTrailPort auditTrailPort;
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
-        if (authentication instanceof OAuth2AuthorizationCodeAuthenticationToken codeExchange
-                && codeExchange.getAdditionalParameters().get(AUDIT_CORRELATION_ID) instanceof String correlationId) {
-            log.debug("Authorization token received: {}", codeExchange);
-            return auditTrail.withCorrelationId(correlationId, () -> handleGrant(codeExchange));
+        if (!(authentication instanceof OAuth2AuthorizationGrantAuthenticationToken grant)) {
+            log.error("Unsupported grant type: {}", authentication.getClass().getName());
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNSUPPORTED_GRANT_TYPE);
         }
-        if (authentication instanceof OAuth2AuthorizationGrantAuthenticationToken oAuth2AuthorizationGrantAuthenticationToken) {
-            log.debug("Authorization token received: {}", oAuth2AuthorizationGrantAuthenticationToken);
-            return handleGrant(oAuth2AuthorizationGrantAuthenticationToken);
+        log.debug("Authorization token received: {}", grant);
+        if (grant instanceof OAuth2AuthorizationCodeAuthenticationToken
+                && grant.getAdditionalParameters().get(AUDIT_CORRELATION_ID) instanceof String correlationId) {
+            return auditTrailPort.withCorrelationId(correlationId, () -> handleGrant(grant));
         }
-        log.error("Unsupported grant type: {}", authentication.getClass().getName());
-        throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNSUPPORTED_GRANT_TYPE);
+        return handleGrant(grant);
     }
 
     private Authentication handleGrant(OAuth2AuthorizationGrantAuthenticationToken authentication) {

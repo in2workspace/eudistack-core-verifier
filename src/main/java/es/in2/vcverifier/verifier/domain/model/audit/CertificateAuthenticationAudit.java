@@ -52,4 +52,10 @@ public record CertificateAuthenticationAudit(
         }
         return reason == CertificateLoginReason.VALIDATION_UNAVAILABLE ? AuditResult.FAILURE : AuditResult.DENIED;
     }
+
+    @Override
+    public String toString() {
+        return "CertificateAuthenticationAudit[clientId=" + oidcClientId + ", result=" + result()
+                + ", reason=" + (reason == null ? null : reason.value()) + "]";
+    }
 }

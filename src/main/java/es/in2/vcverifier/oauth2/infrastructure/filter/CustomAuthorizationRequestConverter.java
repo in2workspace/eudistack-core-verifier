@@ -17,6 +17,7 @@ import es.in2.vcverifier.oauth2.domain.service.LoginMethodsResolver;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.LoginMethod;
+import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -29,7 +30,6 @@ import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import io.micrometer.common.util.StringUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
-import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
@@ -120,14 +120,14 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final TenantLoginMethodsPort tenantLoginMethodsPort;
     private final DcqlProfileResolver dcqlProfileResolver;
     private final WalletLoginWorkflow walletLoginWorkflow;
-    private final AuditTrailPort auditTrail;
+    private final AuditTrailPort auditTrailPort;
     private final LoginMethodsResolver loginMethodsResolver = new LoginMethodsResolver();
 
     @Override
     public Authentication convert(HttpServletRequest request) {
         log.info("CustomAuthorizationRequestConverter.convert");
         String auditCorrelationId = UUID.randomUUID().toString();
-        return auditTrail.withCorrelationId(auditCorrelationId, () -> convert(request, auditCorrelationId));
+        return auditTrailPort.withCorrelationId(auditCorrelationId, () -> convert(request, auditCorrelationId));
     }
 
     private Authentication convert(HttpServletRequest request, String auditCorrelationId) {

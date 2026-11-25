@@ -53,7 +53,7 @@ public class CertificateLoginWorkflow {
     private final AuthorizationResponseProcessorService authorizationResponseProcessorService;
     private final SsoLoginCompletionWorkflow ssoLoginCompletionWorkflow;
     private final AuthenticationAuditPort authenticationAuditPort;
-    private final AuditTrailPort auditTrail;
+    private final AuditTrailPort auditTrailPort;
     private final Clock clock;
 
     public sealed interface Outcome {
@@ -71,7 +71,7 @@ public class CertificateLoginWorkflow {
             return rejected(CertificateLoginReason.LOGIN_NOT_FOUND);
         }
         String correlationId = correlationId(login.get());
-        return auditTrail.withCorrelationId(correlationId,
+        return auditTrailPort.withCorrelationId(correlationId,
                 () -> login(state, tenant, clientCert, clientCertChain, login.get(), correlationId));
     }
 

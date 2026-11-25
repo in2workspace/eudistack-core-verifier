@@ -16,6 +16,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CertificateAuthenticationAuditTest {
 
+    @Test
+    void toString_neverShowsTheHolderOrTheCertificate() {
+        ClientCertificate certificate = new ClientCertificate(new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ",
+                "GARCIA FERNANDEZ JOSE ANTONIO", "jose@example.com", "ES", "12345678Z"), "CN=AC FNMT Usuarios",
+                "ab12cd", Instant.parse("2027-01-01T00:00:00Z"));
+        CertificateAuthenticationAudit audit = CertificateAuthenticationAudit.success("cgcom", "corr-1", "portal",
+                certificate, AssuranceLevel.HIGH, "hwk", AuditedPerson.of(certificate.identity()));
+
+        assertThat(audit.toString())
+                .isEqualTo("CertificateAuthenticationAudit[clientId=portal, result=SUCCESS, reason=null]")
+                .doesNotContain("12345678Z", "JOSE", "jose@example.com", "ab12cd", "AC FNMT");
+    }
+
     private static final ClientCertificate CERTIFICATE = new ClientCertificate(
             new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "NAME", null, "ES", "12345678Z"),
             "CN=AC FNMT Usuarios", "sha256:ab12", Instant.parse("2027-01-01T00:00:00Z"));

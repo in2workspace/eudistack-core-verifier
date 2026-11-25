@@ -1,6 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.audit;
 
 import es.in2.vcverifier.shared.domain.model.audit.AuditEntry;
+import es.in2.vcverifier.shared.domain.model.audit.AuditEventType;
 import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
 import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import es.in2.vcverifier.shared.infrastructure.audit.RejectionThrottle;
@@ -13,7 +14,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.function.Supplier;
+
 import static es.in2.vcverifier.shared.domain.model.audit.AuditEventType.CERTIFICATE_AUTHENTICATION;
+import static es.in2.vcverifier.shared.domain.model.audit.AuditEventType.IAM_SESSION_ESTABLISHED;
 import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
 @Slf4j
@@ -35,21 +39,21 @@ public class AuthenticationAuditTrailAdapter implements AuthenticationAuditPort 
                     event.reason().value(), event.correlationId());
             return;
         }
-        stage(AuthenticationAuditEntries.of(event));
+        stage(CERTIFICATE_AUTHENTICATION, () -> AuthenticationAuditEntries.of(event));
     }
 
     @Override
     public void iamSessionEstablished(IamSessionAudit event) {
         logger.iamSessionEstablished(event);
-        stage(AuthenticationAuditEntries.of(event));
+        stage(IAM_SESSION_ESTABLISHED, () -> AuthenticationAuditEntries.of(event));
     }
 
-    private void stage(AuditEntry entry) {
+    private void stage(AuditEventType type, Supplier<AuditEntry> entry) {
         try {
-            auditTrail.stageBestEffort(entry);
+            auditTrail.stageBestEffort(entry.get());
         } catch (RuntimeException e) {
             log.warn("event=authentication_audit_stage_failed event_type={} error={}",
-                    entry.type().catalogName(), e.getClass().getSimpleName());
+                    type.catalogName(), e.getClass().getSimpleName());
         }
     }
 }
