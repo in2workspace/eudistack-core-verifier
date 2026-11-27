@@ -82,19 +82,35 @@ class DssIssuerReportTranslatorTest {
     }
 
     @Test
-    void translate_issuersListNotWellSigned_isUnavailable() {
+    void translate_issuersListNotWellSigned_isNotTrustedAsListNotWellSigned() {
         ((ObjectNode) report.at("/diagnosticData/ListOfTrustedEntities/0")).put("WellSigned", false);
 
         assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE))
-                .isInstanceOf(IssuerTrust.Unavailable.class);
+                .isEqualTo(new IssuerTrust.NotTrusted("List not well signed: file:/lists/eaa-providers.jws"));
     }
 
     @Test
-    void translate_listOfListsNotWellSigned_isUnavailable() {
+    void translate_listOfListsNotWellSigned_isNotTrustedAsListNotWellSigned() {
         ((ObjectNode) report.at("/diagnosticData/ListOfTrustedEntities/1")).put("WellSigned", false);
 
         assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE))
-                .isInstanceOf(IssuerTrust.Unavailable.class);
+                .isEqualTo(new IssuerTrust.NotTrusted("List not well signed: file:/lists/lolote.jws"));
+    }
+
+    @Test
+    void translate_issuersListNotWellSignedAndOlderThanTheMaximumAge_isNotTrustedAsListNotWellSigned() {
+        ((ObjectNode) report.at("/diagnosticData/ListOfTrustedEntities/0")).put("WellSigned", false);
+
+        assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW.plus(Duration.ofDays(2)), MAX_LIST_AGE))
+                .isInstanceOf(IssuerTrust.NotTrusted.class);
+    }
+
+    @Test
+    void translate_issuersListWithoutWellSigned_isNotTrusted() {
+        ((ObjectNode) report.at("/diagnosticData/ListOfTrustedEntities/0")).remove("WellSigned");
+
+        assertThat(DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE))
+                .isInstanceOf(IssuerTrust.NotTrusted.class);
     }
 
     @Test

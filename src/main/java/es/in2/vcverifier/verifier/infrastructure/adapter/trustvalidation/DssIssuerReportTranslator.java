@@ -1,6 +1,7 @@
 package es.in2.vcverifier.verifier.infrastructure.adapter.trustvalidation;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import es.in2.vcverifier.verifier.domain.model.IssuerTrust;
 
 import java.time.Duration;
@@ -52,6 +53,7 @@ final class DssIssuerReportTranslator {
                                                    String declaredIssuer, Instant now, Duration maxListAge) {
         String expectedServiceType = serviceTypeFor(credentialConfigurationId);
         String expectedIssuer = stripDidElsiPrefix(declaredIssuer);
+        String notWellSignedReason = null;
         String unusableListReason = null;
         for (JsonNode certificate : diagnosticData.path("Certificate")) {
             for (JsonNode entity : certificate.path("TrustedEntity")) {
@@ -63,7 +65,13 @@ final class DssIssuerReportTranslator {
                 if (entityIdentifier == null || !hasService(entity, expectedServiceType)) {
                     continue;
                 }
-                String reason = unusableReason(diagnosticData, list, now, maxListAge);
+                JsonNode parent = parentOf(diagnosticData, list);
+                String signatureReason = notWellSignedReason(list, parent);
+                if (signatureReason != null) {
+                    notWellSignedReason = signatureReason;
+                    continue;
+                }
+                String reason = unusableReason(list, parent, now, maxListAge);
                 if (reason != null) {
                     unusableListReason = reason;
                     continue;
@@ -73,32 +81,47 @@ final class DssIssuerReportTranslator {
                                 ? list.path("SequenceNumber").asInt() : null);
             }
         }
+        if (notWellSignedReason != null) {
+            return new IssuerTrust.NotTrusted(notWellSignedReason);
+        }
         return unusableListReason != null
                 ? new IssuerTrust.Unavailable(unusableListReason)
                 : new IssuerTrust.NotTrusted("Issuer is not an entity of the issuers list with a service for "
                         + credentialConfigurationId);
     }
 
-    private static String unusableReason(JsonNode diagnosticData, JsonNode list, Instant now, Duration maxListAge) {
+    private static JsonNode parentOf(JsonNode diagnosticData, JsonNode list) {
+        String parentId = text(list.path("parent"));
+        return parentId.isEmpty() ? MissingNode.getInstance() : listById(diagnosticData, parentId);
+    }
+
+    private static String notWellSignedReason(JsonNode list, JsonNode parent) {
+        if (!isWellSigned(list)) {
+            return "List not well signed: " + text(list.path("Url"));
+        }
+        if (parent != null && !parent.isMissingNode() && !isWellSigned(parent)) {
+            return "List not well signed: " + text(parent.path("Url"));
+        }
+        return null;
+    }
+
+    private static boolean isWellSigned(JsonNode list) {
+        return list.path("WellSigned").asBoolean(false);
+    }
+
+    private static String unusableReason(JsonNode list, JsonNode parent, Instant now, Duration maxListAge) {
         String reason = unusableListReason(list, now, maxListAge);
         if (reason != null) {
             return reason;
         }
-        String parentId = text(list.path("parent"));
-        if (parentId.isEmpty()) {
-            return null;
+        if (parent == null) {
+            return "The list of lists of " + text(list.path("Url")) + " is not in the report";
         }
-        JsonNode parent = listById(diagnosticData, parentId);
-        return parent == null
-                ? "The list of lists of " + text(list.path("Url")) + " is not in the report"
-                : unusableListReason(parent, now, maxListAge);
+        return parent.isMissingNode() ? null : unusableListReason(parent, now, maxListAge);
     }
 
     private static String unusableListReason(JsonNode list, Instant now, Duration maxListAge) {
         String url = text(list.path("Url"));
-        if (!list.path("WellSigned").asBoolean(false)) {
-            return "The list " + url + " is not well signed";
-        }
         Instant nextUpdate = parseInstant(text(list.path("NextUpdate")));
         if (nextUpdate == null || nextUpdate.isBefore(now)) {
             return "The list " + url + " is past its next update";
