@@ -7,7 +7,7 @@ import java.util.Objects;
 
 public sealed interface IssuerTrust {
 
-    record Trusted(String entityIdentifier, String serviceType, String listUrl, String listType,
+    record Trusted(String entityIdentifier, String entityName, String serviceType, String listUrl, String listType,
                    Integer listSequenceNumber) implements IssuerTrust {
 
         public Trusted {

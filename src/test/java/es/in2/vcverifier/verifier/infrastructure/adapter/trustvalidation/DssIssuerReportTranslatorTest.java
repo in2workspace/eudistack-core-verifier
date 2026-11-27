@@ -35,7 +35,7 @@ class DssIssuerReportTranslatorTest {
     void translate_issuerOfTheIssuersListWithAServiceForTheType_isTrustedWithTheOrigin() {
         IssuerTrust trust = DssIssuerReportTranslator.translate(report, TYPE, ISSUER, NOW, MAX_LIST_AGE);
 
-        assertThat(trust).isEqualTo(new IssuerTrust.Trusted(ISSUER,
+        assertThat(trust).isEqualTo(new IssuerTrust.Trusted(ISSUER, "Emisor de prueba",
                 "http://uri.eudistack.net/19602/SvcType/EAA/learcredential.employee.sd.1/Issuance",
                 "file:/lists/eaa-providers.jws", DssIssuerReportTranslator.ISSUERS_LIST_TYPE, 1));
     }

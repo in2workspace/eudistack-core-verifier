@@ -52,11 +52,12 @@ public class DssIssuerTrustValidationAdapter implements IssuerTrustValidationPor
         String configurationId = LogSanitizer.sanitize(credentialConfigurationId);
         String issuer = LogSanitizer.sanitize(declaredIssuer);
         switch (trust) {
-            case IssuerTrust.Trusted(String entity, String serviceType, String listUrl, String listType,
-                                     Integer sequence) ->
-                    log.info("event={} configurationId={} issuer={} outcome=trusted entity={} serviceType={} "
-                                    + "list={} listType={} listSequence={}",
-                            EVENT, configurationId, issuer, LogSanitizer.sanitize(entity), serviceType,
+            case IssuerTrust.Trusted(String entity, String entityName, String serviceType, String listUrl,
+                                     String listType, Integer sequence) ->
+                    log.info("event={} configurationId={} issuer={} outcome=trusted entity={} entityName=\"{}\" "
+                                    + "serviceType={} list={} listType={} listSequence={}",
+                            EVENT, configurationId, issuer, LogSanitizer.sanitize(entity),
+                            LogSanitizer.sanitize(entityName), serviceType,
                             LogSanitizer.sanitize(listUrl), listType, sequence);
             case IssuerTrust.NotTrusted(String reason) ->
                     log.warn("event={} configurationId={} issuer={} outcome=IssuerNotTrusted reason={}",

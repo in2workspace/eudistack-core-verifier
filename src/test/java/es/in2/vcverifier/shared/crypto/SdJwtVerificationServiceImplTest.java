@@ -60,7 +60,7 @@ class SdJwtVerificationServiceImplTest {
 
     private static final String ISSUER_ORG_ID = "VATES-A78446333";
     private static final IssuerTrust.Trusted TRUSTED = new IssuerTrust.Trusted(
-            ISSUER_ORG_ID, "http://uri.eudistack.net/19602/SvcType/EAA/learcredential.employee.sd.1/Issuance",
+            ISSUER_ORG_ID, "Issuer", "http://uri.eudistack.net/19602/SvcType/EAA/learcredential.employee.sd.1/Issuance",
             "https://lists.example/eaa-providers.jws", "http://uri.eudistack.net/19602/LoTEType/EAAProvidersList", 1);
 
     private SdJwtVerificationServiceImpl service;

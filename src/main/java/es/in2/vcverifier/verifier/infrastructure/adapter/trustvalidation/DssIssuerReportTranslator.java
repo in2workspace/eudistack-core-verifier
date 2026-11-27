@@ -76,7 +76,8 @@ final class DssIssuerReportTranslator {
                     unusableListReason = reason;
                     continue;
                 }
-                return new IssuerTrust.Trusted(entityIdentifier, expectedServiceType, text(list.path("Url")),
+                return new IssuerTrust.Trusted(entityIdentifier, entityName(entity), expectedServiceType,
+                        text(list.path("Url")),
                         text(list.path("Type")), list.path("SequenceNumber").isInt()
                                 ? list.path("SequenceNumber").asInt() : null);
             }
@@ -148,6 +149,16 @@ final class DssIssuerReportTranslator {
         for (JsonNode tradeName : entity.path("TradeName")) {
             String value = text(tradeName.path("value"));
             if (expectedIssuer.equals(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String entityName(JsonNode entity) {
+        for (JsonNode name : entity.path("Name")) {
+            String value = text(name.path("value"));
+            if (!value.isBlank()) {
                 return value;
             }
         }

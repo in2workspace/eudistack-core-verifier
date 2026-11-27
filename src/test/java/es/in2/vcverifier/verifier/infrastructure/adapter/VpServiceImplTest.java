@@ -66,7 +66,7 @@ class VpServiceImplTest {
     @Mock
     private CredentialStatusVerifier bitstringStatusListVerifier;
 
-    private static final IssuerTrust.Trusted TRUSTED = new IssuerTrust.Trusted("VATES-FOO",
+    private static final IssuerTrust.Trusted TRUSTED = new IssuerTrust.Trusted("VATES-FOO", "Foo",
             "http://uri.eudistack.net/19602/SvcType/EAA/LEARCredentialEmployee/Issuance", "https://lists.example/eaa.jws",
             "http://uri.eudistack.net/19602/LoTEType/EAAProvidersList", 1);
 
