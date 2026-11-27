@@ -1,6 +1,10 @@
 package es.in2.vcverifier.shared.infrastructure.audit;
 
 import com.eudistack.auditoria.application.AuditPublisher;
+import com.eudistack.auditoria.context.AuditContexts;
+import com.eudistack.auditoria.context.ThreadLocalAuditContextAccessor;
+import com.eudistack.auditoria.domain.AuditActor;
+import com.eudistack.auditoria.domain.AuditContext;
 import com.eudistack.auditoria.domain.AuditDraft;
 import com.eudistack.auditoria.domain.AuditResult;
 import es.in2.vcverifier.shared.domain.model.audit.AuditEntry;
@@ -13,12 +17,14 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -107,6 +113,28 @@ class StarterAuditTrailAdapterTest {
 
         // Act & Assert
         assertDoesNotThrow(() -> adapter.stageBestEffort(entry));
+    }
+
+    @Test
+    void withCorrelationId_insideARequestContext_stagesUnderThatCorrelationId() {
+        AuditEntry entry = AuditEntry.success(AuditEventType.IAM_SESSION_ESTABLISHED, "login:corr-1", Map.of());
+        AtomicReference<String> stagedUnder = new AtomicReference<>();
+        doAnswer(_ -> {
+            stagedUnder.set(new ThreadLocalAuditContextAccessor().current()
+                    .map(AuditContext::correlationId).orElse(null));
+            return null;
+        }).when(publisher).stage(any());
+
+        try (var _ = AuditContexts.open(new AuditContext("cgcom", null, "request-1", AuditActor.system("portal")))) {
+            adapter.withCorrelationId("corr-1", () -> {
+                adapter.stage(entry);
+                return null;
+            });
+            assertEquals("request-1", new ThreadLocalAuditContextAccessor().current()
+                    .map(AuditContext::correlationId).orElse(null));
+        }
+
+        assertEquals("corr-1", stagedUnder.get());
     }
 
     @Test

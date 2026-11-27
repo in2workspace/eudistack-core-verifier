@@ -17,6 +17,7 @@ import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
+import es.in2.vcverifier.shared.domain.model.SessionOrigin;
 import es.in2.vcverifier.shared.domain.model.sdjwt.SdJwtVerificationResult;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.exception.BumpedFormatTemporarilyDisabledException;
@@ -357,7 +358,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 (String) addl.get(NONCE),
                 authentication,
                 // issuer resolved at /authorize (cached with the request), not the host of this call
-                oAuth2AuthorizationRequest.getAuthorizationUri()
+                oAuth2AuthorizationRequest.getAuthorizationUri(),
+                addl.get(AUDIT_CORRELATION_ID) instanceof String correlationId ? correlationId : UUID.randomUUID().toString(),
+                SessionOrigin.of(authentication)
         ));
 
         // SEC-O2: Log redirect target without full authorization code.
@@ -388,7 +391,8 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallengeMethod,
             String nonce,
             AuthenticationResult authentication,
-            String issuer
+            String issuer,
+            String correlationId
     ) {
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
         if (registeredClient == null) {
@@ -399,7 +403,7 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 : authentication;
         IssuedCode issuedCode = issueAuthorizationCode(new CodeIssuance(
                 registeredClient, redirectUri, scopes, state, codeChallenge, codeChallengeMethod, nonce,
-                reused, issuer));
+                reused, issuer, correlationId, SessionOrigin.SSO_REUSE));
         log.info("SSO reuse: authorization code issued directly, method={}", reused.method().value());
         return issuedCode.redirectUrl();
     }
@@ -429,7 +433,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
             String codeChallengeMethod,
             String nonce,
             AuthenticationResult authentication,
-            String issuer
+            String issuer,
+            String correlationId,
+            SessionOrigin sessionOrigin
     ) {
     }
 
@@ -525,7 +531,9 @@ public class AuthorizationResponseProcessorServiceImpl implements AuthorizationR
                 .authentication(issuance.authentication())
                 .oAuth2Authorization(authorization)
                 .requestedScopes(scopes)
-                .clientNonce(nonce);
+                .clientNonce(nonce)
+                .correlationId(issuance.correlationId())
+                .sessionOrigin(issuance.sessionOrigin());
 
         cacheStoreForAuthorizationCodeData.add(code, authCodeDataBuilder.build());
 

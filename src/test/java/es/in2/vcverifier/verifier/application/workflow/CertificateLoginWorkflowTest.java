@@ -7,12 +7,17 @@ import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CertificateIdentity;
 import es.in2.vcverifier.shared.domain.model.ClientCertificate;
+import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.shared.domain.port.RecordingAuditTrail;
 import es.in2.vcverifier.sso.application.workflow.SsoLoginCompletionWorkflow;
 import es.in2.vcverifier.sso.domain.exception.LoginCompletionUnavailableException;
 import es.in2.vcverifier.verifier.application.workflow.CertificateLoginWorkflow.Outcome;
 import es.in2.vcverifier.verifier.domain.model.AuthResponseResult;
 import es.in2.vcverifier.verifier.domain.model.CertificateLoginReason;
 import es.in2.vcverifier.verifier.domain.model.CertificateTrust;
+import es.in2.vcverifier.verifier.domain.model.audit.AuditedPerson;
+import es.in2.vcverifier.verifier.domain.model.audit.CertificateAuthenticationAudit;
+import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
 import es.in2.vcverifier.verifier.domain.port.CertificateTrustValidationPort;
 import es.in2.vcverifier.verifier.domain.service.AuthorizationResponseProcessorService;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +40,7 @@ import java.util.function.Supplier;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.EXPIRATION;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_METHODS;
@@ -42,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -51,12 +58,15 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class CertificateLoginWorkflowTest {
 
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
+
     private static final Instant NOW = Instant.parse("2026-11-04T10:00:00Z");
     private static final String STATE = "s-1";
     private static final String TENANT = "cgcom";
     private static final String HEADER = ":MIIB:";
     private static final List<String> CHAIN = List.of(":MIIC:");
     private static final String SUBJECT = "b2f1c3";
+    private static final String CORRELATION_ID = "corr-1";
     private static final CertificateIdentity IDENTITY = new CertificateIdentity(
             "JOSE ANTONIO", "GARCIA FERNANDEZ", "GARCIA FERNANDEZ JOSE ANTONIO", null, "ES", "12345678Z");
 
@@ -72,6 +82,8 @@ class CertificateLoginWorkflowTest {
     private AuthorizationResponseProcessorService authorizationResponseProcessorService;
     @Mock
     private SsoLoginCompletionWorkflow ssoLoginCompletionWorkflow;
+    @Mock
+    private AuthenticationAuditPort authenticationAuditPort;
 
     @Mock
     private X509Certificate leaf;
@@ -83,7 +95,7 @@ class CertificateLoginWorkflowTest {
     void setUp() {
         workflow = new CertificateLoginWorkflow(cache, clientCertificateReader, certificateTrustValidationPort,
                 certificateSubjectService, authorizationResponseProcessorService, ssoLoginCompletionWorkflow,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                authenticationAuditPort, auditTrail, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -231,11 +243,183 @@ class CertificateLoginWorkflowTest {
         assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.INTERNAL_ERROR));
     }
 
+    @Test
+    void login_validCertificate_auditsASuccessWithTheLoginCorrelationId() {
+        givenOpenLogin(Map.of());
+        givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.HIGH, List.of("hwk")), IDENTITY);
+        AuthResponseResult issued = mock(AuthResponseResult.class);
+        when(authorizationResponseProcessorService.issueCodeForCertificateLogin(eq(STATE), eq(TENANT), any()))
+                .thenReturn(Optional.of(issued));
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq(TENANT), eq(issued), any(), anyString()))
+                .thenReturn("https://portal.example.com/callback");
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        CertificateAuthenticationAudit audit = auditedCertificateAuthentication();
+        assertThat(audit.result()).isEqualTo(AuditResult.SUCCESS);
+        assertThat(audit.reason()).isNull();
+        assertThat(audit.tenant()).isEqualTo(TENANT);
+        assertThat(audit.correlationId()).isEqualTo(CORRELATION_ID);
+        assertThat(audit.oidcClientId()).isEqualTo("portal");
+        assertThat(audit.certificateIssuer()).isEqualTo("CN=AC FNMT Usuarios");
+        assertThat(audit.certificateFingerprint()).isEqualTo("ab12");
+        assertThat(audit.assuranceLevel()).isEqualTo(AssuranceLevel.HIGH);
+        assertThat(audit.amr()).isEqualTo("hwk");
+        assertThat(audit.holder()).isEqualTo(new AuditedPerson("12345678Z", "JOSE ANTONIO GARCIA FERNANDEZ", null));
+    }
+
+    @Test
+    void login_unknownState_isNotAudited() {
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        verifyNoInteractions(authenticationAuditPort);
+        assertThat(auditTrail.correlationIds()).isEmpty();
+    }
+
+    @Test
+    void login_openLogin_runsUnderTheLoginCorrelationId() {
+        givenOpenLogin(Map.of());
+        when(clientCertificateReader.readChain(null, List.of())).thenThrow(new IllegalArgumentException("empty"));
+
+        workflow.login(STATE, TENANT, null, List.of());
+
+        assertThat(auditTrail.correlationIds()).containsExactly(CORRELATION_ID);
+    }
+
+    @Test
+    void login_loginOfAnotherTenant_isNotAudited() {
+        givenOpenLogin(Map.of(AUTHORIZE_TENANT, "kpmg"));
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        verifyNoInteractions(authenticationAuditPort);
+    }
+
+    @Test
+    void login_withoutCertificateHeader_auditsCertificateMissingWithoutCertificateData() {
+        givenOpenLogin(Map.of());
+        when(clientCertificateReader.readChain(null, List.of())).thenThrow(new IllegalArgumentException("empty"));
+
+        workflow.login(STATE, TENANT, null, List.of());
+
+        CertificateAuthenticationAudit audit = auditedCertificateAuthentication();
+        assertThat(audit.result()).isEqualTo(AuditResult.DENIED);
+        assertThat(audit.reason()).isEqualTo(CertificateLoginReason.CERTIFICATE_MISSING);
+        assertThat(audit.correlationId()).isEqualTo(CORRELATION_ID);
+        assertThat(audit.certificateIssuer()).isNull();
+        assertThat(audit.certificateFingerprint()).isNull();
+        assertThat(audit.holder()).isNull();
+    }
+
+    @Test
+    void login_rejectedByTheTrustValidation_auditsItsReasonWithTheCertificateButNoHolder() {
+        givenOpenLogin(Map.of());
+        givenCertificate(new CertificateTrust.Rejected(CertificateLoginReason.CERTIFICATE_REVOKED), IDENTITY);
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        CertificateAuthenticationAudit audit = auditedCertificateAuthentication();
+        assertThat(audit.result()).isEqualTo(AuditResult.DENIED);
+        assertThat(audit.reason()).isEqualTo(CertificateLoginReason.CERTIFICATE_REVOKED);
+        assertThat(audit.certificateIssuer()).isEqualTo("CN=AC FNMT Usuarios");
+        assertThat(audit.certificateFingerprint()).isEqualTo("ab12");
+        assertThat(audit.holder()).isNull();
+        assertThat(audit.assuranceLevel()).isNull();
+    }
+
+    @Test
+    void login_trustValidationUnavailable_auditsAFailure() {
+        givenOpenLogin(Map.of());
+        givenCertificate(new CertificateTrust.Rejected(CertificateLoginReason.VALIDATION_UNAVAILABLE), IDENTITY);
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        CertificateAuthenticationAudit audit = auditedCertificateAuthentication();
+        assertThat(audit.result()).isEqualTo(AuditResult.FAILURE);
+        assertThat(audit.reason()).isEqualTo(CertificateLoginReason.VALIDATION_UNAVAILABLE);
+    }
+
+    @Test
+    void login_certificateWithoutRecognisableNumber_auditsNotQualified() {
+        givenOpenLogin(Map.of());
+        givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.HIGH, List.of("hwk")),
+                new CertificateIdentity("JOSE ANTONIO", "GARCIA FERNANDEZ", "NAME", null, null, null));
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        assertThat(auditedCertificateAuthentication().reason()).isEqualTo(CertificateLoginReason.CERTIFICATE_NOT_QUALIFIED);
+    }
+
+    @Test
+    void login_essentialLevelNotMet_auditsLevelNotMet() {
+        givenOpenLogin(Map.of(ACR_REQUESTED, AssuranceLevel.HIGH.acrValue(), ACR_ESSENTIAL, true));
+        givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.SUBSTANTIAL, List.of("swk")), IDENTITY);
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        CertificateAuthenticationAudit audit = auditedCertificateAuthentication();
+        assertThat(audit.result()).isEqualTo(AuditResult.DENIED);
+        assertThat(audit.reason()).isEqualTo(CertificateLoginReason.LEVEL_NOT_MET);
+    }
+
+    @Test
+    void login_loginGoneWhenIssuingTheCode_isNotAudited() {
+        givenOpenLogin(Map.of());
+        givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.HIGH, List.of("hwk")), IDENTITY);
+        when(authorizationResponseProcessorService.issueCodeForCertificateLogin(eq(STATE), eq(TENANT), any()))
+                .thenReturn(Optional.empty());
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        verifyNoInteractions(authenticationAuditPort);
+    }
+
+    @Test
+    void login_auditFails_stillCompletes() {
+        givenOpenLogin(Map.of());
+        givenCertificate(new CertificateTrust.Trusted(AssuranceLevel.HIGH, List.of("hwk")), IDENTITY);
+        AuthResponseResult issued = mock(AuthResponseResult.class);
+        when(authorizationResponseProcessorService.issueCodeForCertificateLogin(eq(STATE), eq(TENANT), any()))
+                .thenReturn(Optional.of(issued));
+        when(ssoLoginCompletionWorkflow.resolveBrowserRedirect(eq(TENANT), eq(issued), any(), anyString()))
+                .thenReturn("https://portal.example.com/callback");
+        doThrow(new IllegalStateException("audit down")).when(authenticationAuditPort).certificateAuthentication(any());
+
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN))
+                .isEqualTo(new Outcome.Completed("https://portal.example.com/callback"));
+    }
+
+    @Test
+    void login_auditFailsOnARejection_keepsTheReason() {
+        givenOpenLogin(Map.of());
+        when(clientCertificateReader.readChain(HEADER, CHAIN)).thenThrow(new IllegalArgumentException("unreadable"));
+        doThrow(new IllegalStateException("audit down")).when(authenticationAuditPort).certificateAuthentication(any());
+
+        assertThat(workflow.login(STATE, TENANT, HEADER, CHAIN)).isEqualTo(rejected(CertificateLoginReason.CERTIFICATE_MISSING));
+    }
+
+    @Test
+    void login_loginWithoutCorrelationId_auditsWithAGeneratedOne() {
+        givenOpenLogin(Map.of(AUDIT_CORRELATION_ID, 42));
+        when(clientCertificateReader.readChain(HEADER, CHAIN)).thenThrow(new IllegalArgumentException("unreadable"));
+
+        workflow.login(STATE, TENANT, HEADER, CHAIN);
+
+        assertThat(auditedCertificateAuthentication().correlationId()).isNotBlank().isNotEqualTo(CORRELATION_ID);
+    }
+
+    private CertificateAuthenticationAudit auditedCertificateAuthentication() {
+        ArgumentCaptor<CertificateAuthenticationAudit> audit = ArgumentCaptor.forClass(CertificateAuthenticationAudit.class);
+        verify(authenticationAuditPort).certificateAuthentication(audit.capture());
+        return audit.getValue();
+    }
+
     private void givenOpenLogin(Map<String, Object> overrides) {
         Map<String, Object> parameters = new HashMap<>(Map.of(
                 AUTHORIZE_TENANT, TENANT,
                 EXPIRATION, NOW.plusSeconds(300).getEpochSecond(),
-                LOGIN_METHODS, List.of("x509", "wallet")));
+                LOGIN_METHODS, List.of("x509", "wallet"),
+                AUDIT_CORRELATION_ID, CORRELATION_ID));
         parameters.putAll(overrides);
         when(cache.getIfPresent(STATE)).thenReturn(OAuth2AuthorizationRequest.authorizationCode()
                 .authorizationUri("https://cgcom.example.com/verifier/oidc/authorize")

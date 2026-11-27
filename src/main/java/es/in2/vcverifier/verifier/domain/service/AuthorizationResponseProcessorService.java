@@ -43,7 +43,8 @@ public interface AuthorizationResponseProcessorService {
             String codeChallengeMethod,
             String nonce,
             AuthenticationResult authentication,
-            String issuer
+            String issuer,
+            String correlationId
     );
 
     /**
