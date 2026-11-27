@@ -8,6 +8,12 @@ import es.in2.vcverifier.shared.config.TenantDomainFilter;
 import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
 import es.in2.vcverifier.shared.domain.model.CertificateAuthentication;
 import es.in2.vcverifier.shared.domain.model.CredentialAuthentication;
+import es.in2.vcverifier.shared.domain.model.SessionOrigin;
+import es.in2.vcverifier.shared.domain.model.audit.AuditResult;
+import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
+import es.in2.vcverifier.verifier.domain.model.audit.AuditedPerson;
+import es.in2.vcverifier.verifier.domain.model.audit.IamSessionAudit;
+import es.in2.vcverifier.verifier.domain.port.AuthenticationAuditPort;
 import es.in2.vcverifier.oauth2.application.workflow.TokenGenerationWorkflow;
 import es.in2.vcverifier.oauth2.domain.exception.TenantMismatchException;
 import es.in2.vcverifier.oauth2.domain.model.OAuth2M2MAuditEvent;
@@ -43,6 +49,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.*;
+import static es.in2.vcverifier.shared.domain.util.LogSanitizer.sanitize;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -61,15 +68,21 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     private final TokenGenerationWorkflow tokenGenerationWorkflow;
     private final SchemaProfileRegistry schemaProfileRegistry;
     private final OAuth2M2MAuditPort oAuth2M2MAuditPort;
+    private final AuthenticationAuditPort authenticationAuditPort;
+    private final AuditTrailPort auditTrailPort;
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
-        if (authentication instanceof OAuth2AuthorizationGrantAuthenticationToken oAuth2AuthorizationGrantAuthenticationToken) {
-            log.debug("Authorization token received: {}", oAuth2AuthorizationGrantAuthenticationToken);
-            return handleGrant(oAuth2AuthorizationGrantAuthenticationToken);
+        if (!(authentication instanceof OAuth2AuthorizationGrantAuthenticationToken grant)) {
+            log.error("Unsupported grant type: {}", authentication.getClass().getName());
+            throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNSUPPORTED_GRANT_TYPE);
         }
-        log.error("Unsupported grant type: {}", authentication.getClass().getName());
-        throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNSUPPORTED_GRANT_TYPE);
+        log.debug("Authorization token received: {}", grant);
+        if (grant instanceof OAuth2AuthorizationCodeAuthenticationToken
+                && grant.getAdditionalParameters().get(AUDIT_CORRELATION_ID) instanceof String correlationId) {
+            return auditTrailPort.withCorrelationId(correlationId, () -> handleGrant(grant));
+        }
+        return handleGrant(grant);
     }
 
     private Authentication handleGrant(OAuth2AuthorizationGrantAuthenticationToken authentication) {
@@ -135,9 +148,28 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                 ? (String) clientSettings.get(CLIENT_SETTING_TENANT)
                 : null;
 
-        // Delegate token generation to the workflow
-        TokenGenerationWorkflow.Result tokenResult = tokenGenerationWorkflow.issueAccessToken(
-                credentialJson, audience, authentication.getAdditionalParameters(), !isM2M, tenant);
+        boolean sessionGrant = authentication instanceof OAuth2AuthorizationCodeAuthenticationToken;
+        TokenGenerationWorkflow.Result tokenResult;
+        OAuth2RefreshToken oAuth2RefreshToken;
+        Map<String, Object> additionalParameters;
+        try {
+            // Delegate token generation to the workflow
+            tokenResult = tokenGenerationWorkflow.issueAccessToken(
+                    credentialJson, audience, authentication.getAdditionalParameters(), !isM2M, tenant);
+
+            if (isM2M) {
+                oAuth2RefreshToken = null;
+                additionalParameters = Map.of();
+            } else {
+                additionalParameters = Map.of("id_token", tokenResult.idTokenJwt());
+                oAuth2RefreshToken = getOAuth2RefreshToken(authentication, tokenResult, clientId, authenticationResult, registeredClient);
+            }
+        } catch (RuntimeException e) {
+            if (sessionGrant) {
+                auditSession(authentication, clientId, tenant, authenticationResult, null);
+            }
+            throw e;
+        }
 
         OAuth2AccessToken oAuth2AccessToken = new OAuth2AccessToken(
                 OAuth2AccessToken.TokenType.BEARER,
@@ -145,16 +177,8 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
                 tokenResult.issueTime(),
                 tokenResult.expirationTime()
         );
-
-        OAuth2RefreshToken oAuth2RefreshToken;
-        Map<String, Object> additionalParameters;
-
-        if (isM2M) {
-            oAuth2RefreshToken = null;
-            additionalParameters = Map.of();
-        } else {
-            additionalParameters = Map.of("id_token", tokenResult.idTokenJwt());
-            oAuth2RefreshToken = getOAuth2RefreshToken(authentication, tokenResult, clientId, authenticationResult, registeredClient);
+        if (sessionGrant) {
+            auditSession(authentication, clientId, tenant, authenticationResult, tokenResult.idTokenClaims());
         }
 
         log.info("Authorization grant successfully processed");
@@ -171,6 +195,32 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
     }
 
     // --- Helper methods ---
+
+    private static AuditedPerson holderOf(AuthenticationResult authenticationResult) {
+        if (authenticationResult instanceof CertificateAuthentication certificate) {
+            return AuditedPerson.of(certificate.identity());
+        }
+        return AuditedPerson.UNKNOWN;
+    }
+
+    private void auditSession(OAuth2AuthorizationGrantAuthenticationToken authentication, String clientId,
+                              String tenant, AuthenticationResult authenticationResult,
+                              Map<String, Object> idTokenClaims) {
+        Map<String, Object> parameters = authentication.getAdditionalParameters();
+        String correlationId = parameters.get(AUDIT_CORRELATION_ID) instanceof String id ? id : UUID.randomUUID().toString();
+        SessionOrigin origin = parameters.get(SESSION_ORIGIN) instanceof SessionOrigin value
+                ? value
+                : SessionOrigin.of(authenticationResult);
+        boolean issued = idTokenClaims != null;
+        AuditedPerson holder = issued ? AuditedPerson.of(idTokenClaims) : holderOf(authenticationResult);
+        try {
+            authenticationAuditPort.iamSessionEstablished(new IamSessionAudit(tenant, correlationId, clientId, origin,
+                    issued ? AuditResult.SUCCESS : AuditResult.FAILURE, holder,
+                    issued ? AuditedPerson.identityClaims(idTokenClaims) : null));
+        } catch (RuntimeException e) {
+            log.warn("event=iam_session_audit_failed clientId={} error={}", sanitize(clientId), e.getClass().getSimpleName());
+        }
+    }
 
     private boolean isPublicPkceClient(RegisteredClient rc) {
         if (rc == null) return false;

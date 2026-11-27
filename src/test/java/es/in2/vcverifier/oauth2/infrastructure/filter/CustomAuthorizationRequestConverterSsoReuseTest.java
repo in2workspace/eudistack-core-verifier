@@ -24,6 +24,7 @@ import es.in2.vcverifier.verifier.domain.service.DcqlProfileResolver;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import es.in2.vcverifier.shared.domain.port.RecordingAuditTrail;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,6 +85,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class CustomAuthorizationRequestConverterSsoReuseTest {
+
+    private final RecordingAuditTrail auditTrail = new RecordingAuditTrail();
 
     private static final String TENANT = "tenant-a";
     private static final String CLIENT_ID = "did:key:client-a";
@@ -150,7 +153,7 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         converter = new CustomAuthorizationRequestConverter(didService, jwtService, cacheStore, backendConfig,
                 registeredClientRepository, false, SELECTION_TIMEOUT_SECONDS, httpClient, authorizationRequestBuildWorkflow,
                 safeUrlValidator, reuseSsoSessionWorkflow, ssoBrowserBindingCookie, tenantLoginMethodsPort,
-                dcqlProfileResolver, new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig));
+                dcqlProfileResolver, new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig), auditTrail);
         lenient().when(backendConfig.getLoginTimeoutSeconds()).thenReturn(LOGIN_TIMEOUT_SECONDS);
         lenient().when(tenantLoginMethodsPort.activeLoginMethods(any())).thenReturn(Set.of(LoginMethod.WALLET));
 
@@ -183,6 +186,19 @@ class CustomAuthorizationRequestConverterSsoReuseTest {
         verify(authorizationRequestBuildWorkflow).validateScope(SCOPE);
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
         verifyNoInteractions(ssoBrowserBindingCookie);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Mode.class)
+    void convert_reuse_issuesTheCodeUnderTheCorrelationIdOfTheAuthorizeScope(Mode mode) {
+        HttpServletRequest request = request(mode, null, null);
+        stubReuse(ReuseSsoSessionWorkflow.Result.Status.ALLOWED);
+
+        convertExpectingRedirect(request);
+
+        ArgumentCaptor<String> correlationId = ArgumentCaptor.forClass(String.class);
+        verify(reuseSsoSessionWorkflow).reuse(eq(TENANT), any(), any(), eq(CLIENT_ID), correlationId.capture());
+        assertEquals(List.of(correlationId.getValue()), auditTrail.correlationIds());
     }
 
     @ParameterizedTest

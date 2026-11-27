@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Audit events `CertificateAuthentication` and `IamSessionEstablished`** (catalogue 2.4.0), logged and sent to the audit outbox without ever blocking the login. All the events of one login share its correlation id. The Verifier now emits under catalogue 2.4.0: deploy the Audit API with it first.
+
 ### Added (EUD-244, version 3.5.0)
 
 - **EUD-244 — Audit events (catalogue 2.2.0)**: `SystemAuthenticated` for the client-credentials grant of machine clients and `ExternalSystemAccess` for the calls to the client registry and the trusted list, handed through the `AuditTrailPort` to the transactional audit outbox of `auditoria-spring-boot-starter` when `auditoria.publisher.enabled=true`. Both switches (`auditoria.publisher.enabled`, `auditoria.dispatcher.enabled`) are off by default and the Verifier behaves as before.

@@ -123,6 +123,7 @@ management:
 
 auditoria:
   source: verifier
+  catalog-version: 2.4.0
   publisher:
     enabled: ${AUDIT_PUBLISHER_ENABLED:false}
   dispatcher:

@@ -39,7 +39,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHENTICATION_RESULT;
+import static es.in2.vcverifier.shared.domain.util.Constants.SESSION_ORIGIN;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTH_TIME_PARAM;
 import static org.springframework.security.oauth2.core.oidc.IdTokenClaimNames.NONCE;
 
@@ -118,6 +120,12 @@ public class CustomTokenRequestConverter implements AuthenticationConverter {
         putAuthentication(additionalParameters, authorizationCodeData.authentication());
         additionalParameters.put(OAuth2ParameterNames.SCOPE, String.join(" ", authorizationCodeData.requestedScopes()));
         additionalParameters.put(OAuth2ParameterNames.AUDIENCE, clientId);
+        if (authorizationCodeData.correlationId() != null) {
+            additionalParameters.put(AUDIT_CORRELATION_ID, authorizationCodeData.correlationId());
+        }
+        if (authorizationCodeData.sessionOrigin() != null) {
+            additionalParameters.put(SESSION_ORIGIN, authorizationCodeData.sessionOrigin());
+        }
 
         String nonce = authorizationCodeData.clientNonce();
         if (nonce != null && !nonce.isBlank()) {

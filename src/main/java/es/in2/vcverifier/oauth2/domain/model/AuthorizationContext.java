@@ -36,6 +36,7 @@ public record AuthorizationContext(
         String issuer,
         List<LoginMethod> loginMethods,
         AssuranceLevel essentialLevel,
-        boolean attestationScopes
+        boolean attestationScopes,
+        String auditCorrelationId
 ) {
 }

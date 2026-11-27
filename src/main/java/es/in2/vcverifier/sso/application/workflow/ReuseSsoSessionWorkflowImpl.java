@@ -293,7 +293,8 @@ public class ReuseSsoSessionWorkflowImpl implements ReuseSsoSessionWorkflow {
                 ctx.codeChallengeMethod(),
                 ctx.clientNonce(),
                 authentication,
-                ctx.issuer()
+                ctx.issuer(),
+                correlationId
         );
 
         // 8. AUDIT

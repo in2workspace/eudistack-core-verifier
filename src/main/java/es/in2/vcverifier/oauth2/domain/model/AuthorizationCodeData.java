@@ -1,6 +1,7 @@
 package es.in2.vcverifier.oauth2.domain.model;
 
 import es.in2.vcverifier.shared.domain.model.AuthenticationResult;
+import es.in2.vcverifier.shared.domain.model.SessionOrigin;
 import lombok.Builder;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 
@@ -12,6 +13,8 @@ public record AuthorizationCodeData(
         AuthenticationResult authentication,
         Set<String> requestedScopes,
         OAuth2Authorization oAuth2Authorization,
-        String clientNonce
+        String clientNonce,
+        String correlationId,
+        SessionOrigin sessionOrigin
 ) {
 }

@@ -17,6 +17,7 @@ import es.in2.vcverifier.oauth2.domain.service.LoginMethodsResolver;
 import es.in2.vcverifier.verifier.domain.exception.InvalidScopeException;
 import es.in2.vcverifier.shared.domain.model.AssuranceLevel;
 import es.in2.vcverifier.shared.domain.model.LoginMethod;
+import es.in2.vcverifier.shared.domain.port.AuditTrailPort;
 import es.in2.vcverifier.sso.domain.model.SsoTtlRange;
 import es.in2.vcverifier.shared.crypto.DIDService;
 import es.in2.vcverifier.shared.crypto.JWTService;
@@ -61,6 +62,7 @@ import java.util.regex.Pattern;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACCESS_PROFILE;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_REQUESTED;
+import static es.in2.vcverifier.shared.domain.util.Constants.AUDIT_CORRELATION_ID;
 import static es.in2.vcverifier.shared.domain.util.Constants.AUTHORIZE_TENANT;
 import static es.in2.vcverifier.shared.domain.util.Constants.CLIENT_SETTING_LOGIN_METHODS;
 import static es.in2.vcverifier.shared.domain.util.Constants.LOGIN_METHODS;
@@ -118,11 +120,17 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
     private final TenantLoginMethodsPort tenantLoginMethodsPort;
     private final DcqlProfileResolver dcqlProfileResolver;
     private final WalletLoginWorkflow walletLoginWorkflow;
+    private final AuditTrailPort auditTrailPort;
     private final LoginMethodsResolver loginMethodsResolver = new LoginMethodsResolver();
 
     @Override
     public Authentication convert(HttpServletRequest request) {
         log.info("CustomAuthorizationRequestConverter.convert");
+        String auditCorrelationId = UUID.randomUUID().toString();
+        return auditTrailPort.withCorrelationId(auditCorrelationId, () -> convert(request, auditCorrelationId));
+    }
+
+    private Authentication convert(HttpServletRequest request, String auditCorrelationId) {
 
         String portalUrl = resolvePortalUrlFromRequest(request);
         String originalRequestURL = getFullRequestUrl(request);
@@ -149,6 +157,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
                 .contextPath(contextPath)
                 .accessProfile(request.getParameter(ACCESS_PROFILE_PARAMETER))
                 .issuer(resolveIssuer())
+                .auditCorrelationId(auditCorrelationId)
                 .build();
 
         RegisteredClient registeredClient = registeredClientRepository.findByClientId(clientId);
@@ -269,8 +278,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
         // value itself is never logged, only whether one was found.
         log.debug("event=sso_cookie_lookup tenant={} expectedCookieName={} found={}",
                 tenant, SSO_COOKIE_PREFIX + tenant, cookieValue != null);
-        String correlationId = UUID.randomUUID().toString();
-        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, correlationId);
+        return reuseSsoSessionWorkflow.reuse(tenant, cookieValue, ctx, clientId, ctx.auditCorrelationId());
     }
 
     /**
@@ -750,6 +758,7 @@ public class CustomAuthorizationRequestConverter implements AuthenticationConver
             additionalParameters.put(AUTHORIZE_TENANT, loginBinding.tenant());
         }
         additionalParameters.put(LOGIN_METHODS, loginMethods.stream().map(LoginMethod::value).toList());
+        additionalParameters.put(AUDIT_CORRELATION_ID, authorizationContext.auditCorrelationId());
         if (requestedLevel != null) {
             additionalParameters.put(ACR_REQUESTED, requestedLevel.level().acrValue());
             additionalParameters.put(ACR_ESSENTIAL, requestedLevel.essential());

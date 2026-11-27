@@ -38,4 +38,6 @@ public interface AuditTrailPort {
 
     /** Runs {@code action} with the audit context of a background process acting on {@code tenant}. */
     <T> T asSystem(String tenant, String actorId, Supplier<T> action);
+
+    <T> T withCorrelationId(String correlationId, Supplier<T> action);
 }
