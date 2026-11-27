@@ -1,11 +1,15 @@
 package es.in2.vcverifier.oauth2.application.workflow;
 
+import com.google.common.base.Ticker;
+import com.google.common.cache.CacheBuilder;
 import es.in2.vcverifier.oauth2.application.workflow.LoginMethodsWorkflow.LoginMethods;
 import es.in2.vcverifier.oauth2.application.workflow.LoginMethodsWorkflow.WalletRequestResult;
 import es.in2.vcverifier.shared.config.BackendConfig;
 import es.in2.vcverifier.shared.config.CacheStore;
 import es.in2.vcverifier.verifier.application.workflow.AuthorizationRequestBuildWorkflow;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -20,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static es.in2.vcverifier.shared.domain.util.Constants.ACCESS_PROFILE;
 import static es.in2.vcverifier.shared.domain.util.Constants.ACR_ESSENTIAL;
@@ -227,6 +232,52 @@ class LoginMethodsWorkflowTest {
 
         assertThat(workflow.startWallet(STATE, TENANT)).isInstanceOf(WalletRequestResult.LoginNotFound.class);
         verify(authorizationRequestBuildWorkflow, never()).buildAuthorizationRequest(any(), any(), any(), any());
+    }
+
+    @Nested
+    @DisplayName("pending login retention")
+    class PendingLoginRetention {
+
+        private static final long RETENTION_SECONDS = 1200;
+
+        private final AtomicLong nanos = new AtomicLong();
+
+        @BeforeEach
+        void setUpRetainedCache() {
+            Ticker ticker = new Ticker() {
+                @Override
+                public long read() {
+                    return nanos.get();
+                }
+            };
+            cache = new CacheStore<>(CacheBuilder.newBuilder()
+                    .expireAfterWrite(RETENTION_SECONDS, TimeUnit.SECONDS)
+                    .ticker(ticker)
+                    .build());
+            workflow = new LoginMethodsWorkflow(cache, registeredClientRepository,
+                    new WalletLoginWorkflow(authorizationRequestBuildWorkflow, backendConfig));
+        }
+
+        @Test
+        void startWallet_rewritingTheLoginWithTheWalletRequest_startsTheFullRetentionAgain() {
+            // Arrange
+            cacheLogin(Map.of(LOGIN_METHODS, List.of("x509", "wallet"), ACCESS_PROFILE, "issuer_access"),
+                    Instant.now().plusSeconds(600));
+            RegisteredClient client = registeredClient();
+            when(registeredClientRepository.findByClientId(CLIENT_ID)).thenReturn(client);
+            when(authorizationRequestBuildWorkflow.buildAuthorizationRequest(client, SCOPE, STATE, "issuer_access"))
+                    .thenReturn(new AuthorizationRequestBuildWorkflow.Result("jwt", AUTH_REQUEST, "abc", "vp-nonce"));
+            nanos.addAndGet(TimeUnit.SECONDS.toNanos(RETENTION_SECONDS - 1));
+
+            // Act
+            workflow.startWallet(STATE, TENANT);
+
+            // Assert
+            nanos.addAndGet(TimeUnit.SECONDS.toNanos(RETENTION_SECONDS - 1));
+            assertThat(cache.getIfPresent(STATE)).isNotNull();
+            nanos.addAndGet(TimeUnit.SECONDS.toNanos(2));
+            assertThat(cache.getIfPresent(STATE)).isNull();
+        }
     }
 
     private void cacheLogin(Map<String, Object> parameters) {

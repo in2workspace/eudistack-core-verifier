@@ -1,9 +1,16 @@
 package es.in2.vcverifier.shared.config;
 
 import es.in2.vcverifier.shared.config.properties.BackendProperties;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
@@ -16,6 +23,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -105,7 +113,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://Verifier.Example.com:443",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getTrustedVerifierOrigins())
@@ -117,7 +125,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net"),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getStaticUrl()).isEqualTo("https://verifier.example.com");
@@ -128,7 +136,7 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of("https://kpmg.eudistack.net", "https://dome.example.com"),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getAllUrls())
@@ -146,7 +154,7 @@ class BackendConfigTest {
                 "https://verifier.example.com",
                 List.of(),
                 null, null, null, null, null, null, null,
-                new BackendProperties.Sso("base64-encoded-key"), null);
+                new BackendProperties.Sso("base64-encoded-key"), null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getSsoCredentialEncryptionKey()).isEqualTo("base64-encoded-key");
@@ -157,10 +165,117 @@ class BackendConfigTest {
         BackendProperties properties = new BackendProperties(
                 "https://verifier.example.com",
                 List.of(),
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
         BackendConfig config = new BackendConfig(properties);
 
         assertThat(config.getSsoCredentialEncryptionKey()).isNull();
+    }
+
+    private static BackendConfig backendConfigWithLoginTimes(Long loginTimeout, Long selectionTimeout, Long expiryMargin) {
+        return new BackendConfig(new BackendProperties(
+                "https://verifier.example.com",
+                List.of(),
+                null, null, null, null, loginTimeout, null, null, null, selectionTimeout, expiryMargin));
+    }
+
+    @Nested
+    @DisplayName("getPendingLoginRetentionSeconds")
+    class PendingLoginRetention {
+
+        @Test
+        void getPendingLoginRetentionSeconds_nothingConfigured_returnsSelectionTimeoutPlusDefaultMargin() {
+            // Arrange
+            BackendConfig config = backendConfigWithLoginTimes(null, null, null);
+
+            // Act
+            long retention = config.getPendingLoginRetentionSeconds();
+
+            // Assert
+            assertThat(retention).isEqualTo(1200L);
+        }
+
+        @Test
+        void getPendingLoginRetentionSeconds_customMargin_addsItToTheSelectionTimeout() {
+            // Arrange
+            BackendConfig config = backendConfigWithLoginTimes(null, null, 300L);
+
+            // Act
+            long retention = config.getPendingLoginRetentionSeconds();
+
+            // Assert
+            assertThat(retention).isEqualTo(900L);
+        }
+
+        @Test
+        void getPendingLoginRetentionSeconds_zeroMargin_keepsTheLoginUntilItsLongestExpiry() {
+            // Arrange
+            BackendConfig config = backendConfigWithLoginTimes(null, null, 0L);
+
+            // Act
+            long retention = config.getPendingLoginRetentionSeconds();
+
+            // Assert
+            assertThat(retention).isEqualTo(600L);
+        }
+
+        @Test
+        void getPendingLoginRetentionSeconds_customSelectionTimeout_followsIt() {
+            // Arrange
+            BackendConfig config = backendConfigWithLoginTimes(null, 900L, null);
+
+            // Act
+            long retention = config.getPendingLoginRetentionSeconds();
+
+            // Assert
+            assertThat(retention).isEqualTo(1500L);
+        }
+
+        @Test
+        void getPendingLoginRetentionSeconds_qrTimeoutLongerThanSelection_usesTheLongerOne() {
+            // Arrange
+            BackendConfig config = backendConfigWithLoginTimes(900L, 300L, 100L);
+
+            // Act
+            long retention = config.getPendingLoginRetentionSeconds();
+
+            // Assert
+            assertThat(retention).isEqualTo(1000L);
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = {-1L, 3601L, Long.MAX_VALUE})
+        void loginExpiryMarginSeconds_outOfRange_isRejectedByValidation(long margin) {
+            // Arrange
+            Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+
+            // Act
+            Set<ConstraintViolation<BackendProperties>> violations = validator.validate(propertiesWithMargin(margin));
+
+            // Assert
+            assertThat(violations)
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .containsExactly("loginExpiryMarginSeconds");
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = {0L, 3600L})
+        void loginExpiryMarginSeconds_withinRange_passesValidation(long margin) {
+            // Arrange
+            Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+
+            // Act
+            Set<ConstraintViolation<BackendProperties>> violations = validator.validate(propertiesWithMargin(margin));
+
+            // Assert
+            assertThat(violations).isEmpty();
+        }
+
+        private BackendProperties propertiesWithMargin(long margin) {
+            return new BackendProperties(
+                    "https://verifier.example.com",
+                    List.of(),
+                    null, null, null, null, null, null, null, null, null, margin);
+        }
     }
 
     @Configuration
