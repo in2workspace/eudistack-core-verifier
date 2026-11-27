@@ -9,6 +9,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
@@ -240,22 +242,39 @@ class BackendConfigTest {
             assertThat(retention).isEqualTo(1000L);
         }
 
-        @Test
-        void loginExpiryMarginSeconds_negativeValue_isRejectedByValidation() {
+        @ParameterizedTest
+        @ValueSource(longs = {-1L, 3601L, Long.MAX_VALUE})
+        void loginExpiryMarginSeconds_outOfRange_isRejectedByValidation(long margin) {
             // Arrange
-            BackendProperties properties = new BackendProperties(
-                    "https://verifier.example.com",
-                    List.of(),
-                    null, null, null, null, null, null, null, null, null, -1L);
             Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
             // Act
-            Set<ConstraintViolation<BackendProperties>> violations = validator.validate(properties);
+            Set<ConstraintViolation<BackendProperties>> violations = validator.validate(propertiesWithMargin(margin));
 
             // Assert
             assertThat(violations)
                     .extracting(violation -> violation.getPropertyPath().toString())
                     .containsExactly("loginExpiryMarginSeconds");
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = {0L, 3600L})
+        void loginExpiryMarginSeconds_withinRange_passesValidation(long margin) {
+            // Arrange
+            Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+
+            // Act
+            Set<ConstraintViolation<BackendProperties>> violations = validator.validate(propertiesWithMargin(margin));
+
+            // Assert
+            assertThat(violations).isEmpty();
+        }
+
+        private BackendProperties propertiesWithMargin(long margin) {
+            return new BackendProperties(
+                    "https://verifier.example.com",
+                    List.of(),
+                    null, null, null, null, null, null, null, null, null, margin);
         }
     }
 

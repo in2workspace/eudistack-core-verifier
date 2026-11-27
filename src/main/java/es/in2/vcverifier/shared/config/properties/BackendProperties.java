@@ -1,6 +1,7 @@
 package es.in2.vcverifier.shared.config.properties;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
 
@@ -24,7 +25,7 @@ public record BackendProperties(
         X5cChainValidation x5cChainValidation,
         Sso sso,
         Long loginSelectionTimeoutSeconds,
-        @PositiveOrZero Long loginExpiryMarginSeconds
+        @PositiveOrZero @Max(3600) Long loginExpiryMarginSeconds
 ) {
 
     public record Identity(
